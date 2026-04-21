@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.npm-cache/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# user data that must never leak to git
+~
+.config/
+sessions/
+coverage/
