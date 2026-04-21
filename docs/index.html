@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kimiflare — AI coding agent in your terminal</title>
+  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Claude Code, but open-weight, direct to Cloudflare.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #050508;
+      --bg-elevated: #0a0a10;
+      --bg-card: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.08);
+      --text: #e2e2e8;
+      --text-dim: #8a8a9a;
+      --accent: #00e5c7;
+      --accent-dim: rgba(0,229,199,0.15);
+      --accent-glow: rgba(0,229,199,0.4);
+      --purple: #a78bfa;
+      --purple-dim: rgba(167,139,250,0.15);
+      --terminal-bg: #0c0c14;
+      --terminal-border: rgba(255,255,255,0.1);
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::selection {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* Noise overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* Gradient orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(5,5,8,0.7);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--accent);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .logo::before {
+      content: '◆';
+      color: var(--purple);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      background: var(--accent);
+      color: var(--bg) !important;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px var(--accent-glow);
+    }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8rem 2rem 4rem;
+      overflow: hidden;
+    }
+
+    .hero .orb-1 {
+      width: 600px; height: 600px;
+      background: var(--accent);
+      top: -200px; right: -100px;
+    }
+
+    .hero .orb-2 {
+      width: 500px; height: 500px;
+      background: var(--purple);
+      bottom: -150px; left: -100px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      border-radius: 100px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,229,199,0.2);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+      animation: fadeInUp 0.8s ease-out;
+    }
+
+    .hero-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 5rem);
+      font-weight: 800;
+      line-height: 1.05;
+      text-align: center;
+      max-width: 900px;
+      margin-bottom: 1.5rem;
+      animation: fadeInUp 0.8s ease-out 0.1s both;
+    }
+
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--accent), var(--purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--text-dim);
+      text-align: center;
+      max-width: 600px;
+      margin-bottom: 3rem;
+      animation: fadeInUp 0.8s ease-out 0.2s both;
+    }
+
+    .hero-cta {
+      display: flex;
+      gap: 1rem;
+      animation: fadeInUp 0.8s ease-out 0.3s both;
+    }
+
+    .btn {
+      padding: 0.875rem 2rem;
+      border-radius: 8px;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: 0 4px 24px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--text-dim);
+      background: rgba(255,255,255,0.03);
+    }
+
+    /* Terminal */
+    .terminal-wrap {
+      width: 100%;
+      max-width: 800px;
+      margin-top: 4rem;
+      animation: fadeInUp 0.8s ease-out 0.5s both;
+      perspective: 1000px;
+    }
+
+    .terminal {
+      background: var(--terminal-bg);
+      border: 1px solid var(--terminal-border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.5),
+        0 20px 60px rgba(0,0,0,0.5),
+        0 0 80px rgba(0,229,199,0.05);
+      transform: rotateX(2deg);
+      transition: transform 0.3s;
+    }
+
+    .terminal:hover { transform: rotateX(0deg); }
+
+    .terminal-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.875rem 1rem;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--terminal-border);
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f56; }
+    .dot-y { background: #ffbd2e; }
+    .dot-g { background: #27c93f; }
+
+    .terminal-title {
+      margin-left: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
+    .terminal-body {
+      padding: 1.25rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.7;
+      min-height: 280px;
+    }
+
+    .term-line { display: flex; gap: 0.5rem; margin-bottom: 0.25rem; }
+    .term-prompt { color: var(--accent); font-weight: 600; white-space: nowrap; }
+    .term-input { color: var(--text); }
+    .term-output { color: var(--text-dim); padding-left: 0; margin: 0.5rem 0 1rem; }
+    .term-tool { color: var(--purple); }
+    .term-ok { color: #27c93f; }
+    .term-dim { color: #555; }
+    .term-cursor {
+      display: inline-block;
+      width: 8px; height: 1.1em;
+      background: var(--accent);
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    /* Sections */
+    section {
+      position: relative;
+      padding: 6rem 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .section-header h2 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header p {
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    /* Features */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .feature-card:hover::before { opacity: 1; }
+
+    .feature-icon {
+      width: 40px; height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin-bottom: 1.25rem;
+      background: var(--accent-dim);
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* Architecture */
+    .arch-section {
+      background: var(--bg-elevated);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 3rem;
+      margin-top: 2rem;
+    }
+
+    .arch-diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+    }
+
+    .arch-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 2rem;
+      text-align: center;
+      min-width: 280px;
+      position: relative;
+    }
+
+    .arch-box.accent {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .arch-arrow {
+      color: var(--text-dim);
+      padding: 0.5rem;
+      font-size: 1.2rem;
+    }
+
+    .arch-label {
+      color: var(--text-dim);
+      font-size: 0.7rem;
+      margin-top: 0.25rem;
+    }
+
+    /* Code/install */
+    .code-block {
+      background: var(--terminal-bg);
+      border: 1px solid var(--terminal-border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+
+    .code-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid var(--terminal-border);
+    }
+
+    .code-lang {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    .code-body {
+      padding: 1.25rem 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    .code-body .c { color: var(--text-dim); }
+    .code-body .k { color: var(--purple); }
+    .code-body .s { color: #a5d6ff; }
+    .code-body .v { color: var(--accent); }
+
+    /* Pricing */
+    .pricing-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+      transition: all 0.3s;
+    }
+
+    .pricing-card:hover {
+      border-color: rgba(255,255,255,0.15);
+      transform: translateY(-4px);
+    }
+
+    .pricing-card .price {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin: 1rem 0;
+    }
+
+    .pricing-card .price span {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem 2rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    footer a:hover { color: var(--accent); }
+
+    /* Animations */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero { padding-top: 6rem; }
+      .terminal-body { font-size: 0.75rem; padding: 1rem; }
+      .arch-section { padding: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="#" class="logo">kimiflare</a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub</a></li>
+    </ul>
+  </nav>
+
+  <section class="hero">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <div class="hero-badge">Powered by Kimi-K2.6 on Cloudflare Workers AI</div>
+    <h1>
+      AI coding agent<br>in your <span class="gradient">terminal</span>
+    </h1>
+    <p class="hero-subtitle">
+      Claude Code, but the model is Moonshot's 1T-parameter open-source Kimi running directly on your Cloudflare account — no middleman, no AI Gateway, no OpenAI SDK.
+    </p>
+    <div class="hero-cta">
+      <a href="#install" class="btn btn-primary">Get Started</a>
+      <a href="https://github.com/sinameraji/kimiflare" class="btn btn-secondary" target="_blank">View on GitHub</a>
+    </div>
+
+    <div class="terminal-wrap">
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="dot dot-r"></div>
+          <div class="dot dot-y"></div>
+          <div class="dot dot-g"></div>
+          <span class="terminal-title">kimiflare — zsh</span>
+        </div>
+        <div class="terminal-body" id="terminal">
+          <div class="term-line">
+            <span class="term-prompt">kimiflare</span>
+            <span class="term-input">what files are here?</span>
+          </div>
+          <div class="term-output">
+            <span class="term-ok">✓</span> <span class="term-tool">glob</span>(*)<br>
+            &nbsp;&nbsp;/Users/you/proj/package.json<br>
+            &nbsp;&nbsp;/Users/you/proj/src/index.ts<br>
+            &nbsp;&nbsp;...
+          </div>
+          <div class="term-line">
+            <span class="term-prompt">kimiflare</span>
+            <span class="term-input">add a /health endpoint to server.ts</span>
+          </div>
+          <div class="term-output">
+            <span class="term-ok">✓</span> <span class="term-tool">read</span>(src/server.ts)<br>
+            <span class="term-dim">◐</span> <span class="term-tool">edit</span> src/server.ts<br>
+            &nbsp;&nbsp;─── permission requested ──────────────────<br>
+            &nbsp;&nbsp;@@ -42,6 +42,10 @@<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;app.get('/', …)<br>
+            &nbsp;&nbsp;&nbsp;+&nbsp;&nbsp;app.get('/health', (_, res) => res.json({ ok: true }))<br>
+            &nbsp;&nbsp;─────────────────────────────────────────────<br>
+            &nbsp;&nbsp;[Allow once] [Allow for session] [Deny]
+          </div>
+          <div class="term-line">
+            <span class="term-prompt">kimiflare</span>
+            <span class="term-input" id="typing"></span><span class="term-cursor"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="section-header reveal">
+      <span class="section-label">Features</span>
+      <h2>Built for serious work</h2>
+      <p>Everything you need to ship faster, with full transparency and control.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon">📖</div>
+        <h3>262K Context Window</h3>
+        <p>Read entire modules, large configs, and full stack traces without pagination. The model sees the whole picture.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🔧</div>
+        <h3>Native Tool Use</h3>
+        <p>File I/O, shell execution, globs, grep, and web fetch — all wired up with per-call approval for anything mutating.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🧠</div>
+        <h3>Streaming Reasoning</h3>
+        <p>The model's chain-of-thought streams separately. Toggle it with <code>/reasoning</code> or Ctrl-R to see how it thinks.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">⚡</div>
+        <h3>Direct to Cloudflare</h3>
+        <p>No AI Gateway, no proxy, no OpenAI SDK. Your traffic goes straight to Cloudflare Workers AI from your own account.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">💰</div>
+        <h3>Pay Your Own Way</h3>
+        <p>Your Cloudflare account, your credits, your rate limits. Live cost tracking in the bottom status line.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">🖥️</div>
+        <h3>Beautiful TUI</h3>
+        <p>Built with Ink (React for terminals). Clean rendering under a pty with real-time streaming and permission modals.</p>
+      </div>
+    </div>
+
+    <div class="arch-section reveal">
+      <div class="section-header" style="margin-bottom: 2rem;">
+        <span class="section-label">Architecture</span>
+        <h2 style="font-size: 1.5rem;">How it works</h2>
+      </div>
+      <div class="arch-diagram">
+        <div class="arch-box accent">
+          <strong>kimiflare</strong> <span style="color:var(--text-dim)">Node + Ink TUI</span>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-box">
+          user msg → agent loop → runKimi()<br>
+          <span class="arch-label">OpenAI-compatible messages + tools payload</span>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-box">
+          <span class="term-tool">POST SSE</span> to Workers AI
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-box accent">
+          <strong>api.cloudflare.com</strong><br>
+          <span style="color:var(--text-dim);font-size:0.75rem">@cf/moonshotai/kimi-k2.6</span>
+        </div>
+        <div class="arch-arrow">↑</div>
+        <div class="arch-box">
+          tool result ← tool executor ← tool_calls<br>
+          <span class="arch-label">Permission modal for write / edit / bash</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="section-header reveal">
+      <span class="section-label">Install</span>
+      <h2>Get started in seconds</h2>
+      <p>Clone, build, link. Then point it at your Cloudflare account.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="code-block">
+        <div class="code-header">
+          <div class="dot dot-r"></div>
+          <div class="dot dot-y"></div>
+          <div class="dot dot-g"></div>
+          <span class="code-lang">bash</span>
+        </div>
+        <div class="code-body">
+<span class="c"># Clone and build</span><br>
+<span class="v">git</span> clone https://github.com/sinameraji/kimiflare<br>
+<span class="v">cd</span> kimiflare<br>
+<span class="v">npm</span> install<br>
+<span class="v">npm</span> run build<br>
+<span class="v">npm</span> link<br>
+<br>
+<span class="c"># Configure credentials</span><br>
+<span class="v">export</span> <span class="k">CLOUDFLARE_ACCOUNT_ID</span>=...<br>
+<span class="v">export</span> <span class="k">CLOUDFLARE_API_TOKEN</span>=...<br>
+<br>
+<span class="c"># Or save them once</span><br>
+<span class="v">mkdir</span> -p ~/.config/kimiflare<br>
+<span class="v">cat</span> > ~/.config/kimiflare/config.json <<'EOF'<br>
+{<br>
+&nbsp;&nbsp;<span class="s">"accountId"</span>: <span class="s">"YOUR_ACCOUNT_ID"</span>,<br>
+&nbsp;&nbsp;<span class="s">"apiToken"</span>: <span class="s">"YOUR_API_TOKEN"</span>,<br>
+&nbsp;&nbsp;<span class="s">"model"</span>: <span class="s">"@cf/moonshotai/kimi-k2.6"</span><br>
+}<br>
+EOF<br>
+<span class="v">chmod</span> 600 ~/.config/kimiflare/config.json
+        </div>
+      </div>
+    </div>
+
+    <div class="reveal" style="margin-top: 1.5rem;">
+      <div class="code-block">
+        <div class="code-header">
+          <div class="dot dot-r"></div>
+          <div class="dot dot-y"></div>
+          <div class="dot dot-g"></div>
+          <span class="code-lang">bash</span>
+        </div>
+        <div class="code-body">
+<span class="c"># Interactive TUI</span><br>
+<span class="v">kimiflare</span><br>
+<br>
+<span class="c"># One-shot mode</span><br>
+<span class="v">kimiflare</span> -p <span class="s">"summarize PLAN.md"</span><br>
+<br>
+<span class="c"># Auto-approve for scripts</span><br>
+<span class="v">kimiflare</span> -p <span class="s">"..."</span> --dangerously-allow-all<br>
+<br>
+<span class="c"># Override model</span><br>
+<span class="v">kimiflare</span> --model @cf/moonshotai/kimi-k2.6<br>
+<br>
+<span class="c"># Stream reasoning to stderr</span><br>
+<span class="v">kimiflare</span> --reasoning
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="section-header reveal">
+      <span class="section-label">Pricing</span>
+      <h2>Pay your own way</h2>
+      <p>Your Cloudflare account, your credits. No markup, no subscription.</p>
+    </div>
+
+    <div class="pricing-cards">
+      <div class="pricing-card reveal">
+        <h3>Input Tokens</h3>
+        <div class="price">$0.95 <span>/ 1M tokens</span></div>
+        <p style="color: var(--text-dim); font-size: 0.9rem;">Standard input pricing on Workers AI</p>
+      </div>
+      <div class="pricing-card reveal">
+        <h3>Cached Input</h3>
+        <div class="price">$0.16 <span>/ 1M tokens</span></div>
+        <p style="color: var(--text-dim); font-size: 0.9rem;">Heavily discounted for repeated context</p>
+      </div>
+      <div class="pricing-card reveal">
+        <h3>Output Tokens</h3>
+        <div class="price">$4.00 <span>/ 1M tokens</span></div>
+        <p style="color: var(--text-dim); font-size: 0.9rem;">Generation and reasoning output</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-header reveal">
+      <span class="section-label">Tools</span>
+      <h2>Everything at your fingertips</h2>
+      <p>Seven built-in tools, with smart permission handling.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="code-block">
+        <div class="code-header">
+          <div class="dot dot-r"></div>
+          <div class="dot dot-y"></div>
+          <div class="dot dot-g"></div>
+          <span class="code-lang">markdown</span>
+        </div>
+        <div class="code-body">
+| Tool        | Permission | What it does                                              |<br>
+|-------------|------------|-----------------------------------------------------------|<br>
+| <span class="v">read</span>      | auto       | Read a text file (≤ 2MB) with optional line range.        |<br>
+| <span class="v">write</span>     | prompt     | Create or overwrite a file. Shows a diff before approval. |<br>
+| <span class="v">edit</span>      | prompt     | Replace an exact substring. Fails unless unique match.    |<br>
+| <span class="v">bash</span>      | prompt     | Run a shell command. Session-allow keyed by first token.  |<br>
+| <span class="v">glob</span>      | auto       | Match files by pattern, sorted by mtime.                  |<br>
+| <span class="v">grep</span>      | auto       | Regex search. Uses ripgrep if available.                  |<br>
+| <span class="v">web_fetch</span> | auto       | Fetch a URL, convert HTML → markdown (≤ 100KB).          |
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Built with curiosity by <a href="https://github.com/sinameraji" target="_blank">@sinameraji</a>.
+      Powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/" target="_blank">Kimi-K2.6</a> on Cloudflare Workers AI.
+    </p>
+    <p style="margin-top: 0.5rem; font-size: 0.8rem;">
+      <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a> ·
+      <a href="https://github.com/sinameraji/kimiflare/issues" target="_blank">Issues</a>
+    </p>
+  </footer>
+
+  <script>
+    // Typing effect
+    const phrases = [
+      "refactor auth middleware",
+      "write tests for utils.ts",
+      "deploy to staging",
+      "optimize db queries"
+    ];
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let deleting = false;
+    const typingEl = document.getElementById('typing');
+
+    function type() {
+      const current = phrases[phraseIndex];
+      if (deleting) {
+        typingEl.textContent = current.substring(0, charIndex - 1);
+        charIndex--;
+      } else {
+        typingEl.textContent = current.substring(0, charIndex + 1);
+        charIndex++;
+      }
+
+      let speed = deleting ? 50 : 100;
+      if (!deleting && charIndex === current.length) {
+        speed = 2000;
+        deleting = true;
+      } else if (deleting && charIndex === 0) {
+        deleting = false;
+        phraseIndex = (phraseIndex + 1) % phrases.length;
+        speed = 500;
+      }
+
+      setTimeout(type, speed);
+    }
+    setTimeout(type, 1000);
+
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>
