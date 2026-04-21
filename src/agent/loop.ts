@@ -2,6 +2,7 @@ import { runKimi } from "./client.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
+import type { Task } from "../tasks-state.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -13,6 +14,7 @@ export interface AgentCallbacks {
   onUsage?: (usage: Usage) => void;
   onAssistantFinal?: (msg: ChatMessage) => void;
   onToolResult?: (result: ToolResult) => void;
+  onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
 }
 
@@ -104,7 +106,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       const result = await opts.executor.run(
         { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
         opts.callbacks.askPermission,
-        { cwd: opts.cwd, signal: opts.signal },
+        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks },
       );
       opts.messages.push({
         role: "tool",

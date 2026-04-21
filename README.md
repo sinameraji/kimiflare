@@ -91,7 +91,7 @@ Interactive slash commands:
 | `/logout`                   | Clear saved credentials.                                                        |
 | `/help` `/exit`             | List commands / quit.                                                           |
 
-Keys: `Shift+Tab` cycles mode · `Ctrl-R` toggles reasoning · `Ctrl-C` interrupts an in-flight turn (press again to exit) · `↑`/`↓` walks prompt history.
+Keys: `Shift+Tab` cycles mode · `Ctrl-R` toggles reasoning · `Ctrl-O` toggles verbose tool output · `Ctrl-C` interrupts an in-flight turn (press again to exit) · `↑`/`↓` walks prompt history.
 
 ### Modes
 
@@ -116,6 +116,10 @@ You can type the next prompt while the model is still executing. Submitted promp
 ### Session persistence
 
 Sessions are saved to `~/.local/share/kimiflare/sessions/` after each turn. `/resume` lists the most recent (with first prompt + message count) so you can pick one up later.
+
+### Task panel
+
+For multi-step requests, the agent can publish a live task list via the `tasks_set` tool. The panel shows progress inline with status icons (`■` active, `☐` pending, `✓` done), elapsed time, and tokens consumed for the current task batch. Press `Ctrl-O` while a turn is running to switch tool output between compact (first line) and verbose (full output) modes.
 
 ## Why
 

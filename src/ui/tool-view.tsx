@@ -13,10 +13,18 @@ export interface ToolEventState {
   expanded?: boolean;
 }
 
-export function ToolView({ evt }: { evt: ToolEventState }) {
+interface Props {
+  evt: ToolEventState;
+  verbose?: boolean;
+}
+
+export function ToolView({ evt, verbose }: Props) {
   const statusIcon =
     evt.status === "running" ? <Spinner type="dots" /> : evt.status === "error" ? <Text color="red">✗</Text> : <Text color="green">✓</Text>;
   const title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
+  const expand = Boolean(evt.expanded || verbose);
+  const lines = evt.result ? evt.result.split("\n") : [];
+  const showLimit = verbose ? 200 : 20;
 
   return (
     <Box flexDirection="column" marginLeft={2}>
@@ -28,17 +36,17 @@ export function ToolView({ evt }: { evt: ToolEventState }) {
           <DiffView {...evt.render.diff} />
         </Box>
       ) : null}
-      {evt.result && evt.expanded ? (
+      {evt.result && expand ? (
         <Box marginLeft={2} flexDirection="column">
-          {evt.result.split("\n").slice(0, 20).map((l, i) => (
+          {lines.slice(0, showLimit).map((l, i) => (
             <Text key={i} color="gray">{l}</Text>
           ))}
-          {evt.result.split("\n").length > 20 && (
-            <Text color="gray">... ({evt.result.split("\n").length - 20} more lines)</Text>
+          {lines.length > showLimit && (
+            <Text color="gray">... ({lines.length - showLimit} more lines)</Text>
           )}
         </Box>
       ) : null}
-      {evt.result && !evt.expanded && evt.status !== "running" ? (
+      {evt.result && !expand && evt.status !== "running" ? (
         <Text color="gray">  {firstLine(evt.result)}</Text>
       ) : null}
     </Box>

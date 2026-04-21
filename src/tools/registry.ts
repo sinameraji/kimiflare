@@ -1,8 +1,10 @@
 import type { ToolDef } from "../agent/messages.js";
+import type { Task } from "../tasks-state.js";
 
 export interface ToolContext {
   cwd: string;
   signal?: AbortSignal;
+  onTasks?: (tasks: Task[]) => void;
 }
 
 export interface ToolRender {

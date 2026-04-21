@@ -21,19 +21,20 @@ interface Props {
   events: ChatEvent[];
   showReasoning: boolean;
   theme: Theme;
+  verbose?: boolean;
 }
 
-export function ChatView({ events, showReasoning, theme }: Props) {
+export function ChatView({ events, showReasoning, theme, verbose }: Props) {
   return (
     <Box flexDirection="column">
       {events.map((e) => (
-        <EventView key={e.key} evt={e} showReasoning={showReasoning} theme={theme} />
+        <EventView key={e.key} evt={e} showReasoning={showReasoning} theme={theme} verbose={verbose} />
       ))}
     </Box>
   );
 }
 
-function EventView({ evt, showReasoning, theme }: { evt: ChatEvent; showReasoning: boolean; theme: Theme }) {
+function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; showReasoning: boolean; theme: Theme; verbose?: boolean }) {
   if (evt.kind === "user") {
     return (
       <Box marginY={0}>
@@ -59,7 +60,7 @@ function EventView({ evt, showReasoning, theme }: { evt: ChatEvent; showReasonin
     );
   }
   if (evt.kind === "tool") {
-    return <ToolView evt={evt} />;
+    return <ToolView evt={evt} verbose={verbose} />;
   }
   if (evt.kind === "info") {
     return (

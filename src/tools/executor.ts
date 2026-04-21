@@ -6,6 +6,7 @@ import { bashTool } from "./bash.js";
 import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { webFetchTool } from "./web-fetch.js";
+import { tasksSetTool } from "./tasks.js";
 
 export const ALL_TOOLS: ToolSpec[] = [
   readTool,
@@ -15,6 +16,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   globTool,
   grepTool,
   webFetchTool,
+  tasksSetTool,
 ];
 
 export type PermissionDecision = "allow" | "allow_session" | "deny";

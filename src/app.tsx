@@ -11,6 +11,8 @@ import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
 import { ResumePicker } from "./ui/resume-picker.js";
+import { TaskList } from "./ui/task-list.js";
+import type { Task } from "./tasks-state.js";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo, type UpdateCheckResult } from "./util/update-check.js";
@@ -82,6 +84,10 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   );
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
+  const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
+  const [verbose, setVerbose] = useState(false);
 
   const messagesRef = useRef<ChatMessage[]>([
     {
@@ -166,6 +172,17 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
           { kind: "info", key: mkKey(), text: `mode: ${nm}` },
         ]);
         return nm;
+      });
+      return;
+    }
+    if (key.ctrl && inputChar === "o") {
+      setVerbose((v) => {
+        const next = !v;
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `output: ${next ? "verbose (full tool results)" : "compact"}` },
+        ]);
+        return next;
       });
       return;
     }
@@ -292,6 +309,9 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         sessionIdRef.current = null;
         setEvents([{ kind: "info", key: mkKey(), text: "conversation cleared" }]);
         setUsage(null);
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
         return true;
       }
       if (c === "/reasoning") {
@@ -495,7 +515,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               "  /reasoning              toggle show/hide model reasoning\n" +
               "  /clear                  clear current conversation\n" +
               "  /cost /model /update /logout /help /exit\n" +
-              "keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · shift+tab cycle mode · ↑/↓ history",
+              "keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · ctrl-o toggle verbose output · shift+tab cycle mode · ↑/↓ history",
           },
         ]);
         return true;
@@ -582,6 +602,19 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               });
             },
             onUsage: (u) => setUsage(u),
+            onTasks: (nextTasks) => {
+              setTasks((prev) => {
+                if (prev.length === 0 && nextTasks.length > 0) {
+                  setTasksStartedAt(Date.now());
+                  setTasksStartTokens(usage?.prompt_tokens ?? 0);
+                }
+                if (nextTasks.length === 0) {
+                  setTasksStartedAt(null);
+                  setTasksStartTokens(0);
+                }
+                return nextTasks;
+              });
+            },
             askPermission: (req) =>
               new Promise<PermissionDecision>((resolve) => {
                 if (modeRef.current === "auto") {
@@ -709,7 +742,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
 
   return (
     <Box flexDirection="column">
-      <ChatView events={events} showReasoning={showReasoning} theme={theme} />
+      <ChatView events={events} showReasoning={showReasoning} theme={theme} verbose={verbose} />
       {perm ? (
         <PermissionModal
           tool={perm.tool}
@@ -722,6 +755,14 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         />
       ) : (
         <Box flexDirection="column" marginTop={1}>
+          {tasks.length > 0 && (
+            <TaskList
+              tasks={tasks}
+              theme={theme}
+              startedAt={tasksStartedAt}
+              tokensDelta={Math.max(0, (usage?.prompt_tokens ?? 0) - tasksStartTokens)}
+            />
+          )}
           {queue.length > 0 && (
             <Box flexDirection="column" marginBottom={1}>
               {queue.map((q, i) => (
