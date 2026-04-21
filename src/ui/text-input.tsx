@@ -10,6 +10,7 @@ interface Props {
   onHistoryDown?: () => void;
   onClearQueueItem?: (text: string) => void;
   focus?: boolean;
+  mask?: string;
 }
 
 function findWordBoundaryForward(text: string, pos: number): number {
@@ -32,6 +33,7 @@ export function CustomTextInput({
   onHistoryDown,
   onClearQueueItem,
   focus = true,
+  mask,
 }: Props) {
   const [cursorOffset, setCursorOffset] = useState(value.length);
 
@@ -144,15 +146,17 @@ export function CustomTextInput({
     { isActive: focus },
   );
 
+  const displayValue = mask ? mask.repeat(value.length) : value;
+
   let renderedValue = "";
   let i = 0;
-  for (const char of value) {
+  for (const char of displayValue) {
     renderedValue += i === cursorOffset ? chalk.inverse(char) : char;
     i++;
   }
-  if (value.length === 0) {
+  if (displayValue.length === 0) {
     renderedValue = chalk.inverse(" ");
-  } else if (cursorOffset === value.length) {
+  } else if (cursorOffset === displayValue.length) {
     renderedValue += chalk.inverse(" ");
   }
 

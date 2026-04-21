@@ -18,7 +18,8 @@
     "build": "tsup",
     "dev": "tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
-    "start": "node bin/kimiflare.mjs"
+    "start": "node bin/kimiflare.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "commander": "^12.1.0",

@@ -12,6 +12,9 @@ import { PermissionModal } from "./ui/permission.js";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo, type UpdateCheckResult } from "./util/update-check.js";
+import { Onboarding } from "./ui/onboarding.js";
+import { configPath, DEFAULT_MODEL } from "./config.js";
+import { unlink } from "node:fs/promises";
 
 interface Cfg {
   accountId: string;
@@ -29,8 +32,9 @@ let nextAssistantId = 1;
 let nextKey = 1;
 const mkKey = () => `evt_${nextKey++}`;
 
-function App({ cfg }: { cfg: Cfg }) {
+function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const { exit } = useApp();
+  const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const [events, setEvents] = useState<ChatEvent[]>([
     { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit" },
   ]);
@@ -48,7 +52,7 @@ function App({ cfg }: { cfg: Cfg }) {
   const messagesRef = useRef<ChatMessage[]>([
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools: ALL_TOOLS, model: cfg.model }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools: ALL_TOOLS, model: cfg?.model ?? DEFAULT_MODEL }),
     },
   ]);
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
@@ -129,7 +133,7 @@ function App({ cfg }: { cfg: Cfg }) {
       if (c === "/model") {
         setEvents((e) => [
           ...e,
-          { kind: "info", key: mkKey(), text: `current model: ${cfg.model}` },
+          { kind: "info", key: mkKey(), text: `current model: ${cfg?.model ?? "unknown"}` },
         ]);
         return true;
       }
@@ -172,6 +176,15 @@ function App({ cfg }: { cfg: Cfg }) {
         }
         return true;
       }
+      if (c === "/logout") {
+        unlink(configPath()).catch(() => {});
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `credentials cleared from ${configPath()}` },
+        ]);
+        setCfg(null);
+        return true;
+      }
       if (c === "/help") {
         setEvents((e) => [
           ...e,
@@ -179,18 +192,19 @@ function App({ cfg }: { cfg: Cfg }) {
             kind: "info",
             key: mkKey(),
             text:
-              "commands: /clear /reasoning /cost /model /update /help /exit  ·  keys: ctrl-r toggle reasoning, ctrl-c interrupt/exit",
+              "commands: /clear /reasoning /cost /model /update /logout /help /exit  ·  keys: ctrl-r toggle reasoning, ctrl-c interrupt/exit",
           },
         ]);
         return true;
       }
       return false;
     },
-    [cfg.model, exit, usage, updateInfo],
+    [cfg, exit, usage, updateInfo],
   );
 
   const processMessage = useCallback(
     async (text: string) => {
+      if (!cfg) return;
       const trimmed = text.trim();
       if (!trimmed) return;
 
@@ -337,6 +351,20 @@ function App({ cfg }: { cfg: Cfg }) {
     });
   }, []);
 
+  if (!cfg) {
+    return (
+      <Onboarding
+        onDone={(newCfg) => {
+          setCfg(newCfg);
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare!" },
+          ]);
+        }}
+      />
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <ChatView events={events} showReasoning={showReasoning} />
@@ -426,7 +454,7 @@ function App({ cfg }: { cfg: Cfg }) {
   );
 }
 
-export async function renderApp(cfg: Cfg) {
-  const instance = render(<App cfg={cfg} />);
+export async function renderApp(cfg: Cfg | null) {
+  const instance = render(<App initialCfg={cfg} />);
   await instance.waitUntilExit();
 }

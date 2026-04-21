@@ -25,18 +25,18 @@ const opts = program.opts<{
 
 async function main() {
   const cfg = await loadConfig();
-  if (!cfg) {
-    console.error(
-      "kimiflare: missing credentials.\n" +
-        "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
-        "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
-        "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }",
-    );
-    process.exit(2);
-  }
-  const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
 
   if (opts.print !== undefined) {
+    if (!cfg) {
+      console.error(
+        "kimiflare: missing credentials.\n" +
+          "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
+          "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
+          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }",
+      );
+      process.exit(2);
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
     await runPrintMode({
       ...cfg,
       model,
@@ -53,8 +53,14 @@ async function main() {
     );
     process.exit(2);
   }
+
   const { renderApp } = await import("./app.js");
-  await renderApp({ ...cfg, model });
+  if (cfg) {
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    await renderApp({ ...cfg, model });
+  } else {
+    await renderApp(null);
+  }
 }
 
 interface PrintOpts {
