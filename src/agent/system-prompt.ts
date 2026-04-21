@@ -1,12 +1,14 @@
 import { platform, release, homedir } from "node:os";
 import { basename } from "node:path";
 import type { ToolSpec } from "../tools/registry.js";
+import { systemPromptForMode, type Mode } from "../mode.js";
 
 export interface SystemPromptOpts {
   cwd: string;
   tools: ToolSpec[];
   model: string;
   now?: Date;
+  mode?: Mode;
 }
 
 export function buildSystemPrompt(opts: SystemPromptOpts): string {
@@ -40,5 +42,5 @@ How to work:
 - If a tool returns an error, read it carefully and adjust; do not retry the same call blindly.
 - You have a 262k-token context window. Read as much of a file as needed rather than guessing.
 - If a request is ambiguous, ask one focused question instead of making large assumptions.
-- When you finish a task, stop. Do not add a closing summary.`;
+- When you finish a task, stop. Do not add a closing summary.${opts.mode ? systemPromptForMode(opts.mode) : ""}`;
 }

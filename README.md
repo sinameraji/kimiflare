@@ -77,16 +77,45 @@ kimiflare --reasoning                 # (print mode) stream chain-of-thought to 
 
 Interactive slash commands:
 
-| Command       | Effect                                           |
-|---------------|--------------------------------------------------|
-| `/clear`      | Reset the conversation (keeps system prompt)    |
-| `/reasoning`  | Toggle chain-of-thought display                 |
-| `/cost`       | Show token usage so far                          |
-| `/model`      | Show current model                               |
-| `/help`       | List commands                                    |
-| `/exit`       | Quit                                             |
+| Command                     | Effect                                                                          |
+|-----------------------------|---------------------------------------------------------------------------------|
+| `/mode edit\|plan\|auto`     | Switch mode. `edit` prompts for permission (default), `plan` is read-only research, `auto` auto-approves every tool call. |
+| `/plan` `/auto` `/edit`     | Shortcuts for the three modes.                                                  |
+| `/thinking low\|medium\|high` | Reasoning effort. `low` = fastest, shallow; `medium` = balanced (default); `high` = deepest, slowest. Saved to config. |
+| `/theme NAME`               | Switch color scheme: `dark` (default), `light` (bright terminals), `high-contrast`. Saved to config. |
+| `/resume`                   | Pick a past conversation to restore.                                            |
+| `/compact`                  | Summarize older turns to free context. Suggested automatically at ~80% full.    |
+| `/reasoning`                | Toggle chain-of-thought display.                                                |
+| `/clear`                    | Reset the current conversation.                                                 |
+| `/cost` `/model` `/update`  | Info commands.                                                                  |
+| `/logout`                   | Clear saved credentials.                                                        |
+| `/help` `/exit`             | List commands / quit.                                                           |
 
-Keys: `Ctrl-R` toggles reasoning, `Ctrl-C` interrupts an in-flight turn (press again to exit).
+Keys: `Shift+Tab` cycles mode · `Ctrl-R` toggles reasoning · `Ctrl-C` interrupts an in-flight turn (press again to exit) · `↑`/`↓` walks prompt history.
+
+### Modes
+
+- **edit** — default. The agent calls tools freely for read-only work; mutating tools (`write`, `edit`, `bash`) pause for your approval.
+- **plan** — read-only. Mutating tools are hard-blocked. Ask "plan a refactor" and the agent will investigate and produce a plan without touching the filesystem. Exit plan mode to execute.
+- **auto** — autonomous. Every tool call is auto-approved. Use for trusted, well-scoped tasks.
+
+### Thinking level (quality vs speed)
+
+Kimi-K2.6 always reasons, but you can cap the effort:
+
+- **low** — fastest. Best for chat, small edits, running commands.
+- **medium** — balanced (default). Solid reasoning on real edits without the latency of deep thinking on trivial prompts.
+- **high** — deepest. Best for multi-file refactors, subtle bugs, architectural decisions.
+
+Set with `/thinking medium` (persists), or per-launch via `KIMI_REASONING_EFFORT=high`.
+
+### Type-ahead queue
+
+You can type the next prompt while the model is still executing. Submitted prompts show up as `⏳ …` and fire in order as each turn completes. `Ctrl-C` aborts the current turn and clears the queue.
+
+### Session persistence
+
+Sessions are saved to `~/.local/share/kimiflare/sessions/` after each turn. `/resume` lists the most recent (with first prompt + message count) so you can pick one up later.
 
 ## Why
 
@@ -142,7 +171,7 @@ npm link          # or: ln -s "$PWD/bin/kimiflare.mjs" ~/.local/bin/kimiflare
 
 ## Status
 
-Early. Transport + tools + agent loop + print mode are verified end-to-end; interactive TUI renders cleanly under a pty and awaits real-terminal shakedown. See `PLAN.md` for milestone log and deferred items (first-run wizard, session resume).
+Early but functional. Transport + tools + agent loop + print mode are verified end-to-end. Interactive TUI ships modes, themes, thinking levels, session resume, compaction, and type-ahead queue.
 
 ## License
 

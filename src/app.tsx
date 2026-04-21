@@ -3,23 +3,42 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import Spinner from "ink-spinner";
 import { runAgentTurn } from "./agent/loop.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
+import { compactMessages } from "./agent/compact.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
 import type { ChatMessage, Usage } from "./agent/messages.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
+import { ResumePicker } from "./ui/resume-picker.js";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo, type UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
-import { configPath, DEFAULT_MODEL } from "./config.js";
+import {
+  configPath,
+  DEFAULT_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  saveConfig,
+  type ReasoningEffort,
+} from "./config.js";
+import { resolveTheme, themeNames, type Theme } from "./ui/theme.js";
+import { nextMode, type Mode, isBlockedInPlanMode } from "./mode.js";
+import {
+  listSessions,
+  loadSession,
+  makeSessionId,
+  saveSession,
+  type SessionSummary,
+} from "./sessions.js";
 import { unlink } from "node:fs/promises";
 
 interface Cfg {
   accountId: string;
   apiToken: string;
   model: string;
+  theme?: string;
+  reasoningEffort?: ReasoningEffort;
 }
 
 interface PendingPermission {
@@ -28,15 +47,24 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
+const CONTEXT_LIMIT = 262_000;
+const AUTO_COMPACT_SUGGEST_PCT = 0.8;
+
 let nextAssistantId = 1;
 let nextKey = 1;
 const mkKey = () => `evt_${nextKey++}`;
+
+const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
+  low: "low — fastest; lightest reasoning. Best for simple Q&A, small edits, quick coordination.",
+  medium: "medium — balanced (default). Solid quality on most edits, fast on trivial prompts.",
+  high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
+};
 
 function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const [events, setEvents] = useState<ChatEvent[]>([
-    { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit" },
+    { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit · shift+tab to cycle modes" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,27 +76,99 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState("");
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [mode, setMode] = useState<Mode>("edit");
+  const [effort, setEffort] = useState<ReasoningEffort>(
+    initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+  );
+  const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
+  const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
 
   const messagesRef = useRef<ChatMessage[]>([
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools: ALL_TOOLS, model: cfg?.model ?? DEFAULT_MODEL }),
+      content: buildSystemPrompt({
+        cwd: process.cwd(),
+        tools: ALL_TOOLS,
+        model: cfg?.model ?? DEFAULT_MODEL,
+        mode: "edit",
+      }),
     },
   ]);
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const modeRef = useRef<Mode>(mode);
+  const effortRef = useRef<ReasoningEffort>(effort);
+
+  useEffect(() => {
+    modeRef.current = mode;
+    messagesRef.current[0] = {
+      role: "system",
+      content: buildSystemPrompt({
+        cwd: process.cwd(),
+        tools: ALL_TOOLS,
+        model: cfg?.model ?? DEFAULT_MODEL,
+        mode,
+      }),
+    };
+    if (mode === "plan") {
+      executorRef.current.clearSessionPermissions();
+    }
+  }, [mode, cfg?.model]);
+
+  useEffect(() => {
+    effortRef.current = effort;
+  }, [effort]);
+
+  const saveSessionSafe = useCallback(async () => {
+    if (!cfg) return;
+    if (!sessionIdRef.current) {
+      const firstUser = messagesRef.current.find((m) => m.role === "user");
+      const firstText =
+        typeof firstUser?.content === "string" ? firstUser.content : "session";
+      sessionIdRef.current = makeSessionId(firstText);
+    }
+    try {
+      await saveSession({
+        id: sessionIdRef.current,
+        cwd: process.cwd(),
+        model: cfg.model,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: messagesRef.current,
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }, [cfg]);
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       if (busy && activeControllerRef.current) {
         activeControllerRef.current.abort();
+        setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else {
         exit();
       }
+      return;
     }
-    if (key.ctrl && inputChar === "r") setShowReasoning((s) => !s);
+    if (key.ctrl && inputChar === "r") {
+      setShowReasoning((s) => !s);
+      return;
+    }
+    if (key.shift && key.tab) {
+      setMode((m) => {
+        const nm = nextMode(m);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `mode: ${nm}` },
+        ]);
+        return nm;
+      });
+      return;
+    }
   });
 
   const updateAssistant = useCallback(
@@ -93,15 +193,103 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     [],
   );
 
+  const runCompact = useCallback(async () => {
+    if (!cfg) return;
+    if (busy) {
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't compact while model is running" }]);
+      return;
+    }
+    setBusy(true);
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "compacting conversation…" }]);
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    try {
+      const result = await compactMessages({
+        accountId: cfg.accountId,
+        apiToken: cfg.apiToken,
+        model: cfg.model,
+        messages: messagesRef.current,
+        signal: controller.signal,
+      });
+      if (result.replacedCount === 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "nothing to compact yet" },
+        ]);
+      } else {
+        messagesRef.current = result.newMessages;
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `compacted ${result.replacedCount} messages into a summary`,
+          },
+        ]);
+        await saveSessionSafe();
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `compact failed: ${(e as Error).message}` },
+        ]);
+      }
+    } finally {
+      setBusy(false);
+      activeControllerRef.current = null;
+    }
+  }, [cfg, busy, saveSessionSafe]);
+
+  const openResumePicker = useCallback(async () => {
+    const sessions = await listSessions(30);
+    setResumeSessions(sessions);
+  }, []);
+
+  const handleResumePick = useCallback(
+    async (picked: SessionSummary | null) => {
+      setResumeSessions(null);
+      if (!picked) return;
+      try {
+        const file = await loadSession(picked.filePath);
+        messagesRef.current = file.messages;
+        sessionIdRef.current = file.id;
+        setEvents([
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `resumed session ${picked.id} (${picked.messageCount} msgs)`,
+          },
+        ]);
+        const userMsgs = file.messages
+          .filter((m) => m.role === "user" && typeof m.content === "string")
+          .map((m) => m.content as string);
+        if (userMsgs.length > 0) setHistory(userMsgs);
+        setUsage(null);
+      } catch (e) {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `failed to load session: ${(e as Error).message}` },
+        ]);
+      }
+    },
+    [],
+  );
+
   const handleSlash = useCallback(
     (cmd: string): boolean => {
-      const c = cmd.trim().toLowerCase();
+      const raw = cmd.trim();
+      const [head, ...rest] = raw.split(/\s+/);
+      const c = (head ?? "").toLowerCase();
+      const arg = rest.join(" ").trim().toLowerCase();
+
       if (c === "/exit" || c === "/quit") {
         exit();
         return true;
       }
       if (c === "/clear") {
         messagesRef.current = [messagesRef.current[0]!];
+        sessionIdRef.current = null;
         setEvents([{ kind: "info", key: mkKey(), text: "conversation cleared" }]);
         setUsage(null);
         return true;
@@ -135,6 +323,111 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
           ...e,
           { kind: "info", key: mkKey(), text: `current model: ${cfg?.model ?? "unknown"}` },
         ]);
+        return true;
+      }
+      if (c === "/thinking" || c === "/effort") {
+        if (!arg) {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `current: ${effort}  ·  ${EFFORT_DESCRIPTIONS[effort]}\nuse: /thinking low | medium | high`,
+            },
+          ]);
+          return true;
+        }
+        if (arg === "low" || arg === "medium" || arg === "high") {
+          setEffort(arg);
+          if (cfg) void saveConfig({ ...cfg, reasoningEffort: arg }).catch(() => {});
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `thinking: ${arg}  ·  ${EFFORT_DESCRIPTIONS[arg]}`,
+            },
+          ]);
+          return true;
+        }
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /thinking low | medium | high" },
+        ]);
+        return true;
+      }
+      if (c === "/theme") {
+        if (!arg) {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `current: ${theme.name}  ·  available: ${themeNames().join(", ")}`,
+            },
+          ]);
+          return true;
+        }
+        const next = resolveTheme(arg);
+        if (next.name !== arg) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `unknown theme "${arg}" — available: ${themeNames().join(", ")}` },
+          ]);
+          return true;
+        }
+        setTheme(next);
+        setCfg((c) => (c ? { ...c, theme: next.name } : c));
+        if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
+        ]);
+        return true;
+      }
+      if (c === "/mode") {
+        if (!arg) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `current mode: ${mode}  ·  use /mode edit|plan|auto or shift+tab` },
+          ]);
+          return true;
+        }
+        if (arg === "edit" || arg === "plan" || arg === "auto") {
+          setMode(arg);
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `mode: ${arg}` },
+          ]);
+          return true;
+        }
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto" },
+        ]);
+        return true;
+      }
+      if (c === "/plan") {
+        setMode("plan");
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: plan" }]);
+        return true;
+      }
+      if (c === "/auto") {
+        setMode("auto");
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: auto" }]);
+        return true;
+      }
+      if (c === "/edit") {
+        setMode("edit");
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: edit" }]);
+        return true;
+      }
+      if (c === "/resume") {
+        void openResumePicker();
+        return true;
+      }
+      if (c === "/compact") {
+        void runCompact();
         return true;
       }
       if (c === "/update") {
@@ -192,14 +485,24 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             kind: "info",
             key: mkKey(),
             text:
-              "commands: /clear /reasoning /cost /model /update /logout /help /exit  ·  keys: ctrl-r toggle reasoning, ctrl-c interrupt/exit",
+              "commands:\n" +
+              "  /mode edit|plan|auto    switch mode (or shift+tab to cycle)\n" +
+              "  /plan /auto /edit       shortcuts for /mode\n" +
+              "  /thinking low|med|high  set reasoning effort (quality vs speed)\n" +
+              "  /theme NAME             dark, light, high-contrast\n" +
+              "  /resume                 pick a past conversation\n" +
+              "  /compact                summarize old turns to free context\n" +
+              "  /reasoning              toggle show/hide model reasoning\n" +
+              "  /clear                  clear current conversation\n" +
+              "  /cost /model /update /logout /help /exit\n" +
+              "keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · shift+tab cycle mode · ↑/↓ history",
           },
         ]);
         return true;
       }
       return false;
     },
-    [cfg, exit, usage, updateInfo],
+    [cfg, exit, usage, updateInfo, effort, theme, mode, openResumePicker, runCompact],
   );
 
   const processMessage = useCallback(
@@ -227,6 +530,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
           executor: executorRef.current,
           cwd: process.cwd(),
           signal: controller.signal,
+          reasoningEffort: effortRef.current,
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
@@ -280,10 +584,27 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             onUsage: (u) => setUsage(u),
             askPermission: (req) =>
               new Promise<PermissionDecision>((resolve) => {
+                if (modeRef.current === "auto") {
+                  resolve("allow");
+                  return;
+                }
+                if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+                  setEvents((e) => [
+                    ...e,
+                    {
+                      kind: "info",
+                      key: mkKey(),
+                      text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
+                    },
+                  ]);
+                  resolve("deny");
+                  return;
+                }
                 setPerm({ tool: req.tool, args: req.args, resolve });
               }),
           },
         });
+        await saveSessionSafe();
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(aborted)" }]);
@@ -299,7 +620,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         activeControllerRef.current = null;
       }
     },
-    [cfg, handleSlash, updateAssistant, updateTool],
+    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe],
   );
 
   useEffect(() => {
@@ -332,10 +653,6 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   );
 
   useEffect(() => {
-    // Force a re-render tick so streaming state change is flushed.
-  }, [events]);
-
-  useEffect(() => {
     checkForUpdate().then((result) => {
       if (result.hasUpdate) {
         setUpdateInfo(result);
@@ -351,6 +668,23 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (usage && usage.prompt_tokens / CONTEXT_LIMIT >= AUTO_COMPACT_SUGGEST_PCT) {
+      setEvents((e) => {
+        const last = e[e.length - 1];
+        if (last?.kind === "info" && last.text.startsWith("context ")) return e;
+        return [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `context ${Math.round((usage.prompt_tokens / CONTEXT_LIMIT) * 100)}% full — run /compact to summarize older turns`,
+          },
+        ];
+      });
+    }
+  }, [usage]);
+
   if (!cfg) {
     return (
       <Onboarding
@@ -365,13 +699,22 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     );
   }
 
+  if (resumeSessions !== null) {
+    return (
+      <Box flexDirection="column">
+        <ResumePicker sessions={resumeSessions} onPick={handleResumePick} theme={theme} />
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
-      <ChatView events={events} showReasoning={showReasoning} />
+      <ChatView events={events} showReasoning={showReasoning} theme={theme} />
       {perm ? (
         <PermissionModal
           tool={perm.tool}
           args={perm.args}
+          theme={theme}
           onDecide={(d) => {
             perm.resolve(d);
             setPerm(null);
@@ -382,7 +725,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
           {queue.length > 0 && (
             <Box flexDirection="column" marginBottom={1}>
               {queue.map((q, i) => (
-                <Text key={`queue_${i}`} color="gray" dimColor>
+                <Text key={`queue_${i}`} color={theme.queue.color} dimColor={theme.queue.dim}>
                   ⏳ {q}
                 </Text>
               ))}
@@ -392,61 +735,64 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             model={cfg.model}
             usage={usage}
             thinking={busy}
-            hint={busy ? "ctrl-c to interrupt" : "enter to send · /help"}
+            hint={busy ? "ctrl-c to interrupt · type to queue next" : "enter to send · /help · shift+tab cycles mode"}
+            theme={theme}
+            mode={mode}
+            effort={effort}
+            contextLimit={CONTEXT_LIMIT}
           />
+          {busy && (
+            <Box>
+              <Text color={theme.spinner}>
+                <Spinner type="dots" />
+              </Text>
+              <Text color={theme.info.color} dimColor={theme.info.dim}>
+                {" working…"}
+              </Text>
+            </Box>
+          )}
           <Box>
-            {busy ? (
-              <Box>
-                <Text color="yellow">
-                  <Spinner type="dots" />
-                </Text>
-                <Text color="gray"> working…</Text>
-              </Box>
-            ) : (
-              <Box>
-                <Text color="cyan">› </Text>
-                <CustomTextInput
-                  value={input}
-                  onChange={setInput}
-                  onSubmit={submit}
-                  onHistoryUp={() => {
-                    if (history.length === 0) return;
-                    if (historyIndex === -1) {
-                      setDraftInput(input);
-                      const nextIndex = history.length - 1;
-                      setHistoryIndex(nextIndex);
-                      setInput(history[nextIndex]!);
-                    } else {
-                      const nextIndex = Math.max(0, historyIndex - 1);
-                      setHistoryIndex(nextIndex);
-                      setInput(history[nextIndex]!);
-                    }
-                  }}
-                  onHistoryDown={() => {
-                    if (historyIndex === -1) return;
-                    const nextIndex = historyIndex + 1;
-                    if (nextIndex >= history.length) {
-                      setHistoryIndex(-1);
-                      setInput(draftInput);
-                    } else {
-                      setHistoryIndex(nextIndex);
-                      setInput(history[nextIndex]!);
-                    }
-                  }}
-                  onClearQueueItem={(text) => {
-                    setQueue((q) => {
-                      const idx = q.indexOf(text);
-                      if (idx >= 0) {
-                        const next = [...q];
-                        next.splice(idx, 1);
-                        return next;
-                      }
-                      return q;
-                    });
-                  }}
-                />
-              </Box>
-            )}
+            <Text color={theme.user}>{busy ? "⏳ " : "› "}</Text>
+            <CustomTextInput
+              value={input}
+              onChange={setInput}
+              onSubmit={submit}
+              onHistoryUp={() => {
+                if (history.length === 0) return;
+                if (historyIndex === -1) {
+                  setDraftInput(input);
+                  const nextIndex = history.length - 1;
+                  setHistoryIndex(nextIndex);
+                  setInput(history[nextIndex]!);
+                } else {
+                  const nextIndex = Math.max(0, historyIndex - 1);
+                  setHistoryIndex(nextIndex);
+                  setInput(history[nextIndex]!);
+                }
+              }}
+              onHistoryDown={() => {
+                if (historyIndex === -1) return;
+                const nextIndex = historyIndex + 1;
+                if (nextIndex >= history.length) {
+                  setHistoryIndex(-1);
+                  setInput(draftInput);
+                } else {
+                  setHistoryIndex(nextIndex);
+                  setInput(history[nextIndex]!);
+                }
+              }}
+              onClearQueueItem={(text) => {
+                setQueue((q) => {
+                  const idx = q.indexOf(text);
+                  if (idx >= 0) {
+                    const next = [...q];
+                    next.splice(idx, 1);
+                    return next;
+                  }
+                  return q;
+                });
+              }}
+            />
           </Box>
         </Box>
       )}

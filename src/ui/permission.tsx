@@ -4,14 +4,16 @@ import SelectInput from "ink-select-input";
 import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   tool: ToolSpec;
   args: Record<string, unknown>;
   onDecide: (decision: PermissionDecision) => void;
+  theme: Theme;
 }
 
-export function PermissionModal({ tool, args, onDecide }: Props) {
+export function PermissionModal({ tool, args, onDecide, theme }: Props) {
   const render = tool.render?.(args);
   const items = [
     { label: "Allow once", value: "allow" as const },
@@ -20,12 +22,12 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
   ];
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-      <Text color="yellow" bold>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.permission} paddingX={1}>
+      <Text color={theme.permission} bold>
         Permission requested
       </Text>
       <Text>
-        tool: <Text color="magenta">{tool.name}</Text>
+        tool: <Text color={theme.tool}>{tool.name}</Text>
       </Text>
       {render?.title ? <Text>action: {render.title}</Text> : null}
       {render?.diff ? (
@@ -33,7 +35,7 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
           <DiffView {...render.diff} />
         </Box>
       ) : (
-        <Text color="gray">args: {JSON.stringify(args)}</Text>
+        <Text color={theme.info.color} dimColor={theme.info.dim}>args: {JSON.stringify(args)}</Text>
       )}
       <Box marginTop={1}>
         <SelectInput items={items} onSelect={(item) => onDecide(item.value)} />

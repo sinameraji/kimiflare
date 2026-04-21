@@ -29,6 +29,7 @@ export interface AgentTurnOpts {
   maxToolIterations?: number;
   temperature?: number;
   maxCompletionTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
@@ -50,6 +51,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       signal: opts.signal,
       temperature: opts.temperature,
       maxCompletionTokens: opts.maxCompletionTokens,
+      reasoningEffort: opts.reasoningEffort,
     });
 
     for await (const ev of events) {

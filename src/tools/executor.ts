@@ -52,6 +52,10 @@ export class ToolExecutor {
     return [...this.tools.values()];
   }
 
+  clearSessionPermissions(): void {
+    this.sessionAllowed.clear();
+  }
+
   async run(
     call: ToolInvocation,
     askPermission: PermissionAsker,

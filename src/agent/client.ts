@@ -20,6 +20,7 @@ export interface RunKimiOpts {
   signal?: AbortSignal;
   temperature?: number;
   maxCompletionTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
 }
 
 const RETRYABLE_CODE = 3040; // "Capacity temporarily exceeded"
@@ -27,7 +28,7 @@ const MAX_ATTEMPTS = 5;
 
 export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, void, void> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${opts.model}`;
-  const body = {
+  const body: Record<string, unknown> = {
     messages: opts.messages,
     ...(opts.tools && opts.tools.length
       ? { tools: opts.tools, tool_choice: "auto", parallel_tool_calls: true }
@@ -36,6 +37,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     temperature: opts.temperature ?? 0.2,
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
   };
+  if (opts.reasoningEffort) {
+    body.reasoning_effort = opts.reasoningEffort;
+  }
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const res = await fetch(url, {
