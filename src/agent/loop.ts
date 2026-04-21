@@ -4,6 +4,7 @@ import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executo
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 
 export interface AgentCallbacks {
+  onAssistantStart?: () => void;
   onReasoningDelta?: (text: string) => void;
   onTextDelta?: (text: string) => void;
   onToolCallStart?: (index: number, id: string, name: string) => void;
@@ -38,6 +39,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     const toolCalls: ToolCall[] = [];
     let content = "";
     let reasoning = "";
+    opts.callbacks.onAssistantStart?.();
 
     const events = runKimi({
       accountId: opts.accountId,

@@ -159,7 +159,8 @@ Unit tests: SSE reader split-chunks + `[DONE]`; stream accumulator against recor
 | Scaffolding (package.json / tsconfig / tsup / bin) | ✅ |
 | SSE reader + client + accumulator | ✅ validated via scripts/replay-stream.ts against recorded probe-4 body |
 | Tools + registry + executor + permissions | ✅ |
-| Agent loop + system prompt + messages | 🔄 in progress |
-| Ink TUI (chat / input / permission / status) | ⏳ |
-| Config loader + CLI entry (interactive + one-shot) | ⏳ |
-| End-to-end verification | ⏳ |
+| Agent loop + system prompt + messages | ✅ |
+| Config loader + print-mode CLI entry | ✅ — verified end-to-end (plain chat, readonly tools, mutating tools) |
+| Ink TUI (chat / input / permission / status) | 🔄 next |
+| Interactive CLI entry | ⏳ depends on TUI |
+| End-to-end verification (TUI) | ⏳ |

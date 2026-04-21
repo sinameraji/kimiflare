@@ -47,6 +47,12 @@ async function main() {
     return;
   }
 
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error(
+      "kimi-code: interactive mode requires a TTY. Use `kimi -p \"...\"` for non-TTY / piped usage.",
+    );
+    process.exit(2);
+  }
   const { renderApp } = await import("./app.js");
   await renderApp({ ...cfg, model });
 }
