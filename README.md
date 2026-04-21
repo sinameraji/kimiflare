@@ -121,6 +121,10 @@ Sessions are saved to `~/.local/share/kimiflare/sessions/` after each turn. `/re
 
 For multi-step requests, the agent can publish a live task list via the `tasks_set` tool. The panel shows progress inline with status icons (`■` active, `☐` pending, `✓` done), elapsed time, and tokens consumed for the current task batch. Press `Ctrl-O` while a turn is running to switch tool output between compact (first line) and verbose (full output) modes.
 
+### Paste collapse
+
+Paste a large block (≥ 200 chars or ≥ 3 newlines in one paste) into the prompt and the input collapses it to `[pasted N lines #id]`. The full content still goes to the model on submit — only the on-screen display and chat history are collapsed, so scrollback doesn't get buried by a wall of code.
+
 ## Why
 
 - **262k context.** Read entire modules without pagination.

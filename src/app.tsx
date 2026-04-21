@@ -73,7 +73,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
-  const [queue, setQueue] = useState<string[]>([]);
+  const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState("");
@@ -526,14 +526,15 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   );
 
   const processMessage = useCallback(
-    async (text: string) => {
+    async (text: string, displayText?: string) => {
       if (!cfg) return;
       const trimmed = text.trim();
       if (!trimmed) return;
 
       if (trimmed.startsWith("/") && handleSlash(trimmed)) return;
 
-      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: trimmed }]);
+      const display = displayText?.trim() || trimmed;
+      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display }]);
       messagesRef.current.push({ role: "user", content: trimmed });
       setBusy(true);
 
@@ -660,27 +661,30 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     if (!busy && queue.length > 0) {
       const next = queue[0]!;
       setQueue((q) => q.slice(1));
-      processMessage(next);
+      processMessage(next.full, next.display);
     }
   }, [busy, queue, processMessage]);
 
   const submit = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
+    (full: string, display?: string) => {
+      const trimmedFull = full.trim();
+      if (!trimmedFull) return;
+      const trimmedDisplay = (display ?? full).trim() || trimmedFull;
+
+      const historyEntry = trimmedDisplay;
 
       if (busy) {
-        setQueue((q) => [...q, trimmed]);
-        setHistory((h) => (h.length > 0 && h[h.length - 1] === trimmed ? h : [...h, trimmed]));
+        setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay }]);
+        setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
         setInput("");
         setHistoryIndex(-1);
         return;
       }
 
-      setHistory((h) => (h.length > 0 && h[h.length - 1] === trimmed ? h : [...h, trimmed]));
+      setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
       setInput("");
       setHistoryIndex(-1);
-      processMessage(trimmed);
+      processMessage(trimmedFull, trimmedDisplay !== trimmedFull ? trimmedDisplay : undefined);
     },
     [busy, processMessage],
   );
@@ -767,7 +771,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             <Box flexDirection="column" marginBottom={1}>
               {queue.map((q, i) => (
                 <Text key={`queue_${i}`} color={theme.queue.color} dimColor={theme.queue.dim}>
-                  ⏳ {q}
+                  ⏳ {q.display}
                 </Text>
               ))}
             </Box>
@@ -798,6 +802,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               value={input}
               onChange={setInput}
               onSubmit={submit}
+              enablePaste
               onHistoryUp={() => {
                 if (history.length === 0) return;
                 if (historyIndex === -1) {
@@ -824,7 +829,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               }}
               onClearQueueItem={(text) => {
                 setQueue((q) => {
-                  const idx = q.indexOf(text);
+                  const idx = q.findIndex((item) => item.display === text);
                   if (idx >= 0) {
                     const next = [...q];
                     next.splice(idx, 1);
