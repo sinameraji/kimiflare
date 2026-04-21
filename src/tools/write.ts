@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ToolSpec } from "./registry.js";
-import { resolvePath } from "../util/paths.js";
+import { resolvePath, collapsePath } from "../util/paths.js";
 
 interface Args {
   path: string;
@@ -23,7 +23,7 @@ export const writeTool: ToolSpec<Args> = {
   },
   needsPermission: true,
   render: (args) => ({
-    title: `write ${args.path} (${args.content.length} chars)`,
+    title: `write ${collapsePath(args.path, process.cwd())} (${args.content.length} chars)`,
     diff: { path: args.path, before: "", after: args.content },
   }),
   async run(args, ctx) {

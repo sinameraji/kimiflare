@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import type { ToolSpec } from "./registry.js";
-import { resolvePath } from "../util/paths.js";
+import { resolvePath, collapsePath } from "../util/paths.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -25,7 +25,7 @@ export const readTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: ({ path }) => ({ title: `read ${path}` }),
+  render: ({ path }) => ({ title: `read ${collapsePath(path, process.cwd())}` }),
   async run(args, ctx) {
     const abs = resolvePath(ctx.cwd, args.path);
     const st = await stat(abs);

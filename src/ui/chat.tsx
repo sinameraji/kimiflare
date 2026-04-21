@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { ToolView, type ToolEventState } from "./tool-view.js";
+import { MD } from "./markdown.js";
 import type { Theme } from "./theme.js";
 
 export type ChatEvent =
@@ -37,7 +38,7 @@ export function ChatView({ events, showReasoning, theme, verbose }: Props) {
 function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; showReasoning: boolean; theme: Theme; verbose?: boolean }) {
   if (evt.kind === "user") {
     return (
-      <Box marginY={0}>
+      <Box marginTop={1}>
         <Text color={theme.user}>› </Text>
         <Text>{evt.text}</Text>
       </Box>
@@ -45,7 +46,7 @@ function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; sho
   }
   if (evt.kind === "assistant") {
     return (
-      <Box flexDirection="column" marginY={0}>
+      <Box flexDirection="column" marginTop={1} paddingLeft={1}>
         {showReasoning && evt.reasoning ? (
           <Box flexDirection="column" marginLeft={2}>
             <Text color={theme.reasoning.color} dimColor={theme.reasoning.dim}>
@@ -53,9 +54,7 @@ function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; sho
             </Text>
           </Box>
         ) : null}
-        {evt.text ? (
-          theme.assistant ? <Text color={theme.assistant}>{evt.text}</Text> : <Text>{evt.text}</Text>
-        ) : null}
+        {evt.text ? <MD text={evt.text} theme={theme} /> : null}
       </Box>
     );
   }

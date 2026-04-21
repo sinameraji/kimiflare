@@ -1,5 +1,6 @@
 import { platform, release, homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
 import type { ToolSpec } from "../tools/registry.js";
 import { systemPromptForMode, type Mode } from "../mode.js";
 
@@ -9,6 +10,31 @@ export interface SystemPromptOpts {
   model: string;
   now?: Date;
   mode?: Mode;
+}
+
+const CONTEXT_FILENAMES = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"];
+const MAX_CONTEXT_BYTES = 20 * 1024;
+
+export interface ContextFile {
+  name: string;
+  path: string;
+  content: string;
+  lineCount: number;
+}
+
+export function loadContextFile(cwd: string): ContextFile | null {
+  for (const name of CONTEXT_FILENAMES) {
+    const path = join(cwd, name);
+    try {
+      const s = statSync(path);
+      if (!s.isFile() || s.size > MAX_CONTEXT_BYTES) continue;
+      const content = readFileSync(path, "utf8");
+      return { name, path, content, lineCount: content.split("\n").length };
+    } catch {
+      /* not present */
+    }
+  }
+  return null;
 }
 
 export function buildSystemPrompt(opts: SystemPromptOpts): string {
@@ -22,7 +48,7 @@ export function buildSystemPrompt(opts: SystemPromptOpts): string {
     })
     .join("\n");
 
-  return `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
+  const base = `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
 
 Environment:
 - Working directory: ${opts.cwd}
@@ -43,5 +69,13 @@ How to work:
 - If a tool returns an error, read it carefully and adjust; do not retry the same call blindly.
 - You have a 262k-token context window. Read as much of a file as needed rather than guessing.
 - If a request is ambiguous, ask one focused question instead of making large assumptions.
-- When you finish a task, stop. Do not add a closing summary.${opts.mode ? systemPromptForMode(opts.mode) : ""}`;
+- When you finish a task, stop. Do not add a closing summary.`;
+
+  const ctx = loadContextFile(opts.cwd);
+  const contextBlock = ctx
+    ? `\n\nProject context from ${ctx.name} (${ctx.lineCount} lines, treat as authoritative):\n${ctx.content.trim()}`
+    : "";
+  const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
+
+  return base + contextBlock + modeBlock;
 }

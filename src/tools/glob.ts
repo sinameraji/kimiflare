@@ -1,6 +1,6 @@
 import fg from "fast-glob";
 import type { ToolSpec } from "./registry.js";
-import { resolvePath } from "../util/paths.js";
+import { resolvePath, collapsePath } from "../util/paths.js";
 
 interface Args {
   pattern: string;
@@ -21,7 +21,7 @@ export const globTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `glob ${args.pattern}${args.path ? ` in ${args.path}` : ""}` }),
+  render: (args) => ({ title: `glob ${args.pattern}${args.path ? ` in ${collapsePath(args.path, process.cwd())}` : ""}` }),
   async run(args, ctx) {
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
     const entries = (await fg(args.pattern, {

@@ -13,6 +13,9 @@ import { PermissionModal } from "./ui/permission.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
+import { loadContextFile } from "./agent/system-prompt.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo, type UpdateCheckResult } from "./util/update-check.js";
@@ -65,9 +68,20 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
 function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
-  const [events, setEvents] = useState<ChatEvent[]>([
-    { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit · shift+tab to cycle modes" },
-  ]);
+  const [events, setEvents] = useState<ChatEvent[]>(() => {
+    const initial: ChatEvent[] = [
+      { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit · shift+tab to cycle modes" },
+    ];
+    const ctxFile = loadContextFile(process.cwd());
+    if (ctxFile) {
+      initial.push({
+        kind: "info",
+        key: mkKey(),
+        text: `loaded project context from ${ctxFile.name} (${ctxFile.lineCount} lines)`,
+      });
+    }
+    return initial;
+  });
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -106,6 +120,8 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
+  const tasksRef = useRef<Task[]>([]);
+  const usageRef = useRef<Usage | null>(null);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -262,6 +278,147 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     const sessions = await listSessions(30);
     setResumeSessions(sessions);
   }, []);
+
+  const runInit = useCallback(async () => {
+    if (!cfg) return;
+    if (busy) {
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /init while model is running" }]);
+      return;
+    }
+    const cwd = process.cwd();
+    for (const name of ["KIMI.md", "KIMIFLARE.md", "AGENT.md"]) {
+      if (existsSync(join(cwd, name))) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `${name} already exists at ${join(cwd, name)} — delete it first if you want to regenerate`,
+          },
+        ]);
+        return;
+      }
+    }
+    const prompt = [
+      "Generate a KIMI.md at the repository root so future agents have project context.",
+      "",
+      "First, use the `glob`, `read`, and `grep` tools to understand the project: read `package.json`, the top-level `README.md` if present, the tsconfig / build config, and skim the top-level source directory structure.",
+      "",
+      "Then call the `write` tool to create `KIMI.md` at the repo root with these sections, terse (aim ≤ 100 lines total):",
+      "",
+      "- **Project** — one-line description + primary language/runtime.",
+      "- **Build / test / run** — exact shell commands an agent should use.",
+      "- **Layout** — key directories and what lives in each.",
+      "- **Conventions** — naming, import style, file structure, commit style, anything surprising.",
+      "- **Do / Don't** — quirks or rules future agents should know.",
+      "",
+      "Do not call `tasks_set` for this. Just read what you need, then write the file.",
+    ].join("\n");
+
+    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: "/init" }]);
+    messagesRef.current.push({ role: "user", content: prompt });
+    setBusy(true);
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+
+    try {
+      await runAgentTurn({
+        accountId: cfg.accountId,
+        apiToken: cfg.apiToken,
+        model: cfg.model,
+        messages: messagesRef.current,
+        tools: ALL_TOOLS,
+        executor: executorRef.current,
+        cwd,
+        signal: controller.signal,
+        reasoningEffort: effortRef.current,
+        callbacks: {
+          onAssistantStart: () => {
+            const id = nextAssistantId++;
+            activeAsstIdRef.current = id;
+            setEvents((e) => [
+              ...e,
+              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+            ]);
+          },
+          onReasoningDelta: (d) => {
+            const id = activeAsstIdRef.current;
+            if (id !== null) updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
+          },
+          onTextDelta: (d) => {
+            const id = activeAsstIdRef.current;
+            if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
+          },
+          onAssistantFinal: () => {
+            const id = activeAsstIdRef.current;
+            if (id !== null) updateAssistant(id, () => ({ streaming: false }));
+          },
+          onToolCallFinalized: (call) => {
+            const spec = executorRef.current.list().find((t) => t.name === call.function.name);
+            let renderMeta: ToolRender | undefined;
+            try {
+              const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+              renderMeta = spec?.render?.(args);
+            } catch {
+              /* ignore */
+            }
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "tool",
+                key: `tool_${call.id}`,
+                id: call.id,
+                name: call.function.name,
+                args: call.function.arguments,
+                status: "running",
+                render: renderMeta,
+                expanded: false,
+              },
+            ]);
+          },
+          onToolResult: (r) => {
+            updateTool(r.tool_call_id, { status: r.ok ? "done" : "error", result: r.content });
+          },
+          onUsage: (u) => {
+            usageRef.current = u;
+            setUsage(u);
+          },
+          askPermission: (req) =>
+            new Promise<PermissionDecision>((resolve) => {
+              if (modeRef.current === "auto") return resolve("allow");
+              setPerm({ tool: req.tool, args: req.args, resolve });
+            }),
+        },
+      });
+
+      if (existsSync(join(cwd, "KIMI.md"))) {
+        messagesRef.current[0] = {
+          role: "system",
+          content: buildSystemPrompt({
+            cwd,
+            tools: ALL_TOOLS,
+            model: cfg.model,
+            mode: modeRef.current,
+          }),
+        };
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "KIMI.md generated; context loaded for future turns" },
+        ]);
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `init failed: ${(e as Error).message}` },
+        ]);
+      }
+    } finally {
+      setBusy(false);
+      activeAsstIdRef.current = null;
+      activeControllerRef.current = null;
+    }
+  }, [cfg, busy, updateAssistant, updateTool]);
 
   const handleResumePick = useCallback(
     async (picked: SessionSummary | null) => {
@@ -450,6 +607,10 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         void runCompact();
         return true;
       }
+      if (c === "/init") {
+        void runInit();
+        return true;
+      }
       if (c === "/update") {
         if (updateInfo?.hasUpdate) {
           setEvents((e) => [
@@ -512,6 +673,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               "  /theme NAME             dark, light, high-contrast\n" +
               "  /resume                 pick a past conversation\n" +
               "  /compact                summarize old turns to free context\n" +
+              "  /init                   scan this repo and write a KIMI.md for future agents\n" +
               "  /reasoning              toggle show/hide model reasoning\n" +
               "  /clear                  clear current conversation\n" +
               "  /cost /model /update /logout /help /exit\n" +
@@ -522,7 +684,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
       }
       return false;
     },
-    [cfg, exit, usage, updateInfo, effort, theme, mode, openResumePicker, runCompact],
+    [cfg, exit, usage, updateInfo, effort, theme, mode, openResumePicker, runCompact, runInit],
   );
 
   const processMessage = useCallback(
@@ -602,19 +764,22 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
                 result: r.content,
               });
             },
-            onUsage: (u) => setUsage(u),
+            onUsage: (u) => {
+              usageRef.current = u;
+              setUsage(u);
+            },
             onTasks: (nextTasks) => {
-              setTasks((prev) => {
-                if (prev.length === 0 && nextTasks.length > 0) {
-                  setTasksStartedAt(Date.now());
-                  setTasksStartTokens(usage?.prompt_tokens ?? 0);
-                }
-                if (nextTasks.length === 0) {
-                  setTasksStartedAt(null);
-                  setTasksStartTokens(0);
-                }
-                return nextTasks;
-              });
+              const prevEmpty = tasksRef.current.length === 0;
+              tasksRef.current = nextTasks;
+              setTasks(nextTasks);
+              if (prevEmpty && nextTasks.length > 0) {
+                setTasksStartedAt(Date.now());
+                setTasksStartTokens(usageRef.current?.prompt_tokens ?? 0);
+              }
+              if (nextTasks.length === 0) {
+                setTasksStartedAt(null);
+                setTasksStartTokens(0);
+              }
             },
             askPermission: (req) =>
               new Promise<PermissionDecision>((resolve) => {
