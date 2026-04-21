@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { ToolSpec } from "./registry.js";
-import { resolvePath } from "../util/paths.js";
+import { resolvePath, collapsePath } from "../util/paths.js";
 
 interface Args {
   path: string;
@@ -26,7 +26,7 @@ export const editTool: ToolSpec<Args> = {
   },
   needsPermission: true,
   render: (args) => ({
-    title: `edit ${args.path}${args.replace_all ? " (replace_all)" : ""}`,
+    title: `edit ${collapsePath(args.path, process.cwd())}${args.replace_all ? " (replace_all)" : ""}`,
     diff: { path: args.path, before: args.old_string, after: args.new_string },
   }),
   async run(args, ctx) {

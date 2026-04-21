@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
+import { collapsePathsInText } from "../util/paths.js";
 
 export interface ToolEventState {
   id: string;
@@ -54,7 +55,8 @@ export function ToolView({ evt, verbose }: Props) {
 }
 
 function compactArgs(raw: string): string {
-  const s = raw.replace(/\s+/g, " ");
+  const collapsed = collapsePathsInText(raw, process.cwd());
+  const s = collapsed.replace(/\s+/g, " ");
   return s.length <= 80 ? s : s.slice(0, 80) + "…";
 }
 

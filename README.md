@@ -85,6 +85,7 @@ Interactive slash commands:
 | `/theme NAME`               | Switch color scheme: `dark` (default), `light` (bright terminals), `high-contrast`. Saved to config. |
 | `/resume`                   | Pick a past conversation to restore.                                            |
 | `/compact`                  | Summarize older turns to free context. Suggested automatically at ~80% full.    |
+| `/init`                     | Scan the repo and write a `KIMI.md` so future agents have project context.      |
 | `/reasoning`                | Toggle chain-of-thought display.                                                |
 | `/clear`                    | Reset the current conversation.                                                 |
 | `/cost` `/model` `/update`  | Info commands.                                                                  |
@@ -134,6 +135,10 @@ For multi-step requests, the agent can publish a live task list via the `tasks_s
 ### Paste collapse
 
 Paste a large block (≥ 200 chars or ≥ 3 newlines in one paste) into the prompt and the input collapses it to `[pasted N lines #id]`. The full content still goes to the model on submit — only the on-screen display and chat history are collapsed, so scrollback doesn't get buried by a wall of code.
+
+### Project context (KIMI.md)
+
+Run `/init` inside a repo and kimiflare scans the project (reads `package.json`, `README`, source layout, etc.) and writes a concise `KIMI.md` at the repo root — project overview, build/test commands, conventions, quirks. On every subsequent launch in that directory, `KIMI.md` (or `KIMIFLARE.md` or `AGENT.md`, whichever exists) is auto-loaded into the system prompt so the agent already "knows" the project. If the file already exists, `/init` refuses so you don't overwrite hand-edited context.
 
 ## Why
 
