@@ -490,40 +490,6 @@
     .code-body .s { color: #a5d6ff; }
     .code-body .v { color: var(--accent); }
 
-    /* Pricing */
-    .pricing-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1.5rem;
-    }
-
-    .pricing-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 2rem;
-      text-align: center;
-      transition: all 0.3s;
-    }
-
-    .pricing-card:hover {
-      border-color: rgba(255,255,255,0.15);
-      transform: translateY(-4px);
-    }
-
-    .pricing-card .price {
-      font-size: 2.5rem;
-      font-weight: 800;
-      color: var(--accent);
-      margin: 1rem 0;
-    }
-
-    .pricing-card .price span {
-      font-size: 0.9rem;
-      color: var(--text-dim);
-      font-weight: 500;
-    }
-
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
@@ -588,7 +554,6 @@
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
       <li><a href="#install">Install</a></li>
-      <li><a href="#pricing">Pricing</a></li>
       <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub</a></li>
     </ul>
   </nav>
@@ -788,32 +753,6 @@ EOF<br>
 <span class="c"># Stream reasoning to stderr</span><br>
 <span class="v">kimiflare</span> --reasoning
         </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="pricing">
-    <div class="section-header reveal">
-      <span class="section-label">Pricing</span>
-      <h2>Pay your own way</h2>
-      <p>Your Cloudflare account, your credits. No markup, no subscription.</p>
-    </div>
-
-    <div class="pricing-cards">
-      <div class="pricing-card reveal">
-        <h3>Input Tokens</h3>
-        <div class="price">$0.95 <span>/ 1M tokens</span></div>
-        <p style="color: var(--text-dim); font-size: 0.9rem;">Standard input pricing on Workers AI</p>
-      </div>
-      <div class="pricing-card reveal">
-        <h3>Cached Input</h3>
-        <div class="price">$0.16 <span>/ 1M tokens</span></div>
-        <p style="color: var(--text-dim); font-size: 0.9rem;">Heavily discounted for repeated context</p>
-      </div>
-      <div class="pricing-card reveal">
-        <h3>Output Tokens</h3>
-        <div class="price">$4.00 <span>/ 1M tokens</span></div>
-        <p style="color: var(--text-dim); font-size: 0.9rem;">Generation and reasoning output</p>
       </div>
     </div>
   </section>
