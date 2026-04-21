@@ -114,6 +114,14 @@ export function CustomTextInput({
         } else {
           nextCursor = cursorOffset + 1;
         }
+      } else if (key.meta && input === "b") {
+        nextCursor = findWordBoundaryBackward(value, cursorOffset);
+      } else if (key.meta && input === "f") {
+        nextCursor = findWordBoundaryForward(value, cursorOffset);
+      } else if (key.meta && input === "d") {
+        didDelete = true;
+        const boundary = findWordBoundaryForward(value, cursorOffset);
+        nextValue = value.slice(0, cursorOffset) + value.slice(boundary);
       } else if (key.home || (key.ctrl && input === "a")) {
         nextCursor = 0;
       } else if (key.end || (key.ctrl && input === "e")) {

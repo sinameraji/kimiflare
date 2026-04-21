@@ -93,6 +93,16 @@ Interactive slash commands:
 
 Keys: `Shift+Tab` cycles mode · `Ctrl-R` toggles reasoning · `Ctrl-O` toggles verbose tool output · `Ctrl-C` interrupts an in-flight turn (press again to exit) · `↑`/`↓` walks prompt history.
 
+Editing keys (macOS):
+
+- `⌥←` / `⌥→` — jump word left/right (also works with `Esc b` / `Esc f`)
+- `⌘←` / `⌘→` — jump to start / end of line (in iTerm2's default profile; in Terminal.app you may need to map these to send `Ctrl-A` / `Ctrl-E`)
+- `⌥⌫` — delete word backward
+- `⌘⌫` — delete to start of line (iTerm2 sends this as `Ctrl-U`; map in Terminal.app if needed)
+- `⌥⌦` — delete word forward
+- `Ctrl-A` / `Ctrl-E` — start / end of line (always works)
+- `Ctrl-W` / `Ctrl-U` / `Ctrl-K` — delete word backward / to start of line / to end of line
+
 ### Modes
 
 - **edit** — default. The agent calls tools freely for read-only work; mutating tools (`write`, `edit`, `bash`) pause for your approval.
