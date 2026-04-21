@@ -4,7 +4,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-const GITHUB_API = "https://api.github.com/repos/sinameraji/kimiflare/releases/latest";
+const NPM_REGISTRY = "https://registry.npmjs.org/kimiflare/latest";
 
 interface CacheEntry {
   checkedAt: number;
@@ -54,12 +54,12 @@ async function writeCache(entry: CacheEntry): Promise<void> {
 
 async function fetchLatestVersion(): Promise<string | null> {
   try {
-    const res = await fetch(GITHUB_API, {
-      headers: { "User-Agent": "kimiflare-update-checker" },
+    const res = await fetch(NPM_REGISTRY, {
+      headers: { "User-Agent": "kimiflare-update-checker", Accept: "application/json" },
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { tag_name?: string };
-    return data.tag_name ?? null;
+    const data = (await res.json()) as { version?: string };
+    return data.version ?? null;
   } catch {
     return null;
   }
