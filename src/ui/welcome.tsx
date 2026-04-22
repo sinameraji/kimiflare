@@ -4,7 +4,6 @@ import type { Theme } from "./theme.js";
 
 interface Props {
   theme: Theme;
-  onSuggestion?: (text: string) => void;
 }
 
 const SUGGESTIONS = [
@@ -13,7 +12,7 @@ const SUGGESTIONS = [
   "Refactor a file",
 ];
 
-export function Welcome({ theme, onSuggestion }: Props) {
+export function Welcome({ theme }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>
