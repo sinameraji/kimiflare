@@ -9,7 +9,6 @@ const NPM_REGISTRY = "https://registry.npmjs.org/kimiflare/latest";
 interface CacheEntry {
   checkedAt: number;
   latestVersion: string;
-  hasUpdate: boolean;
 }
 
 function cachePath(): string {
@@ -104,7 +103,8 @@ export async function checkForUpdate(force = false): Promise<UpdateCheckResult> 
   if (!force) {
     const cached = await readCache();
     if (cached) {
-      return { hasUpdate: cached.hasUpdate, localVersion, latestVersion: cached.latestVersion };
+      const hasUpdate = isNewer(localVersion, cached.latestVersion);
+      return { hasUpdate, localVersion, latestVersion: cached.latestVersion };
     }
   }
 
@@ -114,7 +114,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheckResult> 
   }
 
   const hasUpdate = isNewer(localVersion, latestVersion);
-  await writeCache({ checkedAt: Date.now(), latestVersion, hasUpdate });
+  await writeCache({ checkedAt: Date.now(), latestVersion });
   return { hasUpdate, localVersion, latestVersion };
 }
 
