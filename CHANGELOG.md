@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/sinameraji/kimiflare/compare/v0.10.0...v0.11.0) (2026-04-22)
+
+
+### Features
+
+* polished README, landing page, and plan-mode bash support ([#59](https://github.com/sinameraji/kimiflare/issues/59)) ([0b9eedd](https://github.com/sinameraji/kimiflare/commit/0b9eedd2d6a932421e8c9bad2b28255327935e02))
+
 ## [0.10.0](https://github.com/sinameraji/kimiflare/compare/v0.9.2...v0.10.0) (2026-04-22)
 
 
