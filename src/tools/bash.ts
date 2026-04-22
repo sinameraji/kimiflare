@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ToolSpec, ToolContext } from "./registry.js";
 import { truncate } from "../util/paths.js";
 
@@ -46,15 +48,38 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
   const trailer = `Co-authored-by: ${coauthor.name} <${coauthor.email}>`;
 
   const trimmed = command.trim();
-  if (!/\bgit\s+commit\b/.test(trimmed)) return command;
   if (command.includes(trailer)) return command;
-  // Skip dry-run or rebase-continue style invocations
-  if (/\b(--dry-run|-n)\b/.test(trimmed) && !/-m\b|--message\b/.test(trimmed)) return command;
 
-  const tmpFile = `/tmp/kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const check = `! git log -1 --pretty=%B 2>/dev/null | grep -qF "${trailer}"`;
-  const append = `git log -1 --pretty=%B | git interpret-trailers --trailer "${trailer}" > "${tmpFile}" && git commit --amend -F "${tmpFile}" --no-edit && rm -f "${tmpFile}"`;
-  return `(${command}) && ${check} && ${append}`;
+  // Detect git commands that create commits
+  const createsCommit = /\bgit\s+(commit|merge|revert|cherry-pick)\b/.test(trimmed);
+  const isRebaseContinue = /\bgit\s+rebase\b/.test(trimmed) && !/\b--abort\b|\b--skip\b/.test(trimmed);
+  const mentionsGit = /\bgit\b/.test(trimmed);
+
+  if (!createsCommit && !isRebaseContinue && !mentionsGit) return command;
+
+  const tmpFile = join(tmpdir(), `kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const amendBlock = `
+    if ! git log -1 --pretty=%B 2>/dev/null | grep -qF "${trailer}"; then
+      git log -1 --pretty=%B | git interpret-trailers --trailer "${trailer}" > "${tmpFile}" && git commit --amend -F "${tmpFile}" --no-edit && rm -f "${tmpFile}"
+    fi
+  `.trim();
+
+  if (createsCommit || isRebaseContinue) {
+    // Primary path: known commit-creating command — amend immediately after success
+    return `(${command}) && { ${amendBlock}; }`;
+  }
+
+  // Safety net: command mentions git but isn't obviously commit-creating
+  // (e.g., a script or Makefile that calls git internally).
+  // Record HEAD before and after; amend if a new commit lacks the trailer.
+  const beforeHead = `git rev-parse HEAD 2>/dev/null || echo "NO_HEAD"`;
+  const afterCheck = `
+    _KF_AFTER_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "NO_HEAD")
+    if [ "$_KF_BEFORE_HEAD" != "$_KF_AFTER_HEAD" ] && [ "$_KF_AFTER_HEAD" != "NO_HEAD" ]; then
+      ${amendBlock}
+    fi
+  `.trim();
+  return `_KF_BEFORE_HEAD=$(${beforeHead}); (${command}); _KF_EXIT=$?; [ $_KF_EXIT -eq 0 ] && { ${afterCheck}; }; exit $_KF_EXIT`;
 }
 
 function runBash(args: Args, ctx: ToolContext): Promise<string> {
