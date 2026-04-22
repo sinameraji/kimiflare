@@ -8,6 +8,7 @@
   },
   "homepage": "https://github.com/sinameraji/kimiflare#readme",
   "bugs": "https://github.com/sinameraji/kimiflare/issues",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "kimiflare": "bin/kimiflare.mjs"
