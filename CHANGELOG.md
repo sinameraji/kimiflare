@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/sinameraji/kimiflare/compare/v0.6.0...v0.7.0) (2026-04-22)
+
+
+### Features
+
+* **ui:** add progress animations and clearer idle/busy states ([d0c43ae](https://github.com/sinameraji/kimiflare/commit/d0c43ae7dbcf0df93e218e4793154aa48ff66b4a))
+* **ui:** add progress animations and clearer idle/busy states ([c08cb29](https://github.com/sinameraji/kimiflare/commit/c08cb299e8cae0907ca6205effe8c4a601980703))
+
+
+### Bug Fixes
+
+* remove clear msg, proactive updates, paste cursor, compact logs ([4a27c0e](https://github.com/sinameraji/kimiflare/commit/4a27c0ec99a890db2830df58a53a9e4051393249))
+* remove clear msg, proactive updates, paste cursor, compact logs ([4f6068f](https://github.com/sinameraji/kimiflare/commit/4f6068fca908f47af7ccf683f6b7d68ced538ef0))
+
 ## [0.6.0](https://github.com/sinameraji/kimiflare/compare/v0.5.0...v0.6.0) (2026-04-22)
 
 
