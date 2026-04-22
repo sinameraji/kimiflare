@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1](https://github.com/sinameraji/kimiflare/compare/v0.9.0...v0.9.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* make events capping automatic for all setEvents calls ([59da63b](https://github.com/sinameraji/kimiflare/commit/59da63b9556af5ae2d19a8564a2d7366337dc896))
+* prevent memory leaks from unbounded events and timer churn ([6d91b89](https://github.com/sinameraji/kimiflare/commit/6d91b897d21554c7508ffeffe026ee6ef8fd086b))
+* prevent memory leaks from unbounded events and timer churn ([ba0195b](https://github.com/sinameraji/kimiflare/commit/ba0195b9eb9b5bf515859e91c355211752320d18))
+
 ## [0.9.0](https://github.com/sinameraji/kimiflare/compare/v0.8.2...v0.9.0) (2026-04-22)
 
 
