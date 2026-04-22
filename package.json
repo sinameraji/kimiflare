@@ -1,6 +1,6 @@
 {
   "name": "kimiflare",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Kimiflare — a terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI.",
   "repository": {
     "type": "git",

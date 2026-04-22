@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/sinameraji/kimiflare/compare/v0.4.0...v0.4.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **update-check:** walk up dirs to find package.json and .git ([4198ed8](https://github.com/sinameraji/kimiflare/commit/4198ed8cd03552865bc5b5e7b4533c5b80f3e68e))
+* **update-check:** walk up dirs to find package.json and .git ([66f4627](https://github.com/sinameraji/kimiflare/commit/66f4627985514fa1b6900234a859a687b6de5121))
+
 ## [0.4.0](https://github.com/sinameraji/kimiflare/compare/v0.3.1...v0.4.0) (2026-04-22)
 
 
