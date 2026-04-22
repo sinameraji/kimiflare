@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/sinameraji/kimiflare/compare/v0.9.1...v0.9.2) (2026-04-22)
+
+
+### Bug Fixes
+
+* validate tool_call arguments JSON to prevent 400 BadRequest loops ([#52](https://github.com/sinameraji/kimiflare/issues/52)) ([e234417](https://github.com/sinameraji/kimiflare/commit/e234417cc0999c3eddd4d8a17532bdecc7d4220e))
+
 ## [0.9.1](https://github.com/sinameraji/kimiflare/compare/v0.9.0...v0.9.1) (2026-04-22)
 
 
