@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.2](https://github.com/sinameraji/kimiflare/compare/v0.13.1...v0.13.2) (2026-04-22)
+
+
+### Bug Fixes
+
+* robust co-author injection for all git commit-creating commands ([8698d03](https://github.com/sinameraji/kimiflare/commit/8698d03bd206048600e4897b17ae3f8c4a0770f4))
+* robust co-author injection for all git commit-creating commands ([9053488](https://github.com/sinameraji/kimiflare/commit/9053488f74a98aa82647c1045405c88a1eda4a8d))
+
 ## [0.13.1](https://github.com/sinameraji/kimiflare/compare/v0.13.0...v0.13.1) (2026-04-22)
 
 
