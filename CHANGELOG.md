@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.3](https://github.com/sinameraji/kimiflare/compare/v0.13.2...v0.13.3) (2026-04-22)
+
+
+### Bug Fixes
+
+* prevent Ctrl+C from hanging the app ([2c2e7e5](https://github.com/sinameraji/kimiflare/commit/2c2e7e56416f1a9388641c1ec7301aad71360c12))
+* prevent Ctrl+C from hanging the app ([c6e9c1f](https://github.com/sinameraji/kimiflare/commit/c6e9c1fd90c1a8cc401c3f53236dc4bd7da0a294))
+
 ## [0.13.2](https://github.com/sinameraji/kimiflare/compare/v0.13.1...v0.13.2) (2026-04-22)
 
 
