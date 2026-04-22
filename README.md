@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="kimiflare" width="320">
+  <img src="docs/logo.png" alt="kimiflare" width="180">
 </p>
 
 <p align="center">
