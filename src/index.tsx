@@ -85,6 +85,9 @@ interface PrintOpts {
   prompt: string;
   allowAll: boolean;
   showReasoning: boolean;
+  coauthor?: boolean;
+  coauthorName?: string;
+  coauthorEmail?: string;
 }
 
 async function runPrintMode(opts: PrintOpts): Promise<void> {
@@ -110,6 +113,10 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     executor,
     cwd,
     signal: controller.signal,
+    coauthor:
+      opts.coauthor !== false
+        ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "sinameraji@gmail.com" }
+        : undefined,
     callbacks: {
       onReasoningDelta: opts.showReasoning
         ? (delta) => {

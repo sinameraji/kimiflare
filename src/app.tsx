@@ -44,6 +44,9 @@ interface Cfg {
   model: string;
   theme?: string;
   reasoningEffort?: ReasoningEffort;
+  coauthor?: boolean;
+  coauthorName?: string;
+  coauthorEmail?: string;
 }
 
 interface PendingPermission {
@@ -305,6 +308,10 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         cwd,
         signal: controller.signal,
         reasoningEffort: effortRef.current,
+        coauthor:
+          cfg.coauthor !== false
+            ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "sinameraji@gmail.com" }
+            : undefined,
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -680,6 +687,10 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
           cwd: process.cwd(),
           signal: controller.signal,
           reasoningEffort: effortRef.current,
+          coauthor:
+            cfg.coauthor !== false
+              ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "sinameraji@gmail.com" }
+              : undefined,
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
