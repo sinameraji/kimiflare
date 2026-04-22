@@ -1,6 +1,18 @@
-# kimiflare
+<p align="center">
+  <img src="assets/logo.svg" alt="kimiflare" width="320">
+</p>
 
-A terminal coding agent powered by **[Kimi-K2.6](https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/)** on Cloudflare Workers AI. Moonshot's 1T-parameter open-source model runs directly on your Cloudflare account. You bring the token, your traffic goes straight to Cloudflare.
+<p align="center">
+  <a href="https://www.npmjs.com/package/kimiflare"><img src="https://img.shields.io/npm/v/kimiflare?style=flat-square&color=cb3837" alt="npm version"></a>
+  <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sinameraji/kimiflare?style=flat-square&color=2ea44f" alt="license"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js >= 20">
+  <img src="https://img.shields.io/badge/typescript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
+  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/"><img src="https://img.shields.io/badge/powered%20by-Kimi--K2.6-f59e0b?style=flat-square" alt="Powered by Kimi-K2.6"></a>
+</p>
+
+<p align="center">
+  A terminal coding agent powered by <strong><a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a></strong> on Cloudflare Workers AI. Moonshot's 1T-parameter open-source model runs directly on your Cloudflare account. You bring the token, your traffic goes straight to Cloudflare.
+</p>
 
 ```
 $ kimiflare
@@ -198,4 +210,4 @@ Early but functional. Transport + tools + agent loop + print mode are verified e
 
 ## License
 
-TBD.
+[MIT](LICENSE) © Sina Meraji
