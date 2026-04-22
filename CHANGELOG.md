@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.0](https://github.com/sinameraji/kimiflare/compare/v0.7.1...v0.8.0) (2026-04-22)
+
+
+### Features
+
+* paginate /resume picker and add interactive theme picker with live preview ([e1239a9](https://github.com/sinameraji/kimiflare/commit/e1239a9782b80990578b7663d0d31a8d0b516e6a))
+* paginate /resume picker and add interactive theme picker with live preview ([878dd89](https://github.com/sinameraji/kimiflare/commit/878dd893ae6b5884896b97a28a366b3404677764))
+* runtime update nudge on startup + periodic checks ([e423678](https://github.com/sinameraji/kimiflare/commit/e423678eba25201043eb25593cb75ef854382da3))
+* runtime update nudge on startup + periodic checks ([b8a1c31](https://github.com/sinameraji/kimiflare/commit/b8a1c31353c5c7cadfcce17410fb71bdf10e987d))
+
 ## [0.7.1](https://github.com/sinameraji/kimiflare/compare/v0.7.0...v0.7.1) (2026-04-22)
 
 
