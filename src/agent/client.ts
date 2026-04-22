@@ -109,6 +109,8 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   }
 }
 
+const STREAM_TIMEOUT_MS = 60_000;
+
 async function* parseStream(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
@@ -117,7 +119,26 @@ async function* parseStream(
   let lastUsage: Usage | null = null;
   let finishReason: string | null = null;
 
-  for await (const dataStr of readSSE(body, signal)) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
+
+  const resetTimeout = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+    }, STREAM_TIMEOUT_MS);
+  };
+
+  try {
+    for await (const dataStr of readSSE(body, signal)) {
+      if (timedOut) {
+        throw new KimiApiError(
+          `kimiflare: stream timed out (no data for ${STREAM_TIMEOUT_MS / 1000}s)`,
+          undefined,
+          undefined,
+        );
+      }
+      resetTimeout();
     if (dataStr === "[DONE]") break;
     let chunk: StreamChunk | null = null;
     try {
@@ -172,6 +193,21 @@ async function* parseStream(
     }
 
     if (choice.finish_reason) finishReason = choice.finish_reason;
+  }
+
+  for (const [idx, buf] of [...toolCalls.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!buf.name) continue;
+    yield {
+      type: "tool_call_complete",
+      index: idx,
+      id: buf.id,
+      name: buf.name,
+      arguments: buf.args,
+    };
+  }
+
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 
   for (const [idx, buf] of [...toolCalls.entries()].sort((a, b) => a[0] - b[0])) {

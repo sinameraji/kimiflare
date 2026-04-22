@@ -92,6 +92,75 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
 };
 
+/** Replace image_url base64 payloads with lightweight text placeholders.
+ *  Images are processed by the model in the turn they are sent; keeping
+ *  the base64 strings in history forever is the single biggest memory sink. */
+function stripImagesFromHistory(messages: ChatMessage[]): void {
+  for (const m of messages) {
+    if (!Array.isArray(m.content)) continue;
+    let changed = false;
+    const next: ContentPart[] = [];
+    for (const part of m.content) {
+      if (part.type === "image_url") {
+        changed = true;
+        next.push({ type: "text", text: "[image]" });
+      } else {
+        next.push(part);
+      }
+    }
+    if (changed) {
+      m.content = next;
+    }
+  }
+}
+
+/** Truncate tool results older than the most recent `keepRecent` tool messages.
+ *  Tool outputs (grep, bash, read) are heavy but rarely useful many turns later. */
+function truncateOldToolResults(messages: ChatMessage[], keepRecent: number): void {
+  const toolIndices: number[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]!.role === "tool") toolIndices.push(i);
+  }
+  const cutoff = toolIndices.length - keepRecent;
+  for (let i = 0; i < cutoff; i++) {
+    const idx = toolIndices[i]!;
+    const m = messages[idx]!;
+    const text = typeof m.content === "string" ? m.content : "";
+    if (text.length > 500) {
+      m.content = text.slice(0, 500) + "\n… [truncated]";
+    }
+  }
+}
+
+const HEAP_AUTO_COMPACT_THRESHOLD = 2_000_000_000; // 2 GB
+const MSG_AUTO_COMPACT_THRESHOLD = 50;
+
+async function maybeAutoCompact(
+  messages: ChatMessage[],
+  cfg: Cfg,
+  onInfo: (text: string) => void,
+): Promise<boolean> {
+  const heapUsed = process.memoryUsage().heapUsed;
+  if (heapUsed < HEAP_AUTO_COMPACT_THRESHOLD || messages.length <= MSG_AUTO_COMPACT_THRESHOLD) {
+    return false;
+  }
+  onInfo("auto-compacting to reduce memory usage");
+  const result = await compactMessages({
+    accountId: cfg.accountId,
+    apiToken: cfg.apiToken,
+    model: cfg.model,
+    messages,
+    keepLastTurns: 2,
+  });
+  if (result.replacedCount > 0) {
+    messages.length = 0;
+    messages.push(...result.newMessages);
+    onInfo(`compacted ${result.replacedCount} messages into a summary`);
+    return true;
+  }
+  return false;
+}
+
 function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; initialUpdateResult?: UpdateCheckResult }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
@@ -548,6 +617,13 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             }),
         },
       });
+      stripImagesFromHistory(messagesRef.current);
+      truncateOldToolResults(messagesRef.current, 8);
+      await maybeAutoCompact(
+        messagesRef.current,
+        cfg,
+        (text) => setEvents((es) => [...es, { kind: "info", key: mkKey(), text }]),
+      );
 
       if (existsSync(join(cwd, "KIMI.md"))) {
         messagesRef.current[0] = {
@@ -1035,7 +1111,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               }),
           },
         });
-        await saveSessionSafe();
+        stripImagesFromHistory(messagesRef.current);
+        truncateOldToolResults(messagesRef.current, 8);
+        await maybeAutoCompact(
+          messagesRef.current,
+          cfg,
+          (text) => setEvents((es) => [...es, { kind: "info", key: mkKey(), text }]),
+        );
+        void saveSessionSafe();
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
