@@ -145,6 +145,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
@@ -301,8 +302,11 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
-      if (busy && activeControllerRef.current) {
-        activeControllerRef.current.abort();
+      if (busy) {
+        activeControllerRef.current?.abort();
+        permResolveRef.current?.("deny");
+        permResolveRef.current = null;
+        setPerm(null);
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else {
@@ -536,7 +540,11 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                 resolve("deny");
                 return;
               }
-              setPerm({ tool: req.tool, args: req.args, resolve });
+              permResolveRef.current = resolve;
+              setPerm({ tool: req.tool, args: req.args, resolve: (d) => {
+                permResolveRef.current = null;
+                resolve(d);
+              } });
             }),
         },
       });
@@ -557,17 +565,25 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         ]);
       }
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
+      if ((e as Error).name === "AbortError") {
+        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        setEvents((evts) =>
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+        );
+      } else {
         setEvents((es) => [
           ...es,
           { kind: "error", key: mkKey(), text: `init failed: ${(e as Error).message}` },
         ]);
       }
     } finally {
+      const asstId = activeAsstIdRef.current;
+      if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
       setTurnStartedAt(null);
       activeAsstIdRef.current = null;
       activeControllerRef.current = null;
+      permResolveRef.current = null;
     }
   }, [cfg, busy, updateAssistant, updateTool]);
 
@@ -1011,14 +1027,21 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                   resolve("deny");
                   return;
                 }
-                setPerm({ tool: req.tool, args: req.args, resolve });
+                permResolveRef.current = resolve;
+                setPerm({ tool: req.tool, args: req.args, resolve: (d) => {
+                  permResolveRef.current = null;
+                  resolve(d);
+                } });
               }),
           },
         });
         await saveSessionSafe();
       } catch (e) {
         if ((e as Error).name === "AbortError") {
-          setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(aborted)" }]);
+          setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+          setEvents((evts) =>
+            evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+          );
         } else {
           const isInvalidJson400 =
             e instanceof KimiApiError &&
@@ -1042,10 +1065,13 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           }
         }
       } finally {
+        const asstId = activeAsstIdRef.current;
+        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
         setTurnStartedAt(null);
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
+        permResolveRef.current = null;
       }
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe],
