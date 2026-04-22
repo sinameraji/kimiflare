@@ -8,6 +8,7 @@ import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/execut
 import type { ToolSpec } from "./tools/registry.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, Usage } from "./agent/messages.js";
+import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -926,10 +927,26 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         if ((e as Error).name === "AbortError") {
           setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(aborted)" }]);
         } else {
-          setEvents((es) => [
-            ...es,
-            { kind: "error", key: mkKey(), text: (e as Error).message ?? String(e) },
-          ]);
+          const isInvalidJson400 =
+            e instanceof KimiApiError &&
+            e.httpStatus === 400 &&
+            e.message.includes("invalid escaped character");
+          if (isInvalidJson400) {
+            messagesRef.current.pop();
+            setEvents((es) => [
+              ...es,
+              {
+                kind: "error",
+                key: mkKey(),
+                text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
+              },
+            ]);
+          } else {
+            setEvents((es) => [
+              ...es,
+              { kind: "error", key: mkKey(), text: (e as Error).message ?? String(e) },
+            ]);
+          }
         }
       } finally {
         setBusy(false);

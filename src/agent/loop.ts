@@ -75,10 +75,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           opts.callbacks.onToolCallArgs?.(ev.index, ev.argsDelta);
           break;
         case "tool_call_complete": {
+          const safeArgs = validateToolArguments(ev.arguments);
           const call: ToolCall = {
             id: ev.id,
             type: "function",
-            function: { name: ev.name, arguments: ev.arguments },
+            function: { name: ev.name, arguments: safeArgs },
           };
           toolCalls.push(call);
           opts.callbacks.onToolCallFinalized?.(call);
@@ -131,4 +132,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   }
 
   throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50})`);
+}
+
+function validateToolArguments(raw: string): string {
+  if (!raw || !raw.trim()) return "{}";
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    return "{}";
+  }
 }

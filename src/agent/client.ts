@@ -43,7 +43,7 @@ function isRetryable(err: KimiApiError, attempt: number): boolean {
 export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, void, void> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${opts.model}`;
   const body: Record<string, unknown> = {
-    messages: opts.messages,
+    messages: sanitizeMessagesForApi(opts.messages),
     ...(opts.tools && opts.tools.length
       ? { tools: opts.tools, tool_choice: "auto", parallel_tool_calls: true }
       : {}),
@@ -208,6 +208,32 @@ interface StreamToolCall {
   id?: string | null;
   type?: string | null;
   function?: { name?: string | null; arguments?: string | null };
+}
+
+function sanitizeMessagesForApi(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) => {
+    if (!m.tool_calls || m.tool_calls.length === 0) return m;
+    return {
+      ...m,
+      tool_calls: m.tool_calls.map((tc) => ({
+        ...tc,
+        function: {
+          name: tc.function.name,
+          arguments: validateJsonArguments(tc.function.arguments),
+        },
+      })),
+    };
+  });
+}
+
+function validateJsonArguments(raw: string): string {
+  if (!raw || !raw.trim()) return "{}";
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {
+    return "{}";
+  }
 }
 
 function extractCloudflareError(parsed: unknown): { code?: number; message?: string } | null {
