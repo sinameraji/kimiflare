@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.2](https://github.com/sinameraji/kimiflare/compare/v0.8.1...v0.8.2) (2026-04-22)
+
+
+### Bug Fixes
+
+* prevent theme picker from closing on arrow keys ([a0bac95](https://github.com/sinameraji/kimiflare/commit/a0bac95d55932e2defa0f2b87a2c677ef089bf56))
+* prevent theme picker from closing on arrow keys ([fc115fe](https://github.com/sinameraji/kimiflare/commit/fc115fedfbc45eeeb2e057b5d8f5b012889e1c70))
+
 ## [0.8.1](https://github.com/sinameraji/kimiflare/compare/v0.8.0...v0.8.1) (2026-04-22)
 
 
