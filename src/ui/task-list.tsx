@@ -30,11 +30,7 @@ export function TaskList({ tasks, theme, startedAt, tokensDelta }: Props) {
   const total = tasks.length;
   const allDone = done === total;
 
-  const header = active
-    ? active.title
-    : allDone
-      ? `Done (${total} tasks)`
-      : `Tasks (${done}/${total})`;
+  const header = active ? active.title : allDone ? `${total} tasks done` : `${done}/${total}`;
 
   const elapsed = startedAt ? formatElapsed(now - startedAt) : null;
   const headerStats = [elapsed, tokensDelta > 0 ? `↑ ${formatTokens(tokensDelta)} tokens` : null]
@@ -48,7 +44,7 @@ export function TaskList({ tasks, theme, startedAt, tokensDelta }: Props) {
     <Box flexDirection="column" marginBottom={1}>
       <Box>
         <Text color={allDone ? "green" : theme.accent} bold>
-          {allDone ? "✓" : "▸"} {header}
+          {header}
         </Text>
         {headerStats && (
           <Text color={theme.info.color} dimColor={theme.info.dim}>

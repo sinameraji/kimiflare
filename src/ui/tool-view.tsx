@@ -21,7 +21,15 @@ interface Props {
 
 export function ToolView({ evt, verbose }: Props) {
   const statusIcon =
-    evt.status === "running" ? <Spinner type="dots" /> : evt.status === "error" ? <Text color="red">✗</Text> : <Text color="green">✓</Text>;
+    evt.status === "running" ? (
+      <Text color="gray">
+        <Spinner type="dots" />
+      </Text>
+    ) : evt.status === "error" ? (
+      <Text color="red">✗</Text>
+    ) : (
+      <Text color="green">✓</Text>
+    );
   const title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
   const expand = Boolean(evt.expanded || verbose);
   const lines = evt.result ? evt.result.split("\n") : [];
@@ -30,7 +38,8 @@ export function ToolView({ evt, verbose }: Props) {
   return (
     <Box flexDirection="column" marginLeft={2}>
       <Text>
-        {statusIcon} <Text color="magenta">{title}</Text>
+        {statusIcon}{" "}
+        <Text color="gray">{title}</Text>
       </Text>
       {evt.render?.diff ? (
         <Box marginLeft={2}>
@@ -38,17 +47,30 @@ export function ToolView({ evt, verbose }: Props) {
         </Box>
       ) : null}
       {evt.result && expand ? (
-        <Box marginLeft={2} flexDirection="column">
+        <Box
+          marginLeft={2}
+          marginTop={1}
+          flexDirection="column"
+          borderStyle="single"
+          borderColor="gray"
+          paddingX={1}
+        >
           {lines.slice(0, showLimit).map((l, i) => (
-            <Text key={i} color="gray">{l}</Text>
+            <Text key={i} color="gray" dimColor>
+              {l}
+            </Text>
           ))}
           {lines.length > showLimit && (
-            <Text color="gray">... ({lines.length - showLimit} more lines)</Text>
+            <Text color="gray" dimColor>
+              … ({lines.length - showLimit} more lines)
+            </Text>
           )}
         </Box>
       ) : null}
       {evt.result && !expand && evt.status !== "running" ? (
-        <Text color="gray">  {firstLine(evt.result)}</Text>
+        <Text color="gray" dimColor>
+          {"  "}{firstLine(evt.result)}
+        </Text>
       ) : null}
     </Box>
   );

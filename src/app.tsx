@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
-import Spinner from "ink-spinner";
+
 import { runAgentTurn } from "./agent/loop.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -13,13 +13,13 @@ import { PermissionModal } from "./ui/permission.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
-import { loadContextFile } from "./agent/system-prompt.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo, type UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
+import { Welcome } from "./ui/welcome.js";
 import {
   configPath,
   DEFAULT_MODEL,
@@ -68,20 +68,7 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
 function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
-  const [events, setEvents] = useState<ChatEvent[]>(() => {
-    const initial: ChatEvent[] = [
-      { kind: "info", key: mkKey(), text: "kimiflare · /help for commands · ctrl-c to exit · shift+tab to cycle modes" },
-    ];
-    const ctxFile = loadContextFile(process.cwd());
-    if (ctxFile) {
-      initial.push({
-        kind: "info",
-        key: mkKey(),
-        text: `loaded project context from ${ctxFile.name} (${ctxFile.lineCount} lines)`,
-      });
-    }
-    return initial;
-  });
+  const [events, setEvents] = useState<ChatEvent[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -181,25 +168,11 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
       return;
     }
     if (key.shift && key.tab) {
-      setMode((m) => {
-        const nm = nextMode(m);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `mode: ${nm}` },
-        ]);
-        return nm;
-      });
+      setMode((m) => nextMode(m));
       return;
     }
     if (key.ctrl && inputChar === "o") {
-      setVerbose((v) => {
-        const next = !v;
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `output: ${next ? "verbose (full tool results)" : "compact"}` },
-        ]);
-        return next;
-      });
+      setVerbose((v) => !v);
       return;
     }
   });
@@ -909,9 +882,15 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     );
   }
 
+  const hasConversation = events.some((e) => e.kind === "user" || e.kind === "assistant");
+
   return (
     <Box flexDirection="column">
-      <ChatView events={events} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+      {!hasConversation && events.length === 0 ? (
+        <Welcome theme={theme} />
+      ) : (
+        <ChatView events={events} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+      )}
       {perm ? (
         <PermissionModal
           tool={perm.tool}
@@ -945,24 +924,13 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             model={cfg.model}
             usage={usage}
             thinking={busy}
-            hint={busy ? "ctrl-c to interrupt · type to queue next" : "enter to send · /help · shift+tab cycles mode"}
             theme={theme}
             mode={mode}
             effort={effort}
             contextLimit={CONTEXT_LIMIT}
           />
-          {busy && (
-            <Box>
-              <Text color={theme.spinner}>
-                <Spinner type="dots" />
-              </Text>
-              <Text color={theme.info.color} dimColor={theme.info.dim}>
-                {" working…"}
-              </Text>
-            </Box>
-          )}
-          <Box>
-            <Text color={theme.user}>{busy ? "⏳ " : "› "}</Text>
+          <Box marginTop={1}>
+            <Text color={theme.accent}>› </Text>
             <CustomTextInput
               value={input}
               onChange={setInput}

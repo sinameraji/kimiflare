@@ -9,12 +9,16 @@ interface Props {
 
 type Step = "accountId" | "apiToken" | "model" | "confirm";
 
+const STEPS: Step[] = ["accountId", "apiToken", "model", "confirm"];
+
 export function Onboarding({ onDone }: Props) {
   const [step, setStep] = useState<Step>("accountId");
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+
+  const stepIndex = STEPS.indexOf(step) + 1;
 
   const handleAccountIdSubmit = (value: string) => {
     const trimmed = value.trim();
@@ -48,18 +52,25 @@ export function Onboarding({ onDone }: Props) {
   };
 
   return (
-    <Box flexDirection="column">
-      <Text bold color="cyan">
-        Welcome to kimiflare!
-      </Text>
+    <Box flexDirection="column" paddingY={1}>
+      <Box marginBottom={1}>
+        <Text bold color="cyan">
+          kimiflare
+        </Text>
+        <Text color="gray" dimColor>
+          {"  "}Terminal coding agent
+        </Text>
+      </Box>
+
       <Text color="gray" dimColor>
-        Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI.
+        Step {stepIndex} of {STEPS.length}
       </Text>
+
       <Box marginTop={1} flexDirection="column">
         {step === "accountId" && (
           <>
-            <Text>Enter your Cloudflare Account ID:</Text>
-            <Box>
+            <Text>Enter your Cloudflare Account ID</Text>
+            <Box marginTop={1}>
               <Text color="cyan">› </Text>
               <CustomTextInput
                 value={accountId}
@@ -72,11 +83,11 @@ export function Onboarding({ onDone }: Props) {
 
         {step === "apiToken" && (
           <>
-            <Text>Enter your Cloudflare API Token:</Text>
+            <Text>Enter your Cloudflare API Token</Text>
             <Text color="gray" dimColor>
               Create one at https://dash.cloudflare.com/profile/api-tokens
             </Text>
-            <Box>
+            <Box marginTop={1}>
               <Text color="cyan">› </Text>
               <CustomTextInput
                 value={apiToken}
@@ -90,11 +101,11 @@ export function Onboarding({ onDone }: Props) {
 
         {step === "model" && (
           <>
-            <Text>Model ID (press Enter for default):</Text>
+            <Text>Model ID (press Enter for default)</Text>
             <Text color="gray" dimColor>
               default: {DEFAULT_MODEL}
             </Text>
-            <Box>
+            <Box marginTop={1}>
               <Text color="cyan">› </Text>
               <CustomTextInput
                 value={model}
@@ -107,16 +118,21 @@ export function Onboarding({ onDone }: Props) {
 
         {step === "confirm" && (
           <>
-            <Text>Ready to save configuration:</Text>
-            <Box flexDirection="column" marginLeft={2}>
+            <Text>Ready to save configuration</Text>
+            <Box
+              flexDirection="column"
+              marginTop={1}
+              marginBottom={1}
+              borderStyle="single"
+              borderColor="gray"
+              paddingX={1}
+            >
               <Text color="gray">Account ID: {accountId}</Text>
               <Text color="gray">API Token: {"•".repeat(apiToken.length)}</Text>
               <Text color="gray">Model: {model}</Text>
             </Box>
+            <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
             <Box marginTop={1}>
-              <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
-            </Box>
-            <Box>
               <Text color="cyan">› </Text>
               <CustomTextInput
                 value=""
@@ -128,9 +144,7 @@ export function Onboarding({ onDone }: Props) {
         )}
 
         {savedPath && (
-          <Text color="green">
-            Config saved to {savedPath}
-          </Text>
+          <Text color="green">Config saved to {savedPath}</Text>
         )}
       </Box>
     </Box>

@@ -28,29 +28,56 @@ interface Props {
 export function ChatView({ events, showReasoning, theme, verbose }: Props) {
   return (
     <Box flexDirection="column">
-      {events.map((e) => (
-        <EventView key={e.key} evt={e} showReasoning={showReasoning} theme={theme} verbose={verbose} />
-      ))}
+      {events.map((e, i) => {
+        const prev = events[i - 1];
+        const showSeparator =
+          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool");
+        return (
+          <Box key={e.key} flexDirection="column">
+            {showSeparator && (
+              <Box marginY={1}>
+                <Text color={theme.info.color} dimColor={theme.info.dim}>
+                  {"─".repeat(40)}
+                </Text>
+              </Box>
+            )}
+            <EventView evt={e} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+          </Box>
+        );
+      })}
     </Box>
   );
 }
 
-function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; showReasoning: boolean; theme: Theme; verbose?: boolean }) {
+function EventView({
+  evt,
+  showReasoning,
+  theme,
+  verbose,
+}: {
+  evt: ChatEvent;
+  showReasoning: boolean;
+  theme: Theme;
+  verbose?: boolean;
+}) {
   if (evt.kind === "user") {
     return (
-      <Box marginTop={1}>
-        <Text color={theme.user}>› </Text>
-        <Text>{evt.text}</Text>
+      <Box>
+        <Text bold color={theme.user}>
+          ›{" "}
+        </Text>
+        <Text bold>{evt.text}</Text>
       </Box>
     );
   }
   if (evt.kind === "assistant") {
     return (
-      <Box flexDirection="column" marginTop={1} paddingLeft={1}>
+      <Box flexDirection="column" paddingLeft={2}>
         {showReasoning && evt.reasoning ? (
-          <Box flexDirection="column" marginLeft={2}>
+          <Box flexDirection="column" marginBottom={1}>
             <Text color={theme.reasoning.color} dimColor={theme.reasoning.dim}>
-              ✧ thinking: {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
+              thinking…{" "}
+              {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
             </Text>
           </Box>
         ) : null}
@@ -64,9 +91,13 @@ function EventView({ evt, showReasoning, theme, verbose }: { evt: ChatEvent; sho
   if (evt.kind === "info") {
     return (
       <Text color={theme.info.color} dimColor={theme.info.dim}>
-        {evt.text}
+        · {evt.text}
       </Text>
     );
   }
-  return <Text color={theme.error}>! {evt.text}</Text>;
+  return (
+    <Text color={theme.error}>
+      ! {evt.text}
+    </Text>
+  );
 }
