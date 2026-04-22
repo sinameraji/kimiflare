@@ -15,13 +15,15 @@ interface Props {
   mode: Mode;
   effort: ReasoningEffort;
   contextLimit: number;
+  hasUpdate?: boolean;
+  latestVersion?: string | null;
 }
 
 const PRICE_IN_PER_M = 0.95;
 const PRICE_IN_CACHED_PER_M = 0.16;
 const PRICE_OUT_PER_M = 4.0;
 
-export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, effort, contextLimit }: Props) {
+export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion }: Props) {
   const [now, setNow] = useState(Date.now());
   const modeColor =
     mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
@@ -63,6 +65,11 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
           {warn ? (
             <Text color={theme.warn} bold>
               {"  ·  "}/compact recommended
+            </Text>
+          ) : null}
+          {hasUpdate ? (
+            <Text color={theme.warn} bold>
+              {"  ·  "}update available{latestVersion ? ` → ${latestVersion}` : ""} · run /update
             </Text>
           ) : null}
         </Box>

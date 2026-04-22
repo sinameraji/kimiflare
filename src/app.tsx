@@ -18,6 +18,7 @@ import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate, isGitRepo } from "./util/update-check.js";
+import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
 import {
@@ -68,7 +69,7 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
 };
 
-function App({ initialCfg }: { initialCfg: Cfg | null }) {
+function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; initialUpdateResult?: UpdateCheckResult }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const [events, setEvents] = useState<ChatEvent[]>([]);
@@ -93,6 +94,8 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
   const [verbose, setVerbose] = useState(false);
+  const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
+  const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
 
   const messagesRef = useRef<ChatMessage[]>([
     {
@@ -114,13 +117,47 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const tasksRef = useRef<Task[]>([]);
   const usageRef = useRef<Usage | null>(null);
   const updateCheckedRef = useRef(false);
+  const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
     updateCheckedRef.current = true;
+
+    if (initialUpdateResult) {
+      if (initialUpdateResult.hasUpdate && !updateNudgedRef.current) {
+        updateNudgedRef.current = true;
+        setHasUpdate(true);
+        setLatestVersion(initialUpdateResult.latestVersion);
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `update available: ${initialUpdateResult.localVersion} → ${initialUpdateResult.latestVersion}`,
+          },
+        ]);
+        void isGitRepo().then((git) => {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: git
+                ? "run:  git pull && npm install && npm run build  then restart kimiflare"
+                : "run:  npm update -g kimiflare  then restart",
+            },
+          ]);
+        });
+      }
+      return;
+    }
+
     void checkForUpdate().then((result) => {
-      if (result.hasUpdate) {
+      if (result.hasUpdate && !updateNudgedRef.current) {
+        updateNudgedRef.current = true;
+        setHasUpdate(true);
+        setLatestVersion(result.latestVersion);
         setEvents((e) => [
           ...e,
           {
@@ -143,7 +180,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         });
       }
     });
-  }, [cfg]);
+  }, [cfg, initialUpdateResult]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -164,6 +201,42 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   useEffect(() => {
     effortRef.current = effort;
   }, [effort]);
+
+  useEffect(() => {
+    if (!cfg) return;
+    const id = setInterval(() => {
+      void checkForUpdate().then((result) => {
+        if (result.hasUpdate) {
+          setHasUpdate(true);
+          setLatestVersion(result.latestVersion);
+          if (!updateNudgedRef.current) {
+            updateNudgedRef.current = true;
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: `update available: ${result.localVersion} → ${result.latestVersion}`,
+              },
+            ]);
+            void isGitRepo().then((git) => {
+              setEvents((e) => [
+                ...e,
+                {
+                  kind: "info",
+                  key: mkKey(),
+                  text: git
+                    ? "run:  git pull && npm install && npm run build  then restart kimiflare"
+                    : "run:  npm update -g kimiflare  then restart",
+                },
+              ]);
+            });
+          }
+        }
+      });
+    }, 30 * 60 * 1000); // 30 minutes
+    return () => clearInterval(id);
+  }, [cfg]);
 
   const saveSessionSafe = useCallback(async () => {
     if (!cfg) return;
@@ -485,6 +558,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         setTasksStartedAt(null);
         setTasksStartTokens(0);
         compactSuggestedRef.current = false;
+        updateNudgedRef.current = false;
         return true;
       }
       if (c === "/reasoning") {
@@ -628,8 +702,10 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
         return true;
       }
       if (c === "/update") {
-        void checkForUpdate().then((result) => {
+        void checkForUpdate(true).then((result) => {
           if (result.hasUpdate) {
+            setHasUpdate(true);
+            setLatestVersion(result.latestVersion);
             setEvents((e) => [
               ...e,
               {
@@ -651,6 +727,8 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
               ]);
             });
           } else {
+            setHasUpdate(false);
+            setLatestVersion(null);
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: "no update available" },
@@ -953,6 +1031,8 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
             mode={mode}
             effort={effort}
             contextLimit={CONTEXT_LIMIT}
+            hasUpdate={hasUpdate}
+            latestVersion={latestVersion}
           />
           <Box marginTop={1}>
             <Text color={theme.accent}>› </Text>
@@ -1004,7 +1084,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   );
 }
 
-export async function renderApp(cfg: Cfg | null) {
-  const instance = render(<App initialCfg={cfg} />);
+export async function renderApp(cfg: Cfg | null, updateResult?: UpdateCheckResult) {
+  const instance = render(<App initialCfg={cfg} initialUpdateResult={updateResult} />);
   await instance.waitUntilExit();
 }
