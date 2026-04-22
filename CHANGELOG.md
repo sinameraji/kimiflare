@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/sinameraji/kimiflare/compare/v0.4.1...v0.5.0) (2026-04-22)
+
+
+### Features
+
+* auto-append co-author trailer to git commits ([fd6caf2](https://github.com/sinameraji/kimiflare/commit/fd6caf23d3abf889ff432dfe54c54f1d0b03a220))
+* auto-append co-author trailer to git commits ([efb3ff6](https://github.com/sinameraji/kimiflare/commit/efb3ff69e98b5ce15c385b5d0270a0d44dc13668))
+
 ## [0.4.1](https://github.com/sinameraji/kimiflare/compare/v0.4.0...v0.4.1) (2026-04-22)
 
 
