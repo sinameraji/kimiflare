@@ -5,6 +5,7 @@ export interface ToolContext {
   cwd: string;
   signal?: AbortSignal;
   onTasks?: (tasks: Task[]) => void;
+  coauthor?: { name: string; email: string };
 }
 
 export interface ToolRender {

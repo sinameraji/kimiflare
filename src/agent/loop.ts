@@ -32,6 +32,7 @@ export interface AgentTurnOpts {
   temperature?: number;
   maxCompletionTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
+  coauthor?: { name: string; email: string };
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
@@ -106,7 +107,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       const result = await opts.executor.run(
         { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
         opts.callbacks.askPermission,
-        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks },
+        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor },
       );
       opts.messages.push({
         role: "tool",

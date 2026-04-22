@@ -10,6 +10,9 @@ export interface KimiConfig {
   model: string;
   theme?: string;
   reasoningEffort?: ReasoningEffort;
+  coauthor?: boolean;
+  coauthorName?: string;
+  coauthorEmail?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -26,12 +29,21 @@ function readReasoningEffortEnv(): ReasoningEffort | undefined {
   return undefined;
 }
 
+function readCoauthorEnv(): { enabled: boolean; name: string; email: string } | undefined {
+  const enabled = process.env.KIMIFLARE_COAUTHOR;
+  if (enabled === "0" || enabled === "false") return undefined;
+  const name = process.env.KIMIFLARE_COAUTHOR_NAME || "kimiflare";
+  const email = process.env.KIMIFLARE_COAUTHOR_EMAIL || "sinameraji@users.noreply.github.com";
+  return { enabled: true, name, email };
+}
+
 export async function loadConfig(): Promise<KimiConfig | null> {
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
   const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
   const envEffort = readReasoningEffortEnv();
   const envTheme = process.env.KIMI_THEME;
+  const envCoauthor = readCoauthorEnv();
 
   if (envAccount && envToken) {
     return {
@@ -40,6 +52,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       model: envModel,
       theme: envTheme,
       reasoningEffort: envEffort,
+      coauthor: envCoauthor?.enabled ?? true,
+      coauthorName: envCoauthor?.name,
+      coauthorEmail: envCoauthor?.email,
     };
   }
 
@@ -53,6 +68,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         model: envModel ?? parsed.model ?? DEFAULT_MODEL,
         theme: envTheme ?? parsed.theme,
         reasoningEffort: envEffort ?? parsed.reasoningEffort,
+        coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
+        coauthorName: envCoauthor?.name ?? parsed.coauthorName,
+        coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
       };
     }
   } catch {
