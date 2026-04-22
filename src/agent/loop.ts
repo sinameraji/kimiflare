@@ -1,6 +1,7 @@
 import { runKimi } from "./client.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
+import { sanitizeString } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 
@@ -93,9 +94,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
     const assistantMsg: ChatMessage = {
       role: "assistant",
-      content: content || null,
-      ...(reasoning ? { reasoning_content: reasoning } : {}),
-      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      content: content ? sanitizeString(content) : null,
+      ...(reasoning ? { reasoning_content: sanitizeString(reasoning) } : {}),
+      ...(toolCalls.length
+        ? {
+            tool_calls: toolCalls.map((tc) => ({
+              ...tc,
+              function: {
+                name: tc.function.name,
+                arguments: sanitizeString(tc.function.arguments),
+              },
+            })),
+          }
+        : {}),
     };
     opts.messages.push(assistantMsg);
     opts.callbacks.onAssistantFinal?.(assistantMsg);
@@ -112,7 +123,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       opts.messages.push({
         role: "tool",
         tool_call_id: result.tool_call_id,
-        content: result.content,
+        content: sanitizeString(result.content),
         name: result.name,
       });
       opts.callbacks.onToolResult?.(result);

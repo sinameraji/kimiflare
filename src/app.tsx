@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
+import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, Usage } from "./agent/messages.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -325,7 +326,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
     ].join("\n");
 
     setEvents((e) => [...e, { kind: "user", key: mkKey(), text: "/init" }]);
-    messagesRef.current.push({ role: "user", content: prompt });
+    messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
     setTurnStartedAt(Date.now());
     const controller = new AbortController();
@@ -706,7 +707,7 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
 
       const display = displayText?.trim() || trimmed;
       setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display }]);
-      messagesRef.current.push({ role: "user", content: trimmed });
+      messagesRef.current.push({ role: "user", content: sanitizeString(trimmed) });
       setBusy(true);
       setTurnStartedAt(Date.now());
 
