@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/sinameraji/kimiflare/compare/v0.5.0...v0.6.0) (2026-04-22)
+
+
+### Features
+
+* **docs:** add Product Hunt badge, favicon, and SEO meta tags ([9a924a7](https://github.com/sinameraji/kimiflare/commit/9a924a769819e6d694096dbf140a2f427bd9eefd))
+* **docs:** add Product Hunt badge, favicon, and SEO meta tags ([7641b7e](https://github.com/sinameraji/kimiflare/commit/7641b7ede4679388415a5a5d45aa8de096fb1986))
+* **docs:** remove Claude Code reference and subscription language from landing copy ([f2eef80](https://github.com/sinameraji/kimiflare/commit/f2eef8085bcfa6fc4ac6d2b34977f5b546617efd))
+* **docs:** update landing page terminal and copy ([b86954a](https://github.com/sinameraji/kimiflare/commit/b86954af225ea4c0129251a5e7898c85ec9bb645))
+* **docs:** update landing page terminal simulation to match current UI/UX ([9ddaad8](https://github.com/sinameraji/kimiflare/commit/9ddaad8a493dc5bb63bc3995303833b4c2f94d66))
+
+
+### Bug Fixes
+
+* use sinameraji@gmail.com as default co-author email ([f82a45b](https://github.com/sinameraji/kimiflare/commit/f82a45bfbe893ef49f52a035d3bebc58a9771776))
+* use sinameraji@gmail.com as default co-author email ([2456bc8](https://github.com/sinameraji/kimiflare/commit/2456bc8528026ad0ff2a6b208a092456049e4f21))
+
 ## [0.5.0](https://github.com/sinameraji/kimiflare/compare/v0.4.1...v0.5.0) (2026-04-22)
 
 
