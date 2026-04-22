@@ -97,13 +97,15 @@ export interface UpdateCheckResult {
   latestVersion: string | null;
 }
 
-export async function checkForUpdate(): Promise<UpdateCheckResult> {
+export async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
   const localVersion = await readLocalVersion();
   if (!localVersion) return { hasUpdate: false, localVersion: null, latestVersion: null };
 
-  const cached = await readCache();
-  if (cached) {
-    return { hasUpdate: cached.hasUpdate, localVersion, latestVersion: cached.latestVersion };
+  if (!force) {
+    const cached = await readCache();
+    if (cached) {
+      return { hasUpdate: cached.hasUpdate, localVersion, latestVersion: cached.latestVersion };
+    }
   }
 
   const latestVersion = await fetchLatestVersion();

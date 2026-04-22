@@ -7,6 +7,8 @@ import { runAgentTurn } from "./agent/loop.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
+import { checkForUpdate, isGitRepo } from "./util/update-check.js";
+import type { UpdateCheckResult } from "./util/update-check.js";
 
 function readPackageVersion(): string {
   try {
@@ -40,6 +42,7 @@ const opts = program.opts<{
 
 async function main() {
   const cfg = await loadConfig();
+  const updateResult = await checkForUpdate();
 
   if (opts.print !== undefined) {
     if (!cfg) {
@@ -58,6 +61,7 @@ async function main() {
       prompt: opts.print,
       allowAll: !!opts.dangerouslyAllowAll,
       showReasoning: !!opts.reasoning,
+      updateResult,
     });
     return;
   }
@@ -72,9 +76,9 @@ async function main() {
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    await renderApp({ ...cfg, model });
+    await renderApp({ ...cfg, model }, updateResult);
   } else {
-    await renderApp(null);
+    await renderApp(null, updateResult);
   }
 }
 
@@ -88,9 +92,18 @@ interface PrintOpts {
   coauthor?: boolean;
   coauthorName?: string;
   coauthorEmail?: string;
+  updateResult: UpdateCheckResult;
 }
 
 async function runPrintMode(opts: PrintOpts): Promise<void> {
+  if (opts.updateResult.hasUpdate) {
+    const git = await isGitRepo();
+    process.stderr.write(
+      `\x1b[33mkimiflare update available: ${opts.updateResult.localVersion} → ${opts.updateResult.latestVersion}\x1b[0m\n` +
+        `\x1b[33m  ${git ? "git pull && npm install && npm run build" : "npm update -g kimiflare"}  then restart\x1b[0m\n\n`,
+    );
+  }
+
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
   const messages: ChatMessage[] = [
