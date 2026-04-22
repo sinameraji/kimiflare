@@ -45,7 +45,6 @@ export function ThemePicker({ themes, current, onPick }: Props) {
             return (
               <Box>
                 <Text color={color} bold={isSelected} dimColor={!isSelected}>
-                  {isSelected ? "› " : "  "}
                   {label}
                 </Text>
               </Box>
