@@ -1,6 +1,6 @@
 import { readSSE } from "../util/sse.js";
 import { KimiApiError } from "../util/errors.js";
-import { jsonReplacer } from "./messages.js";
+import { jsonReplacer, sanitizeString } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
 
 export type KimiEvent =
@@ -212,10 +212,19 @@ interface StreamToolCall {
 
 function sanitizeMessagesForApi(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((m) => {
-    if (!m.tool_calls || m.tool_calls.length === 0) return m;
+    let next: ChatMessage = m;
+    if (Array.isArray(m.content)) {
+      next = {
+        ...m,
+        content: m.content.map((part) =>
+          part.type === "text" ? { ...part, text: sanitizeString(part.text) } : part,
+        ),
+      };
+    }
+    if (!next.tool_calls || next.tool_calls.length === 0) return next;
     return {
-      ...m,
-      tool_calls: m.tool_calls.map((tc) => ({
+      ...next,
+      tool_calls: next.tool_calls.map((tc) => ({
         ...tc,
         function: {
           name: tc.function.name,

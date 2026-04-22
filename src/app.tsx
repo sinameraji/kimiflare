@@ -7,7 +7,7 @@ import { compactMessages } from "./agent/compact.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
 import { sanitizeString } from "./agent/messages.js";
-import type { ChatMessage, Usage } from "./agent/messages.js";
+import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -41,6 +41,7 @@ import {
   type SessionSummary,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
+import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 
 interface Cfg {
   accountId: string;
@@ -70,6 +71,19 @@ const mkKey = () => `evt_${nextKey++}`;
 function capEvents(prev: ChatEvent[]): ChatEvent[] {
   if (prev.length <= MAX_EVENTS) return prev;
   return prev.slice(prev.length - MAX_EVENTS);
+}
+
+const MAX_IMAGES_PER_MESSAGE = 10;
+
+function findImagePaths(text: string): string[] {
+  const paths: string[] = [];
+  for (const token of text.split(/\s+/)) {
+    const clean = token.replace(/^["']|["',;:!?]$/g, "").replace(/[.,;:!?]$/, "");
+    if (isImagePath(clean) && existsSync(clean)) {
+      paths.push(clean);
+    }
+  }
+  return [...new Set(paths)];
 }
 
 const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
@@ -262,8 +276,13 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     if (!cfg) return;
     if (!sessionIdRef.current) {
       const firstUser = messagesRef.current.find((m) => m.role === "user");
-      const firstText =
-        typeof firstUser?.content === "string" ? firstUser.content : "session";
+      let firstText = "session";
+      if (typeof firstUser?.content === "string") {
+        firstText = firstUser.content;
+      } else if (Array.isArray(firstUser?.content)) {
+        const textPart = firstUser.content.find((p) => p.type === "text");
+        if (textPart?.text) firstText = textPart.text;
+      }
       sessionIdRef.current = makeSessionId(firstText);
     }
     try {
@@ -568,8 +587,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           },
         ]);
         const userMsgs = file.messages
-          .filter((m) => m.role === "user" && typeof m.content === "string")
-          .map((m) => m.content as string);
+          .filter((m) => m.role === "user" && m.content)
+          .map((m) => {
+            if (!m.content) return "";
+            if (typeof m.content === "string") return m.content;
+            const textPart = m.content.find((p) => p.type === "text");
+            return textPart?.text ?? "";
+          })
+          .filter((text) => text.length > 0);
         if (userMsgs.length > 0) setHistory(userMsgs);
         setUsage(null);
       } catch (e) {
@@ -844,8 +869,38 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       if (trimmed.startsWith("/") && handleSlash(trimmed)) return;
 
       const display = displayText?.trim() || trimmed;
-      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display }]);
-      messagesRef.current.push({ role: "user", content: sanitizeString(trimmed) });
+      const imagePaths = findImagePaths(trimmed).slice(0, MAX_IMAGES_PER_MESSAGE);
+      let images: string[] = [];
+      let content: string | ContentPart[] = sanitizeString(trimmed);
+
+      if (imagePaths.length > 0) {
+        const encoded = await Promise.all(
+          imagePaths.map(async (path) => {
+            try {
+              const img = await encodeImageFile(path);
+              return { path, img };
+            } catch (e) {
+              setEvents((es) => [
+                ...es,
+                { kind: "error", key: mkKey(), text: `failed to encode image ${path}: ${(e as Error).message}` },
+              ]);
+              return null;
+            }
+          }),
+        );
+        const valid = encoded.filter((x): x is { path: string; img: EncodedImage } => x !== null);
+        if (valid.length > 0) {
+          images = valid.map((v) => v.img.filename);
+          const parts: ContentPart[] = [
+            { type: "text", text: sanitizeString(trimmed) },
+            ...valid.map((v) => ({ type: "image_url" as const, image_url: { url: v.img.dataUrl } })),
+          ];
+          content = parts;
+        }
+      }
+
+      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+      messagesRef.current.push({ role: "user", content });
       setBusy(true);
       setTurnStartedAt(Date.now());
 

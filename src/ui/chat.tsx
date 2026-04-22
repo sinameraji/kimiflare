@@ -6,7 +6,7 @@ import { MD } from "./markdown.js";
 import type { Theme } from "./theme.js";
 
 export type ChatEvent =
-  | { kind: "user"; key: string; text: string }
+  | { kind: "user"; key: string; text: string; images?: string[] }
   | {
       kind: "assistant";
       key: string;
@@ -63,11 +63,20 @@ function EventView({
 }) {
   if (evt.kind === "user") {
     return (
-      <Box>
-        <Text bold color={theme.user}>
-          ›{" "}
-        </Text>
-        <Text bold>{evt.text}</Text>
+      <Box flexDirection="column">
+        <Box>
+          <Text bold color={theme.user}>
+            ›{" "}
+          </Text>
+          <Text bold>{evt.text}</Text>
+        </Box>
+        {evt.images && evt.images.length > 0 && (
+          <Box paddingLeft={2}>
+            <Text color={theme.info.color} dimColor={theme.info.dim}>
+              🖼️ {evt.images.join(", ")}
+            </Text>
+          </Box>
+        )}
       </Box>
     );
   }

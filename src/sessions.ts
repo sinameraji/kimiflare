@@ -66,7 +66,11 @@ export async function listSessions(limit = 30): Promise<SessionSummary[]> {
       const parsed = JSON.parse(raw) as SessionFile;
       const firstUser = parsed.messages.find((m) => m.role === "user");
       const firstPrompt =
-        typeof firstUser?.content === "string" ? firstUser.content : "(no prompt)";
+        typeof firstUser?.content === "string"
+          ? firstUser.content
+          : firstUser?.content
+            ? firstUser.content.find((p) => p.type === "text")?.text ?? "(no prompt)"
+            : "(no prompt)";
       summaries.push({
         id: parsed.id,
         filePath: path,

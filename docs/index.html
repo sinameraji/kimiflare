@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>kimiflare — AI coding agent in your terminal</title>
-  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Open-weight, direct to Cloudflare.">
+  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, 262k context. Direct to Cloudflare.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://sinameraji.github.io/kimiflare/">
   <meta name="theme-color" content="#f48120">
 
   <!-- Open Graph -->
   <meta property="og:title" content="kimiflare — AI coding agent in your terminal">
-  <meta property="og:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.">
+  <meta property="og:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. Image understanding, plan mode, 262k context. No middleman.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://sinameraji.github.io/kimiflare/">
   <meta property="og:image" content="https://sinameraji.github.io/kimiflare/logo.png">
@@ -19,7 +19,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="kimiflare — AI coding agent in your terminal">
-  <meta name="twitter:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.">
+  <meta name="twitter:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. Image understanding, plan mode, 262k context. No middleman.">
   <meta name="twitter:image" content="https://sinameraji.github.io/kimiflare/logo.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32,7 +32,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "kimiflare",
-    "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Open-weight, direct to Cloudflare.",
+    "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, 262k context. Direct to Cloudflare.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux, Windows",
     "offers": {
@@ -578,7 +578,7 @@
       Kimi K2.6 + Cloudflare<br>in your terminal.<br>No middleman.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      A terminal coding agent with plan mode, live task panels, 14 themes, and 262k context. Direct to Cloudflare — no middleman.
+      A terminal coding agent with image understanding, plan mode, live task panels, 14 themes, and 262k context. Direct to Cloudflare — no middleman.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -702,41 +702,46 @@
       </div>
       <div class="feature-item">
         <span class="feature-num">03</span>
+        <h3>Image understanding</h3>
+        <p>Drop image paths (PNG, JPG, WebP, GIF, BMP up to 5 MB) into any prompt. The model sees them inline — perfect for UI reviews, diagrams, and screenshots.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">04</span>
         <h3>14 terminal themes</h3>
         <p>dark, light, high-contrast, dracula, nord, one-dark, monokai, solarized, tokyo-night, gruvbox, catppuccin, rose-pine. Live preview with Ctrl+T.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">04</span>
+        <span class="feature-num">05</span>
         <h3>Paste collapse</h3>
         <p>Large pastes collapse to <code>[pasted N lines #id]</code>. Full content still goes to the model — scrollback stays clean.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">05</span>
+        <span class="feature-num">06</span>
         <h3>Type-ahead queue</h3>
         <p>Type your next prompt while the model is still working. Queued prompts fire in order. Ctrl-C aborts current and clears queue.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">06</span>
+        <span class="feature-num">07</span>
         <h3>Auto-compaction</h3>
         <p>At ~80% context usage, kimiflare nudges you to run /compact. It summarizes older turns, keeping the last 4 intact.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">07</span>
+        <span class="feature-num">08</span>
         <h3>Streaming reasoning</h3>
         <p>Toggle the model's chain-of-thought with /reasoning or Ctrl-R. See how it thinks in real time.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">08</span>
+        <span class="feature-num">09</span>
         <h3>Session persistence</h3>
         <p>Every turn is auto-saved. /resume lists past sessions with message counts in a paginated picker. Never lose your place.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">09</span>
+        <span class="feature-num">10</span>
         <h3>Smart permissions</h3>
         <p>Bash session-allow is keyed by the first token (allow all git commands). Write/edit show a unified diff before you approve.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">10</span>
+        <span class="feature-num">11</span>
         <h3>262K context window</h3>
         <p>Read entire modules, large configs, and full stack traces without the model losing track. Direct to Cloudflare — no middleman.</p>
       </div>
@@ -827,7 +832,11 @@
 <span class="v">kimiflare</span> --model @cf/moonshotai/kimi-k2.6<br>
 <br>
 <span class="c"># Stream reasoning to stderr</span><br>
-<span class="v">kimiflare</span> --reasoning
+<span class="v">kimiflare</span> --reasoning<br>
+<br>
+<span class="c"># Image understanding — reference images inline</span><br>
+<span class="v">kimiflare</span><br>
+<span class="v">kimiflare</span> -p <span class="s">"explain this diagram.png"
       </div>
     </div>
   </section>
@@ -904,9 +913,9 @@
     // Typing effect
     const phrases = [
       "explain this codebase",
-      "find and fix a bug",
+      "fix the layout bug in screenshot.png",
       "refactor a file",
-      "write tests for utils.ts"
+      "convert mockup.png to Tailwind HTML"
     ];
     let phraseIndex = 0;
     let charIndex = 0;

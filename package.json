@@ -1,7 +1,22 @@
 {
   "name": "kimiflare",
   "version": "0.11.0",
-  "description": "Kimiflare — a terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI.",
+  "description": "Kimiflare — a terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, 262k context.",
+  "keywords": [
+    "ai",
+    "cli",
+    "coding-agent",
+    "terminal",
+    "kimi",
+    "k2.6",
+    "cloudflare",
+    "workers-ai",
+    "vision",
+    "image-understanding",
+    "llm",
+    "code-generation",
+    "tui"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sinameraji/kimiflare.git"

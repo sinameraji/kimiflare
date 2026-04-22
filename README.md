@@ -22,6 +22,7 @@
 ## Why kimiflare
 
 - **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
+- **Image understanding** — Drop image paths into your prompt (PNG, JPG, WebP, GIF, BMP). The model sees them inline — great for UI reviews, diagrams, screenshots, and mockups.
 - **Direct to Cloudflare** — No AI Gateway, no proxy, no OpenAI SDK. Your traffic goes straight to Workers AI from your account.
 - **Plan mode** — Ask the agent to research and produce a plan without touching your filesystem. Review it, then exit plan mode to execute.
 
@@ -53,6 +54,7 @@ Requires Node.js ≥ 20.
 | **Type-ahead queue** | Type your next prompt while the model is still working. Queued prompts show as `⏳ …` and fire in order. `Ctrl-C` aborts current + clears queue. |
 | **Auto-compaction** | At ~80% context usage, kimiflare nudges you to run `/compact`. It summarizes older turns into a dense summary, keeping the last 4 turns intact. |
 | **Streaming reasoning** | Toggle the model's chain-of-thought with `/reasoning` or `Ctrl-R`. See how it thinks in real time. |
+| **Image understanding** | Drop image paths (PNG, JPG, WebP, GIF, BMP up to 5 MB) into any prompt. The model sees them inline — perfect for UI reviews, diagrams, and screenshots. |
 | **Live cost tracking** | Status bar shows real-time cost based on Cloudflare pricing: `$0.95/M input`, `$0.16/M cached`, `$4.00/M output`. |
 | **Session persistence** | Every turn is auto-saved. `/resume` lists past sessions (with message counts) in a paginated picker. |
 | **Smart permissions** | Bash session-allow is keyed by the first token (e.g., allow all `git` commands). Write/edit show a unified diff before you approve. |
@@ -104,6 +106,19 @@ kimiflare -p "summarize PLAN.md"                    # stream answer to stdout
 kimiflare -p "..." --dangerously-allow-all          # auto-approve mutating tools (for scripts)
 kimiflare -p "..." --reasoning                      # include chain-of-thought in stderr
 ```
+
+### Image understanding
+
+Reference image files directly in your prompt — the model sees them inline:
+
+```sh
+kimiflare
+› fix the layout bug in this screenshot docs/bug.png
+› convert this mockup design.png to Tailwind HTML
+› explain this architecture diagram.png
+```
+
+Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP (up to 5 MB each, 10 per message).
 
 ### CLI flags
 

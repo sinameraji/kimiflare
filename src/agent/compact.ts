@@ -54,17 +54,21 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
 
   const transcript = toSummarize
     .map((m) => {
+      const contentStr =
+        typeof m.content === "string"
+          ? m.content
+          : m.content?.map((p) => (p.type === "text" ? p.text : "[image]")).join(" ") ?? "";
       if (m.role === "tool") {
-        const snippet = (m.content ?? "").slice(0, 500);
+        const snippet = contentStr.slice(0, 500);
         return `[tool ${m.name ?? ""}] ${snippet}`;
       }
       if (m.role === "assistant") {
         const calls = m.tool_calls
           ? ` (tool_calls: ${m.tool_calls.map((c) => c.function.name).join(", ")})`
           : "";
-        return `[assistant]${calls} ${m.content ?? ""}`;
+        return `[assistant]${calls} ${contentStr}`;
       }
-      return `[${m.role}] ${m.content ?? ""}`;
+      return `[${m.role}] ${contentStr}`;
     })
     .join("\n");
 
