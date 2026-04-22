@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/sinameraji/kimiflare/compare/v0.11.0...v0.12.0) (2026-04-22)
+
+
+### Features
+
+* image understanding support ([cbf9810](https://github.com/sinameraji/kimiflare/commit/cbf9810d1abb3357f2a21a2b9dbe2edcaec82875))
+* image understanding support ([14b917f](https://github.com/sinameraji/kimiflare/commit/14b917fae2657944dc67bb3ad348d49c47167dfd))
+
 ## [0.11.0](https://github.com/sinameraji/kimiflare/compare/v0.10.0...v0.11.0) (2026-04-22)
 
 
