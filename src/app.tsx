@@ -32,7 +32,7 @@ import {
   type ReasoningEffort,
 } from "./config.js";
 import { resolveTheme, themeNames, themeList, type Theme } from "./ui/theme.js";
-import { nextMode, type Mode, isBlockedInPlanMode } from "./mode.js";
+import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import {
   listSessions,
   loadSession,
@@ -497,7 +497,26 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           },
           askPermission: (req) =>
             new Promise<PermissionDecision>((resolve) => {
-              if (modeRef.current === "auto") return resolve("allow");
+              if (modeRef.current === "auto") {
+                resolve("allow");
+                return;
+              }
+              if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+                if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
+                  resolve("allow");
+                  return;
+                }
+                setEvents((e) => [
+                  ...e,
+                  {
+                    kind: "info",
+                    key: mkKey(),
+                    text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
+                  },
+                ]);
+                resolve("deny");
+                return;
+              }
               setPerm({ tool: req.tool, args: req.args, resolve });
             }),
         },
@@ -922,6 +941,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                   return;
                 }
                 if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+                  if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
+                    resolve("allow");
+                    return;
+                  }
                   setEvents((e) => [
                     ...e,
                     {
