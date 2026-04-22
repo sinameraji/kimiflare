@@ -11,35 +11,28 @@
 </p>
 
 <p align="center">
-  A terminal coding agent powered by <strong><a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a></strong> on Cloudflare Workers AI. Moonshot's 1T-parameter open-source model runs directly on your Cloudflare account. You bring the token, your traffic goes straight to Cloudflare.
+  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a> on Cloudflare Workers AI.</strong><br>
+  Moonshot's 1T-parameter open-source model, running directly on your Cloudflare account.
 </p>
 
-```
-$ kimiflare
-kimiflare · /help for commands · ctrl-c to exit
+<p align="center">
+  <img src="docs/screenshot.png" alt="kimiflare TUI" width="900">
+</p>
 
-› what files are here?
-  ✓ glob(*)
-    /Users/you/proj/package.json
-    /Users/you/proj/src/index.ts
-    ...
+## Why kimiflare
 
-› add a /health endpoint to server.ts
-  ✓ read(src/server.ts)
-  ◐ edit src/server.ts
-    ─── permission requested ──────────────────
-    @@ -42,6 +42,10 @@
-       app.get('/', …)
-    +  app.get('/health', (_, res) => res.json({ ok: true }))
-    ─────────────────────────────────────────────
-    [Allow once] [Allow for session] [Deny]
-```
+- **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
+- **Direct to Cloudflare** — No AI Gateway, no proxy, no OpenAI SDK. Your traffic goes straight to Workers AI from your account.
+- **Plan mode** — Ask the agent to research and produce a plan without touching your filesystem. Review it, then exit plan mode to execute.
 
-## Install
+## Quick start
 
 ```sh
 npm install -g kimiflare
+kimiflare
 ```
+
+On first run, an interactive onboarding wizard asks for your Cloudflare Account ID and API Token. That's it — you're ready.
 
 Or run without installing:
 
@@ -48,6 +41,24 @@ npx kimiflare
 ```
 
 Requires Node.js ≥ 20.
+
+## Features
+
+| Feature | What it does |
+|---------|-------------|
+| **Plan / Edit / Auto modes** | `plan` blocks all mutating tools for safe research. `edit` (default) prompts per mutating call. `auto` approves everything for trusted tasks. |
+| **Live task panel** | For multi-step work, the agent publishes a task list with progress icons (■ active, ☐ pending, ✓ done), elapsed time, and token deltas. |
+| **14 terminal themes** | dark, light, high-contrast, dracula, nord, one-dark, monokai, solarized-dark/light, tokyo-night, gruvbox-dark/light, catppuccin-mocha, rose-pine. Interactive picker with live preview (`Ctrl+T`). |
+| **Paste collapse** | Large pastes (≥200 chars or ≥2 newlines) collapse to `[pasted N lines #id]`. Full content still goes to the model — scrollback stays clean. |
+| **Type-ahead queue** | Type your next prompt while the model is still working. Queued prompts show as `⏳ …` and fire in order. `Ctrl-C` aborts current + clears queue. |
+| **Auto-compaction** | At ~80% context usage, kimiflare nudges you to run `/compact`. It summarizes older turns into a dense summary, keeping the last 4 turns intact. |
+| **Streaming reasoning** | Toggle the model's chain-of-thought with `/reasoning` or `Ctrl-R`. See how it thinks in real time. |
+| **Live cost tracking** | Status bar shows real-time cost based on Cloudflare pricing: `$0.95/M input`, `$0.16/M cached`, `$4.00/M output`. |
+| **Session persistence** | Every turn is auto-saved. `/resume` lists past sessions (with message counts) in a paginated picker. |
+| **Smart permissions** | Bash session-allow is keyed by the first token (e.g., allow all `git` commands). Write/edit show a unified diff before you approve. |
+| **Project context (`/init`)** | Scans your repo and writes a concise `KIMI.md` — build commands, layout, conventions. Auto-loaded on every launch. |
+| **Co-author auto-append** | Detects `git commit` commands and auto-injects `Co-authored-by: kimiflare <kimiflare@proton.me>`. |
+| **Resilient transport** | Retries Cloudflare capacity errors (code 3040) and 5xx with exponential backoff up to 5 attempts. |
 
 ## Configure
 
@@ -79,50 +90,85 @@ chmod 600 ~/.config/kimiflare/config.json
 
 ## Usage
 
+### Interactive TUI
+
 ```sh
-kimiflare                             # interactive TUI
-kimiflare -p "summarize PLAN.md"      # one-shot, streams answer to stdout
-kimiflare -p "..." --dangerously-allow-all   # auto-approve mutating tools (for scripts)
+kimiflare                             # launch TUI
 kimiflare --model @cf/moonshotai/kimi-k2.6   # override model
-kimiflare --reasoning                 # (print mode) stream chain-of-thought to stderr
 ```
 
-Interactive slash commands:
+### Print mode (one-shot, non-interactive)
 
-| Command                     | Effect                                                                          |
-|-----------------------------|---------------------------------------------------------------------------------|
-| `/mode edit\|plan\|auto`     | Switch mode. `edit` prompts for permission (default), `plan` is read-only research, `auto` auto-approves every tool call. |
-| `/plan` `/auto` `/edit`     | Shortcuts for the three modes.                                                  |
+```sh
+kimiflare -p "summarize PLAN.md"                    # stream answer to stdout
+kimiflare -p "..." --dangerously-allow-all          # auto-approve mutating tools (for scripts)
+kimiflare -p "..." --reasoning                      # include chain-of-thought in stderr
+```
+
+### CLI flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--print <prompt>` | `-p` | One-shot mode: send prompt, stream reply, exit |
+| `--model <id>` | `-m` | Model ID (default: `@cf/moonshotai/kimi-k2.6`) |
+| `--dangerously-allow-all` | — | Auto-approve every permission prompt (print mode only) |
+| `--reasoning` | — | Stream chain-of-thought to stderr (print mode only) |
+| `--version` | `-V` | Show version |
+| `--help` | `-h` | Show help |
+
+## Slash commands
+
+| Command | Effect |
+|---------|--------|
+| `/mode edit\|plan\|auto` | Switch mode. `edit` prompts for permission (default), `plan` is read-only research, `auto` auto-approves every tool call. |
+| `/plan` `/auto` `/edit` | Shortcuts for the three modes. |
 | `/thinking low\|medium\|high` | Reasoning effort. `low` = fastest, shallow; `medium` = balanced (default); `high` = deepest, slowest. Saved to config. |
-| `/theme NAME`               | Switch color scheme: `dark` (default), `light` (bright terminals), `high-contrast`. Saved to config. |
-| `/resume`                   | Pick a past conversation to restore.                                            |
-| `/compact`                  | Summarize older turns to free context. Suggested automatically at ~80% full.    |
-| `/init`                     | Scan the repo and write a `KIMI.md` so future agents have project context.      |
-| `/reasoning`                | Toggle chain-of-thought display.                                                |
-| `/clear`                    | Reset the current conversation.                                                 |
-| `/cost` `/model` `/update`  | Info commands.                                                                  |
-| `/logout`                   | Clear saved credentials.                                                        |
-| `/help` `/exit`             | List commands / quit.                                                           |
+| `/theme` | Interactive theme picker with live preview (`Ctrl+T`). Saved to config. |
+| `/theme NAME` | Set theme by name directly. |
+| `/resume` | Pick a past conversation to restore. |
+| `/compact` | Summarize older turns to free context. Suggested automatically at ~80% full. |
+| `/init` | Scan the repo and write a `KIMI.md` so future agents have project context. |
+| `/reasoning` | Toggle chain-of-thought display. |
+| `/clear` | Reset the current conversation. |
+| `/cost` | Show token usage for the current turn. |
+| `/model` | Show current model. |
+| `/update` | Check for updates manually. |
+| `/logout` | Clear saved credentials. |
+| `/help` | List all commands. |
+| `/exit` | Quit. |
 
-Keys: `Shift+Tab` cycles mode · `Ctrl-R` toggles reasoning · `Ctrl-O` toggles verbose tool output · `Ctrl-C` interrupts an in-flight turn (press again to exit) · `↑`/`↓` walks prompt history.
+## Keyboard shortcuts
 
-Editing keys (macOS):
+### Global
 
-- `⌥←` / `⌥→` — jump word left/right (also works with `Esc b` / `Esc f`)
-- `⌘←` / `⌘→` — jump to start / end of line (in iTerm2's default profile; in Terminal.app you may need to map these to send `Ctrl-A` / `Ctrl-E`)
-- `⌥⌫` — delete word backward
-- `⌘⌫` — delete to start of line (iTerm2 sends this as `Ctrl-U`; map in Terminal.app if needed)
-- `⌥⌦` — delete word forward
-- `Ctrl-A` / `Ctrl-E` — start / end of line (always works)
-- `Ctrl-W` / `Ctrl-U` / `Ctrl-K` — delete word backward / to start of line / to end of line
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+C` | Interrupt current turn (press again to exit) |
+| `Ctrl+R` | Toggle reasoning display |
+| `Ctrl+O` | Toggle verbose tool output |
+| `Ctrl+T` | Open theme picker |
+| `Shift+Tab` | Cycle mode (edit → plan → auto) |
+| `↑` / `↓` | Walk prompt history |
 
-### Modes
+### Editing (macOS / Linux)
+
+| Shortcut | Action |
+|----------|--------|
+| `⌥←` / `⌥→` | Jump word left/right |
+| `⌘←` / `⌘→` | Jump to start / end of line |
+| `⌥⌫` | Delete word backward |
+| `⌘⌫` | Delete to start of line |
+| `⌥⌦` | Delete word forward |
+| `Ctrl+A` / `Ctrl+E` | Start / end of line |
+| `Ctrl+W` / `Ctrl+U` / `Ctrl+K` | Delete word backward / to start / to end of line |
+
+## Modes
 
 - **edit** — default. The agent calls tools freely for read-only work; mutating tools (`write`, `edit`, `bash`) pause for your approval.
 - **plan** — read-only. Mutating tools are hard-blocked. Ask "plan a refactor" and the agent will investigate and produce a plan without touching the filesystem. Exit plan mode to execute.
 - **auto** — autonomous. Every tool call is auto-approved. Use for trusted, well-scoped tasks.
 
-### Thinking level (quality vs speed)
+## Thinking level (quality vs speed)
 
 Kimi-K2.6 always reasons, but you can cap the effort:
 
@@ -132,52 +178,26 @@ Kimi-K2.6 always reasons, but you can cap the effort:
 
 Set with `/thinking medium` (persists), or per-launch via `KIMI_REASONING_EFFORT=high`.
 
-### Type-ahead queue
-
-You can type the next prompt while the model is still executing. Submitted prompts show up as `⏳ …` and fire in order as each turn completes. `Ctrl-C` aborts the current turn and clears the queue.
-
-### Session persistence
-
-Sessions are saved to `~/.local/share/kimiflare/sessions/` after each turn. `/resume` lists the most recent (with first prompt + message count) so you can pick one up later.
-
-### Task panel
-
-For multi-step requests, the agent can publish a live task list via the `tasks_set` tool. The panel shows progress inline with status icons (`■` active, `☐` pending, `✓` done), elapsed time, and tokens consumed for the current task batch. Press `Ctrl-O` while a turn is running to switch tool output between compact (first line) and verbose (full output) modes.
-
-### Paste collapse
-
-Paste a large block (≥ 200 chars or ≥ 3 newlines in one paste) into the prompt and the input collapses it to `[pasted N lines #id]`. The full content still goes to the model on submit — only the on-screen display and chat history are collapsed, so scrollback doesn't get buried by a wall of code.
-
-### Project context (KIMI.md)
-
-Run `/init` inside a repo and kimiflare scans the project (reads `package.json`, `README`, source layout, etc.) and writes a concise `KIMI.md` at the repo root — project overview, build/test commands, conventions, quirks. On every subsequent launch in that directory, `KIMI.md` (or `KIMIFLARE.md` or `AGENT.md`, whichever exists) is auto-loaded into the system prompt so the agent already "knows" the project. If the file already exists, `/init` refuses so you don't overwrite hand-edited context.
-
-## Why
-
-- **262k context.** Read entire modules without pagination.
-- **Native tool use.** File I/O, shell, globs, grep, web fetch — all wired up, with per-call approval for anything mutating.
-- **Streaming reasoning + content.** The model's chain-of-thought streams separately; toggle with `/reasoning` or `Ctrl-R`.
-- **Pay your own way.** Your Cloudflare account, your credits, your rate limits. `$0.95 / M input`, `$0.16 / M cached input`, `$4.00 / M output`. The bottom status line shows live cost.
-
 ## Tools
 
 All tool calls show inline; mutating ones require per-call approval the first time, with an option to allow for the rest of the session.
 
-| Tool        | Permission | What it does |
-|-------------|------------|--------------|
-| `read`      | auto       | Read a text file (≤ 2MB) with optional line range. |
-| `write`     | prompt     | Create or overwrite a file. Shows a unified diff before you approve. |
-| `edit`      | prompt     | Replace an exact substring. Fails unless `old_string` is unique (or `replace_all=true`). |
-| `bash`      | prompt     | Run a shell command via `bash -lc`. Session-allow is keyed by the first token of the command. |
-| `glob`      | auto       | Match files by pattern (`**/*.ts`), sorted by mtime. |
-| `grep`      | auto       | Regex search. Uses `rg` if installed; falls back to a JS walk. |
-| `web_fetch` | auto       | Fetch a URL, convert HTML → markdown (≤ 100KB). |
+| Tool | Permission | What it does |
+|------|------------|--------------|
+| `read` | auto | Read a text file (≤ 2MB) with optional line range. |
+| `write` | prompt | Create or overwrite a file. Shows a unified diff before you approve. |
+| `edit` | prompt | Replace an exact substring. Fails unless `old_string` is unique (or `replace_all=true`). |
+| `bash` | prompt | Run a shell command via `bash -lc`. Session-allow is keyed by the first token of the command. |
+| `glob` | auto | Match files by pattern (`**/*.ts`), sorted by mtime. |
+| `grep` | auto | Regex search. Uses `rg` if installed; falls back to a JS walk. |
+| `web_fetch` | auto | Fetch a URL, convert HTML → markdown (≤ 100KB). |
+| `tasks_set` | auto | Publish a live task list for multi-step work. |
 
 ## How it works
 
 ```
            ┌───────────────────────────────────────────────────────────┐
-           │ kimiflare (Node + Ink TUI)                                │
+           │ kimiflare (Node.js TUI)                                   │
  user ─▶   │                                                           │
            │   user msg ─▶ agent loop ─▶ runKimi() ──[POST SSE]──▶     │
            │                       ▲                                   │
@@ -204,9 +224,23 @@ npm run build
 npm link          # or: ln -s "$PWD/bin/kimiflare.mjs" ~/.local/bin/kimiflare
 ```
 
-## Status
+Scripts:
+- `npm run build` — bundle with tsup (`dist/` + `bin/kimiflare.mjs`)
+- `npm run dev` — run via tsx (`tsx src/index.tsx`)
+- `npm run typecheck` — `tsc --noEmit`
+- `npm start` — run compiled bin
 
-Early but functional. Transport + tools + agent loop + print mode are verified end-to-end. Interactive TUI ships modes, themes, thinking levels, session resume, compaction, and type-ahead queue.
+## Contributing
+
+Contributions are welcome!
+
+1. Fork the repository
+2. Create a branch: `git checkout -b feat/your-feature`
+3. Make your changes
+4. Run `npm run typecheck` and `npm run build`
+5. Commit: `git commit -m "feat: description"`
+6. Push: `git push origin feat/your-feature`
+7. Open a Pull Request
 
 ## License
 
