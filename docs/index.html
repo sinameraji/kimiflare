@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>kimiflare — AI coding agent in your terminal</title>
-  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Claude Code, but open-weight, direct to Cloudflare.">
+  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Open-weight, direct to Cloudflare.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://sinameraji.github.io/kimiflare/">
   <meta name="theme-color" content="#f48120">
 
   <!-- Open Graph -->
   <meta property="og:title" content="kimiflare — AI coding agent in your terminal">
-  <meta property="og:description" content="Claude Code, except the model is Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman. No subscriptions.">
+  <meta property="og:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://sinameraji.github.io/kimiflare/">
   <meta property="og:image" content="https://sinameraji.github.io/kimiflare/logo.png">
@@ -19,7 +19,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="kimiflare — AI coding agent in your terminal">
-  <meta name="twitter:description" content="Claude Code, except the model is Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman. No subscriptions.">
+  <meta name="twitter:description" content="Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.">
   <meta name="twitter:image" content="https://sinameraji.github.io/kimiflare/logo.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32,7 +32,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "kimiflare",
-    "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Claude Code, but open-weight, direct to Cloudflare.",
+    "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Open-weight, direct to Cloudflare.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux, Windows",
     "offers": {
@@ -302,6 +302,21 @@
       margin: 0.4rem 0 0.6rem;
       display: inline-block;
     }
+    .perm-border {
+      border: 1px solid #f48120;
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      margin: 0.4rem 0 0.6rem;
+    }
+    .task-active { color: #f48120; font-weight: 600; }
+    .task-done { color: #6b7280; text-decoration: line-through; }
+    .task-pending { color: #6b7280; }
+    .queue-item { color: #6b7280; }
+    .separator { color: #4b5563; letter-spacing: -0.05em; }
+    .mode-badge { color: #22d3ee; font-weight: 600; }
+    .spinner { color: #9ca3af; }
+    .tool-title { color: #9ca3af; }
+    .reasoning-text { color: #6b7280; font-style: italic; }
 
     /* Sections */
     section {
@@ -563,7 +578,7 @@
       Kimi K2.6 + Cloudflare<br>in your terminal.<br>No middleman.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      Claude Code, except the model is Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman. No subscriptions.
+      Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -585,39 +600,80 @@
           <span class="terminal-title">zsh</span>
         </div>
         <div class="terminal-body" id="terminal">
-          <div class="term-dim" style="margin-bottom:0.6rem;">kimiflare · /help for commands · ctrl-c to exit · shift+tab to cycle modes</div>
-
-          <div class="term-line">
-            <span class="term-prompt">› </span>
-            <span class="term-input">what files are here?</span>
+          <div style="margin-bottom:0.4rem;">
+            <span style="color:#f48120;font-weight:600;">kimiflare</span>
+            <span class="term-dim">  Ready when you are.</span>
           </div>
-          <div class="term-output" style="margin-left:0;">
-            <span class="term-ok">✓</span> <span class="term-tool">glob</span>(*)<br>
-            &nbsp;&nbsp;package.json&nbsp;&nbsp;src/index.ts&nbsp;&nbsp;src/server.ts
+          <div class="term-dim" style="margin-bottom:0.6rem;">
+            &nbsp;&nbsp;› Explain this codebase<br>
+            &nbsp;&nbsp;› Find and fix a bug<br>
+            &nbsp;&nbsp;› Refactor a file
+          </div>
+          <div class="term-dim" style="margin-bottom:0.8rem;font-size:0.75rem;">
+            Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
           </div>
 
           <div class="term-line">
             <span class="term-prompt">› </span>
             <span class="term-input">add a /health endpoint</span>
           </div>
-          <div class="term-output" style="margin-left:0;">
-            <span class="term-ok">✓</span> <span class="term-tool">read</span>(src/server.ts)<br>
-            <span class="term-dim">◐</span> <span class="term-tool">edit</span> src/server.ts<br>
-            <div class="perm-box">
-              <div style="color:#f48120;font-weight:600;margin-bottom:0.3rem;">Permission requested</div>
-              <div>tool: <span style="color:#a78bfa;">edit</span></div>
-              <div>action: edit src/server.ts</div>
-              <div style="margin:0.4rem 0;color:#9ca3af;">
-                @@ -42,6 +42,10 @@<br>
-                &nbsp;&nbsp;app.get('/', …)<br>
-                <span style="color:#4ade80;">+&nbsp;&nbsp;app.get('/health', (_, res) =&gt; res.json({ ok: true }))</span><br>
-                &nbsp;&nbsp;…
-              </div>
-              <div><span style="color:#f48120;">›</span> Allow once&nbsp;&nbsp;&nbsp;Allow for this session&nbsp;&nbsp;&nbsp;Deny</div>
-            </div>
+
+          <div class="separator" style="margin:0.6rem 0;">────────────────────────────────────────</div>
+
+          <div style="padding-left:1rem;color:#9ca3af;margin-bottom:0.4rem;">
+            <span class="reasoning-text">thinking… I'll need to read the server file first, then add the endpoint.</span>
           </div>
 
-          <div class="term-dim" style="margin-top:0.6rem;">[edit] model: k2.6 · effort: medium · in: 123 · out: 45 · ctx: 5% · $0.00012</div>
+          <div style="padding-left:1rem;margin-bottom:0.4rem;">
+            <span class="spinner">⠋</span> <span class="tool-title">read(src/server.ts)</span>
+          </div>
+          <div style="padding-left:1rem;margin-bottom:0.6rem;">
+            <span class="term-ok">✓</span> <span class="tool-title">read(src/server.ts)</span>
+          </div>
+
+          <div style="padding-left:1rem;margin-bottom:0.4rem;">
+            <span class="spinner">⠋</span> <span class="tool-title">edit src/server.ts</span>
+          </div>
+
+          <div class="perm-border" style="margin-left:1rem;margin-bottom:0.6rem;">
+            <div style="color:#f48120;font-weight:600;margin-bottom:0.3rem;">Permission requested</div>
+            <div>tool: <span style="color:#22d3ee;">edit</span></div>
+            <div>action: edit src/server.ts</div>
+            <div style="margin:0.4rem 0;color:#9ca3af;font-size:0.75rem;">
+              @@ -42,6 +42,10 @@<br>
+              &nbsp;&nbsp;app.get('/', …)<br>
+              <span style="color:#4ade80;">+&nbsp;&nbsp;app.get('/health', (_, res) =&gt; res.json({ ok: true }))</span><br>
+              &nbsp;&nbsp;…
+            </div>
+            <div><span style="color:#f48120;">›</span> Allow once&nbsp;&nbsp;&nbsp;Allow for this session&nbsp;&nbsp;&nbsp;Deny</div>
+          </div>
+
+          <div style="padding-left:1rem;margin-bottom:0.6rem;">
+            <span class="term-ok">✓</span> <span class="tool-title">edit src/server.ts</span>
+          </div>
+
+          <div style="padding-left:1rem;color:#f3f4f6;margin-bottom:0.8rem;">
+            Done — added <code>/health</code> that returns <code>{ ok: true }</code>.
+          </div>
+
+          <div class="separator" style="margin:0.6rem 0;">────────────────────────────────────────</div>
+
+          <div style="margin-bottom:0.4rem;">
+            <span class="task-active">■ Update landing page terminal</span>
+            <span class="term-dim" style="font-size:0.75rem;">  (12s · ↑ 2.3k tokens)</span>
+          </div>
+          <div class="term-dim" style="margin-bottom:0.2rem;padding-left:1rem;">  ✓ <span class="task-done">Read current UI components</span></div>
+          <div class="term-dim" style="margin-bottom:0.2rem;padding-left:1rem;">  ■ <span class="task-active">Update terminal simulation</span></div>
+          <div class="term-dim" style="margin-bottom:0.6rem;padding-left:1rem;">  ☐ <span class="task-pending">Create PR</span></div>
+
+          <div style="margin-bottom:0.4rem;">
+            <span class="mode-badge">[edit]</span>
+            <span class="term-dim">  k2.6  ·  medium  ·  thinking…</span>
+          </div>
+          <div class="term-dim" style="margin-bottom:0.6rem;font-size:0.75rem;">
+            in 2,847 (1,203 cached)  ·  out 412  ·  ctx 12%  ·  0.00321
+          </div>
+
           <div class="term-line">
             <span class="term-prompt">› </span>
             <span class="term-input" id="typing"></span><span class="term-cursor"></span>
@@ -796,10 +852,10 @@
   <script>
     // Typing effect
     const phrases = [
-      "refactor auth middleware",
-      "write tests for utils.ts",
-      "deploy to staging",
-      "optimize db queries"
+      "explain this codebase",
+      "find and fix a bug",
+      "refactor a file",
+      "write tests for utils.ts"
     ];
     let phraseIndex = 0;
     let charIndex = 0;
