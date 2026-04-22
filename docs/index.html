@@ -578,7 +578,7 @@
       Kimi K2.6 + Cloudflare<br>in your terminal.<br>No middleman.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      Moonshot's open-weight Kimi running on your own Cloudflare account. No middleman.
+      A terminal coding agent with plan mode, live task panels, 14 themes, and 262k context. Direct to Cloudflare — no middleman.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -692,45 +692,90 @@
     <div class="features-list">
       <div class="feature-item">
         <span class="feature-num">01</span>
-        <h3>262K context window</h3>
-        <p>Read entire modules, large configs, and full stack traces without the model losing track.</p>
+        <h3>Plan / Edit / Auto modes</h3>
+        <p>Plan mode blocks all mutating tools for safe research. Edit mode prompts per call. Auto mode approves everything for trusted tasks.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">02</span>
-        <h3>Native tool use</h3>
-        <p>File I/O, shell execution, globs, grep, and web fetch — all with per-call approval for anything destructive.</p>
+        <h3>Live task panel</h3>
+        <p>For multi-step work, the agent publishes a task list with progress icons, elapsed time, and token deltas. Multi-step work feels managed.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">03</span>
+        <h3>14 terminal themes</h3>
+        <p>dark, light, high-contrast, dracula, nord, one-dark, monokai, solarized, tokyo-night, gruvbox, catppuccin, rose-pine. Live preview with Ctrl+T.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">04</span>
+        <h3>Paste collapse</h3>
+        <p>Large pastes collapse to <code>[pasted N lines #id]</code>. Full content still goes to the model — scrollback stays clean.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">05</span>
+        <h3>Type-ahead queue</h3>
+        <p>Type your next prompt while the model is still working. Queued prompts fire in order. Ctrl-C aborts current and clears queue.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">06</span>
+        <h3>Auto-compaction</h3>
+        <p>At ~80% context usage, kimiflare nudges you to run /compact. It summarizes older turns, keeping the last 4 intact.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">07</span>
         <h3>Streaming reasoning</h3>
         <p>Toggle the model's chain-of-thought with /reasoning or Ctrl-R. See how it thinks in real time.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">04</span>
-        <h3>Direct to Cloudflare</h3>
-        <p>No AI Gateway, no proxy, no OpenAI SDK. Your traffic goes straight to Workers AI from your account.</p>
+        <span class="feature-num">08</span>
+        <h3>Session persistence</h3>
+        <p>Every turn is auto-saved. /resume lists past sessions with message counts in a paginated picker. Never lose your place.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">05</span>
-        <h3>BYO API key</h3>
-        <p>Your Cloudflare account, your credits, your rate limits. Live cost tracking in the status line.</p>
+        <span class="feature-num">09</span>
+        <h3>Smart permissions</h3>
+        <p>Bash session-allow is keyed by the first token (allow all git commands). Write/edit show a unified diff before you approve.</p>
       </div>
       <div class="feature-item">
-        <span class="feature-num">06</span>
-        <h3>Built with Ink</h3>
-        <p>React for terminals. Clean rendering under a pty with real-time streaming and permission modals.</p>
+        <span class="feature-num">10</span>
+        <h3>262K context window</h3>
+        <p>Read entire modules, large configs, and full stack traces without the model losing track. Direct to Cloudflare — no middleman.</p>
       </div>
     </div>
 
     <div class="arch-section">
       <span class="section-label">Architecture</span>
       <div class="arch-flow">
-        <strong>kimiflare</strong> <span class="accent">Node + Ink TUI</span><br>
+        <strong>kimiflare</strong> <span class="accent">Node.js TUI</span><br>
         <span class="arrow">↓</span> user msg → agent loop → runKimi()<br>
         <span class="arrow">↓</span> <span class="accent">POST SSE</span> to Workers AI<br>
         <strong>api.cloudflare.com</strong> <span class="accent">@cf/moonshotai/kimi-k2.6</span><br>
         <span class="arrow">↑</span> tool result ← tool executor ← tool_calls<br>
         <span class="arrow">↑</span> permission modal for write / edit / bash
+      </div>
+    </div>
+  </section>
+
+  <section id="modes">
+    <div class="section-header">
+      <span class="section-label">Modes</span>
+      <h2>Three ways to work</h2>
+    </div>
+
+    <div class="features-list">
+      <div class="feature-item">
+        <span class="feature-num">01</span>
+        <h3>Plan</h3>
+        <p>Read-only research. Mutating tools are hard-blocked. Ask "plan a refactor" and the agent investigates without touching your filesystem. Review, then exit plan mode to execute.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">02</span>
+        <h3>Edit</h3>
+        <p>Default mode. The agent calls tools freely for read-only work; mutating tools pause for your approval with a unified diff preview.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">03</span>
+        <h3>Auto</h3>
+        <p>Autonomous execution. Every tool call is auto-approved. Use for trusted, well-scoped tasks. The agent still warns before irreversible actions.</p>
       </div>
     </div>
   </section>
@@ -836,6 +881,11 @@
           <td>web_fetch</td>
           <td>auto</td>
           <td>Fetch a URL, convert HTML → markdown (≤ 100KB)</td>
+        </tr>
+        <tr>
+          <td>tasks_set</td>
+          <td>auto</td>
+          <td>Publish a live task list for multi-step work</td>
         </tr>
       </tbody>
     </table>
