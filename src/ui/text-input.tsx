@@ -15,7 +15,7 @@ interface Props {
 }
 
 const PASTE_CHAR_THRESHOLD = 200;
-const PASTE_NEWLINE_THRESHOLD = 3;
+const PASTE_NEWLINE_THRESHOLD = 1;
 
 function shouldTreatAsPaste(input: string): boolean {
   if (input.length >= PASTE_CHAR_THRESHOLD) return true;
