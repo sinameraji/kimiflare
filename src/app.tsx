@@ -112,6 +112,37 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   const effortRef = useRef<ReasoningEffort>(effort);
   const tasksRef = useRef<Task[]>([]);
   const usageRef = useRef<Usage | null>(null);
+  const updateCheckedRef = useRef(false);
+  const compactSuggestedRef = useRef(false);
+
+  useEffect(() => {
+    if (!cfg || updateCheckedRef.current) return;
+    updateCheckedRef.current = true;
+    void checkForUpdate().then((result) => {
+      if (result.hasUpdate) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `update available: ${result.localVersion} → ${result.latestVersion}`,
+          },
+        ]);
+        void isGitRepo().then((git) => {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: git
+                ? "run:  git pull && npm install && npm run build  then restart kimiflare"
+                : "run:  npm update -g kimiflare  then restart",
+            },
+          ]);
+        });
+      }
+    });
+  }, [cfg]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -209,7 +240,6 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
       return;
     }
     setBusy(true);
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "compacting conversation…" }]);
     const controller = new AbortController();
     activeControllerRef.current = controller;
     try {
@@ -444,11 +474,12 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
       if (c === "/clear") {
         messagesRef.current = [messagesRef.current[0]!];
         sessionIdRef.current = null;
-        setEvents([{ kind: "info", key: mkKey(), text: "conversation cleared" }]);
+        setEvents([]);
         setUsage(null);
         setTasks([]);
         setTasksStartedAt(null);
         setTasksStartTokens(0);
+        compactSuggestedRef.current = false;
         return true;
       }
       if (c === "/reasoning") {
@@ -832,19 +863,17 @@ function App({ initialCfg }: { initialCfg: Cfg | null }) {
   );
 
   useEffect(() => {
+    if (compactSuggestedRef.current) return;
     if (usage && usage.prompt_tokens / CONTEXT_LIMIT >= AUTO_COMPACT_SUGGEST_PCT) {
-      setEvents((e) => {
-        const last = e[e.length - 1];
-        if (last?.kind === "info" && last.text.startsWith("context ")) return e;
-        return [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `context ${Math.round((usage.prompt_tokens / CONTEXT_LIMIT) * 100)}% full — run /compact to summarize older turns`,
-          },
-        ];
-      });
+      compactSuggestedRef.current = true;
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: `context ${Math.round((usage.prompt_tokens / CONTEXT_LIMIT) * 100)}% full — run /compact to summarize older turns`,
+        },
+      ]);
     }
   }, [usage]);
 
