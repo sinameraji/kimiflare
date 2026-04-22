@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/sinameraji/kimiflare/compare/v0.9.2...v0.10.0) (2026-04-22)
+
+
+### Features
+
+* allow read-only bash commands in plan mode ([#54](https://github.com/sinameraji/kimiflare/issues/54)) ([0cf518a](https://github.com/sinameraji/kimiflare/commit/0cf518aed0866a7c7337000b7f9492636137d720))
+
+
+### Bug Fixes
+
+* **docs:** remove stray X placeholders from landing page buttons ([#57](https://github.com/sinameraji/kimiflare/issues/57)) ([45515d2](https://github.com/sinameraji/kimiflare/commit/45515d2d5ede1a2d657be2b30edabc15faeec93b))
+
 ## [0.9.2](https://github.com/sinameraji/kimiflare/compare/v0.9.1...v0.9.2) (2026-04-22)
 
 
