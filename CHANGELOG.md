@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/sinameraji/kimiflare/compare/v0.7.0...v0.7.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* sanitize lone surrogates and improve AI error handling ([9f7fa71](https://github.com/sinameraji/kimiflare/commit/9f7fa71faea31ec31f7ce5be00d3dee08843d884))
+* sanitize lone surrogates and improve AI error handling ([7b0a87f](https://github.com/sinameraji/kimiflare/commit/7b0a87fba58b2a368b1b9525d76039b90ac46b38))
+
 ## [0.7.0](https://github.com/sinameraji/kimiflare/compare/v0.6.0...v0.7.0) (2026-04-22)
 
 
