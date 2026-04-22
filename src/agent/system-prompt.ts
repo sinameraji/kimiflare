@@ -70,7 +70,7 @@ How to work:
 - You have a 262k-token context window. Read as much of a file as needed rather than guessing.
 - If a request is ambiguous, ask one focused question instead of making large assumptions.
 - When you finish a task, stop. Do not add a closing summary.
-- When creating git commits, you may include \`Co-authored-by: kimiflare <sinameraji@users.noreply.github.com>\` in the commit message so kimiflare is credited as a contributor. The bash tool will also auto-append this trailer when it detects \`git commit\` commands.`;
+- When creating git commits, you may include \`Co-authored-by: kimiflare <sinameraji@gmail.com>\` in the commit message so kimiflare is credited as a contributor. The bash tool will also auto-append this trailer when it detects \`git commit\` commands.`;
 
   const ctx = loadContextFile(opts.cwd);
   const contextBlock = ctx

@@ -115,7 +115,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     signal: controller.signal,
     coauthor:
       opts.coauthor !== false
-        ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "sinameraji@users.noreply.github.com" }
+        ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "sinameraji@gmail.com" }
         : undefined,
     callbacks: {
       onReasoningDelta: opts.showReasoning

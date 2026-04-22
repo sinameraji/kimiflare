@@ -33,7 +33,7 @@ function readCoauthorEnv(): { enabled: boolean; name: string; email: string } | 
   const enabled = process.env.KIMIFLARE_COAUTHOR;
   if (enabled === "0" || enabled === "false") return undefined;
   const name = process.env.KIMIFLARE_COAUTHOR_NAME || "kimiflare";
-  const email = process.env.KIMIFLARE_COAUTHOR_EMAIL || "sinameraji@users.noreply.github.com";
+  const email = process.env.KIMIFLARE_COAUTHOR_EMAIL || "sinameraji@gmail.com";
   return { enabled: true, name, email };
 }
 
