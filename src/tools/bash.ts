@@ -41,10 +41,27 @@ function formatBashTitle(raw: string): string {
   return `$ ${cmd}`.slice(0, 120);
 }
 
+function injectCoauthor(command: string, coauthor?: { name: string; email: string }): string {
+  if (!coauthor) return command;
+  const trailer = `Co-authored-by: ${coauthor.name} <${coauthor.email}>`;
+
+  const trimmed = command.trim();
+  if (!/\bgit\s+commit\b/.test(trimmed)) return command;
+  if (command.includes(trailer)) return command;
+  // Skip dry-run or rebase-continue style invocations
+  if (/\b(--dry-run|-n)\b/.test(trimmed) && !/-m\b|--message\b/.test(trimmed)) return command;
+
+  const tmpFile = `/tmp/kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const check = `! git log -1 --pretty=%B 2>/dev/null | grep -qF "${trailer}"`;
+  const append = `git log -1 --pretty=%B | git interpret-trailers --trailer "${trailer}" > "${tmpFile}" && git commit --amend -F "${tmpFile}" --no-edit && rm -f "${tmpFile}"`;
+  return `(${command}) && ${check} && ${append}`;
+}
+
 function runBash(args: Args, ctx: ToolContext): Promise<string> {
   const timeout = Math.min(Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT), MAX_TIMEOUT);
+  const command = injectCoauthor(args.command, ctx.coauthor);
   return new Promise<string>((resolve, reject) => {
-    const child = spawn("bash", ["-lc", args.command], {
+    const child = spawn("bash", ["-lc", command], {
       cwd: ctx.cwd,
       signal: ctx.signal,
     });
