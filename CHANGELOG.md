@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.6](https://github.com/sinameraji/kimiflare/compare/v0.13.5...v0.13.6) (2026-04-23)
+
+
+### Reverts
+
+* roll back memory-optimizations commit to isolate flashing bug ([1cd1bf7](https://github.com/sinameraji/kimiflare/commit/1cd1bf7b1d97cc0d39d1de63f3c400332ed1ca0a))
+
 ## [0.13.5](https://github.com/sinameraji/kimiflare/compare/v0.13.4...v0.13.5) (2026-04-23)
 
 
