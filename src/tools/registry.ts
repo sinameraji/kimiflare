@@ -14,6 +14,12 @@ export interface ToolRender {
   diff?: { path: string; before: string; after: string };
 }
 
+export interface ToolOutput {
+  content: string;
+  rawBytes: number;
+  reducedBytes: number;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface ToolSpec<Args = any> {
   name: string;
@@ -21,7 +27,7 @@ export interface ToolSpec<Args = any> {
   parameters: Record<string, unknown>;
   needsPermission: boolean;
   render?: (args: Args) => ToolRender;
-  run: (args: Args, ctx: ToolContext) => Promise<string>;
+  run: (args: Args, ctx: ToolContext) => Promise<string | ToolOutput>;
 }
 
 export function toOpenAIToolDefs(tools: ToolSpec[]): ToolDef[] {

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolSpec, ToolContext } from "./registry.js";
+import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { truncate } from "../util/paths.js";
 
 interface Args {
@@ -82,10 +82,10 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
   return `_KF_BEFORE_HEAD=$(${beforeHead}); (${command}); _KF_EXIT=$?; [ $_KF_EXIT -eq 0 ] && { ${afterCheck}; }; exit $_KF_EXIT`;
 }
 
-function runBash(args: Args, ctx: ToolContext): Promise<string> {
+function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
   const timeout = Math.min(Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT), MAX_TIMEOUT);
   const command = injectCoauthor(args.command, ctx.coauthor);
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<ToolOutput>((resolve, reject) => {
     const child = spawn("bash", ["-lc", command], {
       cwd: ctx.cwd,
       signal: ctx.signal,
@@ -116,7 +116,13 @@ function runBash(args: Args, ctx: ToolContext): Promise<string> {
       if (stdout) parts.push(`--- stdout ---\n${stdout.trimEnd()}`);
       if (stderr) parts.push(`--- stderr ---\n${stderr.trimEnd()}`);
       if (!stdout && !stderr) parts.push("(no output)");
-      resolve(truncate(parts.join("\n"), OUTPUT_CAP));
+      const raw = parts.join("\n");
+      const reduced = truncate(raw, OUTPUT_CAP);
+      resolve({
+        content: reduced,
+        rawBytes: Buffer.byteLength(raw, "utf8"),
+        reducedBytes: Buffer.byteLength(reduced, "utf8"),
+      });
     });
   });
 }

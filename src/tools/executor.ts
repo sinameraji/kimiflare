@@ -1,4 +1,4 @@
-import type { ToolSpec, ToolContext } from "./registry.js";
+import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { readTool } from "./read.js";
 import { writeTool } from "./write.js";
 import { editTool } from "./edit.js";
@@ -40,6 +40,10 @@ export interface ToolResult {
   name: string;
   content: string;
   ok: boolean;
+  /** Raw output bytes before any truncation/capping. */
+  rawBytes?: number;
+  /** Final output bytes after truncation/capping. */
+  reducedBytes?: number;
 }
 
 export class ToolExecutor {
@@ -110,14 +114,25 @@ export class ToolExecutor {
     }
 
     try {
-      const content = await tool.run(args as never, ctx);
-      return { tool_call_id: call.id, name: call.name, content, ok: true };
-    } catch (e) {
+      const result = await tool.run(args as never, ctx);
+      const normalized = normalizeToolOutput(result);
       return {
         tool_call_id: call.id,
         name: call.name,
-        content: `Error running ${call.name}: ${(e as Error).message ?? String(e)}`,
+        content: normalized.content,
+        ok: true,
+        rawBytes: normalized.rawBytes,
+        reducedBytes: normalized.reducedBytes,
+      };
+    } catch (e) {
+      const msg = `Error running ${call.name}: ${(e as Error).message ?? String(e)}`;
+      return {
+        tool_call_id: call.id,
+        name: call.name,
+        content: msg,
         ok: false,
+        rawBytes: msg.length,
+        reducedBytes: msg.length,
       };
     }
   }
@@ -129,6 +144,14 @@ export class ToolExecutor {
     }
     return tool.name;
   }
+}
+
+function normalizeToolOutput(result: string | ToolOutput): ToolOutput {
+  if (typeof result === "string") {
+    const bytes = Buffer.byteLength(result, "utf8");
+    return { content: result, rawBytes: bytes, reducedBytes: bytes };
+  }
+  return result;
 }
 
 function truncateForError(s: string): string {

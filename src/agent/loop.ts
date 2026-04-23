@@ -4,6 +4,7 @@ import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executo
 import { sanitizeString } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
+import { logTurnDebug } from "../cost-debug.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -34,14 +35,19 @@ export interface AgentTurnOpts {
   maxCompletionTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
   coauthor?: { name: string; email: string };
+  sessionId?: string;
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const max = opts.maxToolIterations ?? 50;
   const toolDefs = toOpenAIToolDefs(opts.tools);
+  let turn = 0;
+  let lastUsage: Usage | null = null;
 
   for (let iter = 0; iter < max; iter++) {
+    turn++;
     const toolCalls: ToolCall[] = [];
+    const toolResults: ToolResult[] = [];
     let content = "";
     let reasoning = "";
     opts.callbacks.onAssistantStart?.();
@@ -86,6 +92,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           break;
         }
         case "usage":
+          lastUsage = ev.usage;
           opts.callbacks.onUsage?.(ev.usage);
           break;
         case "done":
@@ -112,7 +119,18 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     opts.messages.push(assistantMsg);
     opts.callbacks.onAssistantFinal?.(assistantMsg);
 
-    if (toolCalls.length === 0) return;
+    if (toolCalls.length === 0) {
+      if (opts.sessionId && lastUsage) {
+        void logTurnDebug({
+          sessionId: opts.sessionId,
+          turn,
+          messages: opts.messages,
+          toolResults,
+          usage: lastUsage,
+        });
+      }
+      return;
+    }
 
     for (const tc of toolCalls) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
@@ -121,6 +139,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.askPermission,
         { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor },
       );
+      toolResults.push(result);
       opts.messages.push({
         role: "tool",
         tool_call_id: result.tool_call_id,
@@ -128,6 +147,16 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         name: result.name,
       });
       opts.callbacks.onToolResult?.(result);
+    }
+
+    if (opts.sessionId && lastUsage) {
+      void logTurnDebug({
+        sessionId: opts.sessionId,
+        turn,
+        messages: opts.messages,
+        toolResults,
+        usage: lastUsage,
+      });
     }
   }
 
