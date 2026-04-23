@@ -61,10 +61,8 @@ const READONLY_COMMANDS = new Set([
   // System info
   "ps", "df", "du", "env", "printenv", "which", "whereis",
   "uname", "hostname", "uptime", "free", "date", "id", "whoami", "groups",
-  // Dev tools (version/info only)
-  "node", "npx", "python3", "ruby", "perl",
   // Utilities
-  "jq", "yq", "awk", "cut", "tr",
+  "jq", "cut", "tr",
   "base64", "sha256sum", "md5sum", "shasum", "hexdump", "xxd", "strings",
   "less", "more", "man", "clear", "history",
   // Archive inspection
@@ -186,19 +184,13 @@ export function isReadOnlyBash(command: string): boolean {
     }
   }
 
-  // Commands needing argument validation
-  const argCheck = COMMANDS_NEEDING_ARG_CHECK[cmd];
-  if (argCheck) {
-    return argCheck(args);
-  }
-
-  // Simple whitelist
+  // Simple whitelist only — no arg-checked commands in plan mode
   return READONLY_COMMANDS.has(cmd);
 }
 
 export function systemPromptForMode(m: Mode): string {
   if (m === "plan") {
-    return "\n\nPLAN MODE is active. The user wants you to investigate and produce a plan WITHOUT making any changes. Do not call write, edit, or mutating bash commands. You may use read-only bash commands (e.g., git log, git diff, ls, cat) along with read/glob/grep/web-fetch. At the end, present a concise plan (bullets, files to change, approach). The user will review and then exit plan mode to execute.";
+    return "\n\nPLAN MODE is active. The user wants you to investigate and produce a plan WITHOUT making any changes. Do not call write, edit, or mutating bash commands. You may use read-only bash commands (e.g., git log, git diff, ls, cat, grep) along with read/glob/grep/web-fetch. Scripting interpreters (node, python3, ruby, perl, awk) and build/package tools (npm, cargo, go, tsc, jest, etc.) are blocked in plan mode. At the end, present a concise plan (bullets, files to change, approach). The user will review and then exit plan mode to execute.";
   }
   if (m === "auto") {
     return "\n\nAUTO MODE is active. The user has opted into autonomous execution — every tool call will be auto-approved. Work efficiently, but do not take irreversible destructive actions (rm -rf, git push --force, dropping tables, etc.) without pausing to describe them in chat first. Prefer smaller reversible steps.";
