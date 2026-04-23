@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.14.0](https://github.com/sinameraji/kimiflare/compare/v0.13.7...v0.14.0) (2026-04-23)
+
+
+### Features
+
+* /cost command + cost debug logging ([1dcda71](https://github.com/sinameraji/kimiflare/commit/1dcda7185e926bdf85a4253907d24d9f9947e3df))
+* add /cost command with session/today/month/all-time USD breakdown + cost debug logging ([77826a1](https://github.com/sinameraji/kimiflare/commit/77826a109afa11a12e39bfd1567eff4fdb6bd041))
+* MCP server integration ([4660535](https://github.com/sinameraji/kimiflare/commit/46605351fec74a4f34ac572e83eac245c5a0b870))
+* MCP server integration ([c5180df](https://github.com/sinameraji/kimiflare/commit/c5180df9a8ceefaddd94a512f8e5a52ca17f48a3))
+* MCP server integration ([ad3ceee](https://github.com/sinameraji/kimiflare/commit/ad3ceeeed6bc820fdc64238fd97b98ba8d313cb6)), closes [#83](https://github.com/sinameraji/kimiflare/issues/83)
+
+
+### Bug Fixes
+
+* always show npm update instructions on /update ([7e491bf](https://github.com/sinameraji/kimiflare/commit/7e491bf15a6ec4877448898c06a48c6b322007de))
+* brighten theme-picker hint text and add $ to cost display ([98476a1](https://github.com/sinameraji/kimiflare/commit/98476a110674c854487ff58ffaf3e35f1f458665))
+* brighten theme-picker hint text and add $ to cost display ([1bc4616](https://github.com/sinameraji/kimiflare/commit/1bc4616a71b3630c921ebae4a2d84db0abed03a8))
+* brighten theme-picker hint text and add $ to cost display ([d41487a](https://github.com/sinameraji/kimiflare/commit/d41487a9e74010e87ccb7406403ef906f1044b43))
+* detect npm install correctly for update instructions ([0d6f479](https://github.com/sinameraji/kimiflare/commit/0d6f479e33d637389f9f9c5123601cb371ff2065))
+* **ui:** memoize chat components to reduce flicker on large conversations ([342ea5b](https://github.com/sinameraji/kimiflare/commit/342ea5b415392031f7007b8fbde762655c0f9184))
+* **ui:** memoize chat components to reduce flicker on large conversations ([c1df330](https://github.com/sinameraji/kimiflare/commit/c1df330e2c60b98590d9b13a73bcfd3bdd6d6f77))
+* **ui:** memoize chat components to reduce flicker on large conversations ([7a01b2b](https://github.com/sinameraji/kimiflare/commit/7a01b2b801751a55e46307a35e394eb0801e0dd6))
+
 ## [0.13.7](https://github.com/sinameraji/kimiflare/compare/v0.13.6...v0.13.7) (2026-04-23)
 
 
