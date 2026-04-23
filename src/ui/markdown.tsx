@@ -94,7 +94,7 @@ function parseBlocks(src: string): Block[] {
   return out;
 }
 
-function Block({ block, theme }: { block: Block; theme: Theme }) {
+const Block = React.memo(function Block({ block, theme }: { block: Block; theme: Theme }) {
   if (block.kind === "blank") return <Text> </Text>;
   if (block.kind === "heading") {
     return (
@@ -138,7 +138,7 @@ function Block({ block, theme }: { block: Block; theme: Theme }) {
     );
   }
   return <Text>{renderInline(block.text, theme)}</Text>;
-}
+});
 
 function renderInline(src: string, theme: Theme): React.ReactNode {
   const segments = parseInline(src);
