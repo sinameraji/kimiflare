@@ -78,3 +78,21 @@ export function jsonReplacer(_key: string, value: unknown): unknown {
   }
   return value;
 }
+
+/** Deterministic JSON.stringify that sorts object keys recursively.
+ *  Guarantees byte-for-byte identical output for semantically identical objects,
+ *  eliminating V8 insertion-order jitter and conditional-key non-determinism. */
+export function stableStringify(value: unknown, replacer?: (key: string, val: unknown) => unknown, space?: string | number): string {
+  function sortKeys(obj: unknown): unknown {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(sortKeys);
+    const sorted: Record<string, unknown> = {};
+    const keys = Object.keys(obj).sort();
+    for (const k of keys) {
+      sorted[k] = sortKeys((obj as Record<string, unknown>)[k]);
+    }
+    return sorted;
+  }
+  const sorted = sortKeys(value);
+  return JSON.stringify(sorted, replacer, space);
+}

@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import type { ToolSpec } from "../tools/registry.js";
 import { systemPromptForMode, type Mode } from "../mode.js";
+import type { ChatMessage } from "./messages.js";
 
 export interface SystemPromptOpts {
   cwd: string;
@@ -37,28 +38,10 @@ export function loadContextFile(cwd: string): ContextFile | null {
   return null;
 }
 
-export function buildSystemPrompt(opts: SystemPromptOpts): string {
-  const now = opts.now ?? new Date();
-  const date = now.toISOString().slice(0, 10);
-  const shell = process.env.SHELL ? basename(process.env.SHELL) : "sh";
-  const toolsBlock = opts.tools
-    .map((t) => {
-      const perm = t.needsPermission ? " [needs user permission]" : "";
-      return `- \`${t.name}\`${perm}: ${t.description.split("\n")[0]}`;
-    })
-    .join("\n");
-
-  const base = `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
-
-Environment:
-- Working directory: ${opts.cwd}
-- Platform: ${platform()} ${release()}
-- Shell: ${shell}
-- Home: ${homedir()}
-- Today: ${date}
-
-Tools available:
-${toolsBlock}
+/** Build the truly static prefix that should remain byte-for-byte identical
+ *  across all turns in a session. Contains identity and invariant rules only. */
+export function buildStaticPrefix(opts: Pick<SystemPromptOpts, "model">): string {
+  return `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
 
 How to work:
 - Prefer calling tools over guessing. Read files before editing them. Use \`glob\` and \`grep\` to explore code before assuming structure.
@@ -71,6 +54,29 @@ How to work:
 - If a request is ambiguous, ask one focused question instead of making large assumptions.
 - When you finish a task, stop. Do not add a closing summary.
 - When creating git commits, you must include \`Co-authored-by: kimiflare <kimiflare@proton.me>\` in the commit message so kimiflare is credited as a contributor. The bash tool will also auto-append this trailer when it detects git commit-creating commands.`;
+}
+
+/** Build the session-stable prefix that changes only when session-level
+ *  context changes (mode, tools, KIMI.md, environment). */
+export function buildSessionPrefix(opts: SystemPromptOpts): string {
+  const now = opts.now ?? new Date();
+  const date = now.toISOString().slice(0, 10);
+  const shell = process.env.SHELL ? basename(process.env.SHELL) : "sh";
+  const toolsBlock = opts.tools
+    .map((t) => {
+      const perm = t.needsPermission ? " [needs user permission]" : "";
+      return `- \`${t.name}\`${perm}: ${t.description.split("\n")[0]}`;
+    })
+    .join("\n");
+
+  const env = `Environment:
+- Working directory: ${opts.cwd}
+- Platform: ${platform()} ${release()}
+- Shell: ${shell}
+- Home: ${homedir()}
+- Today: ${date}`;
+
+  const tools = `Tools available:\n${toolsBlock}`;
 
   const ctx = loadContextFile(opts.cwd);
   const contextBlock = ctx
@@ -78,5 +84,20 @@ How to work:
     : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
-  return base + contextBlock + modeBlock;
+  return env + "\n\n" + tools + contextBlock + modeBlock;
+}
+
+/** Build a single concatenated system prompt for backward compatibility. */
+export function buildSystemPrompt(opts: SystemPromptOpts): string {
+  return buildStaticPrefix(opts) + "\n\n" + buildSessionPrefix(opts);
+}
+
+/** Build dual system messages for cache-stable prompt assembly.
+ *  Index 0 = static prefix (immutable within a session).
+ *  Index 1 = session prefix (mutable when mode/tools/context change). */
+export function buildSystemMessages(opts: SystemPromptOpts): ChatMessage[] {
+  return [
+    { role: "system", content: buildStaticPrefix(opts) },
+    { role: "system", content: buildSessionPrefix(opts) },
+  ];
 }

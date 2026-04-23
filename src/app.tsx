@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 
 import { runAgentTurn } from "./agent/loop.js";
-import { buildSystemPrompt } from "./agent/system-prompt.js";
+import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
@@ -55,6 +55,7 @@ interface Cfg {
   coauthorName?: string;
   coauthorEmail?: string;
   mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean }>;
+  cacheStablePrompts?: boolean;
 }
 
 interface PendingPermission {
@@ -77,6 +78,23 @@ function capEvents(prev: ChatEvent[]): ChatEvent[] {
 }
 
 const MAX_IMAGES_PER_MESSAGE = 10;
+
+function makePrefixMessages(
+  cacheStable: boolean,
+  model: string,
+  mode: Mode,
+  tools: ToolSpec[],
+): ChatMessage[] {
+  if (cacheStable) {
+    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
+  }
+  return [
+    {
+      role: "system",
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
+    },
+  ];
+}
 
 function findImagePaths(text: string): string[] {
   const paths: string[] = [];
@@ -134,17 +152,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
 
-  const messagesRef = useRef<ChatMessage[]>([
-    {
-      role: "system",
-      content: buildSystemPrompt({
-        cwd: process.cwd(),
-        tools: ALL_TOOLS,
-        model: cfg?.model ?? DEFAULT_MODEL,
-        mode: "edit",
-      }),
-    },
-  ]);
+  const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
+  const messagesRef = useRef<ChatMessage[]>(
+    makePrefixMessages(cacheStableRef.current, cfg?.model ?? DEFAULT_MODEL, "edit", ALL_TOOLS),
+  );
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
@@ -216,15 +227,27 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
 
   useEffect(() => {
     modeRef.current = mode;
-    messagesRef.current[0] = {
-      role: "system",
-      content: buildSystemPrompt({
-        cwd: process.cwd(),
-        tools: [...ALL_TOOLS, ...mcpToolsRef.current],
-        model: cfg?.model ?? DEFAULT_MODEL,
-        mode,
-      }),
-    };
+    if (cacheStableRef.current) {
+      messagesRef.current[1] = {
+        role: "system",
+        content: buildSessionPrefix({
+          cwd: process.cwd(),
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          model: cfg?.model ?? DEFAULT_MODEL,
+          mode,
+        }),
+      };
+    } else {
+      messagesRef.current[0] = {
+        role: "system",
+        content: buildSystemPrompt({
+          cwd: process.cwd(),
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          model: cfg?.model ?? DEFAULT_MODEL,
+          mode,
+        }),
+      };
+    }
     if (mode === "plan") {
       executorRef.current.clearSessionPermissions();
     }
@@ -300,15 +323,27 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       }
     }
     if (totalTools > 0) {
-      messagesRef.current[0] = {
-        role: "system",
-        content: buildSystemPrompt({
-          cwd: process.cwd(),
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
-          model: cfg.model ?? DEFAULT_MODEL,
-          mode: modeRef.current,
-        }),
-      };
+      if (cacheStableRef.current) {
+        messagesRef.current[1] = {
+          role: "system",
+          content: buildSessionPrefix({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+            model: cfg.model ?? DEFAULT_MODEL,
+            mode: modeRef.current,
+          }),
+        };
+      } else {
+        messagesRef.current[0] = {
+          role: "system",
+          content: buildSystemPrompt({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+            model: cfg.model ?? DEFAULT_MODEL,
+            mode: modeRef.current,
+          }),
+        };
+      }
       setEvents((e) => [
         ...e,
         { kind: "info", key: mkKey(), text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available` },
@@ -599,15 +634,27 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       });
 
       if (existsSync(join(cwd, "KIMI.md"))) {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd,
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
-            model: cfg.model,
-            mode: modeRef.current,
-          }),
-        };
+        if (cacheStableRef.current) {
+          messagesRef.current[1] = {
+            role: "system",
+            content: buildSessionPrefix({
+              cwd,
+              tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+              model: cfg.model,
+              mode: modeRef.current,
+            }),
+          };
+        } else {
+          messagesRef.current[0] = {
+            role: "system",
+            content: buildSystemPrompt({
+              cwd,
+              tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+              model: cfg.model,
+              mode: modeRef.current,
+            }),
+          };
+        }
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: "KIMI.md generated; context loaded for future turns" },
@@ -698,7 +745,11 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         return true;
       }
       if (c === "/clear") {
-        messagesRef.current = [messagesRef.current[0]!];
+        if (cacheStableRef.current && messagesRef.current.length >= 2) {
+          messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
+        } else {
+          messagesRef.current = [messagesRef.current[0]!];
+        }
         sessionIdRef.current = null;
         setEvents([]);
         setUsage(null);

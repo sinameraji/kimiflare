@@ -40,12 +40,17 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
   const keep = opts.keepLastTurns ?? 4;
   const messages = opts.messages;
 
-  const systemMsg = messages.find((m) => m.role === "system");
-  if (!systemMsg) throw new Error("compact: no system message found");
+  // Capture all consecutive leading system messages as the prefix.
+  let prefixEnd = 0;
+  while (prefixEnd < messages.length && messages[prefixEnd]!.role === "system") {
+    prefixEnd++;
+  }
+  const prefix = messages.slice(0, prefixEnd);
+  if (prefix.length === 0) throw new Error("compact: no system message found");
 
   const cutoffUserIdx = indexOfNthUserFromEnd(messages, keep);
   const firstKeepIdx = cutoffUserIdx >= 0 ? cutoffUserIdx : messages.length;
-  const toSummarize = messages.slice(1, firstKeepIdx);
+  const toSummarize = messages.slice(prefixEnd, firstKeepIdx);
   const toKeep = messages.slice(firstKeepIdx);
 
   if (toSummarize.length === 0) {
@@ -96,7 +101,7 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
 
   return {
     summary: summary.trim(),
-    newMessages: [systemMsg, summaryMsg, ...toKeep],
+    newMessages: [...prefix, summaryMsg, ...toKeep],
     replacedCount: toSummarize.length,
   };
 }

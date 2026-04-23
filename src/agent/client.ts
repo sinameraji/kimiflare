@@ -1,6 +1,6 @@
 import { readSSE } from "../util/sse.js";
 import { KimiApiError } from "../util/errors.js";
-import { jsonReplacer, sanitizeString } from "./messages.js";
+import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
 
 export type KimiEvent =
@@ -22,6 +22,7 @@ export interface RunKimiOpts {
   temperature?: number;
   maxCompletionTokens?: number;
   reasoningEffort?: "low" | "medium" | "high";
+  sessionId?: string;
 }
 
 const RETRYABLE_CODES = new Set([3040]); // "Capacity temporarily exceeded"
@@ -58,13 +59,17 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let res: Response;
     try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${opts.apiToken}`,
+        "Content-Type": "application/json",
+      };
+      if (opts.sessionId) {
+        headers["X-Session-ID"] = opts.sessionId;
+      }
       res = await fetch(url, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${opts.apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body, jsonReplacer),
+        headers,
+        body: stableStringify(body, jsonReplacer),
         signal: opts.signal,
       });
     } catch (fetchErr) {

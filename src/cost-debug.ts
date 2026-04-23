@@ -20,6 +20,15 @@ export interface ToolByteStats {
   savingsPct: number;
 }
 
+export interface CacheDiagnostics {
+  staticPrefixChars: number;
+  sessionPrefixChars: number;
+  dynamicSuffixChars: number;
+  firstDiffByte: number | null;
+  changedSegment: "static" | "session" | "dynamic" | "none" | null;
+  cacheHitRatio: number;
+}
+
 export interface CostDebugEntry {
   v: number;
   ts: string;
@@ -33,6 +42,7 @@ export interface CostDebugEntry {
   toolTotalRawBytes: number;
   toolTotalReducedBytes: number;
   toolSavingsPct: number;
+  cacheDiagnostics?: CacheDiagnostics;
 }
 
 function debugDir(): string {
@@ -114,6 +124,84 @@ export interface TurnDebugContext {
   messages: ChatMessage[];
   toolResults: ToolResult[];
   usage: Usage;
+  previousMessages?: ChatMessage[];
+}
+
+/** Serialize the prompt prefix (all leading system messages) for comparison. */
+function serializePrefix(messages: ChatMessage[]): string {
+  let end = 0;
+  while (end < messages.length && messages[end]!.role === "system") {
+    end++;
+  }
+  return messages
+    .slice(0, end)
+    .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    .join("\n---\n");
+}
+
+/** Compare current prompt prefix against prior turn to detect cache misses. */
+export function comparePromptPrefixes(
+  prev: ChatMessage[] | undefined,
+  curr: ChatMessage[],
+): CacheDiagnostics {
+  const prevPrefix = prev ? serializePrefix(prev) : "";
+  const currPrefix = serializePrefix(curr);
+  const totalChars = curr.reduce((sum, m) => {
+    if (typeof m.content === "string") return sum + m.content.length;
+    if (Array.isArray(m.content)) return sum + m.content.map((p) => (p.type === "text" ? p.text.length : 0)).reduce((a, b) => a + b, 0);
+    return sum;
+  }, 0);
+
+  let firstDiffByte: number | null = null;
+  let changedSegment: CacheDiagnostics["changedSegment"] = null;
+
+  if (prevPrefix !== currPrefix) {
+    const minLen = Math.min(prevPrefix.length, currPrefix.length);
+    for (let i = 0; i < minLen; i++) {
+      if (prevPrefix[i] !== currPrefix[i]) {
+        firstDiffByte = i;
+        break;
+      }
+    }
+    if (firstDiffByte === null && prevPrefix.length !== currPrefix.length) {
+      firstDiffByte = minLen;
+    }
+
+    // Determine which segment changed based on message boundaries.
+    // With dual system messages: msg0 = static, msg1 = session.
+    if (curr.length >= 1 && curr[0]!.role === "system") {
+      const staticLen = typeof curr[0]!.content === "string" ? curr[0]!.content.length : JSON.stringify(curr[0]!.content).length;
+      if (firstDiffByte !== null && firstDiffByte < staticLen) {
+        changedSegment = "static";
+      } else if (curr.length >= 2 && curr[1]!.role === "system") {
+        const sessionLen = typeof curr[1]!.content === "string" ? curr[1]!.content.length : JSON.stringify(curr[1]!.content).length;
+        if (firstDiffByte !== null && firstDiffByte < staticLen + 5 + sessionLen) {
+          changedSegment = "session";
+        } else {
+          changedSegment = "dynamic";
+        }
+      } else {
+        changedSegment = "dynamic";
+      }
+    } else {
+      changedSegment = "dynamic";
+    }
+  } else {
+    changedSegment = "none";
+  }
+
+  const staticPrefixChars = curr.length > 0 && curr[0]!.role === "system" && typeof curr[0]!.content === "string" ? curr[0]!.content.length : 0;
+  const sessionPrefixChars = curr.length > 1 && curr[1]!.role === "system" && typeof curr[1]!.content === "string" ? curr[1]!.content.length : 0;
+  const dynamicSuffixChars = totalChars - staticPrefixChars - sessionPrefixChars;
+
+  return {
+    staticPrefixChars,
+    sessionPrefixChars,
+    dynamicSuffixChars,
+    firstDiffByte,
+    changedSegment,
+    cacheHitRatio: 0, // populated by caller with actual usage data
+  };
 }
 
 export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
@@ -122,6 +210,9 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
   const toolStats = buildToolStats(ctx.toolResults);
   const toolTotalRaw = toolStats.reduce((sum, t) => sum + t.rawBytes, 0);
   const toolTotalReduced = toolStats.reduce((sum, t) => sum + t.reducedBytes, 0);
+  const cacheDiagnostics = comparePromptPrefixes(ctx.previousMessages, ctx.messages);
+  const cachedTokens = ctx.usage.prompt_tokens_details?.cached_tokens ?? 0;
+  cacheDiagnostics.cacheHitRatio = ctx.usage.prompt_tokens > 0 ? cachedTokens / ctx.usage.prompt_tokens : 0;
 
   await logCostDebug({
     v: LOG_VERSION,
@@ -136,5 +227,6 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     toolTotalRawBytes: toolTotalRaw,
     toolTotalReducedBytes: toolTotalReduced,
     toolSavingsPct: toolTotalRaw > 0 ? Math.round(((toolTotalRaw - toolTotalReduced) / toolTotalRaw) * 100) : 0,
+    cacheDiagnostics,
   });
 }

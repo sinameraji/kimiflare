@@ -46,6 +46,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
   for (let iter = 0; iter < max; iter++) {
     turn++;
+    const previousMessages = opts.messages.slice();
     const toolCalls: ToolCall[] = [];
     const toolResults: ToolResult[] = [];
     let content = "";
@@ -62,6 +63,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       temperature: opts.temperature,
       maxCompletionTokens: opts.maxCompletionTokens,
       reasoningEffort: opts.reasoningEffort,
+      sessionId: opts.sessionId,
     });
 
     for await (const ev of events) {
@@ -125,6 +127,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           sessionId: opts.sessionId,
           turn,
           messages: opts.messages,
+          previousMessages,
           toolResults,
           usage: lastUsage,
         });
@@ -154,6 +157,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         sessionId: opts.sessionId,
         turn,
         messages: opts.messages,
+        previousMessages,
         toolResults,
         usage: lastUsage,
       });

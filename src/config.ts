@@ -23,6 +23,7 @@ export interface KimiConfig {
   coauthorName?: string;
   coauthorEmail?: string;
   mcpServers?: Record<string, McpServerConfig>;
+  cacheStablePrompts?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -55,6 +56,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envTheme = process.env.KIMI_THEME;
   const envCoauthor = readCoauthorEnv();
 
+  const envCacheStable = process.env.KIMIFLARE_CACHE_STABLE_PROMPTS;
+  const cacheStablePrompts = envCacheStable === "0" || envCacheStable === "false" ? false : true;
+
   if (envAccount && envToken) {
     return {
       accountId: envAccount,
@@ -65,6 +69,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       coauthor: envCoauthor?.enabled ?? true,
       coauthorName: envCoauthor?.name,
       coauthorEmail: envCoauthor?.email,
+      cacheStablePrompts,
     };
   }
 
@@ -82,6 +87,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         coauthorName: envCoauthor?.name ?? parsed.coauthorName,
         coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
         mcpServers: parsed.mcpServers,
+        cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
       };
     }
   } catch {
