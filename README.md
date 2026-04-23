@@ -60,6 +60,7 @@ Requires Node.js ≥ 20.
 | **Session persistence** | Every turn is auto-saved. `/resume` lists past sessions (with message counts) in a paginated picker. |
 | **Smart permissions** | Bash session-allow is keyed by the first token (e.g., allow all `git` commands). Write/edit show a unified diff before you approve. |
 | **Project context (`/init`)** | Scans your repo and writes a concise `KIMI.md` — build commands, layout, conventions. Auto-loaded on every launch. |
+| **MCP server integration** | Plug in external tools via the Model Context Protocol — local stdio servers or remote SSE endpoints. GitHub, Sentry, docs search, databases, etc. |
 | **Co-author auto-append** | Detects `git commit` commands and auto-injects `Co-authored-by: kimiflare <kimiflare@proton.me>`. |
 | **Resilient transport** | Retries Cloudflare capacity errors (code 3040) and 5xx with exponential backoff up to 5 attempts. |
 
@@ -90,6 +91,46 @@ cat > ~/.config/kimiflare/config.json <<'EOF'
 EOF
 chmod 600 ~/.config/kimiflare/config.json
 ```
+
+## MCP servers (Model Context Protocol)
+
+kimiflare supports external tools via MCP. Add servers to your `~/.config/kimiflare/config.json`:
+
+```json
+{
+  "accountId": "YOUR_ACCOUNT_ID",
+  "apiToken": "YOUR_API_TOKEN",
+  "mcpServers": {
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
+    },
+    "fetch": {
+      "type": "local",
+      "command": ["uvx", "mcp-server-fetch"]
+    },
+    "my-remote": {
+      "type": "remote",
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer token123" }
+    }
+  }
+}
+```
+
+- `type`: `"local"` (stdio subprocess) or `"remote"` (SSE/HTTP endpoint)
+- `command`: array with executable and args (local only)
+- `url`: endpoint URL (remote only)
+- `env`: environment variables for local servers
+- `headers`: HTTP headers for remote servers
+- `enabled`: set to `false` to skip a server
+
+MCP tools appear prefixed as `mcp_<server>_<tool>` alongside built-in tools.
+
+**Commands:**
+- `/mcp list` — show connected servers and tool counts
+- `/mcp reload` — disconnect and reconnect all configured servers
 
 ## Usage
 
@@ -144,6 +185,8 @@ Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP (up to 5 MB each, 10 per messa
 | `/resume` | Pick a past conversation to restore. |
 | `/compact` | Summarize older turns to free context. Suggested automatically at ~80% full. |
 | `/init` | Scan the repo and write a `KIMI.md` so future agents have project context. |
+| `/mcp list` | List connected MCP servers and their tools. |
+| `/mcp reload` | Disconnect and reconnect all configured MCP servers. |
 | `/reasoning` | Toggle chain-of-thought display. |
 | `/clear` | Reset the current conversation. |
 | `/cost` | Show token usage for the current turn. |
@@ -257,6 +300,89 @@ Contributions are welcome!
 5. Commit: `git commit -m "feat: description"`
 6. Push: `git push origin feat/your-feature`
 7. Open a Pull Request
+
+## Testing MCP locally
+
+You don't need a real MCP server to test the integration. Here's a minimal test server you can save as `test-mcp-server.js`:
+
+```js
+// test-mcp-server.js — a minimal MCP server for testing
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+const server = new Server({ name: "test-server", version: "1.0.0" }, { capabilities: { tools: {} } });
+
+server.setRequestHandler("tools/list", async () => ({
+  tools: [
+    {
+      name: "greet",
+      description: "Greet someone by name",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string" } },
+        required: ["name"],
+      },
+    },
+    {
+      name: "add",
+      description: "Add two numbers",
+      inputSchema: {
+        type: "object",
+        properties: { a: { type: "number" }, b: { type: "number" } },
+        required: ["a", "b"],
+      },
+    },
+  ],
+}));
+
+server.setRequestHandler("tools/call", async (req) => {
+  if (req.params.name === "greet") {
+    return { content: [{ type: "text", text: `Hello, ${req.params.arguments.name}!` }] };
+  }
+  if (req.params.name === "add") {
+    const sum = req.params.arguments.a + req.params.arguments.b;
+    return { content: [{ type: "text", text: String(sum) }] };
+  }
+  throw new Error("Unknown tool");
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+Then add it to your config:
+
+```json
+{
+  "mcpServers": {
+    "test": {
+      "type": "local",
+      "command": ["node", "/path/to/test-mcp-server.js"]
+    }
+  }
+}
+```
+
+Launch kimiflare and try:
+- `/mcp list` — should show `test (local) — 2 tools`
+- `use mcp_test_greet with name "kimiflare"` — should return `Hello, kimiflare!`
+- `use mcp_test_add with a 3 and b 5` — should return `8`
+
+For a real-world test, try the [official GitHub MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/github):
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
+    }
+  }
+}
+```
+
+Then ask: `search for issues labeled bug in sinameraji/kimiflare`
 
 ## License
 

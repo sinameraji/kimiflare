@@ -54,6 +54,14 @@ export class ToolExecutor {
     return [...this.tools.values()];
   }
 
+  register(tool: ToolSpec): void {
+    this.tools.set(tool.name, tool);
+  }
+
+  unregister(name: string): void {
+    this.tools.delete(name);
+  }
+
   clearSessionPermissions(): void {
     this.sessionAllowed.clear();
   }
