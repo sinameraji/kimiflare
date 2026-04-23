@@ -21,7 +21,9 @@ export function modeDescription(m: Mode): string {
 export const MUTATING_TOOLS = new Set(["write", "edit", "bash"]);
 
 export function isBlockedInPlanMode(toolName: string): boolean {
-  return MUTATING_TOOLS.has(toolName);
+  if (MUTATING_TOOLS.has(toolName)) return true;
+  if (toolName.startsWith("mcp_")) return true;
+  return false;
 }
 
 // Dangerous shell patterns that disqualify any command from read-only status

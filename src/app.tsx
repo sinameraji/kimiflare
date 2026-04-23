@@ -6,6 +6,7 @@ import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
+import { McpManager } from "./mcp/manager.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
@@ -52,6 +53,7 @@ interface Cfg {
   coauthor?: boolean;
   coauthorName?: string;
   coauthorEmail?: string;
+  mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean }>;
 }
 
 interface PendingPermission {
@@ -153,6 +155,9 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const updateCheckedRef = useRef(false);
   const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
+  const mcpManagerRef = useRef(new McpManager());
+  const mcpToolsRef = useRef<ToolSpec[]>([]);
+  const mcpInitRef = useRef(false);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
@@ -214,7 +219,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       role: "system",
       content: buildSystemPrompt({
         cwd: process.cwd(),
-        tools: ALL_TOOLS,
+        tools: [...ALL_TOOLS, ...mcpToolsRef.current],
         model: cfg?.model ?? DEFAULT_MODEL,
         mode,
       }),
@@ -259,6 +264,62 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     }, 30 * 60 * 1000); // 30 minutes
     return () => clearInterval(id);
   }, [cfg]);
+
+  const initMcp = useCallback(async () => {
+    if (!cfg?.mcpServers || mcpInitRef.current) return;
+    mcpInitRef.current = true;
+    const manager = mcpManagerRef.current;
+    let totalTools = 0;
+    for (const [name, server] of Object.entries(cfg.mcpServers)) {
+      if (server.enabled === false) continue;
+      try {
+        if (server.type === "local" && server.command && server.command.length > 0) {
+          await manager.addLocalServer(name, server.command, server.env);
+        } else if (server.type === "remote" && server.url) {
+          await manager.addRemoteServer(name, server.url, server.headers);
+        } else {
+          setEvents((e) => [
+            ...e,
+            { kind: "error", key: mkKey(), text: `MCP server "${name}" has invalid config` },
+          ]);
+          continue;
+        }
+        const tools = manager.getAllTools();
+        const newTools = tools.filter((t) => !mcpToolsRef.current.some((mt) => mt.name === t.name));
+        for (const tool of newTools) {
+          executorRef.current.register(tool);
+        }
+        mcpToolsRef.current = tools;
+        totalTools = tools.length;
+      } catch (e) {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `MCP server "${name}" failed: ${(e as Error).message}` },
+        ]);
+      }
+    }
+    if (totalTools > 0) {
+      messagesRef.current[0] = {
+        role: "system",
+        content: buildSystemPrompt({
+          cwd: process.cwd(),
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          model: cfg.model ?? DEFAULT_MODEL,
+          mode: modeRef.current,
+        }),
+      };
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available` },
+      ]);
+    }
+  }, [cfg]);
+
+  useEffect(() => {
+    if (cfg && !mcpInitRef.current) {
+      void initMcp();
+    }
+  }, [cfg, initMcp]);
 
   const saveSessionSafe = useCallback(async () => {
     if (!cfg) return;
@@ -442,7 +503,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         apiToken: cfg.apiToken,
         model: cfg.model,
         messages: messagesRef.current,
-        tools: ALL_TOOLS,
+        tools: [...ALL_TOOLS, ...mcpToolsRef.current],
         executor: executorRef.current,
         cwd,
         signal: controller.signal,
@@ -534,7 +595,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           role: "system",
           content: buildSystemPrompt({
             cwd,
-            tools: ALL_TOOLS,
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
             model: cfg.model,
             mode: modeRef.current,
           }),
@@ -806,6 +867,43 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         });
         return true;
       }
+      if (c === "/mcp") {
+        if (arg === "list") {
+          const servers = mcpManagerRef.current.listServers();
+          if (servers.length === 0) {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "no MCP servers connected — add them to ~/.config/kimiflare/config.json" },
+            ]);
+          } else {
+            const lines = servers.map((s) => `  ${s.name} (${s.type}) — ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "MCP servers:\n" + lines.join("\n") },
+            ]);
+          }
+          return true;
+        }
+        if (arg === "reload") {
+          if (busy) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /mcp reload while model is running" }]);
+            return true;
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "reloading MCP servers..." }]);
+          for (const tool of mcpToolsRef.current) {
+            executorRef.current.unregister(tool.name);
+          }
+          mcpToolsRef.current = [];
+          mcpInitRef.current = false;
+          void initMcp();
+          return true;
+        }
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /mcp list | reload" },
+        ]);
+        return true;
+      }
       if (c === "/logout") {
         unlink(configPath()).catch(() => {});
         setEvents((e) => [
@@ -831,6 +929,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               "  /resume                 pick a past conversation\n" +
               "  /compact                summarize old turns to free context\n" +
               "  /init                   scan this repo and write a KIMI.md for future agents\n" +
+              "  /mcp list               list connected MCP servers and tools\n" +
+              "  /mcp reload             reconnect all configured MCP servers\n" +
               "  /reasoning              toggle show/hide model reasoning\n" +
               "  /clear                  clear current conversation\n" +
               "  /cost /model /update /logout /help /exit\n" +
@@ -841,7 +941,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       }
       return false;
     },
-    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit],
+    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp],
   );
 
   const processMessage = useCallback(
@@ -897,7 +997,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           apiToken: cfg.apiToken,
           model: cfg.model,
           messages: messagesRef.current,
-          tools: ALL_TOOLS,
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
           executor: executorRef.current,
           cwd: process.cwd(),
           signal: controller.signal,
