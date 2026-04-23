@@ -7,7 +7,7 @@ import { runAgentTurn } from "./agent/loop.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
-import { checkForUpdate, isGitRepo } from "./util/update-check.js";
+import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 
 function readPackageVersion(): string {
@@ -97,10 +97,9 @@ interface PrintOpts {
 
 async function runPrintMode(opts: PrintOpts): Promise<void> {
   if (opts.updateResult.hasUpdate) {
-    const git = await isGitRepo();
     process.stderr.write(
       `\x1b[33mkimiflare update available: ${opts.updateResult.localVersion} → ${opts.updateResult.latestVersion}\x1b[0m\n` +
-        `\x1b[33m  ${git ? "git pull && npm install && npm run build" : "npm update -g kimiflare"}  then restart\x1b[0m\n\n`,
+        `\x1b[33m  npm update -g kimiflare  then restart\x1b[0m\n\n`,
     );
   }
 

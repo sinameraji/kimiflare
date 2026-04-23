@@ -118,18 +118,4 @@ export async function checkForUpdate(force = false): Promise<UpdateCheckResult> 
   return { hasUpdate, localVersion, latestVersion };
 }
 
-export async function isGitRepo(): Promise<boolean> {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  while (true) {
-    try {
-      await access(join(dir, ".git"));
-      return true;
-    } catch {
-      /* not found */
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return false;
-}
+

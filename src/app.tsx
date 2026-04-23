@@ -20,7 +20,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
-import { checkForUpdate, isGitRepo } from "./util/update-check.js";
+import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
@@ -171,18 +171,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             text: `update available: ${initialUpdateResult.localVersion} → ${initialUpdateResult.latestVersion}`,
           },
         ]);
-        void isGitRepo().then((git) => {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: git
-                ? "run:  git pull && npm install && npm run build  then restart kimiflare"
-                : "run:  npm update -g kimiflare  then restart",
-            },
-          ]);
-        });
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: "run:  npm update -g kimiflare  then restart",
+          },
+        ]);
       }
       return;
     }
@@ -200,18 +196,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             text: `update available: ${result.localVersion} → ${result.latestVersion}`,
           },
         ]);
-        void isGitRepo().then((git) => {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: git
-                ? "run:  git pull && npm install && npm run build  then restart kimiflare"
-                : "run:  npm update -g kimiflare  then restart",
-            },
-          ]);
-        });
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: "run:  npm update -g kimiflare  then restart",
+          },
+        ]);
       }
     });
   }, [cfg, initialUpdateResult]);
@@ -253,18 +245,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                 text: `update available: ${result.localVersion} → ${result.latestVersion}`,
               },
             ]);
-            void isGitRepo().then((git) => {
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: git
-                    ? "run:  git pull && npm install && npm run build  then restart kimiflare"
-                    : "run:  npm update -g kimiflare  then restart",
-                },
-              ]);
-            });
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: "run:  npm update -g kimiflare  then restart",
+              },
+            ]);
           }
         }
       });
@@ -799,18 +787,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                 text: `update available: ${result.localVersion} → ${result.latestVersion}`,
               },
             ]);
-            void isGitRepo().then((git) => {
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: git
-                    ? "run:  git pull && npm install && npm run build  then restart kimiflare"
-                    : "run:  npm update -g kimiflare  then restart",
-                },
-              ]);
-            });
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: "run:  npm update -g kimiflare  then restart",
+              },
+            ]);
           } else {
             setHasUpdate(false);
             setLatestVersion(null);
