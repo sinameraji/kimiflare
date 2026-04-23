@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.0](https://github.com/sinameraji/kimiflare/compare/v0.15.0...v0.16.0) (2026-04-23)
+
+
+### Features
+
+* compiled context architecture + storage cleanup ([88833f6](https://github.com/sinameraji/kimiflare/commit/88833f6d715b301420a28bf2dd3fd8d733fe1808))
+* compiled context architecture + storage cleanup ([b323e80](https://github.com/sinameraji/kimiflare/commit/b323e80c27acc80a205f5b15a22f166d4e55e6c7))
+
 ## [0.15.0](https://github.com/sinameraji/kimiflare/compare/v0.14.0...v0.15.0) (2026-04-23)
 
 
