@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.4](https://github.com/sinameraji/kimiflare/compare/v0.13.3...v0.13.4) (2026-04-23)
+
+
+### Bug Fixes
+
+* remove redundant global SIGINT handler causing screen flashing ([d332484](https://github.com/sinameraji/kimiflare/commit/d3324848ede678e6efdde0c8bba1460098a54493))
+* remove redundant global SIGINT handler causing screen flashing ([bf46eb8](https://github.com/sinameraji/kimiflare/commit/bf46eb8cdc851149b5ce33490f9eb163847d5179))
+
 ## [0.13.3](https://github.com/sinameraji/kimiflare/compare/v0.13.2...v0.13.3) (2026-04-22)
 
 
