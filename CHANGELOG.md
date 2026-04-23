@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.7](https://github.com/sinameraji/kimiflare/compare/v0.13.6...v0.13.7) (2026-04-23)
+
+
+### Bug Fixes
+
+* **themes:** replace ANSI colors with truecolor hex and remove redundant themes ([86712a3](https://github.com/sinameraji/kimiflare/commit/86712a378c020472e4bc17d45e305c71d42b592a))
+* **themes:** replace ANSI colors with truecolor hex and remove redundant themes ([539657a](https://github.com/sinameraji/kimiflare/commit/539657a31987edd7b6586e842360386d7a1c11d6))
+* **themes:** replace ANSI colors with truecolor hex and remove redundant themes ([cb62898](https://github.com/sinameraji/kimiflare/commit/cb6289826223005189ec979cc0a2be3d6fee9eea))
+
 ## [0.13.6](https://github.com/sinameraji/kimiflare/compare/v0.13.5...v0.13.6) (2026-04-23)
 
 
