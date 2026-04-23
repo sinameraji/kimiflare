@@ -1,5 +1,5 @@
 import TurndownService from "turndown";
-import type { ToolSpec } from "./registry.js";
+import type { ToolSpec, ToolOutput } from "./registry.js";
 import { truncate } from "../util/paths.js";
 
 interface Args {
@@ -24,7 +24,7 @@ export const webFetchTool: ToolSpec<Args> = {
   },
   needsPermission: false,
   render: (args) => ({ title: `GET ${args.url}` }),
-  async run(args) {
+  async run(args): Promise<ToolOutput> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
@@ -36,11 +36,19 @@ export const webFetchTool: ToolSpec<Args> = {
       const ct = res.headers.get("content-type") ?? "";
       const body = await res.text();
       const bounded = body.length > MAX_BYTES ? body.slice(0, MAX_BYTES) : body;
+      let raw: string;
       if (ct.toLowerCase().includes("html")) {
         const td = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
-        return truncate(`# ${args.url}\n\n${td.turndown(bounded)}`, MAX_OUTPUT);
+        raw = `# ${args.url}\n\n${td.turndown(bounded)}`;
+      } else {
+        raw = `# ${args.url}\n\n${bounded}`;
       }
-      return truncate(`# ${args.url}\n\n${bounded}`, MAX_OUTPUT);
+      const reduced = truncate(raw, MAX_OUTPUT);
+      return {
+        content: reduced,
+        rawBytes: Buffer.byteLength(raw, "utf8"),
+        reducedBytes: Buffer.byteLength(reduced, "utf8"),
+      };
     } finally {
       clearTimeout(timer);
     }

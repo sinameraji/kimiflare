@@ -43,6 +43,7 @@ import {
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
+import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
 
 interface Cfg {
   accountId: string;
@@ -321,22 +322,26 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     }
   }, [cfg, initMcp]);
 
+  const ensureSessionId = useCallback(() => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    const firstUser = messagesRef.current.find((m) => m.role === "user");
+    let firstText = "session";
+    if (typeof firstUser?.content === "string") {
+      firstText = firstUser.content;
+    } else if (Array.isArray(firstUser?.content)) {
+      const textPart = firstUser.content.find((p) => p.type === "text");
+      if (textPart?.text) firstText = textPart.text;
+    }
+    sessionIdRef.current = makeSessionId(firstText);
+    return sessionIdRef.current;
+  }, []);
+
   const saveSessionSafe = useCallback(async () => {
     if (!cfg) return;
-    if (!sessionIdRef.current) {
-      const firstUser = messagesRef.current.find((m) => m.role === "user");
-      let firstText = "session";
-      if (typeof firstUser?.content === "string") {
-        firstText = firstUser.content;
-      } else if (Array.isArray(firstUser?.content)) {
-        const textPart = firstUser.content.find((p) => p.type === "text");
-        if (textPart?.text) firstText = textPart.text;
-      }
-      sessionIdRef.current = makeSessionId(firstText);
-    }
+    ensureSessionId();
     try {
       await saveSession({
-        id: sessionIdRef.current,
+        id: sessionIdRef.current!,
         cwd: process.cwd(),
         model: cfg.model,
         createdAt: new Date().toISOString(),
@@ -346,7 +351,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     } catch {
       /* non-fatal */
     }
-  }, [cfg]);
+  }, [cfg, ensureSessionId]);
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
@@ -512,6 +517,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           cfg.coauthor !== false
             ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
             : undefined,
+        sessionId: ensureSessionId(),
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -562,6 +568,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           onUsage: (u) => {
             usageRef.current = u;
             setUsage(u);
+            const sid = ensureSessionId();
+            void recordUsage(sid, u);
           },
           askPermission: (req) =>
             new Promise<PermissionDecision>((resolve) => {
@@ -823,6 +831,19 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: edit" }]);
         return true;
       }
+      if (c === "/cost") {
+        if (!sessionIdRef.current) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no usage recorded yet" }]);
+          return true;
+        }
+        void getCostReport(sessionIdRef.current).then((report) => {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: formatCostReport(report) },
+          ]);
+        });
+        return true;
+      }
       if (c === "/resume") {
         void openResumePicker();
         return true;
@@ -1006,6 +1027,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             cfg.coauthor !== false
               ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
               : undefined,
+          sessionId: ensureSessionId(),
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
