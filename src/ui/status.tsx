@@ -5,6 +5,7 @@ import type { Usage } from "../agent/messages.js";
 import type { Theme } from "./theme.js";
 import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
+import { calculateCost } from "../pricing.js";
 
 interface Props {
   model: string;
@@ -18,10 +19,6 @@ interface Props {
   hasUpdate?: boolean;
   latestVersion?: string | null;
 }
-
-const PRICE_IN_PER_M = 0.95;
-const PRICE_IN_CACHED_PER_M = 0.16;
-const PRICE_OUT_PER_M = 4.0;
 
 export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion }: Props) {
   const [now, setNow] = useState(Date.now());
@@ -80,17 +77,13 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
 
 function buildRightParts(usage: Usage, contextLimit: number): string[] {
   const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const uncachedIn = usage.prompt_tokens - cached;
-  const cost =
-    (uncachedIn * PRICE_IN_PER_M) / 1_000_000 +
-    (cached * PRICE_IN_CACHED_PER_M) / 1_000_000 +
-    (usage.completion_tokens * PRICE_OUT_PER_M) / 1_000_000;
+  const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
   return [
     `in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`,
     `out ${usage.completion_tokens}`,
     `ctx ${pct}%`,
-    `$${cost.toFixed(5)}`,
+    `${cost.total.toFixed(5)}`,
   ];
 }
 

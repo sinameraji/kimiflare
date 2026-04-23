@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
 import fg from "fast-glob";
-import type { ToolSpec } from "./registry.js";
+import type { ToolSpec, ToolOutput } from "./registry.js";
 import { resolvePath, truncate } from "../util/paths.js";
 
 const pExecFile = promisify(execFile);
@@ -61,7 +61,7 @@ async function runRipgrep(
   args: Args,
   root: string,
   mode: "content" | "files",
-): Promise<string> {
+): Promise<ToolOutput> {
   const rgArgs = ["--no-heading", "--color=never", "--line-number"];
   if (args.case_insensitive) rgArgs.push("-i");
   if (args.glob) rgArgs.push("--glob", args.glob);
@@ -70,10 +70,16 @@ async function runRipgrep(
   try {
     const { stdout } = await pExecFile("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024 });
     const trimmed = stdout.trim();
-    return trimmed ? truncate(trimmed, 30_000) : "(no matches)";
+    if (!trimmed) return { content: "(no matches)", rawBytes: 0, reducedBytes: 0 };
+    const reduced = truncate(trimmed, 30_000);
+    return {
+      content: reduced,
+      rawBytes: Buffer.byteLength(trimmed, "utf8"),
+      reducedBytes: Buffer.byteLength(reduced, "utf8"),
+    };
   } catch (e) {
     const err = e as { code?: number; stderr?: string };
-    if (err.code === 1) return "(no matches)";
+    if (err.code === 1) return { content: "(no matches)", rawBytes: 0, reducedBytes: 0 };
     throw new Error(err.stderr || String(e));
   }
 }
@@ -82,7 +88,7 @@ async function runJsFallback(
   args: Args,
   root: string,
   mode: "content" | "files",
-): Promise<string> {
+): Promise<ToolOutput> {
   const re = new RegExp(args.pattern, args.case_insensitive ? "i" : "");
   const globPattern = args.glob ? `**/${args.glob}` : "**/*";
   const files = await fg(globPattern, {
@@ -112,5 +118,12 @@ async function runJsFallback(
     }
     if (out.length > 500) break;
   }
-  return out.length ? truncate(out.join("\n"), 30_000) : "(no matches)";
+  if (!out.length) return { content: "(no matches)", rawBytes: 0, reducedBytes: 0 };
+  const raw = out.join("\n");
+  const reduced = truncate(raw, 30_000);
+  return {
+    content: reduced,
+    rawBytes: Buffer.byteLength(raw, "utf8"),
+    reducedBytes: Buffer.byteLength(reduced, "utf8"),
+  };
 }
