@@ -23,7 +23,7 @@ export function ThemePicker({ themes, current, onPick, onPreview }: Props) {
       <Text color={current.accent} bold>
         Pick a theme
       </Text>
-      <Text color={current.info.color} dimColor={current.info.dim}>
+      <Text color={current.info.color} dimColor={false}>
         Arrow keys to preview, Enter to confirm.
       </Text>
       <Box marginTop={1}>

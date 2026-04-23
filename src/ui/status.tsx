@@ -90,7 +90,7 @@ function buildRightParts(usage: Usage, contextLimit: number): string[] {
     `in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`,
     `out ${usage.completion_tokens}`,
     `ctx ${pct}%`,
-    `${cost.toFixed(5)}`,
+    `$${cost.toFixed(5)}`,
   ];
 }
 
