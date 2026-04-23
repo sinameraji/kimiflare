@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.5](https://github.com/sinameraji/kimiflare/compare/v0.13.4...v0.13.5) (2026-04-23)
+
+
+### Reverts
+
+* roll ctrl+c interrupt work back to v0.12.0 behavior ([d10c104](https://github.com/sinameraji/kimiflare/commit/d10c104ba5ea0c834f4b0dd4559688585e8b62a5))
+
 ## [0.13.4](https://github.com/sinameraji/kimiflare/compare/v0.13.3...v0.13.4) (2026-04-23)
 
 
