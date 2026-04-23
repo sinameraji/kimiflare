@@ -112,10 +112,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
   ];
 
   const controller = new AbortController();
-  process.once("SIGINT", () => {
-    controller.abort();
-    setTimeout(() => process.exit(1), 500);
-  });
+  process.on("SIGINT", () => controller.abort());
 
   let printedReasoningHeader = false;
   let printedAnswerHeader = false;

@@ -223,7 +223,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const updateCheckedRef = useRef(false);
   const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
-  const interruptRequestedRef = useRef(false);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
@@ -373,10 +372,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       if (busy) {
-        if (interruptRequestedRef.current) {
-          process.exit(0);
-        }
-        interruptRequestedRef.current = true;
         activeControllerRef.current?.abort();
         permResolveRef.current?.("deny");
         permResolveRef.current = null;
@@ -475,7 +470,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       setBusy(false);
       setTurnStartedAt(null);
       activeControllerRef.current = null;
-      interruptRequestedRef.current = false;
     }
   }, [cfg, busy, saveSessionSafe]);
 
@@ -666,7 +660,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       activeAsstIdRef.current = null;
       activeControllerRef.current = null;
       permResolveRef.current = null;
-      interruptRequestedRef.current = false;
     }
   }, [cfg, busy, updateAssistant, updateTool]);
 
@@ -1162,19 +1155,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
         permResolveRef.current = null;
-        interruptRequestedRef.current = false;
       }
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe],
   );
-
-  useEffect(() => {
-    const onSigint = () => exit();
-    process.on("SIGINT", onSigint);
-    return () => {
-      process.off("SIGINT", onSigint);
-    };
-  }, [exit]);
 
   useEffect(() => {
     if (!busy && queue.length > 0) {
