@@ -50,7 +50,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
   );
 });
 
-function EventView({
+const EventView = React.memo(function EventView({
   evt,
   showReasoning,
   theme,
@@ -115,4 +115,4 @@ function EventView({
       ! {evt.text}
     </Text>
   );
-}
+});

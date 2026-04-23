@@ -19,7 +19,7 @@ interface Props {
   verbose?: boolean;
 }
 
-export function ToolView({ evt, verbose }: Props) {
+export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
   const statusIcon =
     evt.status === "running" ? (
       <Text color="gray">
@@ -74,7 +74,7 @@ export function ToolView({ evt, verbose }: Props) {
       ) : null}
     </Box>
   );
-}
+});
 
 function compactArgs(raw: string): string {
   const collapsed = collapsePathsInText(raw, process.cwd());
