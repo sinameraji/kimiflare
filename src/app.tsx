@@ -1169,6 +1169,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   );
 
   useEffect(() => {
+    const onSigint = () => exit();
+    process.on("SIGINT", onSigint);
+    return () => {
+      process.off("SIGINT", onSigint);
+    };
+  }, [exit]);
+
+  useEffect(() => {
     if (!busy && queue.length > 0) {
       const next = queue[0]!;
       setQueue((q) => q.slice(1));
