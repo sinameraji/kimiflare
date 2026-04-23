@@ -4,6 +4,17 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import { runAgentTurn } from "./agent/loop.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
+import {
+  compactMessages as compactCompiled,
+  shouldCompact,
+  recallArtifacts,
+} from "./agent/compaction.js";
+import {
+  emptySessionState,
+  ArtifactStore,
+  formatRecalledArtifacts,
+  type SessionState,
+} from "./agent/session-state.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
 import { McpManager } from "./mcp/manager.js";
@@ -56,6 +67,7 @@ interface Cfg {
   coauthorEmail?: string;
   mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean }>;
   cacheStablePrompts?: boolean;
+  compiledContext?: boolean;
 }
 
 interface PendingPermission {
@@ -165,11 +177,29 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const tasksRef = useRef<Task[]>([]);
   const usageRef = useRef<Usage | null>(null);
   const updateCheckedRef = useRef(false);
+  const sessionStateRef = useRef<SessionState>(emptySessionState());
+  const artifactStoreRef = useRef<ArtifactStore>(new ArtifactStore());
+  const compiledContextRef = useRef(initialCfg?.compiledContext === true);
   const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
+
+  useEffect(() => {
+    if (!cfg) return;
+    // Prune old sessions on startup
+    void import("./sessions.js").then(({ pruneSessions }) =>
+      pruneSessions().then((removed) => {
+        if (removed > 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `pruned ${removed} old session files` },
+          ]);
+        }
+      }),
+    );
+  }, [cfg]);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
@@ -382,6 +412,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: messagesRef.current,
+        sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
       });
     } catch {
       /* non-fatal */
@@ -451,29 +482,55 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     const controller = new AbortController();
     activeControllerRef.current = controller;
     try {
-      const result = await compactMessages({
-        accountId: cfg.accountId,
-        apiToken: cfg.apiToken,
-        model: cfg.model,
-        messages: messagesRef.current,
-        signal: controller.signal,
-      });
-      if (result.replacedCount === 0) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "nothing to compact yet" },
-        ]);
+      if (compiledContextRef.current) {
+        const result = compactCompiled({
+          messages: messagesRef.current,
+          state: sessionStateRef.current,
+          store: artifactStoreRef.current,
+        });
+        if (result.metrics.rawTurnsRemoved === 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
+          ]);
+        } else {
+          messagesRef.current = result.newMessages;
+          sessionStateRef.current = result.newState;
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
+            },
+          ]);
+          await saveSessionSafe();
+        }
       } else {
-        messagesRef.current = result.newMessages;
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `compacted ${result.replacedCount} messages into a summary`,
-          },
-        ]);
-        await saveSessionSafe();
+        const result = await compactMessages({
+          accountId: cfg.accountId,
+          apiToken: cfg.apiToken,
+          model: cfg.model,
+          messages: messagesRef.current,
+          signal: controller.signal,
+        });
+        if (result.replacedCount === 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
+          ]);
+        } else {
+          messagesRef.current = result.newMessages;
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `compacted ${result.replacedCount} messages into a summary`,
+            },
+          ]);
+          await saveSessionSafe();
+        }
       }
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -683,6 +740,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         const file = await loadSession(picked.filePath);
         messagesRef.current = file.messages;
         sessionIdRef.current = file.id;
+        if (file.sessionState && compiledContextRef.current) {
+          sessionStateRef.current = file.sessionState;
+          artifactStoreRef.current = new ArtifactStore();
+        }
         setEvents([
           {
             kind: "info",
@@ -751,6 +812,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           messagesRef.current = [messagesRef.current[0]!];
         }
         sessionIdRef.current = null;
+        sessionStateRef.current = emptySessionState();
+        artifactStoreRef.current = new ArtifactStore();
         setEvents([]);
         setUsage(null);
         setTasks([]);
@@ -1057,6 +1120,20 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
 
       setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
       messagesRef.current.push({ role: "user", content });
+
+      // Recall artifacts before sending if compiled context is enabled
+      if (compiledContextRef.current) {
+        const { ids, recalled } = recallArtifacts(messagesRef.current, artifactStoreRef.current, sessionStateRef.current);
+        if (recalled.length > 0) {
+          const recalledText = formatRecalledArtifacts(recalled);
+          messagesRef.current.push({ role: "system", content: recalledText });
+          sessionStateRef.current = {
+            ...sessionStateRef.current,
+            artifact_index: { ...sessionStateRef.current.artifact_index },
+          };
+        }
+      }
+
       setBusy(true);
       setTurnStartedAt(Date.now());
 
@@ -1173,6 +1250,28 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           },
         });
         await saveSessionSafe();
+
+        // Auto-compact after turn if compiled context is enabled and thresholds are met
+        if (compiledContextRef.current && shouldCompact({ messages: messagesRef.current })) {
+          const result = compactCompiled({
+            messages: messagesRef.current,
+            state: sessionStateRef.current,
+            store: artifactStoreRef.current,
+          });
+          if (result.metrics.rawTurnsRemoved > 0) {
+            messagesRef.current = result.newMessages;
+            sessionStateRef.current = result.newState;
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+              },
+            ]);
+            await saveSessionSafe();
+          }
+        }
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(aborted)" }]);

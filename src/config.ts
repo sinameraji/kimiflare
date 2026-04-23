@@ -24,6 +24,8 @@ export interface KimiConfig {
   coauthorEmail?: string;
   mcpServers?: Record<string, McpServerConfig>;
   cacheStablePrompts?: boolean;
+  /** Enable compiled context (token-optimized state packet + artifact store). */
+  compiledContext?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -59,6 +61,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCacheStable = process.env.KIMIFLARE_CACHE_STABLE_PROMPTS;
   const cacheStablePrompts = envCacheStable === "0" || envCacheStable === "false" ? false : true;
 
+  const envCompiled = process.env.KIMIFLARE_COMPILED_CONTEXT;
+  const compiledContext = envCompiled === "1" || envCompiled === "true" ? true : false;
+
   if (envAccount && envToken) {
     return {
       accountId: envAccount,
@@ -70,6 +75,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       coauthorName: envCoauthor?.name,
       coauthorEmail: envCoauthor?.email,
       cacheStablePrompts,
+      compiledContext,
     };
   }
 
@@ -88,6 +94,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
         mcpServers: parsed.mcpServers,
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
+        compiledContext: parsed.compiledContext ?? compiledContext,
       };
     }
   } catch {

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatMessage, Usage } from "./agent/messages.js";
 import type { ToolResult } from "./tools/executor.js";
+import { rotateJsonl, RETENTION } from "./storage-limits.js";
 
 const LOG_VERSION = 1;
 
@@ -29,6 +30,15 @@ export interface CacheDiagnostics {
   cacheHitRatio: number;
 }
 
+export interface CompactionMetrics {
+  estimatedTokensBefore: number;
+  estimatedTokensAfter: number;
+  archivedArtifacts: number;
+  recalledArtifacts: number;
+  rawTurnsRemoved: number;
+  rawTurnsKept: number;
+}
+
 export interface CostDebugEntry {
   v: number;
   ts: string;
@@ -43,6 +53,7 @@ export interface CostDebugEntry {
   toolTotalReducedBytes: number;
   toolSavingsPct: number;
   cacheDiagnostics?: CacheDiagnostics;
+  compaction?: CompactionMetrics;
 }
 
 function debugDir(): string {
@@ -115,6 +126,7 @@ export function buildToolStats(results: ToolResult[]): ToolByteStats[] {
 
 export async function logCostDebug(entry: CostDebugEntry): Promise<void> {
   await mkdir(debugDir(), { recursive: true });
+  await rotateJsonl(debugPath(), RETENTION.costDebugMaxBytes, RETENTION.costDebugRotations);
   await appendFile(debugPath(), JSON.stringify(entry) + "\n", "utf8");
 }
 
@@ -125,6 +137,7 @@ export interface TurnDebugContext {
   toolResults: ToolResult[];
   usage: Usage;
   previousMessages?: ChatMessage[];
+  compaction?: CompactionMetrics;
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -228,5 +241,6 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     toolTotalReducedBytes: toolTotalReduced,
     toolSavingsPct: toolTotalRaw > 0 ? Math.round(((toolTotalRaw - toolTotalReduced) / toolTotalRaw) * 100) : 0,
     cacheDiagnostics,
+    compaction: ctx.compaction,
   });
 }

@@ -2,6 +2,8 @@ import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatMessage } from "./agent/messages.js";
+import type { SessionState } from "./agent/session-state.js";
+import { listFilesByMtime, pruneFiles, RETENTION } from "./storage-limits.js";
 
 export interface SessionSummary {
   id: string;
@@ -19,6 +21,8 @@ export interface SessionFile {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+  /** Compiled session state for token-optimized context (optional). */
+  sessionState?: SessionState;
 }
 
 function sessionsDir(): string {
@@ -46,6 +50,13 @@ export async function saveSession(file: SessionFile): Promise<string> {
   const path = join(dir, `${file.id}.json`);
   await writeFile(path, JSON.stringify(file, null, 2), "utf8");
   return path;
+}
+
+/** Prune old session files to enforce retention policy. */
+export async function pruneSessions(): Promise<number> {
+  const dir = sessionsDir();
+  const files = await listFilesByMtime(dir, /\.json$/);
+  return pruneFiles(files, RETENTION.sessionMaxAgeDays, RETENTION.sessionMaxCount);
 }
 
 export async function listSessions(limit = 30): Promise<SessionSummary[]> {

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Usage } from "./agent/messages.js";
 import { calculateCost } from "./pricing.js";
+import { RETENTION } from "./storage-limits.js";
 
 const LOG_VERSION = 1;
 
@@ -42,6 +43,11 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function cutoffDate(daysBack: number): string {
+  const d = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+
 async function loadLog(): Promise<UsageLog> {
   try {
     const raw = await readFile(usagePath(), "utf8");
@@ -76,8 +82,23 @@ function getOrCreateSession(log: UsageLog, sessionId: string, date: string): Ses
   return session;
 }
 
+/** Prune old day and session entries to enforce retention policy. */
+export function pruneUsageLog(log: UsageLog): UsageLog {
+  const dayCutoff = cutoffDate(RETENTION.usageDayMaxAgeDays);
+  const sessionCutoff = cutoffDate(RETENTION.usageSessionMaxAgeDays);
+  const days = log.days.filter((d) => d.date >= dayCutoff);
+  let sessions = log.sessions.filter((s) => s.date >= sessionCutoff);
+  if (sessions.length > RETENTION.usageSessionMaxCount) {
+    // Keep most recent sessions by date, then by array order as tie-breaker
+    sessions = sessions
+      .sort((a, b) => (b.date < a.date ? -1 : b.date > a.date ? 1 : 0))
+      .slice(0, RETENTION.usageSessionMaxCount);
+  }
+  return { ...log, days, sessions };
+}
+
 export async function recordUsage(sessionId: string, usage: Usage): Promise<void> {
-  const log = await loadLog();
+  const log = pruneUsageLog(await loadLog());
   const date = today();
   const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
 
@@ -104,7 +125,7 @@ export interface CostReport {
 }
 
 export async function getCostReport(sessionId: string): Promise<CostReport> {
-  const log = await loadLog();
+  const log = pruneUsageLog(await loadLog());
   const date = today();
   const currentMonth = date.slice(0, 7); // YYYY-MM
 
