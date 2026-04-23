@@ -45,6 +45,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^12.1.0",
     "diff": "^7.0.0",
     "fast-glob": "^3.3.2",

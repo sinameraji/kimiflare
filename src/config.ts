@@ -4,6 +4,15 @@ import { join } from "node:path";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 
+export interface McpServerConfig {
+  type: "local" | "remote";
+  command?: string[];
+  url?: string;
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
 export interface KimiConfig {
   accountId: string;
   apiToken: string;
@@ -13,6 +22,7 @@ export interface KimiConfig {
   coauthor?: boolean;
   coauthorName?: string;
   coauthorEmail?: string;
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -71,6 +81,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
         coauthorName: envCoauthor?.name ?? parsed.coauthorName,
         coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
+        mcpServers: parsed.mcpServers,
       };
     }
   } catch {
