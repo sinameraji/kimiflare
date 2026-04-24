@@ -30,7 +30,7 @@ Outcome: a `kimiflare` binary that opens a TUI, lets the user chat, calls Kimi-k
 - TypeScript. `tsup` builds, `tsx` for dev.
 - Ink + `ink-text-input`, `ink-spinner`, `ink-select-input`. React 18.
 - `commander` for CLI args. `fast-glob` for globs. `diff` for unified diffs. `turndown` for HTML→markdown.
-- No AI Gateway. No `openai` SDK. Direct `fetch`.
+- No `openai` SDK. Direct `fetch`.
 
 ## File layout
 
