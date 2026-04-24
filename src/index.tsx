@@ -31,7 +31,14 @@ program
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
-  .parse();
+  .command("usage")
+  .description("show per-turn token usage log from ~/.kimiflare/usage.jsonl")
+  .action(async () => {
+    const { showUsageLog } = await import("./usage-cli.js");
+    await showUsageLog();
+  });
+
+program.parse();
 
 const opts = program.opts<{
   print?: string;
@@ -43,6 +50,12 @@ const opts = program.opts<{
 async function main() {
   const cfg = await loadConfig();
   const updateResult = await checkForUpdate();
+
+  // Handle subcommands (usage, etc.)
+  const args = program.args;
+  if (args[0] === "usage") {
+    return;
+  }
 
   if (opts.print !== undefined) {
     if (!cfg) {
@@ -105,8 +118,11 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
 
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
-  const messages: ChatMessage[] = [
+  const systemMessages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
+  ];
+  const messages: ChatMessage[] = [
+    ...systemMessages,
     { role: "user", content: opts.prompt },
   ];
 
@@ -125,6 +141,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     executor,
     cwd,
     signal: controller.signal,
+    systemMessages,
     coauthor:
       opts.coauthor !== false
         ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }

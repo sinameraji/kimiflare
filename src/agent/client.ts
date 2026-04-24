@@ -26,7 +26,7 @@ export interface RunKimiOpts {
 }
 
 const RETRYABLE_CODES = new Set([3040]); // "Capacity temporarily exceeded"
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 2;
 
 function cleanErrorMessage(msg: string): string {
   // Cloudflare Workers AI sometimes prefixes messages with redundant "AiError: "
@@ -50,7 +50,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       : {}),
     stream: true,
     temperature: opts.temperature ?? 0.2,
-    max_completion_tokens: opts.maxCompletionTokens ?? 16384,
+    max_completion_tokens: opts.maxCompletionTokens ?? 4096,
   };
   if (opts.reasoningEffort) {
     body.reasoning_effort = opts.reasoningEffort;

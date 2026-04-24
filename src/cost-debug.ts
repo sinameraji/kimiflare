@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ChatMessage, Usage } from "./agent/messages.js";
 import type { ToolResult } from "./tools/executor.js";
 import { rotateJsonl, RETENTION } from "./storage-limits.js";
+import type { TokenBreakdown } from "./agent/token-limits.js";
 
 const LOG_VERSION = 1;
 
@@ -146,6 +147,68 @@ export interface TurnDebugContext {
   previousMessages?: ChatMessage[];
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
+}
+
+export interface TurnTokenMetrics {
+  v: number;
+  ts: string;
+  sessionId: string;
+  turn: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokenCap: number;
+  messageCount: number;
+  toolOutputCount: number;
+  tokensFromSystem: number;
+  tokensFromSession: number;
+  tokensFromTools: number;
+  tokensFromHistory: number;
+  tokensFromUserInput: number;
+  wasCompacted: boolean;
+  removedCount: number;
+  exceedsLimit: boolean;
+}
+
+function usageDir(): string {
+  return join(homedir(), ".kimiflare");
+}
+
+function usagePath(): string {
+  return join(usageDir(), "usage.jsonl");
+}
+
+export async function logTurnTokenMetrics(metrics: TurnTokenMetrics): Promise<void> {
+  await mkdir(usageDir(), { recursive: true });
+  await rotateJsonl(usagePath(), RETENTION.costDebugMaxBytes, RETENTION.costDebugRotations);
+  await appendFile(usagePath(), JSON.stringify(metrics) + "\n", "utf8");
+}
+
+export function buildTurnTokenMetrics(
+  sessionId: string,
+  turn: number,
+  breakdown: TokenBreakdown,
+  estimatedOutputTokenCap: number,
+  wasCompacted: boolean,
+  removedCount: number,
+  exceedsLimit: boolean,
+): TurnTokenMetrics {
+  return {
+    v: LOG_VERSION,
+    ts: now(),
+    sessionId,
+    turn,
+    estimatedInputTokens: breakdown.total,
+    estimatedOutputTokenCap,
+    messageCount: breakdown.messageCount,
+    toolOutputCount: breakdown.toolOutputCount,
+    tokensFromSystem: breakdown.fromSystem,
+    tokensFromSession: breakdown.fromSession,
+    tokensFromTools: breakdown.fromTools,
+    tokensFromHistory: breakdown.fromHistory,
+    tokensFromUserInput: breakdown.fromUserInput,
+    wasCompacted,
+    removedCount,
+    exceedsLimit,
+  };
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */

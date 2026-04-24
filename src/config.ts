@@ -28,6 +28,12 @@ export interface KimiConfig {
   compiledContext?: boolean;
   /** Number of recent user turns to retain image content; older images are dropped. */
   imageHistoryTurns?: number;
+  /** Max tool/LLM iterations per user action. Default 10. */
+  maxToolIterations?: number;
+  /** Max input tokens per LLM request. Default 30000. */
+  maxInputTokens?: number;
+  /** Max completion tokens per LLM response. Default 4096. */
+  maxCompletionTokens?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -69,6 +75,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
   const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
 
+  const envMaxToolIterations = process.env.KIMIFLARE_MAX_TOOL_ITERATIONS;
+  const maxToolIterations = envMaxToolIterations ? parseInt(envMaxToolIterations, 10) : undefined;
+
+  const envMaxInputTokens = process.env.KIMIFLARE_MAX_INPUT_TOKENS;
+  const maxInputTokens = envMaxInputTokens ? parseInt(envMaxInputTokens, 10) : undefined;
+
+  const envMaxCompletionTokens = process.env.KIMIFLARE_MAX_COMPLETION_TOKENS;
+  const maxCompletionTokens = envMaxCompletionTokens ? parseInt(envMaxCompletionTokens, 10) : undefined;
+
   if (envAccount && envToken) {
     return {
       accountId: envAccount,
@@ -82,6 +97,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       cacheStablePrompts,
       compiledContext,
       imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
+      maxToolIterations: Number.isNaN(maxToolIterations) ? undefined : maxToolIterations,
+      maxInputTokens: Number.isNaN(maxInputTokens) ? undefined : maxInputTokens,
+      maxCompletionTokens: Number.isNaN(maxCompletionTokens) ? undefined : maxCompletionTokens,
     };
   }
 
@@ -102,6 +120,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
         imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
+        maxToolIterations: Number.isNaN(maxToolIterations) ? parsed.maxToolIterations : maxToolIterations,
+        maxInputTokens: Number.isNaN(maxInputTokens) ? parsed.maxInputTokens : maxInputTokens,
+        maxCompletionTokens: Number.isNaN(maxCompletionTokens) ? parsed.maxCompletionTokens : maxCompletionTokens,
       };
     }
   } catch {

@@ -55,6 +55,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
+import { clearOutputHashCache } from "./agent/tool-output-summarizer.js";
 
 interface Cfg {
   accountId: string;
@@ -166,9 +167,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
 
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
-  const messagesRef = useRef<ChatMessage[]>(
+  const systemMessagesRef = useRef<ChatMessage[]>(
     makePrefixMessages(cacheStableRef.current, cfg?.model ?? DEFAULT_MODEL, "edit", ALL_TOOLS),
   );
+  const messagesRef = useRef<ChatMessage[]>(systemMessagesRef.current.slice());
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
@@ -259,7 +261,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   useEffect(() => {
     modeRef.current = mode;
     if (cacheStableRef.current) {
-      messagesRef.current[1] = {
+      const sessionMsg: ChatMessage = {
         role: "system",
         content: buildSessionPrefix({
           cwd: process.cwd(),
@@ -268,8 +270,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           mode,
         }),
       };
+      messagesRef.current[1] = sessionMsg;
+      systemMessagesRef.current[1] = sessionMsg;
     } else {
-      messagesRef.current[0] = {
+      const sysMsg: ChatMessage = {
         role: "system",
         content: buildSystemPrompt({
           cwd: process.cwd(),
@@ -278,6 +282,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           mode,
         }),
       };
+      messagesRef.current[0] = sysMsg;
+      systemMessagesRef.current[0] = sysMsg;
     }
     if (mode === "plan") {
       executorRef.current.clearSessionPermissions();
@@ -355,7 +361,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     }
     if (totalTools > 0) {
       if (cacheStableRef.current) {
-        messagesRef.current[1] = {
+        const sessionMsg: ChatMessage = {
           role: "system",
           content: buildSessionPrefix({
             cwd: process.cwd(),
@@ -364,8 +370,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             mode: modeRef.current,
           }),
         };
+        messagesRef.current[1] = sessionMsg;
+        systemMessagesRef.current[1] = sessionMsg;
       } else {
-        messagesRef.current[0] = {
+        const sysMsg: ChatMessage = {
           role: "system",
           content: buildSystemPrompt({
             cwd: process.cwd(),
@@ -374,6 +382,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             mode: modeRef.current,
           }),
         };
+        messagesRef.current[0] = sysMsg;
+        systemMessagesRef.current[0] = sysMsg;
       }
       setEvents((e) => [
         ...e,
@@ -611,6 +621,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
             : undefined,
         sessionId: ensureSessionId(),
+        systemMessages: systemMessagesRef.current,
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -693,7 +704,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
 
       if (existsSync(join(cwd, "KIMI.md"))) {
         if (cacheStableRef.current) {
-          messagesRef.current[1] = {
+          const sessionMsg: ChatMessage = {
             role: "system",
             content: buildSessionPrefix({
               cwd,
@@ -702,8 +713,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               mode: modeRef.current,
             }),
           };
+          messagesRef.current[1] = sessionMsg;
+          systemMessagesRef.current[1] = sessionMsg;
         } else {
-          messagesRef.current[0] = {
+          const sysMsg: ChatMessage = {
             role: "system",
             content: buildSystemPrompt({
               cwd,
@@ -712,6 +725,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               mode: modeRef.current,
             }),
           };
+          messagesRef.current[0] = sysMsg;
+          systemMessagesRef.current[0] = sysMsg;
         }
         setEvents((e) => [
           ...e,
@@ -739,7 +754,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       if (!picked) return;
       try {
         const file = await loadSession(picked.filePath);
+        const prefixEnd = file.messages.findIndex((m) => m.role !== "system");
+        systemMessagesRef.current = prefixEnd === -1 ? file.messages.slice() : file.messages.slice(0, prefixEnd);
         messagesRef.current = file.messages;
+        clearOutputHashCache();
         sessionIdRef.current = file.id;
         if (file.sessionState && compiledContextRef.current) {
           sessionStateRef.current = file.sessionState;
@@ -808,10 +826,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       }
       if (c === "/clear") {
         if (cacheStableRef.current && messagesRef.current.length >= 2) {
-          messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
+          systemMessagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
         } else {
-          messagesRef.current = [messagesRef.current[0]!];
+          systemMessagesRef.current = [messagesRef.current[0]!];
         }
+        messagesRef.current = systemMessagesRef.current.slice();
+        clearOutputHashCache();
         sessionIdRef.current = null;
         sessionStateRef.current = emptySessionState();
         artifactStoreRef.current = new ArtifactStore();
@@ -1159,6 +1179,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               : undefined,
           sessionId: ensureSessionId(),
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+          systemMessages: systemMessagesRef.current,
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
