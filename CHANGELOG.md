@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/sinameraji/kimiflare/compare/v0.19.0...v0.20.0) (2026-04-24)
+
+
+### Features
+
+* reduce token usage by 70-90% via bounded context and tool output summarization ([#126](https://github.com/sinameraji/kimiflare/issues/126)) ([e75099e](https://github.com/sinameraji/kimiflare/commit/e75099e61b4f34730cd5c192913ee15b428cdbf6))
+
 ## [0.19.0](https://github.com/sinameraji/kimiflare/compare/v0.18.0...v0.19.0) (2026-04-24)
 
 
