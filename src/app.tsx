@@ -54,7 +54,8 @@ import {
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
-import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
+import { recordUsage, getCostReport } from "./usage-tracker.js";
+import { calculateCost } from "./pricing.js";
 
 interface Cfg {
   accountId: string;
@@ -141,6 +142,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<{ prompt_tokens: number; completion_tokens: number; cached_tokens: number; cost: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
@@ -662,6 +664,24 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             setUsage(u);
             const sid = ensureSessionId();
             void recordUsage(sid, u);
+            setSessionUsage((prev) => {
+              const cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+              const cost = calculateCost(u.prompt_tokens, u.completion_tokens, cached);
+              if (!prev) {
+                return {
+                  prompt_tokens: u.prompt_tokens,
+                  completion_tokens: u.completion_tokens,
+                  cached_tokens: cached,
+                  cost: cost.total,
+                };
+              }
+              return {
+                prompt_tokens: prev.prompt_tokens + u.prompt_tokens,
+                completion_tokens: prev.completion_tokens + u.completion_tokens,
+                cached_tokens: prev.cached_tokens + cached,
+                cost: prev.cost + cost.total,
+              };
+            });
           },
           askPermission: (req) =>
             new Promise<PermissionDecision>((resolve) => {
@@ -762,6 +782,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           .filter((text) => text.length > 0);
         if (userMsgs.length > 0) setHistory(userMsgs);
         setUsage(null);
+        void getCostReport(file.id).then((report) => {
+          setSessionUsage({
+            prompt_tokens: report.session.promptTokens,
+            completion_tokens: report.session.completionTokens,
+            cached_tokens: report.session.cachedTokens,
+            cost: report.session.cost,
+          });
+        });
       } catch (e) {
         setEvents((es) => [
           ...es,
@@ -817,6 +845,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         executorRef.current.clearArtifacts();
         setEvents([]);
         setUsage(null);
+        setSessionUsage(null);
         setTasks([]);
         setTasksStartedAt(null);
         setTasksStartTokens(0);
@@ -833,19 +862,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           ]);
           return next;
         });
-        return true;
-      }
-      if (c === "/cost") {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: usage
-              ? `prompt ${usage.prompt_tokens} / completion ${usage.completion_tokens}`
-              : "no usage yet",
-          },
-        ]);
         return true;
       }
       if (c === "/model") {
@@ -947,16 +963,19 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         return true;
       }
       if (c === "/cost") {
-        if (!sessionIdRef.current) {
+        if (!sessionUsage) {
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no usage recorded yet" }]);
           return true;
         }
-        void getCostReport(sessionIdRef.current).then((report) => {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: formatCostReport(report) },
-          ]);
-        });
+        const cached = sessionUsage.cached_tokens > 0 ? ` (${sessionUsage.cached_tokens} cached)` : "";
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `session  ${sessionUsage.cost.toFixed(4)}  (in: ${sessionUsage.prompt_tokens}${cached}  out: ${sessionUsage.completion_tokens})`,
+          },
+        ]);
         return true;
       }
       if (c === "/resume") {
@@ -1210,6 +1229,26 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             onUsage: (u) => {
               usageRef.current = u;
               setUsage(u);
+              const sid = ensureSessionId();
+              void recordUsage(sid, u);
+              setSessionUsage((prev) => {
+                const cached = u.prompt_tokens_details?.cached_tokens ?? 0;
+                const cost = calculateCost(u.prompt_tokens, u.completion_tokens, cached);
+                if (!prev) {
+                  return {
+                    prompt_tokens: u.prompt_tokens,
+                    completion_tokens: u.completion_tokens,
+                    cached_tokens: cached,
+                    cost: cost.total,
+                  };
+                }
+                return {
+                  prompt_tokens: prev.prompt_tokens + u.prompt_tokens,
+                  completion_tokens: prev.completion_tokens + u.completion_tokens,
+                  cached_tokens: prev.cached_tokens + cached,
+                  cost: prev.cost + cost.total,
+                };
+              });
             },
             onTasks: (nextTasks) => {
               const prevEmpty = tasksRef.current.length === 0;
@@ -1426,6 +1465,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           <StatusBar
             model={cfg.model}
             usage={usage}
+            sessionUsage={sessionUsage}
             thinking={busy}
             turnStartedAt={turnStartedAt}
             theme={theme}

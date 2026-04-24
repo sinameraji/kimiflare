@@ -7,9 +7,17 @@ import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 
+interface SessionUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_tokens: number;
+  cost: number;
+}
+
 interface Props {
   model: string;
   usage: Usage | null;
+  sessionUsage?: SessionUsage | null;
   thinking: boolean;
   turnStartedAt: number | null;
   theme: Theme;
@@ -20,7 +28,7 @@ interface Props {
   latestVersion?: string | null;
 }
 
-export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion }: Props) {
   const [now, setNow] = useState(Date.now());
   const modeColor =
     mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
@@ -57,7 +65,7 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
       {usage && (
         <Box>
           <Text color={theme.info.color} dimColor={theme.info.dim}>
-            {buildRightParts(usage, contextLimit).join("  ·  ")}
+            {buildRightParts(usage, sessionUsage, contextLimit).join("  ·  ")}
           </Text>
           {warn ? (
             <Text color={theme.warn} bold>
@@ -75,15 +83,17 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
   );
 }
 
-function buildRightParts(usage: Usage, contextLimit: number): string[] {
-  const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
+function buildRightParts(usage: Usage, sessionUsage: SessionUsage | null | undefined, contextLimit: number): string[] {
+  const cached = sessionUsage?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
+  const inTokens = sessionUsage?.prompt_tokens ?? usage.prompt_tokens;
+  const outTokens = sessionUsage?.completion_tokens ?? usage.completion_tokens;
+  const cost = sessionUsage?.cost ?? calculateCost(usage.prompt_tokens, usage.completion_tokens, cached).total;
   return [
-    `in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`,
-    `out ${usage.completion_tokens}`,
+    `in ${inTokens}${cached ? ` (${cached} cached)` : ""}`,
+    `out ${outTokens}`,
     `ctx ${pct}%`,
-    `$${cost.total.toFixed(5)}`,
+    `${cost.toFixed(5)}`,
   ];
 }
 

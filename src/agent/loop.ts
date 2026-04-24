@@ -95,11 +95,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         }
         case "usage":
           lastUsage = ev.usage;
-          opts.callbacks.onUsage?.(ev.usage);
           break;
         case "done":
           break;
       }
+    }
+
+    if (lastUsage) {
+      opts.callbacks.onUsage?.(lastUsage);
     }
 
     const assistantMsg: ChatMessage = {
