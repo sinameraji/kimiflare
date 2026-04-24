@@ -21,7 +21,7 @@ describe("runKimi session affinity header", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("sends X-Session-ID header when sessionId is provided", async () => {
+  it("sends X-Session-ID and x-session-affinity headers when sessionId is provided", async () => {
     const gen = runKimi({
       accountId: "test",
       apiToken: "token",
@@ -35,9 +35,10 @@ describe("runKimi session affinity header", () => {
     }
     assert.ok(lastRequest);
     assert.strictEqual(lastRequest!.headers.get("X-Session-ID"), "sess-123");
+    assert.strictEqual(lastRequest!.headers.get("x-session-affinity"), "sess-123");
   });
 
-  it("does not send X-Session-ID header when sessionId is omitted", async () => {
+  it("does not send session headers when sessionId is omitted", async () => {
     const gen = runKimi({
       accountId: "test",
       apiToken: "token",
@@ -49,5 +50,6 @@ describe("runKimi session affinity header", () => {
     }
     assert.ok(lastRequest);
     assert.strictEqual(lastRequest!.headers.get("X-Session-ID"), null);
+    assert.strictEqual(lastRequest!.headers.get("x-session-affinity"), null);
   });
 });

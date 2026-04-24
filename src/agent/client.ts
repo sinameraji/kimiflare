@@ -65,6 +65,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       };
       if (opts.sessionId) {
         headers["X-Session-ID"] = opts.sessionId;
+        headers["x-session-affinity"] = opts.sessionId;
       }
       res = await fetch(url, {
         method: "POST",
