@@ -24,7 +24,7 @@
 
 - **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
 - **Image understanding** — Drop image paths into your prompt (PNG, JPG, WebP, GIF, BMP). The model sees them inline — great for UI reviews, diagrams, screenshots, and mockups.
-- **Direct to Cloudflare** — No AI Gateway, no proxy, no OpenAI SDK. Your traffic goes straight to Workers AI from your account.
+- **Direct to Cloudflare** — No proxy, no OpenAI SDK. Your traffic goes straight to Workers AI from your account.
 - **Plan mode** — Ask the agent to research and produce a plan without touching your filesystem. Review it, then exit plan mode to execute.
 
 ## Quick start
