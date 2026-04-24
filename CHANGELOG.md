@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/sinameraji/kimiflare/compare/v0.20.0...v0.20.1) (2026-04-24)
+
+
+### Bug Fixes
+
+* restore TUI entry point when running bare kimiflare command ([#128](https://github.com/sinameraji/kimiflare/issues/128)) ([bf63d42](https://github.com/sinameraji/kimiflare/commit/bf63d42dbe7c577e88a512d2b9dfc9aaf95ffb3b))
+
 ## [0.20.0](https://github.com/sinameraji/kimiflare/compare/v0.19.0...v0.20.0) (2026-04-24)
 
 
