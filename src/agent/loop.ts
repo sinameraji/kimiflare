@@ -1,7 +1,7 @@
 import { runKimi } from "./client.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
-import { sanitizeString } from "./messages.js";
+import { sanitizeString, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
@@ -37,6 +37,8 @@ export interface AgentTurnOpts {
   reasoningEffort?: "low" | "medium" | "high";
   coauthor?: { name: string; email: string };
   sessionId?: string;
+  /** Drop image_url parts from user messages older than this many turns. */
+  keepLastImageTurns?: number;
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
@@ -93,6 +95,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       if (stripReasoning) {
         apiMessages = stripped;
       }
+    }
+
+    if (opts.keepLastImageTurns !== undefined) {
+      apiMessages = stripOldImages(apiMessages, opts.keepLastImageTurns);
     }
 
     const events = runKimi({

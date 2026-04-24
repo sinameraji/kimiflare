@@ -68,6 +68,7 @@ interface Cfg {
   mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean }>;
   cacheStablePrompts?: boolean;
   compiledContext?: boolean;
+  imageHistoryTurns?: number;
 }
 
 interface PendingPermission {
@@ -1157,6 +1158,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
               : undefined,
           sessionId: ensureSessionId(),
+          keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;

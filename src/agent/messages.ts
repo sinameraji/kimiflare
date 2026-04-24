@@ -96,3 +96,35 @@ export function stableStringify(value: unknown, replacer?: (key: string, val: un
   const sorted = sortKeys(value);
   return JSON.stringify(sorted, replacer, space);
 }
+
+/** Remove image_url content parts from user messages older than `keepLastTurns`.
+ *  Returns a new array; input is not mutated. */
+export function stripOldImages(messages: ChatMessage[], keepLastTurns: number): ChatMessage[] {
+  if (keepLastTurns < 0) return messages;
+
+  // Count user messages from the end to find the cutoff index.
+  let userCount = 0;
+  let cutoffIndex = messages.length;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === "user") {
+      userCount++;
+      if (userCount === keepLastTurns) {
+        cutoffIndex = i;
+        break;
+      }
+    }
+  }
+
+  return messages.map((m, idx) => {
+    if (m.role !== "user" || idx >= cutoffIndex) return m;
+    if (!Array.isArray(m.content)) return m;
+
+    const stripped = m.content.filter((p): p is ContentPart => p.type !== "image_url");
+    if (stripped.length === m.content.length) return m;
+
+    return {
+      ...m,
+      content: stripped.length > 0 ? stripped : "[image omitted]",
+    };
+  });
+}

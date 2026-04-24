@@ -26,6 +26,8 @@ export interface KimiConfig {
   cacheStablePrompts?: boolean;
   /** Enable compiled context (token-optimized state packet + artifact store). */
   compiledContext?: boolean;
+  /** Number of recent user turns to retain image content; older images are dropped. */
+  imageHistoryTurns?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -64,6 +66,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCompiled = process.env.KIMIFLARE_COMPILED_CONTEXT;
   const compiledContext = envCompiled === "1" || envCompiled === "true" ? true : false;
 
+  const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
+  const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
+
   if (envAccount && envToken) {
     return {
       accountId: envAccount,
@@ -76,6 +81,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       coauthorEmail: envCoauthor?.email,
       cacheStablePrompts,
       compiledContext,
+      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
     };
   }
 
@@ -95,6 +101,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         mcpServers: parsed.mcpServers,
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
+        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
       };
     }
   } catch {
