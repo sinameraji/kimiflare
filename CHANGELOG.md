@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/sinameraji/kimiflare/compare/v0.18.0...v0.20.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* manual release to sync stable version from 0.18.0 to 0.20.3 ([64f999d](https://github.com/sinameraji/kimiflare/commit/64f999d))
+
 ## [0.18.0](https://github.com/sinameraji/kimiflare/compare/v0.17.0...v0.18.0) (2026-04-24)
 
 
