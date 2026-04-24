@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/sinameraji/kimiflare/compare/v0.18.0...v0.19.0) (2026-04-24)
+
+
+### Features
+
+* drop image content from message history after N turns ([562e211](https://github.com/sinameraji/kimiflare/commit/562e21111ccbd31ec716f55016d6700a4269ff3a)), closes [#98](https://github.com/sinameraji/kimiflare/issues/98)
+
 ## [0.18.0](https://github.com/sinameraji/kimiflare/compare/v0.17.0...v0.18.0) (2026-04-24)
 
 
