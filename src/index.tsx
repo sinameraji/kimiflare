@@ -38,6 +38,7 @@ program
     await showUsageLog();
   });
 
+program.action(() => {});
 program.parse();
 
 const opts = program.opts<{
