@@ -135,10 +135,21 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   }
 }
 
+/** Validate that a model ID looks like a legitimate Cloudflare Workers AI model.
+ *  Prevents path traversal via malicious model strings. */
+function validateModelId(model: string): void {
+  // Cloudflare model IDs: @namespace/name or @namespace/name/version
+  // Allowed chars: @ a-z A-Z 0-9 _ - . /
+  if (!/^@[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(model)) {
+    throw new KimiApiError(`Invalid model ID: ${model}`, 400);
+  }
+}
+
 function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
+  validateModelId(opts.model);
   if (!opts.gateway?.id) {
     return {
-      url: `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${opts.model}`,
+      url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(opts.accountId)}/ai/run/${opts.model}`,
       headers: {},
     };
   }
@@ -159,7 +170,7 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
   }
 
   return {
-    url: `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${encodeURIComponent(
+    url: `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(opts.accountId)}/${encodeURIComponent(
       opts.gateway.id,
     )}/workers-ai/${opts.model}`,
     headers,
