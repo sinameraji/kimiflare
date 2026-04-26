@@ -228,14 +228,15 @@ export interface CostReport {
   allTime: DailyUsage;
 }
 
-export async function getCostReport(sessionId: string): Promise<CostReport> {
+export async function getCostReport(sessionId?: string): Promise<CostReport> {
   const log = pruneUsageLog(await loadLog());
   const date = today();
   const currentMonth = date.slice(0, 7); // YYYY-MM
 
-  const session =
-    log.sessions.find((s) => s.id === sessionId) ??
-    { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+  const session = sessionId
+    ? (log.sessions.find((s) => s.id === sessionId) ??
+      { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 })
+    : { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
 
   const todayUsage =
     log.days.find((d) => d.date === date) ??

@@ -54,7 +54,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
     <Box flexDirection="column">
       <Static items={finalized}>
         {(item) => (
-          <Box flexDirection="column">
+          <Box key={item.id} flexDirection="column">
             {item.showSeparator && (
               <Box marginY={1}>
                 <Text color={theme.info.color} dimColor={theme.info.dim}>
