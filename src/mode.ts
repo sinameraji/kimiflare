@@ -28,7 +28,7 @@ export function isBlockedInPlanMode(toolName: string): boolean {
 
 // Dangerous shell patterns that disqualify any command from read-only status
 // Pipes (|) and AND chains (&&) are allowed — each segment is validated independently.
-const DANGEROUS_PATTERNS = /[<>;&`$]|\$\(|\$\{|\|\||\b&\s*$/;
+const DANGEROUS_PATTERNS = /[<>;`$]|\$\(|\$\{|\|\||\b&\s*$/;
 
 // Git subcommands that are read-only (value = true means always safe, false means needs arg check)
 const GIT_READONLY_SUBCOMMANDS: Record<string, boolean> = {
