@@ -1,0 +1,418 @@
+import Database from "better-sqlite3";
+import { join, dirname } from "node:path";
+import { mkdirSync, statSync } from "node:fs";
+import type { Memory, MemoryInput, MemoryStats, MemoryCategory } from "./schema.js";
+
+let dbInstance: Database.Database | null = null;
+let dbPathInstance: string | null = null;
+
+function initSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      category TEXT NOT NULL,
+      source_session_id TEXT NOT NULL,
+      repo_path TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      accessed_at INTEGER NOT NULL,
+      importance INTEGER NOT NULL DEFAULT 3,
+      related_files TEXT NOT NULL DEFAULT '[]',
+      topic_key TEXT,
+      superseded_by TEXT,
+      forgotten INTEGER NOT NULL DEFAULT 0,
+      vectorized INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memories_repo ON memories(repo_path);
+    CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
+    CREATE INDEX IF NOT EXISTS idx_memories_accessed ON memories(accessed_at);
+    CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+    CREATE INDEX IF NOT EXISTS idx_memories_topic_key ON memories(topic_key);
+    CREATE INDEX IF NOT EXISTS idx_memories_forgotten ON memories(forgotten);
+    CREATE INDEX IF NOT EXISTS idx_memories_vectorized ON memories(vectorized);
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+      content,
+      category,
+      repo_path,
+      content='memories',
+      content_rowid='rowid'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+      INSERT INTO memories_fts(rowid, content, category, repo_path)
+      VALUES (new.rowid, new.content, new.category, new.repo_path);
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+      INSERT INTO memories_fts(memories_fts, rowid, content, category, repo_path)
+      VALUES ('delete', old.rowid, old.content, old.category, old.repo_path);
+    END;
+
+    CREATE TABLE IF NOT EXISTS memory_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+}
+
+function migrateV1(db: Database.Database): void {
+  // Add columns that may be missing from pre-v1 schema
+  const columns = db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+  const names = new Set(columns.map((c) => c.name));
+  if (!names.has("topic_key")) {
+    db.exec("ALTER TABLE memories ADD COLUMN topic_key TEXT");
+  }
+  if (!names.has("superseded_by")) {
+    db.exec("ALTER TABLE memories ADD COLUMN superseded_by TEXT");
+  }
+  if (!names.has("forgotten")) {
+    db.exec("ALTER TABLE memories ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("vectorized")) {
+    db.exec("ALTER TABLE memories ADD COLUMN vectorized INTEGER NOT NULL DEFAULT 0");
+  }
+  // Create new indexes if missing
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_memories_topic_key ON memories(topic_key);
+    CREATE INDEX IF NOT EXISTS idx_memories_forgotten ON memories(forgotten);
+    CREATE INDEX IF NOT EXISTS idx_memories_vectorized ON memories(vectorized);
+  `);
+}
+
+export function openMemoryDb(dbPath: string): Database.Database {
+  if (dbInstance && dbPathInstance === dbPath) {
+    return dbInstance;
+  }
+  if (dbInstance) {
+    dbInstance.close();
+  }
+  mkdirSync(dirname(dbPath), { recursive: true });
+  dbInstance = new Database(dbPath);
+  dbInstance.pragma("journal_mode = WAL");
+  dbInstance.pragma("foreign_keys = ON");
+  initSchema(dbInstance);
+  migrateV1(dbInstance);
+  dbPathInstance = dbPath;
+  return dbInstance;
+}
+
+export function closeMemoryDb(): void {
+  if (dbInstance) {
+    dbInstance.close();
+    dbInstance = null;
+    dbPathInstance = null;
+  }
+}
+
+export function getMemoryDb(): Database.Database | null {
+  return dbInstance;
+}
+
+function rowToMemory(row: Database.RunResult & Record<string, unknown>): Memory {
+  const embedding = new Float32Array(row.embedding as Buffer);
+  return {
+    id: row.id as string,
+    content: row.content as string,
+    embedding,
+    category: row.category as MemoryCategory,
+    sourceSessionId: row.source_session_id as string,
+    repoPath: row.repo_path as string,
+    createdAt: row.created_at as number,
+    accessedAt: row.accessed_at as number,
+    importance: row.importance as number,
+    relatedFiles: JSON.parse(row.related_files as string) as string[],
+    topicKey: (row.topic_key as string | null) ?? null,
+    supersededBy: (row.superseded_by as string | null) ?? null,
+    forgotten: (row.forgotten as number) === 1,
+    vectorized: (row.vectorized as number) === 1,
+  };
+}
+
+export function insertMemory(db: Database.Database, mem: MemoryInput, embedding: Float32Array): Memory {
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = Date.now();
+  const memory: Memory = {
+    id,
+    content: mem.content,
+    embedding,
+    category: mem.category,
+    sourceSessionId: mem.sourceSessionId,
+    repoPath: mem.repoPath,
+    createdAt: now,
+    accessedAt: now,
+    importance: mem.importance,
+    relatedFiles: mem.relatedFiles ?? [],
+    topicKey: mem.topicKey ?? null,
+    supersededBy: null,
+    forgotten: false,
+    vectorized: true,
+  };
+
+  db.prepare(
+    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    memory.id,
+    memory.content,
+    Buffer.from(memory.embedding.buffer),
+    memory.category,
+    memory.sourceSessionId,
+    memory.repoPath,
+    memory.createdAt,
+    memory.accessedAt,
+    memory.importance,
+    JSON.stringify(memory.relatedFiles),
+    memory.topicKey,
+    memory.supersededBy,
+    memory.forgotten ? 1 : 0,
+    memory.vectorized ? 1 : 0
+  );
+
+  return memory;
+}
+
+export function insertMemories(db: Database.Database, items: { input: MemoryInput; embedding: Float32Array }[]): Memory[] {
+  const insert = db.prepare(
+    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const inserted: Memory[] = [];
+  const insertMany = db.transaction((batch: typeof items) => {
+    for (const { input, embedding } of batch) {
+      const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = Date.now();
+      const memory: Memory = {
+        id,
+        content: input.content,
+        embedding,
+        category: input.category,
+        sourceSessionId: input.sourceSessionId,
+        repoPath: input.repoPath,
+        createdAt: now,
+        accessedAt: now,
+        importance: input.importance,
+        relatedFiles: input.relatedFiles ?? [],
+        topicKey: input.topicKey ?? null,
+        supersededBy: null,
+        forgotten: false,
+        vectorized: true,
+      };
+      insert.run(
+        memory.id,
+        memory.content,
+        Buffer.from(memory.embedding.buffer),
+        memory.category,
+        memory.sourceSessionId,
+        memory.repoPath,
+        memory.createdAt,
+        memory.accessedAt,
+        memory.importance,
+        JSON.stringify(memory.relatedFiles),
+        memory.topicKey,
+        memory.supersededBy,
+        memory.forgotten ? 1 : 0,
+        memory.vectorized ? 1 : 0
+      );
+      inserted.push(memory);
+    }
+  });
+
+  insertMany(items);
+  return inserted;
+}
+
+export function updateAccessedAt(db: Database.Database, ids: string[]): void {
+  if (ids.length === 0) return;
+  const now = Date.now();
+  const stmt = db.prepare(`UPDATE memories SET accessed_at = ? WHERE id = ?`);
+  const updateMany = db.transaction((memoryIds: string[]) => {
+    for (const id of memoryIds) {
+      stmt.run(now, id);
+    }
+  });
+  updateMany(ids);
+}
+
+export function searchMemoriesFts(
+  db: Database.Database,
+  query: string,
+  repoPath?: string,
+  limit = 50
+): Array<{ memory: Memory; rank: number }> {
+  const sql = repoPath
+    ? `SELECT m.*, rank FROM memories m
+       JOIN memories_fts fts ON m.rowid = fts.rowid
+       WHERE memories_fts MATCH ? AND m.repo_path = ? AND m.forgotten = 0 AND m.superseded_by IS NULL
+       ORDER BY rank
+       LIMIT ?`
+    : `SELECT m.*, rank FROM memories m
+       JOIN memories_fts fts ON m.rowid = fts.rowid
+       WHERE memories_fts MATCH ? AND m.forgotten = 0 AND m.superseded_by IS NULL
+       ORDER BY rank
+       LIMIT ?`;
+
+  const params = repoPath ? [`${query}*`, repoPath, limit] : [`${query}*`, limit];
+  const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+  return rows.map((row) => ({
+    memory: rowToMemory(row as Database.RunResult & Record<string, unknown>),
+    rank: row.rank as number,
+  }));
+}
+
+export function listMemoriesForVectorSearch(
+  db: Database.Database,
+  repoPath: string,
+  since: number,
+  limit = 2000
+): Memory[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM memories
+       WHERE repo_path = ? AND created_at >= ? AND forgotten = 0 AND superseded_by IS NULL
+       ORDER BY accessed_at DESC
+       LIMIT ?`
+    )
+    .all(repoPath, since, limit) as Array<Database.RunResult & Record<string, unknown>>;
+  return rows.map(rowToMemory);
+}
+
+export function getMemoryStats(db: Database.Database): MemoryStats {
+  const totalCount = (db.prepare("SELECT COUNT(*) as c FROM memories WHERE forgotten = 0 AND superseded_by IS NULL").get() as { c: number }).c;
+  const dbPath = db.name;
+  let dbSizeBytes = 0;
+  try {
+    dbSizeBytes = statSync(dbPath).size;
+  } catch {
+    /* ignore */
+  }
+
+  const lastCleanup = db.prepare("SELECT value FROM memory_meta WHERE key = 'last_cleanup'").get() as
+    | { value: string }
+    | undefined;
+
+  const categories = db.prepare("SELECT category, COUNT(*) as c FROM memories WHERE forgotten = 0 AND superseded_by IS NULL GROUP BY category").all() as Array<{
+    category: MemoryCategory;
+    c: number;
+  }>;
+
+  const byCategory: Record<MemoryCategory, number> = {
+    fact: 0,
+    event: 0,
+    instruction: 0,
+    task: 0,
+    preference: 0,
+  };
+  for (const row of categories) {
+    byCategory[row.category] = row.c;
+  }
+
+  return {
+    totalCount,
+    dbSizeBytes,
+    lastCleanupAt: lastCleanup ? parseInt(lastCleanup.value, 10) : null,
+    byCategory,
+  };
+}
+
+export function deleteMemoriesByIds(db: Database.Database, ids: string[]): number {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const result = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
+  return result.changes;
+}
+
+export function deleteOldMemories(db: Database.Database, maxAgeMs: number): number {
+  const cutoff = Date.now() - maxAgeMs;
+  const result = db.prepare("DELETE FROM memories WHERE created_at < ?").run(cutoff);
+  return result.changes;
+}
+
+export function deleteExcessMemories(db: Database.Database, repoPath: string, keep: number): number {
+  const result = db
+    .prepare(
+      `DELETE FROM memories WHERE id IN (
+        SELECT id FROM memories WHERE repo_path = ?
+        ORDER BY accessed_at DESC
+        LIMIT -1 OFFSET ?
+      )`
+    )
+    .run(repoPath, keep);
+  return result.changes;
+}
+
+export function setLastCleanup(db: Database.Database): void {
+  db.prepare(
+    `INSERT INTO memory_meta (key, value) VALUES ('last_cleanup', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(String(Date.now()));
+}
+
+export function clearMemoriesForRepo(db: Database.Database, repoPath: string): number {
+  const result = db.prepare("DELETE FROM memories WHERE repo_path = ?").run(repoPath);
+  return result.changes;
+}
+
+export function listTopicKeys(db: Database.Database, repoPath: string): string[] {
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT topic_key FROM memories
+       WHERE repo_path = ? AND topic_key IS NOT NULL AND forgotten = 0 AND superseded_by IS NULL`
+    )
+    .all(repoPath) as Array<{ topic_key: string }>;
+  return rows.map((r) => r.topic_key);
+}
+
+export function findMemoriesByTopicKey(
+  db: Database.Database,
+  repoPath: string,
+  topicKey: string
+): Memory[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM memories
+       WHERE repo_path = ? AND topic_key = ? AND forgotten = 0 AND superseded_by IS NULL
+       ORDER BY created_at DESC`
+    )
+    .all(repoPath, topicKey) as Array<Database.RunResult & Record<string, unknown>>;
+  return rows.map(rowToMemory);
+}
+
+export function supersedeMemory(db: Database.Database, oldId: string, newId: string): void {
+  db.prepare(
+    `UPDATE memories SET superseded_by = ? WHERE id = ?`
+  ).run(newId, oldId);
+}
+
+export function forgetMemory(db: Database.Database, id: string): void {
+  db.prepare(
+    `UPDATE memories SET forgotten = 1 WHERE id = ?`
+  ).run(id);
+}
+
+export function listUnvectorizedMemories(db: Database.Database, repoPath: string, limit = 100): Memory[] {
+  const rows = db
+    .prepare(
+      `SELECT * FROM memories
+       WHERE repo_path = ? AND vectorized = 0
+       LIMIT ?`
+    )
+    .all(repoPath, limit) as Array<Database.RunResult & Record<string, unknown>>;
+  return rows.map(rowToMemory);
+}
+
+export function updateMemoryEmbedding(db: Database.Database, id: string, embedding: Float32Array): void {
+  db.prepare(
+    `UPDATE memories SET embedding = ?, vectorized = 1 WHERE id = ?`
+  ).run(Buffer.from(embedding.buffer), id);
+}
+
+export function getMemoryById(db: Database.Database, id: string): Memory | null {
+  const row = db.prepare("SELECT * FROM memories WHERE id = ?").get(id) as
+    | (Database.RunResult & Record<string, unknown>)
+    | undefined;
+  return row ? rowToMemory(row) : null;
+}

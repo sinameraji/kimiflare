@@ -17,6 +17,10 @@ export const RETENTION = {
   costDebugMaxBytes: 5 * 1024 * 1024,
   /** Number of rotated cost-debug files to keep. */
   costDebugRotations: 2,
+  /** Memories older than this (days) are pruned. */
+  memoryMaxAgeDays: 90,
+  /** Max memories per repo. */
+  memoryMaxEntries: 1000,
 } as const;
 
 /** Return files sorted by mtime descending (newest first). */

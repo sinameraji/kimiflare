@@ -5,6 +5,7 @@ import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executo
 import { sanitizeString, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
+import type { MemoryManager } from "../memory/manager.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 
@@ -43,6 +44,7 @@ export interface AgentTurnOpts {
   gateway?: AiGatewayOptions;
   /** Drop image_url parts from user messages older than this many turns. */
   keepLastImageTurns?: number;
+  memoryManager?: MemoryManager | null;
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
@@ -201,7 +203,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       const result = await opts.executor.run(
         { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
         opts.callbacks.askPermission,
-        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor },
+        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
       );
       toolResults.push(result);
       opts.messages.push({

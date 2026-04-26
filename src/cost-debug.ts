@@ -37,6 +37,8 @@ export interface CompactionMetrics {
   recalledArtifacts: number;
   rawTurnsRemoved: number;
   rawTurnsKept: number;
+  memoriesExtracted?: number;
+  memoriesStored?: number;
 }
 
 export interface CostDebugEntry {
