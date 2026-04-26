@@ -58,7 +58,6 @@ import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
 import type { GatewayUsageLookup } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
-import { extractAndStoreMemories } from "./memory/integration.js";
 import { RETENTION } from "./storage-limits.js";
 
 interface Cfg {
@@ -228,7 +227,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
-  const memoryRecalledRef = useRef(false);
 
   useEffect(() => {
     if (!cfg) return;
@@ -260,13 +258,21 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       manager.open();
       memoryManagerRef.current = manager;
 
-      // Run cleanup on startup
+      // Run cleanup and backfill on startup
       void manager.cleanup(process.cwd()).then((result) => {
         const total = result.oldDeleted + result.excessDeleted + result.duplicatesMerged;
         if (total > 0) {
           setEvents((e) => [
             ...e,
             { kind: "info", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
+          ]);
+        }
+      });
+      void manager.backfill(process.cwd()).then((fixed) => {
+        if (fixed > 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `memory backfill: embedded ${fixed} un-vectorized entries` },
           ]);
         }
       });
@@ -576,28 +582,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         } else {
           messagesRef.current = result.newMessages;
           sessionStateRef.current = result.newState;
-          let memoryText = "";
-          if (memoryManagerRef.current && cfg.memoryEnabled) {
-            const stored = await extractAndStoreMemories({
-              manager: memoryManagerRef.current,
-              messages: messagesRef.current,
-              removedCount: result.metrics.rawTurnsRemoved,
-              sessionId: ensureSessionId(),
-              repoPath: process.cwd(),
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              model: cfg.model,
-              signal: controller.signal,
-              gateway: gatewayFromConfig(cfg),
-            });
-            if (stored > 0) memoryText = `, ${stored} memories stored`;
-          }
           setEvents((e) => [
             ...e,
             {
               kind: "info",
               key: mkKey(),
-              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts${memoryText}`,
+              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
             },
           ]);
           await saveSessionSafe();
@@ -618,28 +608,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           ]);
         } else {
           messagesRef.current = result.newMessages;
-          let memoryText = "";
-          if (memoryManagerRef.current && cfg.memoryEnabled) {
-            const stored = await extractAndStoreMemories({
-              manager: memoryManagerRef.current,
-              messages: messagesRef.current,
-              removedCount: result.replacedCount,
-              sessionId: ensureSessionId(),
-              repoPath: process.cwd(),
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              model: cfg.model,
-              signal: controller.signal,
-              gateway: gatewayFromConfig(cfg),
-            });
-            if (stored > 0) memoryText = `, ${stored} memories stored`;
-          }
           setEvents((e) => [
             ...e,
             {
               kind: "info",
               key: mkKey(),
-              text: `compacted ${result.replacedCount} messages into a summary${memoryText}`,
+              text: `compacted ${result.replacedCount} messages into a summary`,
             },
           ]);
           await saveSessionSafe();
@@ -724,6 +698,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
             : undefined,
         sessionId: ensureSessionId(),
+        memoryManager: memoryManagerRef.current,
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -943,7 +918,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         setTasksStartTokens(0);
         compactSuggestedRef.current = false;
         updateNudgedRef.current = false;
-        memoryRecalledRef.current = false;
         return true;
       }
       if (c === "/reasoning") {
@@ -1301,23 +1275,6 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         }
       }
 
-      // Recall cross-session memories on first user message
-      if (memoryManagerRef.current && cfg.memoryEnabled && !memoryRecalledRef.current) {
-        memoryRecalledRef.current = true;
-        try {
-          const recalledText = await memoryManagerRef.current.recallForSession(process.cwd(), display);
-          if (recalledText) {
-            messagesRef.current.push({ role: "system", content: recalledText });
-            setEvents((e) => [
-              ...e,
-              { kind: "info", key: mkKey(), text: "recalled memories from previous sessions" },
-            ]);
-          }
-        } catch {
-          /* best effort */
-        }
-      }
-
       setBusy(true);
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
@@ -1343,6 +1300,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
               : undefined,
           sessionId: ensureSessionId(),
+          memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           callbacks: {
             onAssistantStart: () => {
@@ -1454,27 +1412,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           if (result.metrics.rawTurnsRemoved > 0) {
             messagesRef.current = result.newMessages;
             sessionStateRef.current = result.newState;
-            let memoryText = "";
-            if (memoryManagerRef.current && cfg.memoryEnabled) {
-              const stored = await extractAndStoreMemories({
-                manager: memoryManagerRef.current,
-                messages: messagesRef.current,
-                removedCount: result.metrics.rawTurnsRemoved,
-                sessionId: ensureSessionId(),
-                repoPath: process.cwd(),
-                accountId: cfg.accountId,
-                apiToken: cfg.apiToken,
-                model: cfg.model,
-                gateway: gatewayFromConfig(cfg),
-              });
-              if (stored > 0) memoryText = `, ${stored} memories stored`;
-            }
             setEvents((e) => [
               ...e,
               {
                 kind: "info",
                 key: mkKey(),
-                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)${memoryText}`,
+                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
               },
             ]);
             await saveSessionSafe();

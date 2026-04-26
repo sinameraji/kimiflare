@@ -6,6 +6,8 @@ export interface ToolContext {
   signal?: AbortSignal;
   onTasks?: (tasks: Task[]) => void;
   coauthor?: { name: string; email: string };
+  memoryManager?: import("../memory/manager.js").MemoryManager | null;
+  sessionId?: string;
 }
 
 export interface ToolRender {

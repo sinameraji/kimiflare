@@ -4,6 +4,8 @@ import {
   deleteExcessMemories,
   setLastCleanup,
   getMemoryStats,
+  supersedeMemory,
+  deleteMemoriesByIds,
 } from "./db.js";
 import { cosineSimilarity } from "./embeddings.js";
 import type { Memory } from "./schema.js";
@@ -61,9 +63,23 @@ export async function runCleanup(opts: CleanupOpts): Promise<CleanupResult> {
     const duplicates = findDuplicates(candidates);
 
     if (duplicates.length > 0) {
-      const toDelete = duplicates.map(([, b]) => b);
-      const { deleteMemoriesByIds } = await import("./db.js");
-      result.duplicatesMerged = deleteMemoriesByIds(opts.db, toDelete);
+      const toSupersede: Array<[string, string]> = [];
+      const toDelete: string[] = [];
+
+      for (const [olderId, newerId] of duplicates) {
+        // Prefer supersession over hard-delete so the chain is preserved
+        toSupersede.push([olderId, newerId]);
+      }
+
+      for (const [oldId, newId] of toSupersede) {
+        supersedeMemory(opts.db, oldId, newId);
+      }
+
+      if (toDelete.length > 0) {
+        deleteMemoriesByIds(opts.db, toDelete);
+      }
+
+      result.duplicatesMerged = toSupersede.length;
     }
   }
 

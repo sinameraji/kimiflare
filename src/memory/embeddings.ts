@@ -9,6 +9,44 @@ export interface EmbedOpts {
 }
 
 const DEFAULT_MODEL = "@cf/baai/bge-base-en-v1.5";
+const MAX_EMBED_CHARS = 2000; // Approximate token limit for bge-base-en-v1.5
+
+function truncateForEmbedding(text: string): string {
+  if (text.length <= MAX_EMBED_CHARS) return text;
+  return text.slice(0, MAX_EMBED_CHARS);
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 3
+): Promise<Response> {
+  let lastError: Error | undefined;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return res;
+      if (res.status === 429 || res.status >= 500) {
+        // Rate limit or server error — retry with backoff
+        const delay = 1000 * 2 ** i;
+        await sleep(delay);
+        continue;
+      }
+      const errText = await res.text().catch(() => "unknown error");
+      throw new Error(`embeddings request failed (${res.status}): ${errText}`);
+    } catch (e) {
+      lastError = e as Error;
+      if (i < retries - 1) {
+        await sleep(1000 * 2 ** i);
+      }
+    }
+  }
+  throw lastError ?? new Error("embeddings request failed after retries");
+}
 
 export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> {
   const model = opts.model ?? DEFAULT_MODEL;
@@ -30,12 +68,9 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
   // Workers AI embeddings endpoint accepts single text or batch
   const results: Float32Array[] = [];
   for (const text of opts.texts) {
-    const body = JSON.stringify({ text: [text] });
-    const res = await fetch(url, { method: "POST", headers, body });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "unknown error");
-      throw new Error(`embeddings request failed (${res.status}): ${errText}`);
-    }
+    const truncated = truncateForEmbedding(text);
+    const body = JSON.stringify({ text: [truncated] });
+    const res = await fetchWithRetry(url, { method: "POST", headers, body });
     const json = (await res.json()) as unknown;
 
     // Workers AI returns { result: { data: number[][] } } or { result: { shape: [...], data: number[] } }
@@ -66,18 +101,25 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     if (vectors.length === 0) {
       throw new Error("embeddings response contained no vectors");
     }
-    results.push(new Float32Array(vectors[0]!));
+    const vec = new Float32Array(vectors[0]!);
+    if (vec.length === 0) {
+      throw new Error("embeddings response contained empty vector");
+    }
+    results.push(vec);
   }
 
   return results;
 }
 
 export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) {
+    // Mismatched dimensions — skip this pair
+    return 0;
+  }
   let dot = 0;
   let normA = 0;
   let normB = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < a.length; i++) {
     const ai = a[i]!;
     const bi = b[i]!;
     dot += ai * bi;

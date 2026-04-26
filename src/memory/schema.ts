@@ -11,6 +11,10 @@ export interface Memory {
   accessedAt: number;
   importance: number;
   relatedFiles: string[];
+  topicKey: string | null;
+  supersededBy: string | null;
+  forgotten: boolean;
+  vectorized: boolean;
 }
 
 export interface MemoryInput {
@@ -20,6 +24,7 @@ export interface MemoryInput {
   repoPath: string;
   importance: number;
   relatedFiles?: string[];
+  topicKey?: string;
 }
 
 export interface MemoryQuery {
@@ -36,6 +41,7 @@ export interface HybridResult {
   ftsScore: number;
   vectorScore: number;
   exactScore: number;
+  topicKeyScore: number;
   combinedScore: number;
 }
 
