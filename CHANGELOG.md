@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.23.0](https://github.com/sinameraji/kimiflare/compare/v0.22.0...v0.23.0) (2026-04-26)
+
+
+### Features
+
+* agent-driven memory with tools, RRF retrieval, verification, and supersession ([12bab38](https://github.com/sinameraji/kimiflare/commit/12bab384321a7660603eed636390eaefe9ae20bf))
+* Code Mode — Local TypeScript Sandbox ([fdb4ec2](https://github.com/sinameraji/kimiflare/commit/fdb4ec29af6d5767e8e65d89fdc891ceff237296))
+* implement Code Mode — local TypeScript sandbox for tool execution ([2ee4d2a](https://github.com/sinameraji/kimiflare/commit/2ee4d2a226eabba8ab21f2f8bdd23afe2c5c0111)), closes [#146](https://github.com/sinameraji/kimiflare/issues/146)
+* Local Structured Agent Memory — SQLite + Embeddings for Cross-Session Context ([956eba8](https://github.com/sinameraji/kimiflare/commit/956eba834ebfb21b4a0d09c3e464e304bcf41bc7))
+* Local Structured Agent Memory — SQLite + Embeddings for Cross-Session Context ([00ff896](https://github.com/sinameraji/kimiflare/commit/00ff896c2af77ae9fd0bb9c1427665df0f9ef211))
+
+
+### Bug Fixes
+
+* add /billable-usage to Cloudflare billing URL ([ebe48ed](https://github.com/sinameraji/kimiflare/commit/ebe48ed0391ac4eaa6f1521b4ad7c7fb8a5380c0))
+* add /billable-usage to Cloudflare billing URL in welcome screen ([334711a](https://github.com/sinameraji/kimiflare/commit/334711ad3c2ef573282c2dee3ccf1f481d430913))
+* allow pipes and && chains of read-only bash commands in plan mode ([16477be](https://github.com/sinameraji/kimiflare/commit/16477bec2a9e9121b772c6ff65ffabfa5c0f3487))
+* allow pipes and && chains of read-only bash commands in plan mode ([2bc0576](https://github.com/sinameraji/kimiflare/commit/2bc05766eab643730f36220454d28f8d7fca9f4f))
+* allow pipes and && chains of read-only bash commands in plan mode ([9327c2d](https://github.com/sinameraji/kimiflare/commit/9327c2df6a830b13e68baf8c8ae4a3aa88b8878f))
+* bump CI and engines to Node 22 for isolated-vm compatibility ([e77ff30](https://github.com/sinameraji/kimiflare/commit/e77ff30893707ed079c1625e3cd573ab1f6bcfea))
+* bump CI and engines to Node 22 for isolated-vm compatibility ([ec57339](https://github.com/sinameraji/kimiflare/commit/ec57339bb53922b339f069b1409385f4a11e801f))
+* bump CI and engines to Node 22 for isolated-vm compatibility ([7fbd050](https://github.com/sinameraji/kimiflare/commit/7fbd05053ff7537a1b5a40d79ccfd778139d800d))
+* bump CI and engines to Node 22 for isolated-vm compatibility ([43b4720](https://github.com/sinameraji/kimiflare/commit/43b472003cc7d98245f8225f5fa3decb1aaea942))
+* show session-level cost and token totals in status bar and /cost command ([3de4cdb](https://github.com/sinameraji/kimiflare/commit/3de4cdb3d48ce918ebc4d2431cd435aa629d210f))
+* show session-level cost and token totals in status bar and /cost command ([a7f928c](https://github.com/sinameraji/kimiflare/commit/a7f928cea24f4633c229ff698a8946fcae780df3))
+* **tui:** cap Static events and fix task timer restart ([5f17089](https://github.com/sinameraji/kimiflare/commit/5f17089582c973c2bfaaa38df9203347d61cbff7))
+* **tui:** cap Static events to prevent incremental rendering from hiding output; fix task timer restart ([c229bb2](https://github.com/sinameraji/kimiflare/commit/c229bb23bf6e751fe97d25abbcedf23e6bdfd632)), closes [#160](https://github.com/sinameraji/kimiflare/issues/160)
+
+
+### Reverts
+
+* remove intern's session-level token count work from status bar ([931aab7](https://github.com/sinameraji/kimiflare/commit/931aab7029db903378f2c6e6675b5285adc00f1e))
+
 ## [0.22.0](https://github.com/sinameraji/kimiflare/compare/v0.21.0...v0.22.0) (2026-04-26)
 
 
