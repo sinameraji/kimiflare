@@ -51,9 +51,11 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
   // Detect git commands that create commits
   const createsCommit = /\bgit\s+(commit|merge|revert|cherry-pick)\b/.test(trimmed);
   const isRebaseContinue = /\bgit\s+rebase\b/.test(trimmed) && !/\b--abort\b|\b--skip\b/.test(trimmed);
+  const movesHeadOnly = /\bgit\s+(reset|checkout|switch)\b/.test(trimmed);
   const mentionsGit = /\bgit\b/.test(trimmed);
 
   if (!createsCommit && !isRebaseContinue && !mentionsGit) return command;
+  if (movesHeadOnly) return command;
 
   const tmpFile = join(tmpdir(), `kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const amendBlock = `
@@ -73,7 +75,7 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
   const beforeHead = `git rev-parse HEAD 2>/dev/null || echo "NO_HEAD"`;
   const afterCheck = `
     _KF_AFTER_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "NO_HEAD")
-    if [ "$_KF_BEFORE_HEAD" != "$_KF_AFTER_HEAD" ] && [ "$_KF_AFTER_HEAD" != "NO_HEAD" ]; then
+    if [ "$_KF_BEFORE_HEAD" != "$_KF_AFTER_HEAD" ] && [ "$_KF_AFTER_HEAD" != "NO_HEAD" ] && git merge-base --is-ancestor "$_KF_BEFORE_HEAD" "$_KF_AFTER_HEAD" 2>/dev/null; then
       ${amendBlock}
     fi
   `.trim();
