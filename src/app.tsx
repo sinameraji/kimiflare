@@ -110,7 +110,7 @@ interface PendingPermission {
 
 const CONTEXT_LIMIT = 262_000;
 const AUTO_COMPACT_SUGGEST_PCT = 0.8;
-const MAX_EVENTS = 500;
+const MAX_EVENTS = 80;
 
 let nextAssistantId = 1;
 let nextKey = 1;
@@ -219,6 +219,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
+
+  // Batched streaming delta refs to reduce React re-render frequency
+  const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!cfg) return;
@@ -483,15 +487,56 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     }
   });
 
+  const flushAssistantUpdates = useCallback(() => {
+    flushTimeoutRef.current = null;
+    const pending = pendingTextRef.current;
+    if (pending.size === 0) return;
+    pendingTextRef.current = new Map();
+    setEvents((evts) =>
+      evts.map((e) => {
+        if (e.kind !== "assistant") return e;
+        const delta = pending.get(e.id);
+        if (!delta) return e;
+        return {
+          ...e,
+          text: e.text + delta.text,
+          reasoning: e.reasoning + delta.reasoning,
+        } as ChatEvent;
+      }),
+    );
+  }, []);
+
   const updateAssistant = useCallback(
     (id: number, patch: (e: Extract<ChatEvent, { kind: "assistant" }>) => Partial<ChatEvent>) => {
+      const result = patch({ text: "", reasoning: "" } as Extract<ChatEvent, { kind: "assistant" }>);
+      const assistantResult = result as Partial<Extract<ChatEvent, { kind: "assistant" }>>;
+      const hasTextDelta = assistantResult.text !== undefined && assistantResult.text.length > 0;
+      const hasReasoningDelta = assistantResult.reasoning !== undefined && assistantResult.reasoning.length > 0;
+
+      if (hasTextDelta || hasReasoningDelta) {
+        const existing = pendingTextRef.current.get(id) ?? { text: "", reasoning: "" };
+        pendingTextRef.current.set(id, {
+          text: existing.text + (assistantResult.text ?? ""),
+          reasoning: existing.reasoning + (assistantResult.reasoning ?? ""),
+        });
+        if (!flushTimeoutRef.current) {
+          flushTimeoutRef.current = setTimeout(flushAssistantUpdates, 16); // ~60fps
+        }
+        return;
+      }
+
+      // Non-text patches (streaming flag, etc.) apply immediately after flushing
+      if (flushTimeoutRef.current) {
+        clearTimeout(flushTimeoutRef.current);
+        flushAssistantUpdates();
+      }
       setEvents((evts) =>
         evts.map((e) =>
-          e.kind === "assistant" && e.id === id ? ({ ...e, ...patch(e) } as ChatEvent) : e,
+          e.kind === "assistant" && e.id === id ? ({ ...e, ...result } as ChatEvent) : e,
         ),
       );
     },
-    [],
+    [flushAssistantUpdates],
   );
 
   const updateTool = useCallback(
@@ -1544,6 +1589,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
 }
 
 export async function renderApp(cfg: Cfg | null, updateResult?: UpdateCheckResult) {
-  const instance = render(<App initialCfg={cfg} initialUpdateResult={updateResult} />);
+  const instance = render(<App initialCfg={cfg} initialUpdateResult={updateResult} />, {
+    incrementalRendering: true,
+  });
   await instance.waitUntilExit();
 }
