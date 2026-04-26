@@ -46,6 +46,11 @@ export function Welcome({ theme, accountId }: Props) {
           Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
         </Text>
       </Box>
+      <Box>
+        <Text color={theme.info.color} dimColor={theme.info.dim}>
+          Tip: type /hello to send feedback to the creator
+        </Text>
+      </Box>
     </Box>
   );
 }

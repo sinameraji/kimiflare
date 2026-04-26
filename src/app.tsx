@@ -59,6 +59,10 @@ import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
+import { shouldShowCreatorMessage, markCreatorMessageSeen } from "./util/state.js";
+import { getAppVersion } from "./util/version.js";
+import { spawn } from "node:child_process";
+import { platform } from "node:os";
 
 interface Cfg {
   accountId: string;
@@ -108,6 +112,14 @@ function gatewayUsageLookupFromConfig(
     gatewayId: cfg.aiGatewayId,
     meta,
   };
+}
+
+const FEEDBACK_WORKER_URL = "https://kimiflare-feedback.sinameraji.workers.dev";
+
+function openBrowser(url: string): void {
+  const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
+  const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
+  child.unref();
 }
 
 interface PendingPermission {
@@ -248,6 +260,21 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         }
       }),
     );
+
+    // Show creator welcome message once per version
+    void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
+      if (shouldShow) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: "Hey, how do you like this version? I'd love to hear from you — type /hello to send me a voice note. Only I see it, and I may DM you back.",
+          },
+        ]);
+        void markCreatorMessageSeen(getAppVersion());
+      }
+    });
 
     // Initialize memory manager if enabled
     if (cfg.memoryEnabled) {
@@ -1338,6 +1365,16 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         ]);
         return true;
       }
+      if (c === "/hello") {
+        const session = crypto.randomUUID();
+        const url = `${FEEDBACK_WORKER_URL}/?s=${session}&v=${getAppVersion()}`;
+        openBrowser(url);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Opened voice note page in your browser. Record your message there and hit Send when you're done." },
+        ]);
+        return true;
+      }
       if (c === "/logout") {
         unlink(configPath()).catch(() => {});
         setEvents((e) => [
@@ -1370,6 +1407,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               "  /mcp reload             reconnect all configured MCP servers\n" +
               "  /reasoning              toggle show/hide model reasoning\n" +
               "  /clear                  clear current conversation\n" +
+              "  /hello                  send a voice note to the creator\n" +
               "  /gateway                show gateway status\n" +
               "  /gateway ID             enable AI Gateway\n" +
               "  /gateway off            disable AI Gateway (direct Workers AI)\n" +
