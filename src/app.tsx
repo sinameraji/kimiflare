@@ -903,6 +903,110 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         ]);
         return true;
       }
+      if (c === "/gateway") {
+        if (!cfg) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no config loaded" }]);
+          return true;
+        }
+        const sub = rest[0]?.toLowerCase() ?? "";
+        const subArg = rest.slice(1).join(" ").trim();
+
+        if (!sub || sub === "status") {
+          const lines: string[] = [];
+          if (cfg.aiGatewayId) {
+            lines.push(`gateway: ${cfg.aiGatewayId}`);
+            lines.push(`cache-ttl: ${cfg.aiGatewayCacheTtl ?? "default"}`);
+            lines.push(`skip-cache: ${cfg.aiGatewaySkipCache ?? false}`);
+            lines.push(`collect-logs: ${cfg.aiGatewayCollectLogPayload ?? false}`);
+            const meta = cfg.aiGatewayMetadata;
+            lines.push(`metadata: ${meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : "none"}`);
+          } else {
+            lines.push("gateway: off (direct Workers AI)");
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+          return true;
+        }
+
+        if (sub === "off") {
+          const next = { ...cfg, aiGatewayId: undefined };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "gateway disabled — using direct Workers AI" }]);
+          return true;
+        }
+
+        if (sub === "cache-ttl") {
+          const ttl = parseInt(subArg, 10);
+          if (Number.isNaN(ttl) || ttl < 0) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /gateway cache-ttl <seconds>" }]);
+            return true;
+          }
+          const next = { ...cfg, aiGatewayCacheTtl: ttl };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway cache-ttl set to ${ttl}s` }]);
+          return true;
+        }
+
+        if (sub === "skip-cache") {
+          const val = subArg === "true" ? true : subArg === "false" ? false : undefined;
+          if (val === undefined) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /gateway skip-cache true|false" }]);
+            return true;
+          }
+          const next = { ...cfg, aiGatewaySkipCache: val };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway skip-cache set to ${val}` }]);
+          return true;
+        }
+
+        if (sub === "collect-logs") {
+          const val = subArg === "true" ? true : subArg === "false" ? false : undefined;
+          if (val === undefined) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /gateway collect-logs true|false" }]);
+            return true;
+          }
+          const next = { ...cfg, aiGatewayCollectLogPayload: val };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway collect-logs set to ${val}` }]);
+          return true;
+        }
+
+        if (sub === "metadata") {
+          if (subArg === "clear") {
+            const next = { ...cfg, aiGatewayMetadata: undefined };
+            setCfg(next);
+            void saveConfig(next).catch(() => {});
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "gateway metadata cleared" }]);
+            return true;
+          }
+          const eq = subArg.indexOf("=");
+          if (eq === -1) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /gateway metadata KEY=VALUE  or  /gateway metadata clear" }]);
+            return true;
+          }
+          const key = subArg.slice(0, eq).trim();
+          let value: string | number | boolean = subArg.slice(eq + 1).trim();
+          if (value === "true") value = true;
+          else if (value === "false") value = false;
+          else if (/^-?\d+$/.test(value)) value = parseInt(value, 10);
+          const nextMeta = { ...(cfg.aiGatewayMetadata ?? {}), [key]: value };
+          const next = { ...cfg, aiGatewayMetadata: nextMeta };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway metadata: ${key}=${JSON.stringify(value)}` }]);
+          return true;
+        }
+
+        // Default: treat sub as a gateway ID to enable
+        const next = { ...cfg, aiGatewayId: rest[0] };
+        setCfg(next);
+        void saveConfig(next).catch(() => {});
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway enabled: ${rest[0]}` }]);
+        return true;
+      }
       if (c === "/thinking" || c === "/effort") {
         if (!arg) {
           setEvents((e) => [
@@ -1117,6 +1221,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               "  /mcp reload             reconnect all configured MCP servers\n" +
               "  /reasoning              toggle show/hide model reasoning\n" +
               "  /clear                  clear current conversation\n" +
+              "  /gateway                show gateway status\n" +
+              "  /gateway ID             enable AI Gateway\n" +
+              "  /gateway off            disable AI Gateway (direct Workers AI)\n" +
+              "  /gateway cache-ttl N    set gateway cache TTL in seconds\n" +
+              "  /gateway skip-cache T|F set gateway skip-cache flag\n" +
+              "  /gateway collect-logs T|F  include payload in gateway logs\n" +
+              "  /gateway metadata K=V   add metadata key-value pair\n" +
+              "  /gateway metadata clear remove all metadata\n" +
               "  /cost /model /update /logout /help /exit\n" +
               "keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · ctrl-o verbose · ctrl+t theme · shift+tab cycle mode · ↑/↓ history",
           },
@@ -1125,7 +1237,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       }
       return false;
     },
-    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp],
+    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg],
   );
 
   const processMessage = useCallback(

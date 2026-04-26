@@ -26,7 +26,7 @@ describe("runKimi session affinity header", () => {
     const gen = runKimi({
       accountId: "test",
       apiToken: "token",
-      model: "m",
+      model: "@cf/test/model",
       messages: [{ role: "user", content: "hi" }],
       sessionId: "sess-123",
     });
@@ -43,7 +43,7 @@ describe("runKimi session affinity header", () => {
     const gen = runKimi({
       accountId: "test",
       apiToken: "token",
-      model: "m",
+      model: "@cf/test/model",
       messages: [{ role: "user", content: "hi" }],
     });
     for await (const _ of gen) {
