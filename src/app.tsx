@@ -56,7 +56,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
-import type { GatewayUsageLookup } from "./usage-tracker.js";
+import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
 
@@ -83,6 +83,7 @@ interface Cfg {
   memoryMaxAgeDays?: number;
   memoryMaxEntries?: number;
   memoryEmbeddingModel?: string;
+  codeMode?: boolean;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -180,6 +181,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
@@ -189,6 +191,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [draftInput, setDraftInput] = useState("");
 
   const [mode, setMode] = useState<Mode>("edit");
+  const [codeMode, setCodeMode] = useState<boolean>(initialCfg?.codeMode ?? false);
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
@@ -532,6 +535,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       setShowThemePicker(true);
       return;
     }
+    if (key.ctrl && inputChar === "m") {
+      setCodeMode((c) => !c);
+      return;
+    }
   });
 
   const flushAssistantUpdates = useCallback(() => {
@@ -744,6 +751,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             : undefined,
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
+        codeMode,
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -798,6 +806,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           onUsageFinal: (u, meta) => {
             const sid = ensureSessionId();
             void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+            void getCostReport(sid).then((report) => setSessionUsage(report.session));
           },
           onGatewayMeta: updateGatewayMeta,
           askPermission: (req) =>
@@ -899,8 +908,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           .filter((text) => text.length > 0);
         if (userMsgs.length > 0) setHistory(userMsgs);
         setUsage(null);
+        setSessionUsage(null);
         gatewayMetaRef.current = null;
         setGatewayMeta(null);
+        void getCostReport(file.id).then((report) => setSessionUsage(report.session));
       } catch (e) {
         setEvents((es) => [
           ...es,
@@ -1459,6 +1470,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           sessionId: ensureSessionId(),
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+          codeMode,
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
@@ -1733,6 +1745,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           <StatusBar
             model={cfg.model}
             usage={usage}
+            sessionUsage={sessionUsage}
             thinking={busy}
             turnStartedAt={turnStartedAt}
             theme={theme}
@@ -1742,6 +1755,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             hasUpdate={hasUpdate}
             latestVersion={latestVersion}
             gatewayMeta={gatewayMeta}
+            codeMode={codeMode}
           />
           <Box marginTop={1}>
             <Text color={theme.accent}>› </Text>

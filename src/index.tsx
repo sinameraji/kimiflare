@@ -62,6 +62,7 @@ async function main() {
       prompt: opts.print,
       allowAll: !!opts.dangerouslyAllowAll,
       showReasoning: !!opts.reasoning,
+      codeMode: cfg.codeMode,
       updateResult,
     });
     return;
@@ -99,6 +100,7 @@ interface PrintOpts {
   aiGatewayCollectLogPayload?: boolean;
   aiGatewayMetadata?: Record<string, string | number | boolean>;
   updateResult: UpdateCheckResult;
+  codeMode?: boolean;
 }
 
 function gatewayFromPrintOpts(opts: PrintOpts): AiGatewayOptions | undefined {
@@ -143,6 +145,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     executor,
     cwd,
     signal: controller.signal,
+    codeMode: opts.codeMode,
     coauthor:
       opts.coauthor !== false
         ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }

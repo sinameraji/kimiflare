@@ -12,7 +12,7 @@ describe("status gateway cache formatting", () => {
         prompt_tokens_details: { cached_tokens: 50 },
       },
       1_000,
-      { cacheStatus: "hit" },
+      { date: "2025-01-01", promptTokens: 100, completionTokens: 20, cachedTokens: 50, cost: 0.00014, gatewayCachedRequests: 1 },
     );
 
     assert.deepStrictEqual(parts, [

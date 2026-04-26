@@ -43,6 +43,8 @@ export interface KimiConfig {
   memoryMaxEntries?: number;
   /** Embedding model for memory vectors. Default: @cf/baai/bge-base-en-v1.5. */
   memoryEmbeddingModel?: string;
+  /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
+  codeMode?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -134,6 +136,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envMemoryMaxAgeDays = readNumberEnv("KIMIFLARE_MEMORY_MAX_AGE_DAYS");
   const envMemoryMaxEntries = readNumberEnv("KIMIFLARE_MEMORY_MAX_ENTRIES");
   const envMemoryEmbeddingModel = process.env.KIMIFLARE_MEMORY_EMBEDDING_MODEL;
+  const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
 
   if (envAccount && envToken) {
     return {
@@ -158,6 +161,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       memoryMaxAgeDays: envMemoryMaxAgeDays,
       memoryMaxEntries: envMemoryMaxEntries,
       memoryEmbeddingModel: envMemoryEmbeddingModel,
+      codeMode: envCodeMode,
     };
   }
 
@@ -189,6 +193,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
         memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
         memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
+        codeMode: envCodeMode ?? parsed.codeMode,
       };
     }
   } catch {

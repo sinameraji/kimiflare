@@ -8,6 +8,7 @@ import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
+import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -45,11 +46,50 @@ export interface AgentTurnOpts {
   /** Drop image_url parts from user messages older than this many turns. */
   keepLastImageTurns?: number;
   memoryManager?: MemoryManager | null;
+  /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
+  codeMode?: boolean;
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const max = opts.maxToolIterations ?? 50;
-  const toolDefs = toOpenAIToolDefs(opts.tools);
+  const codeMode = opts.codeMode ?? false;
+
+  let toolDefs: ReturnType<typeof toOpenAIToolDefs>;
+  let codeModeApiString = "";
+
+  if (codeMode) {
+    codeModeApiString = generateTypeScriptApi(opts.tools);
+    toolDefs = [
+      {
+        type: "function",
+        function: {
+          name: "execute_code",
+          description:
+            `Write and execute TypeScript code to accomplish your task.\n\n` +
+            `Available APIs:\n${codeModeApiString}\n\n` +
+            `Use console.log() to return results. Only console.log output will be sent back to you.`,
+          parameters: {
+            type: "object",
+            properties: {
+              code: {
+                type: "string",
+                description: "TypeScript code to execute. Use the api object to call available tools.",
+              },
+              reasoning: {
+                type: "string",
+                description: "Brief reasoning about what the code does.",
+              },
+            },
+            required: ["code"],
+            additionalProperties: false,
+          },
+        },
+      },
+    ];
+  } else {
+    toolDefs = toOpenAIToolDefs(opts.tools);
+  }
+
   let turn = 0;
   let lastUsage: Usage | null = null;
 
@@ -200,19 +240,66 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
     for (const tc of toolCalls) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
-      const result = await opts.executor.run(
-        { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
-        opts.callbacks.askPermission,
-        { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
-      );
-      toolResults.push(result);
-      opts.messages.push({
-        role: "tool",
-        tool_call_id: result.tool_call_id,
-        content: sanitizeString(result.content),
-        name: result.name,
-      });
-      opts.callbacks.onToolResult?.(result);
+
+      if (codeMode && tc.function.name === "execute_code") {
+        const args = JSON.parse(tc.function.arguments || "{}") as { code?: string; reasoning?: string };
+        const code = args.code || "";
+
+        const sandboxResult = await runInSandbox({
+          code,
+          tools: opts.tools,
+          executor: opts.executor,
+          askPermission: opts.callbacks.askPermission,
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          timeoutMs: 30000,
+          memoryLimitMB: 128,
+        });
+
+        // Emit individual tool results from inside the script
+        for (const stc of sandboxResult.toolCalls) {
+          const toolResult: ToolResult = {
+            tool_call_id: tc.id,
+            name: stc.name,
+            content: stc.result,
+            ok: true,
+          };
+          toolResults.push(toolResult);
+          opts.callbacks.onToolResult?.(toolResult);
+        }
+
+        const resultContent = sandboxResult.error
+          ? `Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
+          : sandboxResult.output;
+
+        const result: ToolResult = {
+          tool_call_id: tc.id,
+          name: "execute_code",
+          content: resultContent,
+          ok: !sandboxResult.error,
+        };
+        toolResults.push(result);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: sanitizeString(resultContent),
+          name: "execute_code",
+        });
+        opts.callbacks.onToolResult?.(result);
+      } else {
+        const result = await opts.executor.run(
+          { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
+          opts.callbacks.askPermission,
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+        );
+        toolResults.push(result);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: result.tool_call_id,
+          content: sanitizeString(result.content),
+          name: result.name,
+        });
+        opts.callbacks.onToolResult?.(result);
+      }
     }
 
     if (opts.sessionId && lastUsage) {
