@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.24.0](https://github.com/sinameraji/kimiflare/compare/v0.23.0...v0.24.0) (2026-04-26)
+
+
+### Features
+
+* /hello voice note feedback ([b170496](https://github.com/sinameraji/kimiflare/commit/b17049693b6784239d0fe9cc20ce1b86dee3f0e1))
+* add /hello voice note feedback to creator ([8e05b8f](https://github.com/sinameraji/kimiflare/commit/8e05b8f7ccf9ad6ff50ffb67f12dbf3e480b3ca6))
+* allow plan mode to prompt for non-whitelisted bash commands ([8c2770d](https://github.com/sinameraji/kimiflare/commit/8c2770dfbe4645c8a8fd9b603c9c92b1795cf4d9))
+* allow plan mode to prompt for non-whitelisted bash commands ([75b96c9](https://github.com/sinameraji/kimiflare/commit/75b96c9bc736b3674393b19885d5ac17c63d9e8b))
+* **discord:** add /community command and welcome promotion ([c5a3e69](https://github.com/sinameraji/kimiflare/commit/c5a3e697c8e62e94c35245f6bf2763d08cb6a924))
+* **feedback:** compact single-screen layout ([1a2f644](https://github.com/sinameraji/kimiflare/commit/1a2f64496194da619a4d5062a9c41391d70f81f0))
+* **feedback:** improve visual design and contrast ([19378fd](https://github.com/sinameraji/kimiflare/commit/19378fd2f084aabdc38704b1f88da8b8b153cc22))
+* **feedback:** redesign page to match landing page branding ([c05e756](https://github.com/sinameraji/kimiflare/commit/c05e7568cd94e0591b5f575ebcdc51f8cc413f4f))
+* **feedback:** use real logo and inline success message ([011b5f1](https://github.com/sinameraji/kimiflare/commit/011b5f19ea5d37db4ff3271dab60972a8a9c5881))
+
+
+### Bug Fixes
+
+* /cost rendering, Static keys, and status bar token sync ([2050e9f](https://github.com/sinameraji/kimiflare/commit/2050e9fc2c1745b01df267eb1593cfc4f41677fe))
+* /cost rendering, Static keys, and status bar token sync ([b7b0a05](https://github.com/sinameraji/kimiflare/commit/b7b0a057a5f2cf90fe73ed588b7e9aadfce193e5))
+* /cost rendering, Static keys, and status bar token sync ([7c4042a](https://github.com/sinameraji/kimiflare/commit/7c4042aab02c0c43541f98aaf950f7c9acdd3996)), closes [#152](https://github.com/sinameraji/kimiflare/issues/152)
+* **feedback:** add stop button and creator message ([7ecfa59](https://github.com/sinameraji/kimiflare/commit/7ecfa591856cfa7680e3b79b6a80c5597369a703))
+* **feedback:** make copy first-person and more personal ([c705edd](https://github.com/sinameraji/kimiflare/commit/c705eddb79ef1815d1965f1e2e14ea81dfd298d1))
+* **feedback:** simplify privacy line ([d20fc7e](https://github.com/sinameraji/kimiflare/commit/d20fc7e6d1ec78fd3ddaa3fe9e4889948b309845))
+* **feedback:** update privacy copy on recording page ([d419ac6](https://github.com/sinameraji/kimiflare/commit/d419ac659b5aa569bf27c6753d114d64a17338e2))
+* prevent co-author injection on git commands that only move HEAD ([2cc0a2f](https://github.com/sinameraji/kimiflare/commit/2cc0a2ff57aa1d26c07736d0be3c5bef7a818a5d))
+* prevent co-author injection on git commands that only move HEAD ([0bde202](https://github.com/sinameraji/kimiflare/commit/0bde2026ab89269149a72ffd788205546eb3302b))
+* **tui:** remove Static to fix missing user messages; fix plan mode && chains ([049671d](https://github.com/sinameraji/kimiflare/commit/049671d8014e3c6448f0febf21c0806174230412))
+* **tui:** restore Static, raise event cap to 500, add visual compaction ([fd14c6d](https://github.com/sinameraji/kimiflare/commit/fd14c6da9de24de7aaa51d265420f0a242f57c4a))
+* update feedback worker URL to deployed subdomain ([2af59a5](https://github.com/sinameraji/kimiflare/commit/2af59a587122df04b1eb90cf0aa3d4d9d3eb3a7f))
+
 ## [0.23.0](https://github.com/sinameraji/kimiflare/compare/v0.22.0...v0.23.0) (2026-04-26)
 
 
