@@ -27,7 +27,7 @@ export function Welcome({ theme, accountId }: Props) {
       {accountId && (
         <Box marginBottom={1}>
           <Text color={theme.info.color} dimColor={theme.info.dim}>
-            {"  "}Check your Cloudflare billing: https://dash.cloudflare.com/{accountId}/billing
+            {"  "}Check your Cloudflare billing: https://dash.cloudflare.com/{accountId}/billing/billable-usage
           </Text>
         </Box>
       )}
