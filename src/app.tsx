@@ -852,6 +852,11 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                   resolve("allow");
                   return;
                 }
+                if (req.tool.name === "bash") {
+                  // Non-whitelisted bash in plan mode: ask for temporary permission
+                  setPerm({ tool: req.tool, args: req.args, resolve });
+                  return;
+                }
                 setEvents((e) => [
                   ...e,
                   {
