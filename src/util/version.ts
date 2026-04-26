@@ -6,14 +6,19 @@ let cachedVersion: string | null = null;
 
 export function getAppVersion(): string {
   if (cachedVersion !== null) return cachedVersion;
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const pkg = JSON.parse(readFileSync(join(here, "..", "..", "package.json"), "utf8")) as {
-      version?: string;
-    };
-    cachedVersion = pkg.version ?? "0.0.0";
-  } catch {
-    cachedVersion = "0.0.0";
+  const here = dirname(fileURLToPath(import.meta.url));
+  // When running from source: src/util/ -> ../../package.json
+  // When bundled by tsup: dist/ -> ../package.json
+  const candidates = [join(here, "..", "..", "package.json"), join(here, "..", "package.json")];
+  for (const path of candidates) {
+    try {
+      const pkg = JSON.parse(readFileSync(path, "utf8")) as { version?: string };
+      cachedVersion = pkg.version ?? "0.0.0";
+      return cachedVersion;
+    } catch {
+      // try next candidate
+    }
   }
+  cachedVersion = "0.0.0";
   return cachedVersion;
 }
