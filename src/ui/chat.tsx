@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text } from "ink";
+import { Box, Text, Static } from "ink";
 import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
@@ -26,13 +26,50 @@ interface Props {
   verbose?: boolean;
 }
 
+interface StaticItem {
+  id: string;
+  evt: ChatEvent;
+  showSeparator: boolean;
+}
+
 export const ChatView = React.memo(function ChatView({ events, showReasoning, theme, verbose }: Props) {
+  const finalized: StaticItem[] = [];
+  const active: ChatEvent[] = [];
+
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i]!;
+    const isStreaming = e.kind === "assistant" && e.streaming;
+    if (isStreaming) {
+      active.push(e);
+    } else {
+      const prev = events[i - 1];
+      const showSeparator = !!(
+        e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
+      );
+      finalized.push({ id: e.key, evt: e, showSeparator });
+    }
+  }
+
   return (
     <Box flexDirection="column">
-      {events.map((e, i) => {
-        const prev = events[i - 1];
+      <Static items={finalized}>
+        {(item) => (
+          <Box flexDirection="column">
+            {item.showSeparator && (
+              <Box marginY={1}>
+                <Text color={theme.info.color} dimColor={theme.info.dim}>
+                  {"─".repeat(40)}
+                </Text>
+              </Box>
+            )}
+            <EventView evt={item.evt} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+          </Box>
+        )}
+      </Static>
+      {active.map((e, i) => {
+        const prevEvt = i > 0 ? active[i - 1] : finalized[finalized.length - 1]?.evt;
         const showSeparator =
-          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool");
+          e.kind === "user" && prevEvt && (prevEvt.kind === "assistant" || prevEvt.kind === "tool");
         return (
           <Box key={e.key} flexDirection="column">
             {showSeparator && (
@@ -91,7 +128,7 @@ const EventView = React.memo(function EventView({
             </Text>
           </Box>
         ) : null}
-        {evt.text ? <MD text={evt.text} theme={theme} /> : null}
+        {evt.text ? <MD text={evt.text} theme={theme} streaming={evt.streaming} /> : null}
         {evt.streaming && (
           <Text color={theme.spinner}>
             <Spinner type="dots" />
