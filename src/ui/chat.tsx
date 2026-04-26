@@ -32,6 +32,10 @@ interface StaticItem {
   showSeparator: boolean;
 }
 
+// Cap finalized events to prevent unbounded Static output from breaking
+// incremental rendering cursor math when the terminal scrolls.
+const MAX_FINALIZED_EVENTS = 100;
+
 export const ChatView = React.memo(function ChatView({ events, showReasoning, theme, verbose }: Props) {
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
@@ -50,9 +54,13 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
     }
   }
 
+  // Drop oldest finalized events from the top to keep incremental rendering stable.
+  const droppedCount = Math.max(0, finalized.length - MAX_FINALIZED_EVENTS);
+  const visibleFinalized = droppedCount > 0 ? finalized.slice(droppedCount) : finalized;
+
   return (
     <Box flexDirection="column">
-      <Static items={finalized}>
+      <Static items={visibleFinalized}>
         {(item) => (
           <Box flexDirection="column">
             {item.showSeparator && (
@@ -67,7 +75,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
         )}
       </Static>
       {active.map((e, i) => {
-        const prevEvt = i > 0 ? active[i - 1] : finalized[finalized.length - 1]?.evt;
+        const prevEvt = i > 0 ? active[i - 1] : visibleFinalized[visibleFinalized.length - 1]?.evt;
         const showSeparator =
           e.kind === "user" && prevEvt && (prevEvt.kind === "assistant" || prevEvt.kind === "tool");
         return (

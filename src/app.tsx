@@ -1533,9 +1533,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             onGatewayMeta: updateGatewayMeta,
             onTasks: (nextTasks) => {
               const prevEmpty = tasksRef.current.length === 0;
+              const prevAllDone =
+                tasksRef.current.length > 0 &&
+                tasksRef.current.every((t) => t.status === "completed");
               tasksRef.current = nextTasks;
               setTasks(nextTasks);
-              if (prevEmpty && nextTasks.length > 0) {
+              if ((prevEmpty || prevAllDone) && nextTasks.length > 0) {
                 setTasksStartedAt(Date.now());
                 setTasksStartTokens(usageRef.current?.prompt_tokens ?? 0);
               }
