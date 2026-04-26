@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.22.0](https://github.com/sinameraji/kimiflare/compare/v0.21.0...v0.22.0) (2026-04-26)
+
+
+### Features
+
+* /gateway slash command + model ID validation ([006b3ff](https://github.com/sinameraji/kimiflare/commit/006b3ffc49fafeff74514d02182f498b9b970194))
+* add /gateway slash command and validate model IDs ([a012c27](https://github.com/sinameraji/kimiflare/commit/a012c271bc80f7d48b164adde26820cb58d33f97))
+* add billing notice to README and terminal welcome screen ([5632b82](https://github.com/sinameraji/kimiflare/commit/5632b82264910555657493d8cef552e618f104c1))
+* add billing notice to README and terminal welcome screen ([5cbe1d6](https://github.com/sinameraji/kimiflare/commit/5cbe1d626e369ee4bf1a1c3625517df0c7d77902))
+* add billing notice to README and terminal welcome screen ([0918a7e](https://github.com/sinameraji/kimiflare/commit/0918a7e12e28002a5f6a707d82549539c520e965))
+* add optional AI Gateway routing ([96ad68c](https://github.com/sinameraji/kimiflare/commit/96ad68cc562c3c5df06d21015cbd97ef216e9e60))
+* add optional AI Gateway routing ([5b6ec67](https://github.com/sinameraji/kimiflare/commit/5b6ec6772f96b2e56de2a6a5e29e46ea6bb140a5))
+
+
+### Bug Fixes
+
+* **tui:** reduce flicker during streaming output ([4d3f543](https://github.com/sinameraji/kimiflare/commit/4d3f54304dc652a58f84cdfd242b87af4ec9aa4e))
+* **tui:** reduce flicker during streaming output ([037002d](https://github.com/sinameraji/kimiflare/commit/037002d3100bde72755525acda0d5256bd595376))
+
 ## [0.21.0](https://github.com/sinameraji/kimiflare/compare/v0.20.3...v0.21.0) (2026-04-24)
 
 
