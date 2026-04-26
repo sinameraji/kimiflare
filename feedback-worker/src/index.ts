@@ -217,8 +217,8 @@ function htmlPage(session: string, version: string): string {
 <div class="card">
   <div class="logo">kimiflare</div>
   <h1>Hey, how do you like v${escapeHtml(version)}?</h1>
-  <p class="sub">Record a voice note for Sina. Only he sees it.</p>
-  <p class="why">"I notice quite a number of people are using this tool that I built, but there's no way for me to see you or hear you. So I thought I would make this." — Sina</p>
+  <p class="sub">Record a voice note for me. Only I see it.</p>
+  <p class="why">I notice quite a number of people are using this tool that I built, but there's no way for me to see you or hear you. So I thought I would make this.</p>
 
   <div id="step-record" class="record-area">
     <button id="btn-record" class="btn btn-record">● Record</button>
@@ -250,10 +250,10 @@ function htmlPage(session: string, version: string): string {
 
   <div class="field">
     <label for="contact">Email or X/Twitter (optional)</label>
-    <input id="contact" type="text" placeholder="so Sina can reply">
+    <input id="contact" type="text" placeholder="so I can reply">
   </div>
 
-  <p class="privacy">There's no email list or automation right now — Sina will personally contact you. If there's ever a plan to start a mailing list, he'll ask you first.</p>
+  <p class="privacy">There's no email list or automation right now — I'll personally contact you. If there's ever a plan to start a mailing list, I'll ask you first.</p>
   <div class="status" id="status"></div>
 </div>
 
