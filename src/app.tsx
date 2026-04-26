@@ -1271,8 +1271,23 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         return true;
       }
       if (c === "/memory") {
-        if (!cfg?.memoryEnabled) {
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory is disabled. Enable with KIMIFLARE_MEMORY_ENABLED=1" }]);
+        if (!cfg) return true;
+        if (arg === "on") {
+          const next = { ...cfg, memoryEnabled: true };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory enabled" }]);
+          return true;
+        }
+        if (arg === "off") {
+          const next = { ...cfg, memoryEnabled: false };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory disabled" }]);
+          return true;
+        }
+        if (!cfg.memoryEnabled) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory is disabled. Use /memory on to enable it, or set KIMIFLARE_MEMORY_ENABLED=1" }]);
           return true;
         }
         if (arg === "clear") {
@@ -1436,6 +1451,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               "  /compact                summarize old turns to free context\n" +
               "  /init                   scan this repo and write a KIMI.md for future agents\n" +
               "  /memory                 show memory stats\n" +
+              "  /memory on              enable memory\n" +
+              "  /memory off             disable memory\n" +
               "  /memory search <query>  search stored memories\n" +
               "  /memory clear           wipe memories for this repo\n" +
               "  /mcp list               list connected MCP servers and tools\n" +
