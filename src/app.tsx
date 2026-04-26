@@ -56,7 +56,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
-import type { GatewayUsageLookup } from "./usage-tracker.js";
+import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
 
@@ -181,6 +181,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
@@ -805,6 +806,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           onUsageFinal: (u, meta) => {
             const sid = ensureSessionId();
             void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+            void getCostReport(sid).then((report) => setSessionUsage(report.session));
           },
           onGatewayMeta: updateGatewayMeta,
           askPermission: (req) =>
@@ -906,8 +908,10 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           .filter((text) => text.length > 0);
         if (userMsgs.length > 0) setHistory(userMsgs);
         setUsage(null);
+        setSessionUsage(null);
         gatewayMetaRef.current = null;
         setGatewayMeta(null);
+        void getCostReport(file.id).then((report) => setSessionUsage(report.session));
       } catch (e) {
         setEvents((es) => [
           ...es,
@@ -963,6 +967,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         executorRef.current.clearArtifacts();
         setEvents([]);
         setUsage(null);
+        setSessionUsage(null);
         gatewayMetaRef.current = null;
         setGatewayMeta(null);
         setTasks([]);
@@ -984,16 +989,16 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         return true;
       }
       if (c === "/cost") {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: usage
-              ? `prompt ${usage.prompt_tokens} / completion ${usage.completion_tokens}`
-              : "no usage yet",
-          },
-        ]);
+        if (!sessionIdRef.current) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no usage recorded yet" }]);
+          return true;
+        }
+        void getCostReport(sessionIdRef.current).then((report) => {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: formatCostReport(report) },
+          ]);
+        });
         return true;
       }
       if (c === "/model") {
@@ -1741,6 +1746,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           <StatusBar
             model={cfg.model}
             usage={usage}
+            sessionUsage={sessionUsage}
             thinking={busy}
             turnStartedAt={turnStartedAt}
             theme={theme}

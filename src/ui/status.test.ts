@@ -12,6 +12,7 @@ describe("status gateway cache formatting", () => {
         prompt_tokens_details: { cached_tokens: 50 },
       },
       1_000,
+      null,
       { cacheStatus: "hit" },
     );
 

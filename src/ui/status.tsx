@@ -7,10 +7,12 @@ import type { Theme } from "./theme.js";
 import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
+import type { DailyUsage } from "../usage-tracker.js";
 
 interface Props {
   model: string;
   usage: Usage | null;
+  sessionUsage?: DailyUsage | null;
   thinking: boolean;
   turnStartedAt: number | null;
   theme: Theme;
@@ -23,7 +25,7 @@ interface Props {
   codeMode?: boolean;
 }
 
-export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
   const [now, setNow] = useState(Date.now());
   const modeColor =
     mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
@@ -61,7 +63,7 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
       {usage && (
         <Box>
           <Text color={theme.info.color} dimColor={theme.info.dim}>
-            {buildRightParts(usage, contextLimit, gatewayMeta).join("  ·  ")}
+            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta).join("  ·  ")}
           </Text>
           {warn ? (
             <Text color={theme.warn} bold>
@@ -82,17 +84,25 @@ export function StatusBar({ model, usage, thinking, turnStartedAt, theme, mode, 
 export function buildRightParts(
   usage: Usage,
   contextLimit: number,
+  sessionUsage?: DailyUsage | null,
   gatewayMeta?: GatewayMeta | null,
 ): string[] {
-  const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
-  const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
-  const parts = [
-    `in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`,
-    `out ${usage.completion_tokens}`,
-    `ctx ${pct}%`,
-    `${cost.total.toFixed(5)}`,
-  ];
+  const parts: string[] = [];
+  if (sessionUsage) {
+    const cached = sessionUsage.cachedTokens;
+    parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
+    parts.push(`out ${sessionUsage.completionTokens}`);
+    parts.push(`ctx ${pct}%`);
+    parts.push(`${sessionUsage.cost.toFixed(5)}`);
+  } else {
+    const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
+    const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
+    parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
+    parts.push(`out ${usage.completion_tokens}`);
+    parts.push(`ctx ${pct}%`);
+    parts.push(`${cost.total.toFixed(5)}`);
+  }
   const gatewayCache = formatGatewayCacheStatus(gatewayMeta);
   if (gatewayCache) parts.push(gatewayCache);
   return parts;
