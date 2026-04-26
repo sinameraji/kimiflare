@@ -68,6 +68,7 @@ Requires Node.js ≥ 20.
 | **Project context (`/init`)** | Scans your repo and writes a concise `KIMI.md` — build commands, layout, conventions. Auto-loaded on every launch. |
 | **MCP server integration** | Plug in external tools via the Model Context Protocol — local stdio servers or remote SSE endpoints. GitHub, Sentry, docs search, databases, etc. |
 | **Co-author auto-append** | Detects `git commit` commands and auto-injects `Co-authored-by: kimiflare <kimiflare@proton.me>`. |
+| **Local structured memory** | SQLite + embeddings cross-session memory. Extracts facts, instructions, and preferences at compaction time; recalls them via hybrid search (FTS5 + vector + exact) in future sessions. Team-shareable via `.kimiflare/memory.db`. |
 | **Resilient transport** | Retries Cloudflare capacity errors (code 3040) and 5xx with exponential backoff up to 5 attempts. |
 
 ## Configure
@@ -84,6 +85,11 @@ export CLOUDFLARE_ACCOUNT_ID=...
 export CLOUDFLARE_API_TOKEN=...
 # Optional: route through a Cloudflare AI Gateway you own
 export KIMIFLARE_AI_GATEWAY_ID=...
+# Optional: enable local structured memory
+export KIMIFLARE_MEMORY_ENABLED=1
+export KIMIFLARE_MEMORY_DB_PATH=.kimiflare/memory.db
+export KIMIFLARE_MEMORY_MAX_AGE_DAYS=90
+export KIMIFLARE_MEMORY_MAX_ENTRIES=1000
 ```
 
 or save them once (`chmod 600` automatically):
@@ -164,6 +170,43 @@ MCP tools appear prefixed as `mcp_<server>_<tool>` alongside built-in tools.
 - `/mcp list` — show connected servers and tool counts
 - `/mcp reload` — disconnect and reconnect all configured servers
 
+## Local structured memory
+
+kimiflare can remember facts, instructions, and preferences across sessions using a local SQLite database with vector search.
+
+**How it works:**
+- At compaction time, the agent extracts structured memories from the conversation
+- Memories are stored with embeddings (`@cf/baai/bge-base-en-v1.5`) in a local SQLite database
+- On future sessions, relevant memories are recalled via hybrid search (FTS5 full-text + vector similarity + exact file-path matching)
+- Supports team-shared memory: `.kimiflare/memory.db` in your repo root (add to `.gitignore`)
+
+**Enable:**
+```sh
+export KIMIFLARE_MEMORY_ENABLED=1
+```
+
+Or in `~/.config/kimiflare/config.json`:
+```json
+{
+  "memoryEnabled": true,
+  "memoryDbPath": ".kimiflare/memory.db",
+  "memoryMaxAgeDays": 90,
+  "memoryMaxEntries": 1000,
+  "memoryEmbeddingModel": "@cf/baai/bge-base-en-v1.5"
+}
+```
+
+**Commands:**
+- `/memory` — show memory stats (total count, DB size, by category)
+- `/memory search <query>` — manual hybrid search over stored memories
+- `/memory clear` — wipe all memories for the current repo
+
+**Storage & cleanup:**
+- Default retention: 90 days, 1000 memories per repo
+- Automatic deduplication of near-identical memories
+- Cleanup runs on startup and after every compaction
+- Typical size: ~4–5 KB per memory; ~15 MB/month under heavy use
+
 ## Usage
 
 ### Interactive TUI
@@ -215,8 +258,11 @@ Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP (up to 5 MB each, 10 per messa
 | `/theme` | Interactive theme picker with live preview (`Ctrl+T`). Saved to config. |
 | `/theme NAME` | Set theme by name directly. |
 | `/resume` | Pick a past conversation to restore. |
-| `/compact` | Summarize older turns to free context. Suggested automatically at ~80% full. |
+| `/compact` | Summarize older turns to free context. Suggested automatically at ~80% full. Extracts memories if memory is enabled. |
 | `/init` | Scan the repo and write a `KIMI.md` so future agents have project context. |
+| `/memory` | Show memory stats (total count, DB size, by category). |
+| `/memory search <query>` | Search stored memories manually. |
+| `/memory clear` | Wipe all memories for the current repo. |
 | `/mcp list` | List connected MCP servers and their tools. |
 | `/mcp reload` | Disconnect and reconnect all configured MCP servers. |
 | `/reasoning` | Toggle chain-of-thought display. |
@@ -415,6 +461,10 @@ For a real-world test, try the [official GitHub MCP server](https://github.com/m
 ```
 
 Then ask: `search for issues labeled bug in sinameraji/kimiflare`
+
+## Credits
+
+- **Cloudflare Agent Memory** — This feature was inspired by [Cloudflare's Agent Memory](https://blog.cloudflare.com/introducing-agent-memory/) announcement. While Cloudflare's managed service requires a platform binding, kimiflare implements a local self-hosted equivalent using SQLite + Workers AI embeddings so you can use it today with your own account.
 
 ## License
 

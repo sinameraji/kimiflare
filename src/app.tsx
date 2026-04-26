@@ -57,6 +57,9 @@ import { unlink } from "node:fs/promises";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
 import type { GatewayUsageLookup } from "./usage-tracker.js";
+import { MemoryManager } from "./memory/manager.js";
+import { extractAndStoreMemories } from "./memory/integration.js";
+import { RETENTION } from "./storage-limits.js";
 
 interface Cfg {
   accountId: string;
@@ -76,6 +79,11 @@ interface Cfg {
   cacheStablePrompts?: boolean;
   compiledContext?: boolean;
   imageHistoryTurns?: number;
+  memoryEnabled?: boolean;
+  memoryDbPath?: string;
+  memoryMaxAgeDays?: number;
+  memoryMaxEntries?: number;
+  memoryEmbeddingModel?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -219,6 +227,8 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
+  const memoryManagerRef = useRef<MemoryManager | null>(null);
+  const memoryRecalledRef = useRef(false);
 
   useEffect(() => {
     if (!cfg) return;
@@ -233,6 +243,37 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         }
       }),
     );
+
+    // Initialize memory manager if enabled
+    if (cfg.memoryEnabled) {
+      const dbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+      const manager = new MemoryManager({
+        dbPath,
+        accountId: cfg.accountId,
+        apiToken: cfg.apiToken,
+        model: cfg.model,
+        embeddingModel: cfg.memoryEmbeddingModel,
+        gateway: gatewayFromConfig(cfg),
+        maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
+        maxEntries: cfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
+      });
+      manager.open();
+      memoryManagerRef.current = manager;
+
+      // Run cleanup on startup
+      void manager.cleanup(process.cwd()).then((result) => {
+        const total = result.oldDeleted + result.excessDeleted + result.duplicatesMerged;
+        if (total > 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
+          ]);
+        }
+      });
+    } else {
+      memoryManagerRef.current?.close();
+      memoryManagerRef.current = null;
+    }
   }, [cfg]);
 
   useEffect(() => {
@@ -535,12 +576,28 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         } else {
           messagesRef.current = result.newMessages;
           sessionStateRef.current = result.newState;
+          let memoryText = "";
+          if (memoryManagerRef.current && cfg.memoryEnabled) {
+            const stored = await extractAndStoreMemories({
+              manager: memoryManagerRef.current,
+              messages: messagesRef.current,
+              removedCount: result.metrics.rawTurnsRemoved,
+              sessionId: ensureSessionId(),
+              repoPath: process.cwd(),
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              model: cfg.model,
+              signal: controller.signal,
+              gateway: gatewayFromConfig(cfg),
+            });
+            if (stored > 0) memoryText = `, ${stored} memories stored`;
+          }
           setEvents((e) => [
             ...e,
             {
               kind: "info",
               key: mkKey(),
-              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
+              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts${memoryText}`,
             },
           ]);
           await saveSessionSafe();
@@ -561,12 +618,28 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           ]);
         } else {
           messagesRef.current = result.newMessages;
+          let memoryText = "";
+          if (memoryManagerRef.current && cfg.memoryEnabled) {
+            const stored = await extractAndStoreMemories({
+              manager: memoryManagerRef.current,
+              messages: messagesRef.current,
+              removedCount: result.replacedCount,
+              sessionId: ensureSessionId(),
+              repoPath: process.cwd(),
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              model: cfg.model,
+              signal: controller.signal,
+              gateway: gatewayFromConfig(cfg),
+            });
+            if (stored > 0) memoryText = `, ${stored} memories stored`;
+          }
           setEvents((e) => [
             ...e,
             {
               kind: "info",
               key: mkKey(),
-              text: `compacted ${result.replacedCount} messages into a summary`,
+              text: `compacted ${result.replacedCount} messages into a summary${memoryText}`,
             },
           ]);
           await saveSessionSafe();
@@ -870,6 +943,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         setTasksStartTokens(0);
         compactSuggestedRef.current = false;
         updateNudgedRef.current = false;
+        memoryRecalledRef.current = false;
         return true;
       }
       if (c === "/reasoning") {
@@ -994,6 +1068,47 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: edit" }]);
         return true;
       }
+      if (c === "/memory") {
+        if (!cfg?.memoryEnabled) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory is disabled. Enable with KIMIFLARE_MEMORY_ENABLED=1" }]);
+          return true;
+        }
+        if (arg === "clear") {
+          const cleared = memoryManagerRef.current?.clearRepo(process.cwd()) ?? 0;
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `cleared ${cleared} memories for this repo` }]);
+          return true;
+        }
+        if (arg.startsWith("search ")) {
+          const query = arg.slice(7).trim();
+          if (!query) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /memory search <query>" }]);
+            return true;
+          }
+          void memoryManagerRef.current?.recall({ text: query, repoPath: process.cwd(), limit: 10 }).then((results) => {
+            if (results.length === 0) {
+              setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "no memories found" }]);
+            } else {
+              const lines = results.map((r) => `  [${r.memory.category}] ${r.memory.content} (score: ${r.combinedScore.toFixed(2)})`);
+              setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `memories:\n${lines.join("\n")}` }]);
+            }
+          });
+          return true;
+        }
+        const stats = memoryManagerRef.current?.getStats();
+        if (stats) {
+          const sizeKb = Math.round(stats.dbSizeBytes / 1024);
+          const lines = [
+            `total: ${stats.totalCount} memories (${sizeKb} KB)`,
+            `  fact: ${stats.byCategory.fact}, event: ${stats.byCategory.event}, instruction: ${stats.byCategory.instruction}`,
+            `  task: ${stats.byCategory.task}, preference: ${stats.byCategory.preference}`,
+            `last cleanup: ${stats.lastCleanupAt ? new Date(stats.lastCleanupAt).toISOString() : "never"}`,
+          ];
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+        } else {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory manager not initialized" }]);
+        }
+        return true;
+      }
       if (c === "/cost") {
         if (!sessionIdRef.current) {
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no usage recorded yet" }]);
@@ -1113,6 +1228,9 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
               "  /resume                 pick a past conversation\n" +
               "  /compact                summarize old turns to free context\n" +
               "  /init                   scan this repo and write a KIMI.md for future agents\n" +
+              "  /memory                 show memory stats\n" +
+              "  /memory search <query>  search stored memories\n" +
+              "  /memory clear           wipe memories for this repo\n" +
               "  /mcp list               list connected MCP servers and tools\n" +
               "  /mcp reload             reconnect all configured MCP servers\n" +
               "  /reasoning              toggle show/hide model reasoning\n" +
@@ -1180,6 +1298,23 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             ...sessionStateRef.current,
             artifact_index: { ...sessionStateRef.current.artifact_index },
           };
+        }
+      }
+
+      // Recall cross-session memories on first user message
+      if (memoryManagerRef.current && cfg.memoryEnabled && !memoryRecalledRef.current) {
+        memoryRecalledRef.current = true;
+        try {
+          const recalledText = await memoryManagerRef.current.recallForSession(process.cwd(), display);
+          if (recalledText) {
+            messagesRef.current.push({ role: "system", content: recalledText });
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "recalled memories from previous sessions" },
+            ]);
+          }
+        } catch {
+          /* best effort */
         }
       }
 
@@ -1319,12 +1454,27 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           if (result.metrics.rawTurnsRemoved > 0) {
             messagesRef.current = result.newMessages;
             sessionStateRef.current = result.newState;
+            let memoryText = "";
+            if (memoryManagerRef.current && cfg.memoryEnabled) {
+              const stored = await extractAndStoreMemories({
+                manager: memoryManagerRef.current,
+                messages: messagesRef.current,
+                removedCount: result.metrics.rawTurnsRemoved,
+                sessionId: ensureSessionId(),
+                repoPath: process.cwd(),
+                accountId: cfg.accountId,
+                apiToken: cfg.apiToken,
+                model: cfg.model,
+                gateway: gatewayFromConfig(cfg),
+              });
+              if (stored > 0) memoryText = `, ${stored} memories stored`;
+            }
             setEvents((e) => [
               ...e,
               {
                 kind: "info",
                 key: mkKey(),
-                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)${memoryText}`,
               },
             ]);
             await saveSessionSafe();

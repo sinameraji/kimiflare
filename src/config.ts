@@ -33,6 +33,16 @@ export interface KimiConfig {
   compiledContext?: boolean;
   /** Number of recent user turns to retain image content; older images are dropped. */
   imageHistoryTurns?: number;
+  /** Enable local structured memory (SQLite + embeddings). */
+  memoryEnabled?: boolean;
+  /** Path to memory database. Defaults to .kimiflare/memory.db in repo root, or ~/.local/share/kimiflare/memory.db. */
+  memoryDbPath?: string;
+  /** Max age of memories in days before cleanup. Default: 90. */
+  memoryMaxAgeDays?: number;
+  /** Max memories per repo. Default: 1000. */
+  memoryMaxEntries?: number;
+  /** Embedding model for memory vectors. Default: @cf/baai/bge-base-en-v1.5. */
+  memoryEmbeddingModel?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -119,6 +129,12 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
   const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
 
+  const envMemoryEnabled = readBooleanEnv("KIMIFLARE_MEMORY_ENABLED");
+  const envMemoryDbPath = process.env.KIMIFLARE_MEMORY_DB_PATH;
+  const envMemoryMaxAgeDays = readNumberEnv("KIMIFLARE_MEMORY_MAX_AGE_DAYS");
+  const envMemoryMaxEntries = readNumberEnv("KIMIFLARE_MEMORY_MAX_ENTRIES");
+  const envMemoryEmbeddingModel = process.env.KIMIFLARE_MEMORY_EMBEDDING_MODEL;
+
   if (envAccount && envToken) {
     return {
       accountId: envAccount,
@@ -137,6 +153,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       cacheStablePrompts,
       compiledContext,
       imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
+      memoryEnabled: envMemoryEnabled,
+      memoryDbPath: envMemoryDbPath,
+      memoryMaxAgeDays: envMemoryMaxAgeDays,
+      memoryMaxEntries: envMemoryMaxEntries,
+      memoryEmbeddingModel: envMemoryEmbeddingModel,
     };
   }
 
@@ -163,6 +184,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
         imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
+        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled,
+        memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
+        memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
+        memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
+        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
       };
     }
   } catch {
