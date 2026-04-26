@@ -118,7 +118,7 @@ interface PendingPermission {
 
 const CONTEXT_LIMIT = 262_000;
 const AUTO_COMPACT_SUGGEST_PCT = 0.8;
-const MAX_EVENTS = 80;
+const MAX_EVENTS = 500;
 
 let nextAssistantId = 1;
 let nextKey = 1;
@@ -127,6 +127,28 @@ const mkKey = () => `evt_${nextKey++}`;
 function capEvents(prev: ChatEvent[]): ChatEvent[] {
   if (prev.length <= MAX_EVENTS) return prev;
   return prev.slice(prev.length - MAX_EVENTS);
+}
+
+/** Visually compact events by collapsing old turns into a placeholder.
+ *  Keeps the last `keepLastTurns` user messages and everything after them. */
+function compactEventsVisual(prev: ChatEvent[], keepLastTurns: number): ChatEvent[] {
+  let seen = 0;
+  let cutoff = -1;
+  for (let i = prev.length - 1; i >= 0; i--) {
+    if (prev[i]!.kind === "user") {
+      seen++;
+      if (seen === keepLastTurns + 1) {
+        cutoff = i;
+        break;
+      }
+    }
+  }
+  if (cutoff <= 0) return prev;
+  const kept = prev.slice(cutoff);
+  return [
+    { kind: "info", key: mkKey(), text: `··· ${cutoff} earlier messages compacted ···` },
+    ...kept,
+  ];
 }
 
 const MAX_IMAGES_PER_MESSAGE = 10;
@@ -634,14 +656,19 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         } else {
           messagesRef.current = result.newMessages;
           sessionStateRef.current = result.newState;
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
-            },
-          ]);
+          setEvents((e) =>
+            compactEventsVisual(
+              [
+                ...e,
+                {
+                  kind: "info",
+                  key: mkKey(),
+                  text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
+                },
+              ],
+              4,
+            ),
+          );
           await saveSessionSafe();
         }
       } else {
@@ -660,14 +687,19 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           ]);
         } else {
           messagesRef.current = result.newMessages;
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: `compacted ${result.replacedCount} messages into a summary`,
-            },
-          ]);
+          setEvents((e) =>
+            compactEventsVisual(
+              [
+                ...e,
+                {
+                  kind: "info",
+                  key: mkKey(),
+                  text: `compacted ${result.replacedCount} messages into a summary`,
+                },
+              ],
+              4,
+            ),
+          );
           await saveSessionSafe();
         }
       }
