@@ -27,7 +27,8 @@ export function isBlockedInPlanMode(toolName: string): boolean {
 }
 
 // Dangerous shell patterns that disqualify any command from read-only status
-const DANGEROUS_PATTERNS = /[<>|;&`$]|\$\(|\$\{|&&|\|\||\b&\s*$/;
+// Pipes (|) and AND chains (&&) are allowed — each segment is validated independently.
+const DANGEROUS_PATTERNS = /[<>;&`$]|\$\(|\$\{|\|\||\b&\s*$/;
 
 // Git subcommands that are read-only (value = true means always safe, false means needs arg check)
 const GIT_READONLY_SUBCOMMANDS: Record<string, boolean> = {
@@ -53,7 +54,7 @@ const GIT_READONLY_SUBCOMMANDS: Record<string, boolean> = {
 // Whitelisted non-git commands (must be exact first token)
 const READONLY_COMMANDS = new Set([
   // File system
-  "ls", "cat", "head", "tail", "pwd", "echo",
+  "cd", "ls", "cat", "head", "tail", "pwd", "echo",
   "file", "stat", "readlink", "realpath", "dirname", "basename",
   "wc", "sort", "uniq", "diff", "cmp",
   // Search
@@ -138,27 +139,56 @@ function tokenizeCommand(command: string): string[] {
   return tokens;
 }
 
-export function isReadOnlyBash(command: string): boolean {
+function splitByOperators(command: string, operators: string[]): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let inQuote: string | null = null;
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+
+    if (inQuote) {
+      if (ch === inQuote) {
+        inQuote = null;
+      }
+      current += ch;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      current += ch;
+      continue;
+    }
+
+    let matchedOp = false;
+    for (const op of operators) {
+      if (command.slice(i, i + op.length) === op) {
+        segments.push(current.trim());
+        current = "";
+        i += op.length - 1;
+        matchedOp = true;
+        break;
+      }
+    }
+    if (matchedOp) continue;
+
+    current += ch;
+  }
+
+  if (current.trim()) segments.push(current.trim());
+  return segments;
+}
+
+function isReadOnlyBashSegment(command: string): boolean {
   const trimmed = command.trim();
   if (!trimmed) return false;
-
-  // Reject any command with dangerous shell patterns
-  if (DANGEROUS_PATTERNS.test(trimmed)) return false;
 
   const tokens = tokenizeCommand(trimmed);
   if (tokens.length === 0) return false;
 
-  const first = tokens[0]!;
-
-  // Handle cd prefix: cd somewhere && real_command
-  let cmdIndex = 0;
-  if (first === "cd" && tokens.length >= 3 && tokens[1] && tokens[2] === "&&") {
-    cmdIndex = 3;
-  }
-
-  const cmd = tokens[cmdIndex];
-  if (!cmd) return false;
-  const args = tokens.slice(cmdIndex + 1);
+  const cmd = tokens[0]!;
+  const args = tokens.slice(1);
 
   // Git commands
   if (cmd === "git") {
@@ -186,6 +216,23 @@ export function isReadOnlyBash(command: string): boolean {
 
   // Simple whitelist only — no arg-checked commands in plan mode
   return READONLY_COMMANDS.has(cmd);
+}
+
+export function isReadOnlyBash(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) return false;
+
+  // Reject redirections, background, subshells, variable expansion
+  if (DANGEROUS_PATTERNS.test(trimmed)) return false;
+
+  // Split by pipes and && chains, validating each segment independently
+  const segments = splitByOperators(trimmed, ["|", "&&"]);
+  if (segments.length === 0) return false;
+
+  for (const segment of segments) {
+    if (!isReadOnlyBashSegment(segment.trim())) return false;
+  }
+  return true;
 }
 
 export function systemPromptForMode(m: Mode): string {
