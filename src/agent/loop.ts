@@ -2,7 +2,7 @@ import { runKimi } from "./client.js";
 import type { AiGatewayOptions, GatewayMeta } from "./client.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
-import { sanitizeString, stripOldImages } from "./messages.js";
+import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
@@ -50,6 +50,8 @@ export interface AgentTurnOpts {
   codeMode?: boolean;
 }
 
+const codeModeApiCache = new Map<string, string>();
+
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
@@ -58,7 +60,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let codeModeApiString = "";
 
   if (codeMode) {
-    codeModeApiString = generateTypeScriptApi(opts.tools);
+    const toolsKey = stableStringify(opts.tools);
+    const cached = codeModeApiCache.get(toolsKey);
+    if (cached) {
+      codeModeApiString = cached;
+    } else {
+      codeModeApiString = generateTypeScriptApi(opts.tools);
+      codeModeApiCache.set(toolsKey, codeModeApiString);
+    }
     toolDefs = [
       {
         type: "function",

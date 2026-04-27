@@ -35,6 +35,7 @@ function schemaToTsType(prop: JsonSchemaProperty | undefined, required = true): 
   } else if (prop.type === "object") {
     if (prop.properties && Object.keys(prop.properties).length > 0) {
       const entries = Object.entries(prop.properties)
+        .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, val]) => {
           const isReq = prop.required?.includes(key) ?? false;
           return `  ${key}${isReq ? "" : "?"}: ${schemaToTsType(val, isReq)};`;
@@ -58,6 +59,7 @@ function schemaToTsType(prop: JsonSchemaProperty | undefined, required = true): 
 
 function generateInterface(name: string, properties: Record<string, JsonSchemaProperty>, required: string[] = []): string {
   const entries = Object.entries(properties)
+    .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, val]) => {
       const isReq = required.includes(key);
       return `  ${key}${isReq ? "" : "?"}: ${schemaToTsType(val, isReq)};`;
@@ -84,7 +86,7 @@ export function generateTypeScriptApi(tools: ToolSpec[]): string {
   const outputInterfaces: string[] = [];
   const methodEntries: string[] = [];
 
-  for (const tool of tools) {
+  for (const tool of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
     const baseName = sanitizeTypeName(tool.name);
     const inputName = `${baseName}_Input`;
     const outputName = `${baseName}_Output`;
@@ -95,8 +97,9 @@ export function generateTypeScriptApi(tools: ToolSpec[]): string {
       required?: string[];
     };
 
-    if (params.properties && Object.keys(params.properties).length > 0) {
-      inputInterfaces.push(generateInterface(inputName, params.properties, params.required));
+    const sortedPropKeys = params.properties ? Object.keys(params.properties).sort((a, b) => a.localeCompare(b)) : [];
+    if (sortedPropKeys.length > 0 && params.properties) {
+      inputInterfaces.push(generateInterface(inputName, params.properties, [...(params.required ?? [])].sort((a, b) => a.localeCompare(b))));
       inputInterfaces.push("");
       methodEntries.push(`  /**`);
       methodEntries.push(`   * ${tool.description.replace(/\n/g, "\n   * ")}`);

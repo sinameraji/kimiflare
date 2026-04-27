@@ -499,7 +499,7 @@ Verification:
 
 Ordering: ArtifactStore persistence → Scout plumbing → Code Mode determinism → session-start recall.
 
-#### PR 1 — `feat/artifact-store-persistence` (in progress)
+#### PR 1 — `feat/artifact-store-persistence` (merged)
 
 Addresses finding §6.2: `ArtifactStore` is not persisted, so `/resume` leaves compiled-context recall broken.
 
@@ -510,3 +510,25 @@ Changes:
 - `src/agent/session-state.test.ts` — 4 new test cases: empty store round-trip, timestamp ordering, 50 KB truncation, and full inverse property.
 
 Verification: `npm run typecheck` clean; `npm test` 145 passing, 0 failing (was 139 before this PR).
+
+#### PR 2 — `feat/scout-plumbing` (merged)
+
+Addresses finding §6.10: Memory write pipeline uses Kimi K2.6 for verification, topic-key normalization, and hypothetical-query generation — 3 LLM calls per `memory_remember`.
+
+Changes:
+- `src/memory/manager.ts` — `verifyMemory` and `generateHypotheticalQueries` now use `plumbingLlmOpts` (Llama 4 Scout) instead of the main model. `normalizeTopicKey` replaced with `deterministicTopicKey`: a pure function that lowercases, strips non-alphanumerics, replaces spaces with `_`, and truncates to 60 chars — zero LLM calls.
+- `src/config.ts` — added `plumbingModel` config key, defaulting to `@cf/meta/llama-4-scout-17b-16e-instruct`.
+- `src/app.tsx` — passes `plumbingModel` through to `MemoryManager`.
+
+Verification: `npm run typecheck` clean; `npm test` passing.
+
+#### PR 3 — `feat/code-mode-determinism` (in progress)
+
+Addresses finding §6.4 / §7.4: Code Mode's TypeScript API is regenerated every turn and embedded in the `execute_code` tool description. Without determinism, property-key ordering jitter invalidates the Workers AI prefix cache from that point onward.
+
+Changes:
+- `src/code-mode/api-generator.ts` — Sorts `Object.entries()` and `Object.keys()` by key in `schemaToTsType`, `generateInterface`, and `generateTypeScriptApi`. Sorts the tools array by name. Sorts `required` arrays before passing to `generateInterface`.
+- `src/agent/loop.ts` — Adds a module-level `codeModeApiCache` keyed by `stableStringify(opts.tools)`. The generated API string is only recomputed when the tool list actually changes (e.g., MCP connect/disconnect).
+- `src/code-mode/api-generator.test.ts` — New test suite covering: identical output across different property-key insertion orders, identical output on repeated calls, tool-name sorting, simple declaration smoke test, no-parameters handling, and nested object property ordering.
+
+Verification: `npm run typecheck` clean; `npm test` passing.
