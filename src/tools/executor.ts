@@ -26,7 +26,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryForgetTool,
 ];
 
-export type PermissionDecision = "allow" | "allow_session" | "deny" | "halt";
+export type PermissionDecision = "allow" | "allow_session" | "deny";
 
 export interface PermissionRequest {
   tool: ToolSpec;
@@ -53,8 +53,6 @@ export interface ToolResult {
   reducedBytes?: number;
   /** Artifact ID if the raw output was stored for later expansion. */
   artifactId?: string;
-  /** When true, the agent loop should stop after this batch of tool calls. */
-  halt?: boolean;
 }
 
 export class ToolExecutor {
@@ -125,15 +123,6 @@ export class ToolExecutor {
             name: call.name,
             content: `Permission denied by user. Do not retry this exact call; ask the user what they want to do differently.`,
             ok: false,
-          };
-        }
-        if (decision === "halt") {
-          return {
-            tool_call_id: call.id,
-            name: call.name,
-            content: `Blocked by plan mode. Switch to edit mode to execute ${call.name}.`,
-            ok: false,
-            halt: true,
           };
         }
         if (decision === "allow_session") this.sessionAllowed.add(sessionKey);

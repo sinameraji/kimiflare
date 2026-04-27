@@ -344,21 +344,6 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       }
     }
 
-    if (toolResults.some((r) => r.halt)) {
-      if (opts.sessionId && lastUsage) {
-        void logTurnDebug({
-          sessionId: opts.sessionId,
-          turn,
-          messages: opts.messages,
-          previousMessages,
-          toolResults,
-          usage: lastUsage,
-          shadowStrip: shadowStripMetrics,
-        });
-      }
-      return;
-    }
-
     if (opts.sessionId && lastUsage) {
       void logTurnDebug({
         sessionId: opts.sessionId,

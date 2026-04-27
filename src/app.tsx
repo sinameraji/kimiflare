@@ -65,7 +65,6 @@ import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
 import { shouldShowCreatorMessage, markCreatorMessageSeen } from "./util/state.js";
 import { getAppVersion } from "./util/version.js";
-import { notifyUser } from "./util/notify.js";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { loadCustomCommands } from "./commands/loader.js";
@@ -972,8 +971,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                     text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
                   },
                 ]);
-                notifyUser("Kimiflare — Plan Mode", `Blocked ${req.tool.name}. Switch to edit mode to continue.`);
-                resolve("halt");
+                resolve("deny");
                 return;
               }
               setPerm({ tool: req.tool, args: req.args, resolve });
@@ -1838,8 +1836,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                       text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
                     },
                   ]);
-                  notifyUser("Kimiflare — Plan Mode", `Blocked ${req.tool.name}. Switch to edit mode to continue.`);
-                  resolve("halt");
+                  resolve("deny");
                   return;
                 }
                 setPerm({ tool: req.tool, args: req.args, resolve });
