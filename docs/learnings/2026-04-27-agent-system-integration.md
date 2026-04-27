@@ -546,8 +546,8 @@ Verification: `npm run typecheck` clean; `npm test` passing.
 
 ### 2026-04-27 — Milestone 3 (`feat/memory-polish-and-loop-guardrails`)
 
-Branch: `feat/memory-polish-and-loop-guardrails` off `main`.
-Status: **in progress**.
+Branch: `feat/memory-polish-and-loop-guardrails` off `main` (PR #177).
+Status: **submitted for review**.
 
 Plan:
 
