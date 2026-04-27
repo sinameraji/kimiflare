@@ -364,15 +364,21 @@ export function recallArtifacts(
     }
   }
 
-  // Recall by failure reference (if current text mentions a prior failure)
+  // Recall by failure reference (if current text mentions a prior failure).
+  // Require the artifact summary itself to mention the keyword — otherwise
+  // a single matching keyword would pull every bash artifact in the index.
   for (const failure of state.recent_failures) {
     const keyword = failure.split(":")[0];
-    if (keyword && text.toLowerCase().includes(keyword.toLowerCase())) {
-      // Find artifact related to this failure
-      for (const [id, meta] of Object.entries(state.artifact_index)) {
-        if (meta.source === "bash" && !ids.includes(id)) {
-          ids.push(id);
-        }
+    if (!keyword) continue;
+    const lowerKeyword = keyword.toLowerCase();
+    if (!text.toLowerCase().includes(lowerKeyword)) continue;
+    for (const [id, meta] of Object.entries(state.artifact_index)) {
+      if (
+        meta.source === "bash" &&
+        !ids.includes(id) &&
+        meta.summary.toLowerCase().includes(lowerKeyword)
+      ) {
+        ids.push(id);
       }
     }
   }
