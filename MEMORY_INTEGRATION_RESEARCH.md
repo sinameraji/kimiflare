@@ -11,7 +11,7 @@ Kimiflare grew four overlapping mechanisms in close succession:
 3. **Code Mode** — a TypeScript sandbox that replaces native tool-calling with one `execute_code` tool, modeled on [Cloudflare's Code Mode blog post](https://blog.cloudflare.com/code-mode/).
 4. **Agent Memory** — a per-repo SQLite + embeddings store with RRF retrieval and explicit tool-driven writes, modeled on [Cloudflare's Agent Memory blog post](https://blog.cloudflare.com/introducing-agent-memory/).
 
-Each landed within roughly two weeks of the previous one. Each was built mostly in isolation. None was redesigned when the next arrived. The result is four solid mechanisms that don't yet form one coherent system.
+All four landed inside a five-day window in late April 2026 — the project itself is roughly a week old at the time of writing. Compact landed within four hours of the initial scaffold. Compiled context landed two days later. Agent memory and code mode both landed on the same afternoon, thirty minutes apart. Each was built mostly in isolation; none was redesigned when the next arrived. The result is four solid mechanisms that haven't yet had time to form one coherent system.
 
 The optimization target is twofold:
 
