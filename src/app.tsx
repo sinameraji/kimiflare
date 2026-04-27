@@ -288,6 +288,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
+  const sessionStartRecallRef = useRef<Promise<void> | null>(null);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -358,6 +359,28 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           ]);
         }
       });
+
+      // Fire session-start recall so the model walks in with context.
+      // The promise is awaited in submit() before the first user message.
+      const cwd = process.cwd();
+      sessionStartRecallRef.current = (async () => {
+        try {
+          const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
+          if (results.length > 0) {
+            const text = MemoryManager.formatRecalled(results);
+            // Insert after existing system messages, before any user messages
+            const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+            const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+            messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
+            ]);
+          }
+        } catch {
+          // Non-fatal: session works fine without recalled memories
+        }
+      })();
     } else {
       memoryManagerRef.current?.close();
       memoryManagerRef.current = null;
@@ -1014,6 +1037,24 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         } else {
           artifactStoreRef.current = new ArtifactStore();
         }
+
+        // Recall memories for resumed session so the model has context
+        const manager = memoryManagerRef.current;
+        if (manager) {
+          try {
+            const cwd = process.cwd();
+            const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
+            if (results.length > 0) {
+              const text = MemoryManager.formatRecalled(results);
+              const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+              messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
+
         setEvents([
           {
             kind: "info",
@@ -1650,6 +1691,12 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         }
       }
 
+      // Ensure session-start memory recall has settled before the first turn
+      if (sessionStartRecallRef.current) {
+        await sessionStartRecallRef.current;
+        sessionStartRecallRef.current = null;
+      }
+
       setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
       messagesRef.current.push({ role: "user", content });
 
@@ -1855,6 +1902,33 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
                 ]);
               }
             }
+          }
+        }
+
+        // After compaction, recall memories so the model retains durable anchors
+        const manager = memoryManagerRef.current;
+        if (manager) {
+          try {
+            const cwd = process.cwd();
+            const queryText = sessionStateRef.current.task || cwd;
+            const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+            if (results.length > 0) {
+              const text = MemoryManager.formatRecalled(results);
+              const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+              messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+              setEvents((e) => [
+                ...e,
+                {
+                  kind: "info",
+                  key: mkKey(),
+                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                },
+              ]);
+              await saveSessionSafe();
+            }
+          } catch {
+            // Non-fatal
           }
         }
       } catch (e) {

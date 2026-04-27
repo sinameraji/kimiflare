@@ -277,6 +277,19 @@ export class MemoryManager {
   }
 
   /**
+   * Format recalled memories as a compact context block for injection into messages.
+   */
+  static formatRecalled(results: HybridResult[]): string {
+    if (results.length === 0) return "";
+    const lines: string[] = ["[recalled memories]"];
+    for (const r of results) {
+      const files = r.memory.relatedFiles.length > 0 ? ` [${r.memory.relatedFiles.join(", ")}]` : "";
+      lines.push(`- [${r.memory.category}] ${r.memory.content}${files}`);
+    }
+    return lines.join("\n");
+  }
+
+  /**
    * Soft-delete a memory by ID.
    */
   async forget(id: string): Promise<boolean> {
