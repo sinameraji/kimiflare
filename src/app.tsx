@@ -1696,25 +1696,63 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         });
         await saveSessionSafe();
 
-        // Auto-compact after turn if compiled context is enabled and thresholds are met
-        if (compiledContextRef.current && shouldCompact({ messages: messagesRef.current })) {
-          const result = compactCompiled({
-            messages: messagesRef.current,
-            state: sessionStateRef.current,
-            store: artifactStoreRef.current,
-          });
-          if (result.metrics.rawTurnsRemoved > 0) {
-            messagesRef.current = result.newMessages;
-            sessionStateRef.current = result.newState;
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "info",
-                key: mkKey(),
-                text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-              },
-            ]);
-            await saveSessionSafe();
+        // Auto-compact after turn when thresholds are met. With compiled
+        // context on, use the heuristic compactor; otherwise fall back to the
+        // LLM summarizer so users have a safety net regardless of the flag.
+        if (shouldCompact({ messages: messagesRef.current })) {
+          if (compiledContextRef.current) {
+            const result = compactCompiled({
+              messages: messagesRef.current,
+              state: sessionStateRef.current,
+              store: artifactStoreRef.current,
+            });
+            if (result.metrics.rawTurnsRemoved > 0) {
+              messagesRef.current = result.newMessages;
+              sessionStateRef.current = result.newState;
+              setEvents((e) => [
+                ...e,
+                {
+                  kind: "info",
+                  key: mkKey(),
+                  text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                },
+              ]);
+              await saveSessionSafe();
+            }
+          } else {
+            try {
+              const result = await compactMessages({
+                accountId: cfg.accountId,
+                apiToken: cfg.apiToken,
+                model: cfg.model,
+                messages: messagesRef.current,
+                signal: controller.signal,
+                gateway: gatewayFromConfig(cfg),
+              });
+              if (result.replacedCount > 0) {
+                messagesRef.current = result.newMessages;
+                setEvents((e) => [
+                  ...e,
+                  {
+                    kind: "info",
+                    key: mkKey(),
+                    text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                  },
+                ]);
+                await saveSessionSafe();
+              }
+            } catch (compactErr) {
+              if ((compactErr as Error).name !== "AbortError") {
+                setEvents((es) => [
+                  ...es,
+                  {
+                    kind: "info",
+                    key: mkKey(),
+                    text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                  },
+                ]);
+              }
+            }
           }
         }
       } catch (e) {

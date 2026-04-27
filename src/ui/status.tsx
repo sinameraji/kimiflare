@@ -94,14 +94,14 @@ export function buildRightParts(
     parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`out ${sessionUsage.completionTokens}`);
     parts.push(`ctx ${pct}%`);
-    parts.push(`${sessionUsage.cost.toFixed(5)}`);
+    parts.push(`$${sessionUsage.cost.toFixed(5)}`);
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
     const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`out ${usage.completion_tokens}`);
     parts.push(`ctx ${pct}%`);
-    parts.push(`${cost.total.toFixed(5)}`);
+    parts.push(`$${cost.total.toFixed(5)}`);
   }
   const gatewayCache = formatGatewayCacheStatus(gatewayMeta);
   if (gatewayCache) parts.push(gatewayCache);

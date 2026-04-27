@@ -153,4 +153,29 @@ describe("recallArtifacts", () => {
     assert.strictEqual(ids.length, 0);
     assert.strictEqual(recalled.length, 0);
   });
+
+  it("does not pull unrelated bash artifacts when failure keyword matches text", () => {
+    const state = emptySessionState();
+    state.recent_failures.push("failed: npm test");
+    state.artifact_index["b1"] = {
+      type: "bash_log",
+      summary: "bash: failed test run",
+      source: "bash",
+    };
+    state.artifact_index["b2"] = {
+      type: "bash_log",
+      summary: "bash: ls -la",
+      source: "bash",
+    };
+    const store = new ArtifactStore();
+    store.add({ id: "b1", type: "bash_log", summary: "bash: failed test run", raw: "x", source: "bash", ts: "2024-01-01T00:00:00Z" });
+    store.add({ id: "b2", type: "bash_log", summary: "bash: ls -la", raw: "y", source: "bash", ts: "2024-01-01T00:00:00Z" });
+
+    const messages: ChatMessage[] = [{ role: "user", content: "the build failed again" }];
+    const { ids } = recallArtifacts(messages, store, state);
+
+    // Only b1 should match: keyword "failed" appears in user text and in b1's summary.
+    // b2 must not be pulled in just because it's a bash artifact.
+    assert.deepStrictEqual(ids, ["b1"]);
+  });
 });
