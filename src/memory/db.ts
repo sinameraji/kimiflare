@@ -246,12 +246,12 @@ export function searchMemoriesFts(
   const sql = repoPath
     ? `SELECT m.*, rank FROM memories m
        JOIN memories_fts fts ON m.rowid = fts.rowid
-       WHERE memories_fts MATCH ? AND m.repo_path = ? AND m.forgotten = 0 AND m.superseded_by IS NULL
+       WHERE memories_fts MATCH ? AND m.repo_path = ? AND m.forgotten = 0 AND m.superseded_by IS NULL AND m.category != 'task'
        ORDER BY rank
        LIMIT ?`
     : `SELECT m.*, rank FROM memories m
        JOIN memories_fts fts ON m.rowid = fts.rowid
-       WHERE memories_fts MATCH ? AND m.forgotten = 0 AND m.superseded_by IS NULL
+       WHERE memories_fts MATCH ? AND m.forgotten = 0 AND m.superseded_by IS NULL AND m.category != 'task'
        ORDER BY rank
        LIMIT ?`;
 
@@ -272,7 +272,7 @@ export function listMemoriesForVectorSearch(
   const rows = db
     .prepare(
       `SELECT * FROM memories
-       WHERE repo_path = ? AND created_at >= ? AND forgotten = 0 AND superseded_by IS NULL
+       WHERE repo_path = ? AND created_at >= ? AND forgotten = 0 AND superseded_by IS NULL AND category != 'task'
        ORDER BY accessed_at DESC
        LIMIT ?`
     )

@@ -102,6 +102,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let turn = 0;
   let lastUsage: Usage | null = null;
 
+  // Anti-loop guardrail: track recent tool call signatures to detect thrashing
+  const recentToolCalls: string[] = [];
+  const LOOP_WINDOW = 8;
+  const LOOP_THRESHOLD = 2; // 3rd identical call triggers the guardrail
+
   for (let iter = 0; iter < max; iter++) {
     turn++;
     const previousMessages = opts.messages.slice();
@@ -250,6 +255,30 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     for (const tc of toolCalls) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
 
+      // Anti-loop guardrail
+      const loopSignature = `${tc.function.name}:${stableStringify(tc.function.arguments)}`;
+      const loopCount = recentToolCalls.filter((s) => s === loopSignature).length;
+      if (loopCount >= LOOP_THRESHOLD) {
+        const warning = `Loop detected: you have called ${tc.function.name} with the same arguments multiple times in a row. Consider a different approach.`;
+        const loopResult: ToolResult = {
+          tool_call_id: tc.id,
+          name: tc.function.name,
+          content: warning,
+          ok: false,
+        };
+        toolResults.push(loopResult);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: sanitizeString(warning),
+          name: tc.function.name,
+        });
+        opts.callbacks.onToolResult?.(loopResult);
+        recentToolCalls.push(loopSignature);
+        if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+        continue;
+      }
+
       if (codeMode && tc.function.name === "execute_code") {
         const args = JSON.parse(tc.function.arguments || "{}") as { code?: string; reasoning?: string };
         const code = args.code || "";
@@ -294,6 +323,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           name: "execute_code",
         });
         opts.callbacks.onToolResult?.(result);
+        recentToolCalls.push(loopSignature);
+        if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       } else {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
@@ -308,6 +339,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           name: result.name,
         });
         opts.callbacks.onToolResult?.(result);
+        recentToolCalls.push(loopSignature);
+        if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       }
     }
 

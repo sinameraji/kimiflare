@@ -532,3 +532,47 @@ Changes:
 - `src/code-mode/api-generator.test.ts` — New test suite covering: identical output across different property-key insertion orders, identical output on repeated calls, tool-name sorting, simple declaration smoke test, no-parameters handling, and nested object property ordering.
 
 Verification: `npm run typecheck` clean; `npm test` passing.
+
+#### PR 4 — `feat/session-start-memory-recall` (merged)
+
+Addresses finding §6.3 / §7.1: The model walks into every session cold even when there are stored memories about the repo.
+
+Changes:
+- `src/app.tsx` — On startup (when `cfg.memoryEnabled`), fires `manager.recall({ text: cwd, repoPath: cwd, limit: 5 })` and injects the formatted results as a system message after existing system messages, before any user messages. The promise is stored in `sessionStartRecallRef` and awaited in `submit()` before the first user message is sent.
+- `src/app.tsx` — After auto-compaction (both compiled-context and LLM-summarizer paths), recalls memories using `sessionStateRef.current.task || cwd` as the query and injects the results as a system message.
+- `src/app.tsx` — On `/resume`, recalls memories for the resumed session and injects them.
+
+Verification: `npm run typecheck` clean; `npm test` passing.
+
+### 2026-04-27 — Milestone 3 (`feat/memory-polish-and-loop-guardrails`)
+
+Branch: `feat/memory-polish-and-loop-guardrails` off `main`.
+Status: **in progress**.
+
+Plan:
+
+1. Anti-loop guardrail on tool calls (§6.11).
+2. Exclude Tasks from vector index (§6.7).
+3. Prose synthesis for memory recall (§7.1, §9.4).
+4. TUI memory visibility — `kind: "memory"` chat events (§9.6).
+
+Changes:
+
+| # | Subject | Touches |
+|---|---------|---------|
+| 1 | `feat(loop): anti-loop guardrail on repeated identical tool calls` | `src/agent/loop.ts` |
+| 2 | `feat(memory): exclude task-category memories from hybrid retrieval` | `src/memory/db.ts` |
+| 3 | `feat(memory): prose synthesis for recalled memories via plumbing model` | `src/memory/manager.ts`, `src/app.tsx` |
+| 4 | `feat(ui): add kind:memory chat event for memory system visibility` | `src/ui/chat.tsx`, `src/app.tsx` |
+
+Key implementation notes:
+
+- **Anti-loop guardrail.** Tracks the last 8 tool call signatures (`name:stableStringify(args)`) in `src/agent/loop.ts`. If a signature appears 3+ times within the window, the third and subsequent calls are skipped and a synthetic tool result is injected: `"Loop detected: you have called {tool} with the same arguments multiple times in a row. Consider a different approach."` This prevents the merge-conflict thrashing observed in §6.5 and §6.11 without adding new UI surfaces.
+- **Task exclusion.** Adds `AND category != 'task'` to both `searchMemoriesFts` and `listMemoriesForVectorSearch` in `src/memory/db.ts`. Tasks remain in the DB for direct lookup but don't pollute hybrid recall across sessions, matching Cloudflare's design (§6.7).
+- **Prose synthesis.** New `MemoryManager.synthesizeRecalled()` method pipes `formatRecalled()` output through the plumbing model (Llama 4 Scout) with a terse system prompt: *"Synthesize these recalled memories into a single dense paragraph of context for a coding assistant. Preserve all facts, file paths, and decisions. Do not add information not present in the memories. Be terse."* Falls back to the raw bullet list if synthesis returns empty. Applied to session-start, resume, and compaction-time recall in `src/app.tsx`. Costs one Scout call per recall — cheap relative to Kimi K2.6.
+- **TUI memory visibility.** New `ChatEvent` kind `"memory"` rendered with a `◈` prefix in muted color, distinct from generic `info` dots. All memory system events in `src/app.tsx` now use this kind: cleanup, backfill, enable/disable, clear, and recall confirmations (session-start, resume, compaction-time).
+
+Out of scope for this milestone:
+- HyDE retrieval channel (§6.9) — experimental, needs validation.
+- Archive code-mode scripts as artifacts (§7.4) — optional, low impact.
+- Compiled context on by default (§9.2) — product decision, pending sharp-edge fixes.

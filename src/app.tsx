@@ -347,7 +347,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         if (total > 0) {
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
+            { kind: "memory", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
           ]);
         }
       });
@@ -355,7 +355,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         if (fixed > 0) {
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: `memory backfill: embedded ${fixed} un-vectorized entries` },
+            { kind: "memory", key: mkKey(), text: `memory backfill: embedded ${fixed} un-vectorized entries` },
           ]);
         }
       });
@@ -367,14 +367,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         try {
           const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
           if (results.length > 0) {
-            const text = MemoryManager.formatRecalled(results);
+            const text = await manager.synthesizeRecalled(results);
             // Insert after existing system messages, before any user messages
             const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
             const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
             messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
             setEvents((e) => [
               ...e,
-              { kind: "info", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
+              { kind: "memory", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
             ]);
           }
         } catch {
@@ -1045,7 +1045,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             const cwd = process.cwd();
             const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
             if (results.length > 0) {
-              const text = MemoryManager.formatRecalled(results);
+              const text = await manager.synthesizeRecalled(results);
               const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
               const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
               messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
@@ -1377,14 +1377,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           const next = { ...cfg, memoryEnabled: true };
           setCfg(next);
           void saveConfig(next).catch(() => {});
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory enabled" }]);
+          setEvents((e) => [...e, { kind: "memory", key: mkKey(), text: "memory enabled" }]);
           return true;
         }
         if (arg === "off") {
           const next = { ...cfg, memoryEnabled: false };
           setCfg(next);
           void saveConfig(next).catch(() => {});
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "memory disabled" }]);
+          setEvents((e) => [...e, { kind: "memory", key: mkKey(), text: "memory disabled" }]);
           return true;
         }
         if (!cfg.memoryEnabled) {
@@ -1393,7 +1393,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         }
         if (arg === "clear") {
           const cleared = memoryManagerRef.current?.clearRepo(process.cwd()) ?? 0;
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `cleared ${cleared} memories for this repo` }]);
+          setEvents((e) => [...e, { kind: "memory", key: mkKey(), text: `cleared ${cleared} memories for this repo` }]);
           return true;
         }
         if (arg.startsWith("search ")) {
@@ -1913,14 +1913,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             const queryText = sessionStateRef.current.task || cwd;
             const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
             if (results.length > 0) {
-              const text = MemoryManager.formatRecalled(results);
+              const text = await manager.synthesizeRecalled(results);
               const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
               const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
               messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "info",
+                  kind: "memory",
                   key: mkKey(),
                   text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
                 },

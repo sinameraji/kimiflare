@@ -17,7 +17,8 @@ export type ChatEvent =
     }
   | ({ kind: "tool"; key: string } & ToolEventState)
   | { kind: "info"; key: string; text: string }
-  | { kind: "error"; key: string; text: string };
+  | { kind: "error"; key: string; text: string }
+  | { kind: "memory"; key: string; text: string };
 
 interface Props {
   events: ChatEvent[];
@@ -144,6 +145,13 @@ const EventView = React.memo(function EventView({
     return (
       <Text color={theme.info.color} dimColor={theme.info.dim}>
         · {evt.text}
+      </Text>
+    );
+  }
+  if (evt.kind === "memory") {
+    return (
+      <Text color={theme.info.color} dimColor={theme.info.dim}>
+        ◈ {evt.text}
       </Text>
     );
   }
