@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.25.0](https://github.com/sinameraji/kimiflare/compare/v0.24.0...v0.25.0) (2026-04-27)
+
+
+### Features
+
+* add /memory on and /memory off commands ([5617f68](https://github.com/sinameraji/kimiflare/commit/5617f68d2125b59076cf1b4c3458b00f12ba0466))
+* add /memory on and /memory off commands ([a1a3cf3](https://github.com/sinameraji/kimiflare/commit/a1a3cf381f4919a4d2ebe15aa74def0addc92eaf))
+* add interactive nested help menu ([6430153](https://github.com/sinameraji/kimiflare/commit/643015305753bd133fbcf9f4c059646562e4b336))
+* **commands:** custom slash commands from markdown files ([0121692](https://github.com/sinameraji/kimiflare/commit/01216920df4ffcf250f458ed0df0b3ab3129a601))
+* **commands:** custom slash commands from markdown files ([b36926e](https://github.com/sinameraji/kimiflare/commit/b36926ea7207506076e3bca30af00bb9cf5f24ac))
+* make help menu interactive with executable commands and Escape navigation ([d2b75c6](https://github.com/sinameraji/kimiflare/commit/d2b75c60c7f80c761853e2804a832f1c136f4ce8))
+
+
+### Bug Fixes
+
+* auto-compact fallback, diff-friendly bash, tighter failure recall ([5b7984f](https://github.com/sinameraji/kimiflare/commit/5b7984fb7a71908544734ac10c7072ef8b259f0a))
+* **compact:** auto-compact via LLM summarizer when compiled context is off ([c84810a](https://github.com/sinameraji/kimiflare/commit/c84810a53da8860c9217abad5e162c7bb39fae6b))
+* **compaction:** tighten failure-keyword artifact recall ([9c1521f](https://github.com/sinameraji/kimiflare/commit/9c1521f5f9e09a03f8d630c7be44713789a3c9e2))
+* **reducer:** bypass bash reducer for diff-style git commands ([92b2532](https://github.com/sinameraji/kimiflare/commit/92b2532f97e7bd18f385ac6793109eb583ce06a8))
+* **status:** restore $ prefix on cost cell in right status bar ([88cfa35](https://github.com/sinameraji/kimiflare/commit/88cfa35f1e25aef6d38608e9ec24ca73fcd1d66a))
+* **version:** correct package.json path when bundled ([b024232](https://github.com/sinameraji/kimiflare/commit/b02423234ac2c6e4ed44d12d3f1baebb4d2020ea))
+* **version:** correct package.json path when bundled ([ac9dca0](https://github.com/sinameraji/kimiflare/commit/ac9dca00667776283fd20ae65e627fab67979a41))
+
 ## [0.24.0](https://github.com/sinameraji/kimiflare/compare/v0.23.0...v0.24.0) (2026-04-26)
 
 
