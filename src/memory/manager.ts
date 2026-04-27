@@ -290,6 +290,28 @@ export class MemoryManager {
   }
 
   /**
+   * Synthesize recalled memories into a dense prose paragraph.
+   * Uses the lightweight plumbing model (Scout) to keep costs low.
+   */
+  async synthesizeRecalled(results: HybridResult[], signal?: AbortSignal): Promise<string> {
+    if (results.length === 0) return "";
+    const raw = MemoryManager.formatRecalled(results);
+    const text = await runKimiText({
+      ...this.plumbingLlmOpts,
+      signal,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a context-synthesis engine. Given a list of recalled memories about a codebase, produce a single dense paragraph of context for a coding assistant. Preserve all facts, file paths, and decisions. Do not add information not present in the memories. Be terse.",
+        },
+        { role: "user", content: raw },
+      ],
+    });
+    return text || raw;
+  }
+
+  /**
    * Soft-delete a memory by ID.
    */
   async forget(id: string): Promise<boolean> {
