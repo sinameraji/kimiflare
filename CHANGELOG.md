@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.26.0](https://github.com/sinameraji/kimiflare/compare/v0.25.0...v0.26.0) (2026-04-27)
+
+
+### Features
+
+* **code-mode:** deterministic TypeScript API generation + cache ([b78eac2](https://github.com/sinameraji/kimiflare/commit/b78eac2eaab54ae569b57bc7242ed18403b5c6d1))
+* **code-mode:** deterministic TypeScript API generation + cache ([81ad1f2](https://github.com/sinameraji/kimiflare/commit/81ad1f29ff89f040b8eb73e085bdbf22cb3be35f))
+* **commands:** interactive TUI for creating, editing, deleting and listing custom slash commands ([b522099](https://github.com/sinameraji/kimiflare/commit/b522099e28bba586f26779cd76d25ab05d63e8a5))
+* **commands:** interactive TUI for custom slash commands ([4b27a04](https://github.com/sinameraji/kimiflare/commit/4b27a04d89b2521a04e58f2f3d725b229ac4791a))
+* **commands:** side-by-side template guide in command wizard ([414521c](https://github.com/sinameraji/kimiflare/commit/414521c04a2bf6d867054eae74f7532966a78d68))
+* memory polish and loop guardrails ([2d9dbf5](https://github.com/sinameraji/kimiflare/commit/2d9dbf596b81fa46e626ba25fa2bf6ad3d82768a))
+* memory polish and loop guardrails ([500b26b](https://github.com/sinameraji/kimiflare/commit/500b26b381bb04c18341f4b3053304c13f436f5b))
+* **memory:** session-start and compaction-time memory recall ([cb790f5](https://github.com/sinameraji/kimiflare/commit/cb790f586ba3ad5d7ae379038216b3875b3299ad))
+* **memory:** session-start and compaction-time memory recall ([82623b2](https://github.com/sinameraji/kimiflare/commit/82623b2b0a06de72d8a3e5f093c3c695fd687931))
+* **memory:** use Llama 4 Scout for plumbing tasks and deterministic topic keys ([1615e2a](https://github.com/sinameraji/kimiflare/commit/1615e2a9c04c520811292502eb100de3c44535bd))
+* **memory:** use Llama 4 Scout for plumbing tasks and deterministic topic keys ([467f9a2](https://github.com/sinameraji/kimiflare/commit/467f9a2dbcff9381e7be1c6eba2d582a00d470c6))
+* **session:** persist ArtifactStore across session resume ([75b6ece](https://github.com/sinameraji/kimiflare/commit/75b6ece914a2f51d4c9bb90291424a162044391e))
+* **session:** persist ArtifactStore across session resume ([c58e86d](https://github.com/sinameraji/kimiflare/commit/c58e86d0a834c72f2ccb5187cfa251634eda259d))
+
 ## [0.25.0](https://github.com/sinameraji/kimiflare/compare/v0.24.0...v0.25.0) (2026-04-27)
 
 
