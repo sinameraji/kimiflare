@@ -132,6 +132,26 @@ export class ToolExecutor {
     try {
       const result = await tool.run(args as never, ctx);
       const normalized = normalizeToolOutput(result);
+
+      // Diff-style git commands carry meaning per line; the bash reducer's
+      // dedupeConsecutiveLines rule mangles them and traps the model in retry
+      // loops on merge-conflict resolution. Archive the artifact so
+      // expand_artifact still works, but hand the model the unreduced content.
+      const cmd = call.name === "bash" && typeof args.command === "string" ? args.command : "";
+      if (isDiffCommand(cmd)) {
+        const artifactId = this.artifactStore.store(normalized.content);
+        const bytes = Buffer.byteLength(normalized.content, "utf8");
+        return {
+          tool_call_id: call.id,
+          name: call.name,
+          content: normalized.content,
+          ok: true,
+          rawBytes: bytes,
+          reducedBytes: bytes,
+          artifactId,
+        };
+      }
+
       const reduced = reduceToolOutput(
         call.name,
         normalized.content,
@@ -168,6 +188,21 @@ export class ToolExecutor {
     }
     return tool.name;
   }
+}
+
+/** True if the command is a diff-style git invocation whose output the bash
+ *  reducer would mangle (dedupe of similar adjacent lines collapses real diff
+ *  context). Conservative match: anchored at the start, requires `-p` /
+ *  `--patch` for the cases where it's optional. */
+export function isDiffCommand(cmd: string): boolean {
+  const trimmed = cmd.trim();
+  if (/^git\s+show(?:\s|$)/.test(trimmed)) return true;
+  if (/^git\s+diff(?:\s|$)/.test(trimmed)) return true;
+  if (/^git\s+format-patch(?:\s|$)/.test(trimmed)) return true;
+  const hasPatchFlag = /(?:^|\s)(?:-p|--patch)(?:\s|$)/.test(trimmed);
+  if (/^git\s+log(?:\s|$)/.test(trimmed) && hasPatchFlag) return true;
+  if (/^git\s+stash\s+show(?:\s|$)/.test(trimmed) && hasPatchFlag) return true;
+  return false;
 }
 
 function normalizeToolOutput(result: string | ToolOutput): ToolOutput {
