@@ -8,6 +8,11 @@ export function resolvePath(cwd: string, input: string): string {
   return isAbsolute(input) ? input : resolve(cwd, input);
 }
 
+// Caller must pass a path produced by node:path `relative(...)`; raw user input is not safe.
+export function isPathOutside(relPath: string): boolean {
+  return relPath === ".." || relPath.startsWith(`..${sep}`) || isAbsolute(relPath);
+}
+
 export function truncate(s: string, n: number): string {
   if (s.length <= n) return s;
   return s.slice(0, n) + `\n... [truncated, ${s.length - n} chars omitted]`;

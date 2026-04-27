@@ -3,10 +3,16 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import type { Theme } from "./theme.js";
 
+interface CustomCommandSummary {
+  name: string;
+  description?: string;
+}
+
 interface Props {
   theme: Theme;
   themes: { name: string; label: string }[];
   currentThemeName: string;
+  customCommands?: CustomCommandSummary[];
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -21,7 +27,8 @@ type Page =
   | "mcp"
   | "gateway"
   | "info"
-  | "config";
+  | "config"
+  | "custom";
 
 interface CommandItem {
   command: string;
@@ -130,8 +137,9 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, onDone, onCommand }: Props) {
+export function HelpMenu({ theme, themes, currentThemeName, customCommands, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
+  const customs = customCommands ?? [];
 
   useInput((_input, key) => {
     if (key.escape) {
@@ -149,11 +157,14 @@ export function HelpMenu({ theme, themes, currentThemeName, onDone, onCommand }:
   };
 
   if (page === "main") {
-    const items = CATEGORIES.map((cat) => ({
+    const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
       label: cat.label,
       value: cat.key,
       key: cat.key,
     }));
+    if (customs.length > 0) {
+      items.push({ label: "Custom commands", value: "custom", key: "custom" });
+    }
     items.push({ label: "(close)", value: "__close__", key: "__close__" });
 
     return (
@@ -216,6 +227,40 @@ export function HelpMenu({ theme, themes, currentThemeName, onDone, onCommand }:
                 setPage("main");
               } else {
                 handleSelect(`/theme ${item.value}`);
+              }
+            }}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (page === "custom") {
+    const items = customs.map((c) => ({
+      label: `${`/${c.name}`.padEnd(28)} ${c.description ?? ""}`.trimEnd(),
+      value: `/${c.name}`,
+      key: c.name,
+    }));
+    items.push({ label: "← Back", value: "__back__", key: "__back__" });
+
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Text color={theme.accent} bold>
+          Custom commands
+        </Text>
+        <Text color={theme.info.color} dimColor={false}>
+          {customs.length === 0
+            ? "no custom commands found in .kimiflare/commands/"
+            : "Arrow keys to navigate, Enter to run, Esc to go back."}
+        </Text>
+        <Box marginTop={1}>
+          <SelectInput
+            items={items}
+            onSelect={(item) => {
+              if (item.value === "__back__") {
+                setPage("main");
+              } else {
+                handleSelect(item.value as string);
               }
             }}
           />

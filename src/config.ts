@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type ReasoningEffort = "low" | "medium" | "high";
+export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
 
 export interface McpServerConfig {
   type: "local" | "remote";
@@ -57,8 +58,9 @@ export function configPath(): string {
 
 function readReasoningEffortEnv(): ReasoningEffort | undefined {
   const raw = process.env.KIMI_REASONING_EFFORT?.toLowerCase();
-  if (raw === "low" || raw === "medium" || raw === "high") return raw;
-  return undefined;
+  return (EFFORTS as readonly string[]).includes(raw ?? "")
+    ? (raw as ReasoningEffort)
+    : undefined;
 }
 
 function readCoauthorEnv(): { enabled: boolean; name: string; email: string } | undefined {

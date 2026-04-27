@@ -64,6 +64,9 @@ import { shouldShowCreatorMessage, markCreatorMessageSeen } from "./util/state.j
 import { getAppVersion } from "./util/version.js";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
+import { loadCustomCommands } from "./commands/loader.js";
+import { renderCommand } from "./commands/renderer.js";
+import type { CustomCommand } from "./commands/types.js";
 
 interface Cfg {
   accountId: string;
@@ -194,6 +197,12 @@ function findImagePaths(text: string): string[] {
   return [...new Set(paths)];
 }
 
+const BUILTIN_COMMAND_NAMES = new Set([
+  "exit", "quit", "clear", "reasoning", "cost", "model", "thinking", "effort",
+  "theme", "mode", "plan", "auto", "edit", "resume", "compact", "init",
+  "update", "mcp", "logout", "help", "memory", "gateway", "hello", "community",
+]);
+
 const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   low: "low — fastest; lightest reasoning. Best for simple Q&A, small edits, quick coordination.",
   medium: "medium — balanced (default). Solid quality on most edits, fast on trivial prompts.",
@@ -270,6 +279,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customCommandsRef = useRef<CustomCommand[]>([]);
 
   useEffect(() => {
     if (!cfg) return;
@@ -338,7 +348,21 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       memoryManagerRef.current?.close();
       memoryManagerRef.current = null;
     }
-  }, [cfg]);
+
+    void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
+      customCommandsRef.current = commands;
+      for (const w of warnings) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `commands: ${w}` }]);
+      }
+      const shadowed = commands.filter((c) => BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()));
+      for (const c of shadowed) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `commands: /${c.name} (${c.filepath}) shadowed by built-in — will not run` },
+        ]);
+      }
+    });
+  }, [cfg, setEvents]);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
@@ -1459,12 +1483,41 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
       if (!cfg) return;
-      const trimmed = text.trim();
+      let trimmed = text.trim();
       if (!trimmed) return;
 
-      if (trimmed.startsWith("/") && handleSlash(trimmed)) return;
+      let overrideModel: string | undefined;
+      let overrideEffort: ReasoningEffort | undefined;
+      let display = displayText?.trim() || trimmed;
 
-      const display = displayText?.trim() || trimmed;
+      if (trimmed.startsWith("/")) {
+        if (handleSlash(trimmed)) return;
+        const head = trimmed.split(/\s+/)[0]!.slice(1);
+        const custom = customCommandsRef.current.find((c) => c.name === head);
+        if (custom) {
+          const info = (text: string) =>
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+          const { prompt: rendered, warnings } = await renderCommand(custom, trimmed, {
+            cwd: process.cwd(),
+          });
+          for (const w of warnings) info(`${custom.name}: ${w}`);
+          if (!rendered.trim()) return;
+          const parts: string[] = [];
+          if (custom.model) {
+            overrideModel = custom.model;
+            parts.push(`model=${custom.model}`);
+          }
+          if (custom.effort) {
+            overrideEffort = custom.effort;
+            parts.push(`effort=${custom.effort}`);
+          }
+          if (parts.length > 0) info(`command '${custom.name}' → ${parts.join(", ")} (this turn)`);
+          if (custom.mode) info(`note: mode override (${custom.mode}) is not yet wired; current mode applies`);
+          display = trimmed;
+          trimmed = rendered;
+        }
+      }
+
       const imagePaths = findImagePaths(trimmed).slice(0, MAX_IMAGES_PER_MESSAGE);
       let images: string[] = [];
       let content: string | ContentPart[] = sanitizeString(trimmed);
@@ -1523,14 +1576,14 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         await runAgentTurn({
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
-          model: cfg.model,
+          model: overrideModel ?? cfg.model,
           gateway: gatewayFromConfig(cfg),
           messages: messagesRef.current,
           tools: [...ALL_TOOLS, ...mcpToolsRef.current],
           executor: executorRef.current,
           cwd: process.cwd(),
           signal: controller.signal,
-          reasoningEffort: effortRef.current,
+          reasoningEffort: overrideEffort ?? effortRef.current,
           coauthor:
             cfg.coauthor !== false
               ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
@@ -1783,6 +1836,9 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           theme={theme}
           themes={themeList().map((t) => ({ name: t.name, label: t.label }))}
           currentThemeName={theme.name}
+          customCommands={customCommandsRef.current
+            .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
+            .map((c) => ({ name: c.name, description: c.description }))}
           onDone={() => setShowHelpMenu(false)}
           onCommand={handleHelpCommand}
         />
