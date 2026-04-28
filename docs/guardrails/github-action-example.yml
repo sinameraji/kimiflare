@@ -1,0 +1,234 @@
+# Example GitHub Actions Workflow for Automated Guardrail Review
+#
+# Copy this to .github/workflows/guardrail-review.yml to enable automated PR review.
+# This workflow runs on every PR and uses a lightweight script to evaluate the diff
+# against the guardrails. For a full AI-agent review, replace the script step with
+# a call to your preferred LLM API with the guardrails as system context.
+#
+# NOTE: This is a template. Customize the scoring thresholds and notification
+# channels for your team's needs.
+
+name: Guardrail Review
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'bin/**'
+      - 'feedback-worker/**'
+      - 'docs/**'
+      - 'package.json'
+      - 'tsconfig.json'
+
+jobs:
+  guardrail-check:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ─── Critical Auto-Checks ───
+      - name: TypeScript compile check
+        run: npm run typecheck
+        id: typecheck
+
+      - name: Run tests
+        run: npm test
+        id: tests
+
+      - name: Build check
+        run: npm run build
+        id: build
+
+      # ─── Static Analysis Checks ───
+      - name: Check for unsafe path operations
+        run: |
+          echo "=== Checking for file operations without resolvePath ==="
+          UNSAFE=$(git diff origin/main...HEAD --name-only | grep -E '\.ts$' | xargs -I {} sh -c 'grep -n "readFile\\|writeFile\\|readdir" "{}" | grep -v "resolvePath" | grep -v "test" | grep -v "node:" || true')
+          if [ -n "$UNSAFE" ]; then
+            echo "⚠️ POTENTIAL UNSAFE PATH OPERATIONS:"
+            echo "$UNSAFE"
+            echo "unsafe_paths=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No unsafe path operations detected"
+            echo "unsafe_paths=false" >> $GITHUB_OUTPUT
+          fi
+        id: path_check
+
+      - name: Check for secret exposure
+        run: |
+          echo "=== Checking for potential secret exposure ==="
+          SECRETS=$(git diff origin/main...HEAD --name-only | grep -E '\.ts$' | xargs -I {} sh -c 'grep -n "apiToken\\|apiKey\\|password\\|secret" "{}" | grep -v "config.ts" | grep -v "test" | grep -v "redact" | grep -v "// " || true')
+          if [ -n "$SECRETS" ]; then
+            echo "⚠️ POTENTIAL SECRET EXPOSURE:"
+            echo "$SECRETS"
+            echo "secrets_exposed=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No secret exposure detected"
+            echo "secrets_exposed=false" >> $GITHUB_OUTPUT
+          fi
+        id: secret_check
+
+      - name: Check for cache stability risks
+        run: |
+          echo "=== Checking for volatile data in system prompt ==="
+          VOLATILE=$(git diff origin/main...HEAD -- src/agent/system-prompt.ts | grep -E '^\+.*(new Date|Date\.now|Math\.random|crypto\.randomUUID)' || true)
+          if [ -n "$VOLATILE" ]; then
+            echo "⚠️ VOLATILE DATA IN SYSTEM PROMPT:"
+            echo "$VOLATILE"
+            echo "volatile_prompt=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No volatile data in system prompt"
+            echo "volatile_prompt=false" >> $GITHUB_OUTPUT
+          fi
+        id: cache_check
+
+      - name: Check for unbounded loops
+        run: |
+          echo "=== Checking for unbounded iteration ==="
+          LOOPS=$(git diff origin/main...HEAD --name-only | grep -E '\.ts$' | xargs -I {} sh -c 'grep -n "while (true)\\|for (;;)\\|while (!done)" "{}" || true')
+          if [ -n "$LOOPS" ]; then
+            echo "⚠️ UNBOUNDED LOOPS DETECTED:"
+            echo "$LOOPS"
+            echo "unbounded_loops=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No unbounded loops detected"
+            echo "unbounded_loops=false" >> $GITHUB_OUTPUT
+          fi
+        id: loop_check
+
+      - name: Check reducer config changes
+        run: |
+          echo "=== Checking for reducer config modifications ==="
+          REDUCER=$(git diff origin/main...HEAD -- src/tools/reducer.ts | grep -E '^\+.*(maxTotalLines|maxOutputChars|dedupeConsecutiveLines)' || true)
+          if [ -n "$REDUCER" ]; then
+            echo "⚠️ REDUCER CONFIG CHANGED:"
+            echo "$REDUCER"
+            echo "reducer_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No reducer config changes"
+            echo "reducer_changed=false" >> $GITHUB_OUTPUT
+          fi
+        id: reducer_check
+
+      # ─── Generate Review Report ───
+      - name: Generate guardrail report
+        id: report
+        run: |
+          REPORT="## 🤖 Automated Guardrail Review\n\n"
+          REPORT+="| Check | Status |\n"
+          REPORT+="|-------|--------|\n"
+
+          if [ "${{ steps.typecheck.outcome }}" == "success" ]; then
+            REPORT+="| TypeScript Compile | ✅ PASS |\n"
+          else
+            REPORT+="| TypeScript Compile | ❌ FAIL |\n"
+          fi
+
+          if [ "${{ steps.tests.outcome }}" == "success" ]; then
+            REPORT+="| Tests | ✅ PASS |\n"
+          else
+            REPORT+="| Tests | ❌ FAIL |\n"
+          fi
+
+          if [ "${{ steps.build.outcome }}" == "success" ]; then
+            REPORT+="| Build | ✅ PASS |\n"
+          else
+            REPORT+="| Build | ❌ FAIL |\n"
+          fi
+
+          if [ "${{ steps.path_check.outputs.unsafe_paths }}" == "false" ]; then
+            REPORT+="| Path Safety | ✅ PASS |\n"
+          else
+            REPORT+="| Path Safety | ⚠️ WARN |\n"
+          fi
+
+          if [ "${{ steps.secret_check.outputs.secrets_exposed }}" == "false" ]; then
+            REPORT+="| Secret Exposure | ✅ PASS |\n"
+          else
+            REPORT+="| Secret Exposure | ⚠️ WARN |\n"
+          fi
+
+          if [ "${{ steps.cache_check.outputs.volatile_prompt }}" == "false" ]; then
+            REPORT+="| Cache Stability | ✅ PASS |\n"
+          else
+            REPORT+="| Cache Stability | ⚠️ WARN |\n"
+          fi
+
+          if [ "${{ steps.loop_check.outputs.unbounded_loops }}" == "false" ]; then
+            REPORT+="| Loop Safety | ✅ PASS |\n"
+          else
+            REPORT+="| Loop Safety | ⚠️ WARN |\n"
+          fi
+
+          if [ "${{ steps.reducer_check.outputs.reducer_changed }}" == "false" ]; then
+            REPORT+="| Reducer Config | ✅ PASS |\n"
+          else
+            REPORT+="| Reducer Config | ⚠️ WARN |\n"
+          fi
+
+          REPORT+="\n### 📋 Next Steps\n\n"
+          REPORT+="- Review the [Guardrails README](/docs/guardrails/README.md)\n"
+          REPORT+="- Check the [File Checklist](/docs/guardrails/file-checklist.md) for modified files\n"
+          REPORT+="- Ensure the [Scoring Rubric](/docs/guardrails/scoring-rubric.md) criteria are met\n"
+
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPORT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # ─── Post PR Comment ───
+      - name: Post guardrail review comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = `${{ steps.report.outputs.report }}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('Automated Guardrail Review')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: report,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: report,
+              });
+            }
+
+      # ─── Fail on Critical Issues ───
+      - name: Fail if critical checks failed
+        if: |
+          steps.typecheck.outcome == 'failure' ||
+          steps.tests.outcome == 'failure' ||
+          steps.build.outcome == 'failure'
+        run: |
+          echo "❌ Critical guardrail checks failed. Please fix before merging."
+          exit 1
