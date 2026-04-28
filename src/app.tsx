@@ -626,7 +626,15 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   }, [cfg]);
 
   const initLsp = useCallback(async () => {
-    if (!cfg?.lspEnabled || !cfg?.lspServers || lspInitRef.current) return;
+    if (!cfg?.lspEnabled || !cfg?.lspServers || lspInitRef.current) {
+      if (lspInitRef.current) return;
+      if (!cfg?.lspEnabled) {
+        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP is disabled. Enable it in config to use language servers." }]);
+      } else if (!cfg?.lspServers || Object.keys(cfg.lspServers).length === 0) {
+        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP reload complete — no servers configured." }]);
+      }
+      return;
+    }
     lspInitRef.current = true;
     const manager = lspManagerRef.current;
     let totalServers = 0;
@@ -672,6 +680,11 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       setEvents((e) => [
         ...e,
         { kind: "info", key: mkKey(), text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active` },
+      ]);
+    } else {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "LSP reload complete — no servers started (check config or enabled status)." },
       ]);
     }
   }, [cfg]);
@@ -1631,7 +1644,9 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           }
           lspToolsRef.current = [];
           lspInitRef.current = false;
-          void initLsp();
+          void initLsp().catch((e) => {
+            setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `LSP reload failed: ${(e as Error).message}` }]);
+          });
           return true;
         }
         if (arg === "config" || arg === "") {

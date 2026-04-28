@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import React, { useState, useMemo } from "react";
+import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
 import type { Theme } from "./theme.js";
 import type { LspServerConfig } from "../config.js";
+import { CustomTextInput } from "./text-input.js";
 
 interface Preset {
   id: string;
@@ -121,7 +122,7 @@ const PRESETS: Preset[] = [
   },
 ];
 
-type Page = "main" | "add" | "install" | "edit" | "delete" | "list" | "custom";
+type Page = "main" | "add" | "install" | "custom-name" | "custom-command" | "edit" | "delete" | "list";
 
 interface Props {
   theme: Theme;
@@ -138,31 +139,15 @@ interface InstallState {
 export function LspWizard({ theme, servers, onDone, onSave }: Props) {
   const [page, setPage] = useState<Page>("main");
   const [selectedPreset, setSelectedPreset] = useState<Preset | null>(null);
-  const [customCommand, setCustomCommand] = useState("");
   const [customName, setCustomName] = useState("");
+  const [customCommand, setCustomCommand] = useState("");
   const [installState, setInstallState] = useState<InstallState>({ status: "idle", output: "" });
-  const [editKey, setEditKey] = useState<string | null>(null);
-
-  useInput((_input, key) => {
-    if (key.escape) {
-      if (page === "main") {
-        onDone();
-      } else if (page === "install" && installState.status === "running") {
-        // Don't allow escape while installing
-        return;
-      } else {
-        setPage("main");
-        setInstallState({ status: "idle", output: "" });
-      }
-    }
-  });
 
   const runInstall = (command: string) => {
     setInstallState({ status: "running", output: "Installing..." });
 
     const child = spawn("bash", ["-lc", command], {
       env: process.env,
-      timeout: 120000,
     });
 
     let stdout = "";
@@ -191,10 +176,11 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
 
   const handleAddPreset = (preset: Preset) => {
     if (preset.id === "custom") {
-      setPage("custom");
+      setPage("custom-name");
       return;
     }
     setSelectedPreset(preset);
+    setInstallState({ status: "idle", output: "" });
     setPage("install");
   };
 
@@ -223,11 +209,13 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
   };
 
   const handleSaveCustom = () => {
-    if (!customName.trim() || !customCommand.trim()) return;
+    const name = customName.trim();
+    const cmd = customCommand.trim();
+    if (!name || !cmd) return;
     const next = {
       ...servers,
-      [customName.trim()]: {
-        command: customCommand.trim().split(/\s+/),
+      [name]: {
+        command: cmd.split(/\s+/),
         enabled: true,
       },
     };
@@ -252,28 +240,31 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
     onSave(next, true);
   };
 
-  // ─── Main menu ─────────────────────────────────────────────────────────────
-
-  if (page === "main") {
-    const items = [
+  const mainItems = useMemo(
+    () => [
       { label: "Add server", value: "add", key: "add" },
       { label: "Edit server", value: "edit", key: "edit" },
       { label: "Delete server", value: "delete", key: "delete" },
       { label: "List servers", value: "list", key: "list" },
       { label: "(close)", value: "__close__", key: "__close__" },
-    ];
+    ],
+    [],
+  );
 
+  // ─── Main menu ─────────────────────────────────────────────────────────────
+
+  if (page === "main") {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
         <Text color={theme.accent} bold>
           LSP Servers
         </Text>
         <Text color={theme.info.color} dimColor={false}>
-          Arrow keys to navigate, Enter to select, Esc to close.
+          Arrow keys to navigate, Enter to select.
         </Text>
         <Box marginTop={1}>
           <SelectInput
-            items={items}
+            items={mainItems}
             onSelect={(item) => {
               if (item.value === "__close__") {
                 onDone();
@@ -290,12 +281,17 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
   // ─── Add ───────────────────────────────────────────────────────────────────
 
   if (page === "add") {
-    const items = PRESETS.map((p) => ({
-      label: `${p.name.padEnd(20)} ${p.description}`,
-      value: p.id,
-      key: p.id,
-    }));
-    items.push({ label: "← Back", value: "__back__", key: "__back__" });
+    const items = useMemo(
+      () => [
+        ...PRESETS.map((p) => ({
+          label: `${p.name.padEnd(20)} ${p.description}`,
+          value: p.id,
+          key: p.id,
+        })),
+        { label: "← Back", value: "__back__", key: "__back__" },
+      ],
+      [],
+    );
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -329,6 +325,20 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
     const isDone = installState.status === "success" || installState.status === "error";
     const isSuccess = installState.status === "success";
 
+    const items = useMemo(() => {
+      if (!isDone) {
+        return [
+          { label: isRunning ? "Installing..." : "Run install command", value: "run", key: "run" },
+          { label: "Skip install (already installed)", value: "skip", key: "skip" },
+          { label: "← Back", value: "__back__", key: "__back__" },
+        ];
+      }
+      return [
+        { label: isSuccess ? "Save to config ✓" : "Save anyway", value: "save", key: "save" },
+        { label: "← Back", value: "__back__", key: "__back__" },
+      ];
+    }, [isDone, isRunning, isSuccess]);
+
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
         <Text color={theme.accent} bold>
@@ -353,40 +363,21 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
         )}
 
         <Box marginTop={1}>
-          {!isDone ? (
-            <SelectInput
-              items={[
-                { label: isRunning ? "Installing..." : "Run install command", value: "run", key: "run" },
-                { label: "Skip install (already installed)", value: "skip", key: "skip" },
-                { label: "← Back", value: "__back__", key: "__back__" },
-              ]}
-              onSelect={(item) => {
-                if (item.value === "__back__") {
-                  setPage("add");
-                  setInstallState({ status: "idle", output: "" });
-                } else if (item.value === "run" && !isRunning) {
-                  handleConfirmInstall();
-                } else if (item.value === "skip") {
-                  setInstallState({ status: "success", output: "Skipped install." });
-                }
-              }}
-            />
-          ) : (
-            <SelectInput
-              items={[
-                { label: isSuccess ? "Save to config ✓" : "Save anyway", value: "save", key: "save" },
-                { label: "← Back", value: "__back__", key: "__back__" },
-              ]}
-              onSelect={(item) => {
-                if (item.value === "__back__") {
-                  setPage("add");
-                  setInstallState({ status: "idle", output: "" });
-                } else if (item.value === "save") {
-                  handleSavePreset();
-                }
-              }}
-            />
-          )}
+          <SelectInput
+            items={items}
+            onSelect={(item) => {
+              if (item.value === "__back__") {
+                setPage("add");
+                setInstallState({ status: "idle", output: "" });
+              } else if (item.value === "run" && !isRunning) {
+                handleConfirmInstall();
+              } else if (item.value === "skip") {
+                setInstallState({ status: "success", output: "Skipped install." });
+              } else if (item.value === "save") {
+                handleSavePreset();
+              }
+            }}
+          />
         </Box>
 
         {isSuccess && (
@@ -400,36 +391,68 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
     );
   }
 
-  // ─── Custom ────────────────────────────────────────────────────────────────
+  // ─── Custom name ───────────────────────────────────────────────────────────
 
-  if (page === "custom") {
+  if (page === "custom-name") {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
         <Text color={theme.accent} bold>
-          Custom LSP Server
+          Custom LSP Server — Name
         </Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color}>Name (e.g., my-server):</Text>
-          {/* We use a simple text display since ink-text-input would need more wiring */}
-          <Text color={theme.accent}>{customName || "(type below, press Enter)"}</Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color}>Command (space-separated):</Text>
-          <Text color={theme.accent}>{customCommand || "(type below, press Enter)"}</Text>
+        <Text color={theme.info.color} dimColor={false}>
+          Enter a name for this server (e.g., my-server).
+        </Text>
+        <Box marginTop={1}>
+          <Text color={theme.accent}>› </Text>
+          <CustomTextInput
+            value={customName}
+            onChange={setCustomName}
+            onSubmit={(value) => {
+              if (value.trim()) {
+                setCustomName(value.trim());
+                setPage("custom-command");
+              }
+            }}
+          />
         </Box>
         <Box marginTop={1}>
           <SelectInput
-            items={[
-              { label: customName && customCommand ? "Save" : "(enter name and command first)", value: "save", key: "save" },
-              { label: "← Back", value: "__back__", key: "__back__" },
-            ]}
-            onSelect={(item) => {
-              if (item.value === "__back__") {
-                setPage("add");
-              } else if (item.value === "save" && customName && customCommand) {
+            items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
+            onSelect={() => setPage("add")}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  // ─── Custom command ────────────────────────────────────────────────────────
+
+  if (page === "custom-command") {
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Text color={theme.accent} bold>
+          Custom LSP Server — Command
+        </Text>
+        <Text color={theme.info.color} dimColor={false}>
+          Enter the command to start the server (space-separated).
+        </Text>
+        <Box marginTop={1}>
+          <Text color={theme.accent}>› </Text>
+          <CustomTextInput
+            value={customCommand}
+            onChange={setCustomCommand}
+            onSubmit={(value) => {
+              if (value.trim()) {
+                setCustomCommand(value.trim());
                 handleSaveCustom();
               }
             }}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <SelectInput
+            items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
+            onSelect={() => setPage("custom-name")}
           />
         </Box>
       </Box>
@@ -457,16 +480,21 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
       );
     }
 
-    const items = keys.map((k) => {
-      const s = servers[k]!;
-      const status = s.enabled !== false ? "enabled" : "disabled";
-      return {
-        label: `${k.padEnd(16)} ${status}  ${s.command.join(" ")}`,
-        value: k,
-        key: k,
-      };
-    });
-    items.push({ label: "← Back", value: "__back__", key: "__back__" });
+    const items = useMemo(
+      () => [
+        ...keys.map((k) => {
+          const s = servers[k]!;
+          const status = s.enabled !== false ? "enabled" : "disabled";
+          return {
+            label: `${k.padEnd(16)} ${status}  ${s.command.join(" ")}`,
+            value: k,
+            key: k,
+          };
+        }),
+        { label: "← Back", value: "__back__", key: "__back__" },
+      ],
+      [keys, servers],
+    );
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -513,12 +541,17 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
       );
     }
 
-    const items = keys.map((k) => ({
-      label: `${k.padEnd(16)} ${servers[k]!.command.join(" ")}`,
-      value: k,
-      key: k,
-    }));
-    items.push({ label: "← Back", value: "__back__", key: "__back__" });
+    const items = useMemo(
+      () => [
+        ...keys.map((k) => ({
+          label: `${k.padEnd(16)} ${servers[k]!.command.join(" ")}`,
+          value: k,
+          key: k,
+        })),
+        { label: "← Back", value: "__back__", key: "__back__" },
+      ],
+      [keys, servers],
+    );
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
