@@ -48,6 +48,8 @@ export interface AgentTurnOpts {
   memoryManager?: MemoryManager | null;
   /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
   codeMode?: boolean;
+  /** Called after write/edit tools succeed so LSP document sync can fire. */
+  onFileChange?: (path: string, content: string) => void;
 }
 
 const codeModeApiCache = new Map<string, string>();
@@ -330,6 +332,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
           { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          opts.onFileChange,
         );
         toolResults.push(result);
         opts.messages.push({

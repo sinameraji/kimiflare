@@ -25,6 +25,10 @@ export interface ReducerConfig {
     maxChars: number;
     maxHeadingChars: number;
   };
+  lsp: {
+    maxLines: number;
+    maxOutputChars: number;
+  };
 }
 
 export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
@@ -51,6 +55,10 @@ export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
   webFetch: {
     maxChars: 2000,
     maxHeadingChars: 500,
+  },
+  lsp: {
+    maxLines: 50,
+    maxOutputChars: 3000,
   },
 };
 
@@ -104,6 +112,21 @@ export function reduceToolOutput(
     }
     case "web_fetch": {
       const r = reduceWebFetch(raw, args, config.webFetch);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
+      break;
+    }
+    case "lsp_hover":
+    case "lsp_definition":
+    case "lsp_references":
+    case "lsp_documentSymbols":
+    case "lsp_workspaceSymbol":
+    case "lsp_diagnostics":
+    case "lsp_codeAction":
+    case "lsp_implementation":
+    case "lsp_typeDefinition": {
+      const r = reduceLsp(raw, config.lsp);
       reduced = r.body;
       wasReduced = r.wasReduced;
       hint = r.hint;
@@ -445,5 +468,28 @@ function reduceWebFetch(raw: string, args: Record<string, unknown>, cfg: Reducer
     body: parts.join("\n"),
     wasReduced: true,
     hint: "Use expand_artifact for full page content.",
+  };
+}
+
+// ─── LSP ─────────────────────────────────────────────────────────────────────
+
+function reduceLsp(raw: string, cfg: ReducerConfig["lsp"]): ReduceResult {
+  const lines = raw.split("\n");
+  if (lines.length <= cfg.maxLines && raw.length <= cfg.maxOutputChars) {
+    return { body: raw, wasReduced: false };
+  }
+
+  let result = raw;
+  if (lines.length > cfg.maxLines) {
+    result = lines.slice(0, cfg.maxLines).join("\n");
+  }
+  if (result.length > cfg.maxOutputChars) {
+    result = result.slice(0, cfg.maxOutputChars);
+  }
+
+  return {
+    body: result,
+    wasReduced: true,
+    hint: "Use expand_artifact for full output.",
   };
 }

@@ -90,6 +90,7 @@ export class ToolExecutor {
     call: ToolInvocation,
     askPermission: PermissionAsker,
     ctx: ToolContext,
+    onFileChange?: (path: string, content: string) => void,
   ): Promise<ToolResult> {
     const tool = this.tools.get(call.name);
     if (!tool) {
@@ -132,6 +133,17 @@ export class ToolExecutor {
     try {
       const result = await tool.run(args as never, ctx);
       const normalized = normalizeToolOutput(result);
+
+      // Notify LSP document sync bridge on write/edit
+      if (onFileChange) {
+        if (call.name === "write" && typeof args.path === "string" && typeof args.content === "string") {
+          onFileChange(args.path, args.content);
+        } else if (call.name === "edit" && typeof args.path === "string") {
+          // For edit, we don't have the new content readily available;
+          // the LSP manager will need to read the file. Pass empty to signal change.
+          onFileChange(args.path, "");
+        }
+      }
 
       // Diff-style git commands carry meaning per line; the bash reducer's
       // dedupeConsecutiveLines rule mangles them and traps the model in retry

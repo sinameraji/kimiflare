@@ -23,6 +23,7 @@ export const MUTATING_TOOLS = new Set(["write", "edit", "bash"]);
 export function isBlockedInPlanMode(toolName: string): boolean {
   if (MUTATING_TOOLS.has(toolName)) return true;
   if (toolName.startsWith("mcp_")) return true;
+  if (toolName === "lsp_rename" || toolName === "lsp_codeAction") return true;
   return false;
 }
 

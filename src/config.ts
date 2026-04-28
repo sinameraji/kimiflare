@@ -14,6 +14,13 @@ export interface McpServerConfig {
   enabled?: boolean;
 }
 
+export interface LspServerConfig {
+  command: string[];
+  env?: Record<string, string>;
+  enabled?: boolean;
+  rootPatterns?: string[];
+}
+
 export interface KimiConfig {
   accountId: string;
   apiToken: string;
@@ -48,6 +55,10 @@ export interface KimiConfig {
   plumbingModel?: string;
   /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
   codeMode?: boolean;
+  /** Enable LSP integration. Default: false. */
+  lspEnabled?: boolean;
+  /** LSP server configurations. */
+  lspServers?: Record<string, LspServerConfig>;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
