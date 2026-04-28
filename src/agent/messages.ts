@@ -104,7 +104,7 @@ export function stripOldImages(messages: ChatMessage[], keepLastTurns: number): 
 
   // Count user messages from the end to find the cutoff index.
   let userCount = 0;
-  let cutoffIndex = messages.length;
+  let cutoffIndex = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]!.role === "user") {
       userCount++;

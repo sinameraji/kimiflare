@@ -107,4 +107,13 @@ describe("stripOldImages", () => {
     const result = stripOldImages(messages, -1);
     assert.deepStrictEqual((result[0]!.content as typeof messages[0]["content"])!, [img("http://a")]);
   });
+
+  it("keeps images when user message count is below keepLastTurns", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: [txt("hello"), img("http://a")] },
+      { role: "assistant", content: "ok" },
+    ];
+    const result = stripOldImages(messages, 2);
+    assert.deepStrictEqual((result[0]!.content as typeof messages[0]["content"])!, [txt("hello"), img("http://a")]);
+  });
 });
