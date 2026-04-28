@@ -25,6 +25,33 @@
   <img src="docs/screenshot.png" alt="kimiflare TUI" width="900">
 </p>
 
+## Stay in the loop
+
+Kimiflare is shipping quickly.
+
+Get:
+- release notes,
+- technical write-ups,
+- early experimental features,
+- architecture notes on building coding agents on Cloudflare.
+
+→ Get updates: https://kimiflare.com
+
+## Shipping fast
+
+Recently shipped:
+- Cloudflare Code Mode support
+- Local agent memory
+- Major token cost reductions (70–90% lower)
+- Better session compaction
+
+Coming next:
+- OpenCode parity improvements
+- Cost attribution dashboard
+- Cloudflare Artifacts experiments
+
+Full changelog and notes at https://kimiflare.com
+
 ## Why kimiflare
 
 - **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
@@ -48,6 +75,8 @@ npx kimiflare
 ```
 
 Requires Node.js ≥ 20.
+
+> For release notes and rapid feature drops: https://kimiflare.com
 
 ## Features
 
