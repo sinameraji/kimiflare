@@ -299,9 +299,55 @@
 
 ---
 
+## `src/lsp/connection.ts`
+
+- [ ] Spawn timeout enforced (default 30s)
+- [ ] `kill()` cleans up child process and pending requests
+- [ ] JSON-RPC buffer parsing handles split chunks
+- [ ] AbortSignal propagated to pending requests
+- [ ] No unbounded buffer growth (messages processed eagerly)
+
+---
+
+## `src/lsp/client.ts`
+
+- [ ] `didOpen`/`didChange`/`didClose` document sync correct
+- [ ] Diagnostics cached per URI, cleared on close
+- [ ] All LSP requests pass AbortSignal through
+- [ ] `getCapabilities()` returns server capabilities post-initialize
+
+---
+
+## `src/lsp/manager.ts`
+
+- [ ] `startServer` stops existing server before restarting
+- [ ] `stopAll` shuts down gracefully on app exit
+- [ ] `resolveClientForPath` falls back to first running server
+- [ ] `notifyChange` broadcasts to all running servers
+- [ ] Restart attempts capped at `maxRestartAttempts`
+
+---
+
+## `src/lsp/adapter.ts`
+
+- [ ] `formatDocumentSymbols` does not include bogus paths
+- [ ] `formatLocation` uses `relative()` for readable paths
+- [ ] Null/empty inputs return helpful fallback strings
+
+---
+
+## `src/tools/lsp.ts`
+
+- [ ] All tools use `resolveLspPath` + `isPathOutside` guard
+- [ ] `needsPermission: true` on mutating tools (`lsp_rename`, `lsp_codeAction`)
+- [ ] Deterministic ordering preserved (`tools.sort()`)
+- [ ] `makeLspTools` returns empty array when no servers active
+
+---
+
 ## `package.json`
 
-- [ ] `engines.node` >= 22 (for `isolated-vm` compatibility)
+- [ ] `engines.node` >= 20 preserved
 - [ ] `type: "module"` preserved
 - [ ] `bin` points to `bin/kimiflare.mjs`
 - [ ] `tsup` config externalizes runtime deps

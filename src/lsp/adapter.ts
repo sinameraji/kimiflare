@@ -33,7 +33,6 @@ export function formatDocumentSymbols(symbols: DocumentSymbol[] | null | undefin
   if (!symbols || symbols.length === 0) return "No symbols found.";
   const lines: string[] = [];
   for (const sym of symbols) {
-    const path = fromUri(sym.range.start.line + ":" + (sym.range.start.character + 1));
     const prefix = "  ".repeat(indent);
     const detail = sym.detail ? ` — ${sym.detail}` : "";
     lines.push(`${prefix}${sym.name} (${symbolKindName(sym.kind)})${detail}`);

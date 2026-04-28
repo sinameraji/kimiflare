@@ -490,6 +490,6 @@ function reduceLsp(raw: string, cfg: ReducerConfig["lsp"]): ReduceResult {
   return {
     body: result,
     wasReduced: true,
-    hint: "Use expand_artifact for full output.",
+    hint: "LSP output truncated. Use a narrower query, specific file path, or smaller scope to reduce results.",
   };
 }

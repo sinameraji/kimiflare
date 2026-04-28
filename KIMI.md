@@ -1,6 +1,6 @@
 # kimiflare
 
-**Project** — Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. TypeScript / Node.js ≥20, React + Ink TUI.
+**Project** — Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. TypeScript / Node.js ≥20, React + Ink TUI. LSP integration for semantic code intelligence.
 
 **Build / test / run**
 - `npm run build` — bundle with tsup (`dist/` + `bin/kimiflare.mjs`)
@@ -13,7 +13,8 @@
 - `src/index.tsx` — CLI entry (Commander args, print mode, TUI bootstrap)
 - `src/app.tsx` — Ink TUI root (chat, status bar, permission modals, input)
 - `src/agent/` — LLM client (`client.ts`), agent loop (`loop.ts`), system prompt builder, message compaction
-- `src/tools/` — Tool specs & executors: `read`, `write`, `edit`, `bash`, `glob`, `grep`, `web_fetch`, `tasks`
+- `src/tools/` — Tool specs & executors: `read`, `write`, `edit`, `bash`, `glob`, `grep`, `web_fetch`, `tasks`, `lsp_*`
+- `src/lsp/` — Language Server Protocol integration: connection manager, client, protocol types, output formatters
 - `src/ui/` — Ink components: chat, diff view, permission modal, task list, status bar, theme, text input
 - `src/util/` — Helpers: SSE parser, paths, errors, update check
 - `bin/` — Compiled CLI shim (`kimiflare.mjs`)

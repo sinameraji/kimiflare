@@ -43,6 +43,21 @@ describe("buildSessionPrefix", () => {
     assert.ok(p.includes("Working directory:"));
     assert.ok(p.includes("read"));
   });
+
+  it("includes LSP guidance when LSP tools are present", () => {
+    const lspTools: ToolSpec[] = [
+      ...DUMMY_TOOLS,
+      { name: "lsp_definition", description: "Go to definition.", parameters: { type: "object", properties: {}, required: [] }, needsPermission: false, run: async () => "" },
+    ];
+    const p = buildSessionPrefix({ cwd: "/tmp", tools: lspTools, model: "m" });
+    assert.ok(p.includes("LSP tools are available"));
+    assert.ok(p.includes("lsp_definition"));
+  });
+
+  it("excludes LSP guidance when no LSP tools are present", () => {
+    const p = buildSessionPrefix({ cwd: "/tmp", tools: DUMMY_TOOLS, model: "m" });
+    assert.ok(!p.includes("LSP tools are available"));
+  });
 });
 
 describe("buildSystemMessages", () => {

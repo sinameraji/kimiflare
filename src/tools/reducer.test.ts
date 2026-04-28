@@ -227,6 +227,46 @@ describe("reduceToolOutput — web_fetch", () => {
   });
 });
 
+describe("reduceToolOutput — lsp", () => {
+  it("passes through short LSP outputs unchanged", () => {
+    const store = new ToolArtifactStore();
+    const raw = "src/index.ts:5:10\nsrc/lib.ts:20:5";
+    const result = reduceToolOutput("lsp_definition", raw, {}, store, DEFAULT_REDUCER_CONFIG);
+    assert.strictEqual(result.content, raw);
+    assert.strictEqual(result.reducedBytes, result.rawBytes);
+  });
+
+  it("truncates long LSP outputs by line count", () => {
+    const store = new ToolArtifactStore();
+    const lines: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      lines.push(`src/file${i}.ts:${i + 1}:1`);
+    }
+    const raw = lines.join("\n");
+    const result = reduceToolOutput("lsp_references", raw, {}, store, DEFAULT_REDUCER_CONFIG);
+    assert.ok(result.reducedBytes < result.rawBytes);
+    assert.ok(result.content.includes("LSP output truncated"));
+    const outputLines = result.content.split("\n");
+    assert.ok(outputLines.length <= DEFAULT_REDUCER_CONFIG.lsp.maxLines + 2); // +2 for hint lines
+  });
+
+  it("truncates long LSP outputs by char count", () => {
+    const store = new ToolArtifactStore();
+    const raw = "a".repeat(5000);
+    const result = reduceToolOutput("lsp_hover", raw, {}, store, DEFAULT_REDUCER_CONFIG);
+    assert.ok(result.reducedBytes < result.rawBytes);
+    assert.ok(result.content.length <= DEFAULT_REDUCER_CONFIG.lsp.maxOutputChars + 200);
+  });
+
+  it("stores artifact for truncated LSP output", () => {
+    const store = new ToolArtifactStore();
+    const raw = "line\n".repeat(100);
+    const result = reduceToolOutput("lsp_documentSymbols", raw, {}, store, DEFAULT_REDUCER_CONFIG);
+    assert.ok(result.artifactId);
+    assert.strictEqual(store.retrieve(result.artifactId), raw);
+  });
+});
+
 describe("reduceToolOutput — disabled", () => {
   it("returns raw content when enabled is false", () => {
     const store = new ToolArtifactStore();
