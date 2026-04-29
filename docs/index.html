@@ -3,24 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>kimiflare — AI coding agent in your terminal</title>
-  <meta name="description" content="A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, MCP server integration, 262k context. Direct to Cloudflare.">
+  <title>kimiflare — Claude Code alternative on Cloudflare</title>
+  <meta name="description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://sinameraji.github.io/kimiflare/">
+  <link rel="canonical" href="https://kimiflare.com/">
   <meta name="theme-color" content="#f48120">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="kimiflare — AI coding agent in your terminal">
-  <meta property="og:description" content="Read files, edit code, and run commands — directly through your Cloudflare account. MCP server support included. No middleman.">
+  <meta property="og:title" content="kimiflare — Claude Code alternative on Cloudflare">
+  <meta property="og:description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://sinameraji.github.io/kimiflare/">
-  <meta property="og:image" content="https://sinameraji.github.io/kimiflare/logo.png">
+  <meta property="og:url" content="https://kimiflare.com/">
+  <meta property="og:image" content="https://kimiflare.com/logo.png">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="kimiflare — AI coding agent in your terminal">
-  <meta name="twitter:description" content="Read files, edit code, and run commands — directly through your Cloudflare account. MCP server support included. No middleman.">
-  <meta name="twitter:image" content="https://sinameraji.github.io/kimiflare/logo.png">
+  <meta name="twitter:title" content="kimiflare — Claude Code alternative on Cloudflare">
+  <meta name="twitter:description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
+  <meta name="twitter:image" content="https://kimiflare.com/logo.png">
+
+  <!-- Cloudflare Web Analytics -->
+  <!-- <script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "YOUR_BEACON_TOKEN"}'></script> -->
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,7 +35,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "kimiflare",
-    "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, MCP server integration, 262k context. Direct to Cloudflare.",
+    "description": "An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux, Windows",
     "offers": {
@@ -503,6 +506,174 @@
       background: var(--accent-dim);
     }
 
+    /* Email Capture */
+    .email-capture {
+      margin-top: 3rem;
+      max-width: 480px;
+    }
+
+    .email-capture-inner {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .email-capture-inner h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: var(--text);
+    }
+
+    .email-capture-inner p {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+
+    .email-form {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .email-form input[type="email"] {
+      flex: 1;
+      padding: 0.6rem 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .email-form input[type="email"]:focus {
+      border-color: var(--accent);
+    }
+
+    .email-form .btn {
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    .email-helper {
+      font-size: 0.75rem !important;
+      color: var(--text-faint) !important;
+      margin-top: 0.75rem !important;
+      margin-bottom: 0 !important;
+    }
+
+    .subscribe-message {
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+      min-height: 1.2rem;
+    }
+
+    .subscribe-message.success { color: #16a34a; }
+    .subscribe-message.error { color: #dc2626; }
+
+    /* Changelog */
+    .changelog-section {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-top: 3rem;
+    }
+
+    .changelog-section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+
+    .changelog-lists {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    .changelog-list h4 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-faint);
+      margin-bottom: 0.75rem;
+    }
+
+    .changelog-list ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .changelog-list li {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      padding: 0.35rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .changelog-list li:last-child {
+      border-bottom: none;
+    }
+
+    .changelog-link {
+      display: inline-block;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .changelog-link:hover {
+      color: var(--accent-hover);
+    }
+
+    /* Discord */
+    .discord-section {
+      margin-top: 3rem;
+      padding: 2rem;
+      background: linear-gradient(135deg, rgba(88, 101, 242, 0.06) 0%, rgba(88, 101, 242, 0.02) 100%);
+      border: 1px solid rgba(88, 101, 242, 0.15);
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .discord-section h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+
+    .discord-section p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      max-width: 480px;
+      margin: 0 auto 1.25rem;
+      line-height: 1.6;
+    }
+
+    .btn-discord {
+      background: #5865f2;
+      color: #fff;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-discord:hover {
+      background: #4752c4;
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
@@ -555,6 +726,9 @@
       section { padding: 4rem 1.25rem; }
       footer { flex-direction: column; gap: 1rem; text-align: center; }
       .arch-section { padding: 1.5rem; }
+      .email-form { flex-direction: column; }
+      .changelog-lists { grid-template-columns: 1fr; gap: 1.5rem; }
+      .discord-section { padding: 1.5rem; }
     }
   </style>
 </head>
@@ -568,6 +742,7 @@
     <ul class="nav-links">
       <li><a href="#features">Features</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="#updates">Get Updates</a></li>
       <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub →</a></li>
     </ul>
   </nav>
@@ -575,10 +750,10 @@
   <section class="hero">
     <div class="hero-label fade-in">Kimi-K2.6 · Cloudflare Workers AI</div>
     <h1 class="fade-in delay-1">
-      Kimi K2.6 in your terminal.
+      Claude Code alternative, on your own Cloudflare account.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      Read files, edit code, and run commands — directly through your Cloudflare account. No middleman.
+      An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -589,6 +764,20 @@
       <a href="https://www.producthunt.com/products/kimiflare?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-kimiflare" target="_blank" rel="noopener noreferrer">
         <img alt="kimiflare - kimi k2.6 cli code editor hosted on cloudflare workers AI | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1129412&theme=light&t=1776822277935">
       </a>
+    </div>
+
+    <!-- Email Capture -->
+    <div id="updates" class="email-capture fade-in delay-3">
+      <div class="email-capture-inner">
+        <h3>Get Kimiflare updates</h3>
+        <p>Occasional release notes, technical write-ups, and early experiments on building AI coding agents on Cloudflare.</p>
+        <form id="subscribe-form" class="email-form">
+          <input type="email" id="subscribe-email" placeholder="you@example.com" required>
+          <button type="submit" class="btn btn-primary">Subscribe</button>
+        </form>
+        <p id="subscribe-message" class="subscribe-message"></p>
+        <p class="email-helper">No spam. Only meaningful ships.</p>
+      </div>
     </div>
 
     <div class="terminal-wrap fade-in delay-4">
@@ -680,6 +869,43 @@
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="shipping">
+    <!-- Micro Changelog -->
+    <div class="changelog-section fade-in">
+      <span class="section-label">Shipping fast</span>
+      <div class="changelog-lists">
+        <div class="changelog-list">
+          <h4>Recently shipped</h4>
+          <ul>
+            <li>Cloudflare Code Mode support</li>
+            <li>Local structured agent memory</li>
+            <li>70–90% token cost reduction work</li>
+            <li>Session compaction improvements</li>
+          </ul>
+        </div>
+        <div class="changelog-list">
+          <h4>Coming next</h4>
+          <ul>
+            <li>OpenCode parity features</li>
+            <li>Cost attribution dashboard</li>
+            <li>Cloudflare Artifacts parallel agents</li>
+          </ul>
+        </div>
+      </div>
+      <a href="https://github.com/sinameraji/kimiflare/releases" class="changelog-link" target="_blank">See full changelog →</a>
+    </div>
+
+    <!-- Discord -->
+    <div class="discord-section fade-in">
+      <h3>Join Kimiflare Builders</h3>
+      <p>Bug reports, feature requests, nightly builds, architecture discussion, and early experiments.</p>
+      <a href="https://discord.gg/7aJMV5vN" class="btn btn-discord" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>
+        Join Discord
+      </a>
     </div>
   </section>
 
@@ -909,7 +1135,8 @@
     <span>Built by <a href="https://github.com/sinameraji" target="_blank">@sinameraji</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
     <span>
       <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a> ·
-      <a href="https://github.com/sinameraji/kimiflare/issues" target="_blank">Issues</a> ·
+      <a href="https://discord.gg/7aJMV5vN" target="_blank">Discord</a> ·
+      <a href="https://github.com/sinameraji/kimiflare/releases" target="_blank">Changelog</a> ·
       <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE" target="_blank">MIT License</a>
     </span>
   </footer>
@@ -950,6 +1177,45 @@
       setTimeout(type, speed);
     }
     setTimeout(type, 1000);
+
+    // Email subscription
+    const subscribeForm = document.getElementById('subscribe-form');
+    const subscribeEmail = document.getElementById('subscribe-email');
+    const subscribeMessage = document.getElementById('subscribe-message');
+
+    subscribeForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = subscribeEmail.value.trim();
+      if (!email) return;
+
+      subscribeForm.querySelector('button').disabled = true;
+      subscribeMessage.textContent = '';
+      subscribeMessage.className = 'subscribe-message';
+
+      try {
+        const res = await fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          subscribeMessage.textContent = data.message || "You're on the list.";
+          subscribeMessage.className = 'subscribe-message success';
+          subscribeEmail.value = '';
+        } else {
+          subscribeMessage.textContent = data.error || 'Something went wrong. Try again.';
+          subscribeMessage.className = 'subscribe-message error';
+        }
+      } catch {
+        subscribeMessage.textContent = 'Something went wrong. Try again.';
+        subscribeMessage.className = 'subscribe-message error';
+      } finally {
+        subscribeForm.querySelector('button').disabled = false;
+      }
+    });
   </script>
 </body>
 </html>
