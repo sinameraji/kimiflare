@@ -900,8 +900,8 @@
       </div>
       <div class="feature-item">
         <span class="feature-num">07</span>
-        <h3>Auto-compaction</h3>
-        <p>At ~80% context usage, kimiflare nudges you to run /compact. It summarizes older turns, keeping the last 4 intact.</p>
+        <h3>Smart context management</h3>
+        <p>Compiled context extracts structured state and archives raw tool outputs as recallable artifacts. Auto-compaction kicks in at ~80% usage. The model never loses track of what it learned.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">08</span>
@@ -927,6 +927,16 @@
         <span class="feature-num">12</span>
         <h3>MCP server integration</h3>
         <p>Plug in external tools via the Model Context Protocol — local stdio servers or remote SSE endpoints. GitHub, Sentry, docs search, databases, and more.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">13</span>
+        <h3>Prefix cache optimization</h3>
+        <p>Deterministic system prompts, stable JSON serialization, and session-affinity headers maximize Workers AI prefix-cache hits. Cached tokens are billed at a discount — cost drops as the conversation grows.</p>
+      </div>
+      <div class="feature-item">
+        <span class="feature-num">14</span>
+        <h3>Explicit cross-session memory</h3>
+        <p>The agent never surveils your conversation. Memories are stored only when you ask — via <code>remember</code>, <code>recall</code>, and <code>forget</code> tools — with SQLite + embeddings for durable, privacy-respecting retrieval across sessions.</p>
       </div>
     </div>
 
@@ -1090,7 +1100,7 @@
   </section>
 
   <footer>
-    <span>Built by <a href="https://github.com/sinameraji" target="_blank">@sinameraji</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
+    <span>Built by <a href="https://github.com/sinameraji" target="_blank">Sina</a> with <a href="https://github.com/sinameraji/kimiflare" target="_blank">kimiflare</a> and <a href="https://github.com/sinameraji/kimiflare/graphs/contributors" target="_blank">contributors</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
     <span>
       <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a> ·
       <a href="https://github.com/sinameraji/kimiflare/releases" target="_blank">Changelog</a> ·
