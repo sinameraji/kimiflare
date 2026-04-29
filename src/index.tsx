@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { loadConfig, DEFAULT_MODEL } from "./config.js";
+import { resolveLspConfig } from "./util/lsp-config.js";
 import { runAgentTurn } from "./agent/loop.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
@@ -28,8 +29,23 @@ const opts = program.opts<{
 }>();
 
 async function main() {
-  const cfg = await loadConfig();
+  const globalCfg = await loadConfig();
   const updateResult = await checkForUpdate();
+
+  let cfg = globalCfg;
+  let lspScope: "project" | "global" = "global";
+  let lspProjectPath: string | null = null;
+
+  if (globalCfg) {
+    const resolved = await resolveLspConfig(globalCfg, process.cwd());
+    cfg = {
+      ...globalCfg,
+      lspEnabled: resolved.lspEnabled,
+      lspServers: resolved.lspServers,
+    };
+    lspScope = resolved.scope;
+    lspProjectPath = resolved.projectPath;
+  }
 
   if (opts.print !== undefined) {
     if (!cfg) {
@@ -64,9 +80,9 @@ async function main() {
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    await renderApp({ ...cfg, model }, updateResult);
+    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath);
   } else {
-    await renderApp(null, updateResult);
+    await renderApp(null, updateResult, lspScope, lspProjectPath);
   }
 }
 

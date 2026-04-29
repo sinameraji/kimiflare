@@ -25,6 +25,7 @@ type Page =
   | "session"
   | "memory"
   | "mcp"
+  | "lsp"
   | "gateway"
   | "info"
   | "config"
@@ -93,6 +94,16 @@ const CATEGORIES: Category[] = [
     commands: [
       { command: "/mcp list", description: "list connected MCP servers and tools" },
       { command: "/mcp reload", description: "reconnect all configured MCP servers" },
+    ],
+  },
+  {
+    key: "lsp",
+    label: "LSP",
+    commands: [
+      { command: "/lsp config", description: "add, edit, or remove language servers" },
+      { command: "/lsp list", description: "list active LSP servers" },
+      { command: "/lsp reload", description: "restart all configured LSP servers" },
+      { command: "/lsp scope", description: "show whether LSP config is project or global" },
     ],
   },
   {

@@ -82,6 +82,11 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
 - Home: ${homedir()}
 - Today: ${date}`;
 
+  const hasLsp = opts.tools.some((t) => t.name.startsWith("lsp_"));
+  const lspBlock = hasLsp
+    ? "\n\nLSP tools are available for semantic code intelligence. Prefer `lsp_definition` over `grep` when looking for the source of a symbol. Prefer `lsp_references` over `grep` when finding usages. Use `lsp_hover` to confirm types before refactoring."
+    : "";
+
   const tools = `Tools available:\n${toolsBlock}`;
 
   const ctx = loadContextFile(opts.cwd);
@@ -90,7 +95,7 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
     : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
-  return env + "\n\n" + tools + contextBlock + modeBlock;
+  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */

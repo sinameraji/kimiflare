@@ -22,6 +22,8 @@ import {
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
 import { McpManager } from "./mcp/manager.js";
+import { LspManager } from "./lsp/manager.js";
+import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
@@ -75,6 +77,9 @@ import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { CommandWizard } from "./ui/command-wizard.js";
 import { CommandPicker } from "./ui/command-picker.js";
 import { CommandList } from "./ui/command-list.js";
+import { LspWizard } from "./ui/lsp-wizard.js";
+import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
+import { maybeLspNudge } from "./util/lsp-nudge.js";
 
 interface Cfg {
   accountId: string;
@@ -101,6 +106,8 @@ interface Cfg {
   memoryEmbeddingModel?: string;
   plumbingModel?: string;
   codeMode?: boolean;
+  lspEnabled?: boolean;
+  lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -238,9 +245,21 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
 };
 
-function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; initialUpdateResult?: UpdateCheckResult }) {
+function App({
+  initialCfg,
+  initialUpdateResult,
+  initialLspScope,
+  initialLspProjectPath,
+}: {
+  initialCfg: Cfg | null;
+  initialUpdateResult?: UpdateCheckResult;
+  initialLspScope: "project" | "global";
+  initialLspProjectPath: string | null;
+}) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
+  const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
+  const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
   const [events, setRawEvents] = useState<ChatEvent[]>([]);
   const setEvents = useCallback(
     (updater: React.SetStateAction<ChatEvent[]>) => {
@@ -277,6 +296,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
   const [showCommandList, setShowCommandList] = useState(false);
+  const [showLspWizard, setShowLspWizard] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
@@ -307,6 +327,9 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
+  const lspManagerRef = useRef(new LspManager());
+  const lspToolsRef = useRef<ToolSpec[]>([]);
+  const lspInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
 
@@ -497,7 +520,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         role: "system",
         content: buildSessionPrefix({
           cwd: process.cwd(),
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           model: cfg?.model ?? DEFAULT_MODEL,
           mode,
         }),
@@ -507,7 +530,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         role: "system",
         content: buildSystemPrompt({
           cwd: process.cwd(),
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           model: cfg?.model ?? DEFAULT_MODEL,
           mode,
         }),
@@ -593,7 +616,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           role: "system",
           content: buildSessionPrefix({
             cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
             mode: modeRef.current,
           }),
@@ -603,7 +626,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           role: "system",
           content: buildSystemPrompt({
             cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
             mode: modeRef.current,
           }),
@@ -616,11 +639,78 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     }
   }, [cfg]);
 
+  const initLsp = useCallback(async () => {
+    if (!cfg?.lspEnabled || !cfg?.lspServers || lspInitRef.current) {
+      if (lspInitRef.current) return;
+      if (!cfg?.lspEnabled) {
+        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP is disabled. Enable it in config to use language servers." }]);
+      } else if (!cfg?.lspServers || Object.keys(cfg.lspServers).length === 0) {
+        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP reload complete — no servers configured." }]);
+      }
+      return;
+    }
+    lspInitRef.current = true;
+    const manager = lspManagerRef.current;
+    let totalServers = 0;
+    for (const [name, server] of Object.entries(cfg.lspServers)) {
+      if (server.enabled === false) continue;
+      try {
+        await manager.startServer(name, server, process.cwd());
+        totalServers++;
+      } catch (e) {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `LSP server "${name}" failed: ${(e as Error).message}` },
+        ]);
+      }
+    }
+    if (totalServers > 0) {
+      const tools = makeLspTools(manager);
+      for (const tool of tools) {
+        executorRef.current.register(tool);
+      }
+      lspToolsRef.current = tools;
+      if (cacheStableRef.current) {
+        messagesRef.current[1] = {
+          role: "system",
+          content: buildSessionPrefix({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model ?? DEFAULT_MODEL,
+            mode: modeRef.current,
+          }),
+        };
+      } else {
+        messagesRef.current[0] = {
+          role: "system",
+          content: buildSystemPrompt({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model ?? DEFAULT_MODEL,
+            mode: modeRef.current,
+          }),
+        };
+      }
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active` },
+      ]);
+    } else {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "LSP reload complete — no servers started (check config or enabled status)." },
+      ]);
+    }
+  }, [cfg]);
+
   useEffect(() => {
     if (cfg && !mcpInitRef.current) {
       void initMcp();
     }
-  }, [cfg, initMcp]);
+    if (cfg && !lspInitRef.current) {
+      void initLsp();
+    }
+  }, [cfg, initMcp, initLsp]);
 
   const ensureSessionId = useCallback(() => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -662,7 +752,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else {
-        exit();
+        void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
     }
@@ -898,7 +988,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         model: cfg.model,
         gateway: gatewayFromConfig(cfg),
         messages: messagesRef.current,
-        tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+        tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
         executor: executorRef.current,
         cwd,
         signal: controller.signal,
@@ -910,6 +1000,18 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
         codeMode,
+        onFileChange: (path, content) => {
+          if (content) {
+            lspManagerRef.current.notifyChange(path, content);
+          } else {
+            // For edit tool, read the file and notify with full content
+            void import("node:fs/promises").then(({ readFile }) =>
+              readFile(path, "utf8")
+                .then((c) => lspManagerRef.current.notifyChange(path, c))
+                .catch(() => {}),
+            );
+          }
+        },
         callbacks: {
           onAssistantStart: () => {
             const id = nextAssistantId++;
@@ -1005,7 +1107,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             role: "system",
             content: buildSessionPrefix({
               cwd,
-              tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+              tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
               model: cfg.model,
               mode: modeRef.current,
             }),
@@ -1015,7 +1117,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
             role: "system",
             content: buildSystemPrompt({
               cwd,
-              tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+              tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
               model: cfg.model,
               mode: modeRef.current,
             }),
@@ -1137,7 +1239,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       const arg = rest.join(" ").trim().toLowerCase();
 
       if (c === "/exit" || c === "/quit") {
-        exit();
+        void lspManagerRef.current.stopAll().finally(() => exit());
         return true;
       }
       if (c === "/clear") {
@@ -1528,6 +1630,62 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
         ]);
         return true;
       }
+      if (c === "/lsp") {
+        if (arg === "list") {
+          const servers = lspManagerRef.current.listActive();
+          const scopeLine = lspScope === "project" && lspProjectPath
+            ? ` (project: ${lspProjectPath})`
+            : " (global config)";
+          if (servers.length === 0) {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `no LSP servers active${scopeLine}` },
+            ]);
+          } else {
+            const lines = servers.map((s) => `  ${s.id} (${s.rootUri}) — ${s.state}, ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `LSP servers${scopeLine}:\n` + lines.join("\n") },
+            ]);
+          }
+          return true;
+        }
+        if (arg === "reload") {
+          if (busy) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /lsp reload while model is running" }]);
+            return true;
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "reloading LSP servers..." }]);
+          for (const tool of lspToolsRef.current) {
+            executorRef.current.unregister(tool.name);
+          }
+          lspToolsRef.current = [];
+          lspInitRef.current = false;
+          void initLsp().catch((e) => {
+            setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `LSP reload failed: ${(e as Error).message}` }]);
+          });
+          return true;
+        }
+        if (arg === "scope") {
+          const scopeText = lspScope === "project" && lspProjectPath
+            ? `project scope: ${lspProjectPath}`
+            : "global scope: ~/.config/kimiflare/config.json";
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: scopeText },
+          ]);
+          return true;
+        }
+        if (arg === "config" || arg === "") {
+          setShowLspWizard(true);
+          return true;
+        }
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /lsp list | reload | scope | config" },
+        ]);
+        return true;
+      }
       if (c === "/hello") {
         const session = crypto.randomUUID();
         const url = `${FEEDBACK_WORKER_URL}/?s=${session}&v=${getAppVersion()}`;
@@ -1721,6 +1879,13 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
       }
 
       setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+
+      // LSP nudge: if user references code files and LSP is not configured
+      const nudge = maybeLspNudge(display, cfg?.lspEnabled ?? false, cfg?.lspServers ?? {});
+      if (nudge) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: nudge }]);
+      }
+
       messagesRef.current.push({ role: "user", content });
 
       // Recall artifacts before sending if compiled context is enabled
@@ -1751,7 +1916,7 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           model: overrideModel ?? cfg.model,
           gateway: gatewayFromConfig(cfg),
           messages: messagesRef.current,
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current],
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           executor: executorRef.current,
           cwd: process.cwd(),
           signal: controller.signal,
@@ -1764,6 +1929,17 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode,
+          onFileChange: (path, content) => {
+            if (content) {
+              lspManagerRef.current.notifyChange(path, content);
+            } else {
+              void import("node:fs/promises").then(({ readFile }) =>
+                readFile(path, "utf8")
+                  .then((c) => lspManagerRef.current.notifyChange(path, c))
+                  .catch(() => {}),
+              );
+            }
+          },
           callbacks: {
             onAssistantStart: () => {
               const id = nextAssistantId++;
@@ -2083,6 +2259,47 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
     );
   }
 
+  if (showLspWizard) {
+    return (
+      <Box flexDirection="column">
+        <LspWizard
+          theme={theme}
+          servers={cfg?.lspServers ?? {}}
+          currentScope={lspScope}
+          hasProjectDir={existsSync(join(process.cwd(), ".kimiflare"))}
+          onDone={() => setShowLspWizard(false)}
+          onSave={(servers, enabled, scope) => {
+            setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
+            setLspScope(scope);
+            if (scope === "project") {
+              void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
+                .then((path) => {
+                  setLspProjectPath(path);
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
+                  ]);
+                })
+                .catch(() => {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
+                  ]);
+                });
+            } else if (cfg) {
+              void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
+              ]);
+            }
+            setShowLspWizard(false);
+          }}
+        />
+      </Box>
+    );
+  }
+
   if (commandWizard) {
     return (
       <Box flexDirection="column">
@@ -2263,9 +2480,22 @@ function App({ initialCfg, initialUpdateResult }: { initialCfg: Cfg | null; init
   );
 }
 
-export async function renderApp(cfg: Cfg | null, updateResult?: UpdateCheckResult) {
-  const instance = render(<App initialCfg={cfg} initialUpdateResult={updateResult} />, {
-    incrementalRendering: true,
-  });
+export async function renderApp(
+  cfg: Cfg | null,
+  updateResult?: UpdateCheckResult,
+  lspScope: "project" | "global" = "global",
+  lspProjectPath: string | null = null,
+) {
+  const instance = render(
+    <App
+      initialCfg={cfg}
+      initialUpdateResult={updateResult}
+      initialLspScope={lspScope}
+      initialLspProjectPath={lspProjectPath}
+    />,
+    {
+      incrementalRendering: true,
+    },
+  );
   await instance.waitUntilExit();
 }
