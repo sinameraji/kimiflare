@@ -18,8 +18,36 @@ program
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
-  .option("--reasoning", "include reasoning in stdout (print mode only)")
-  .parse();
+  .option("--reasoning", "include reasoning in stdout (print mode only)");
+
+program
+  .command("cost")
+  .description("Show cost attribution by task type (requires costAttribution enabled)")
+  .option("-w, --week", "last 7 days (default)")
+  .option("-m, --month", "last 30 days")
+  .option("-d, --day", "today only")
+  .option("-s, --session <id>", "single session detail")
+  .option("-c, --category <name>", "filter by category")
+  .option("--json", "machine-readable output")
+  .option("--reclassify", "re-run classification on all sessions")
+  .option("--local-only", "skip Cloudflare reconciliation")
+  .action(async (cmdOpts) => {
+    const cfg = await loadConfig();
+    const enabled = cfg?.costAttribution ?? false;
+    if (!enabled) {
+      console.error(
+        "Cost attribution is disabled. Enable it with:\n" +
+          "  KIMI_COST_ATTRIBUTION=1 kimiflare cost\n" +
+          "Or add costAttribution: true to ~/.config/kimiflare/config.json",
+      );
+      process.exit(1);
+    }
+
+    const { runCostCommand } = await import("./cost-attribution/cli.js");
+    await runCostCommand({ ...cmdOpts, config: cfg });
+  });
+
+program.parse();
 
 const opts = program.opts<{
   print?: string;

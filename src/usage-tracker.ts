@@ -30,6 +30,13 @@ export interface SessionUsage {
   gatewayCachedRequests?: number;
   gatewayCost?: number;
   gatewayLogs?: GatewayUsageSnapshot[];
+  // Cost attribution fields
+  category?: string;
+  confidence?: number;
+  classifiedBy?: "heuristic" | "llm" | "user";
+  classifiedAt?: string;
+  summary?: string;
+  tags?: string[];
 }
 
 export interface GatewayUsageSnapshot {
@@ -53,7 +60,7 @@ export interface GatewayUsageLookup {
   meta: GatewayMeta;
 }
 
-interface UsageLog {
+export interface UsageLog {
   version: number;
   days: DailyUsage[];
   sessions: SessionUsage[];

@@ -59,6 +59,8 @@ export interface KimiConfig {
   lspEnabled?: boolean;
   /** LSP server configurations. */
   lspServers?: Record<string, LspServerConfig>;
+  /** Enable cost attribution by task type. Default: false. Once stable for 2 releases, consider defaulting to true. */
+  costAttribution?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -153,6 +155,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envMemoryEmbeddingModel = process.env.KIMIFLARE_MEMORY_EMBEDDING_MODEL;
   const envPlumbingModel = process.env.KIMIFLARE_PLUMBING_MODEL;
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
+  const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
 
   if (envAccount && envToken) {
     return {
@@ -179,6 +182,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       memoryEmbeddingModel: envMemoryEmbeddingModel,
       plumbingModel: envPlumbingModel,
       codeMode: envCodeMode,
+      costAttribution: envCostAttribution ?? false,
     };
   }
 
@@ -212,6 +216,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         codeMode: envCodeMode ?? parsed.codeMode,
+        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
       };
     }
   } catch {

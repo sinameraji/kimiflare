@@ -57,6 +57,7 @@ export interface CostDebugEntry {
   cacheDiagnostics?: CacheDiagnostics;
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
+  signals?: string[]; // Literal categories detected this turn (cost attribution)
 }
 
 function debugDir(): string {

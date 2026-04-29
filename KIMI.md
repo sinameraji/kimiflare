@@ -20,6 +20,7 @@
 - `bin/` — Compiled CLI shim (`kimiflare.mjs`)
 - `dist/` — tsup ESM output
 - `docs/` — Documentation
+- `src/cost-attribution/` — Cost attribution by task type (`kimiflare cost`)
 
 **Conventions**
 - ESM only (`"type": "module"`).
@@ -31,6 +32,12 @@
 - tsup externalizes runtime deps (`ink`, `react`, `commander`, etc.); bundles source only.
 - No test suite yet.
 - Git branches: `feat/...`, `fix/...`, `chore/...`, `redesign/...`, `ui/...`. Releases managed by release-please; tags are `vX.Y.Z`.
+
+**Cost Attribution (opt-in)**
+- Enable with `costAttribution: true` in config or `KIMI_COST_ATTRIBUTION=1`.
+- Run `kimiflare cost --week` to see spend by literal task type (e.g. `editing-source-code`, `running-tests`).
+- Classification is lazy (runs on first `cost` invocation), deterministic heuristic with optional LLM fallback.
+- Results cached in `usage.json`; no runtime cost when disabled.
 
 **Do / Don't**
 - Do keep agent responses terse; don't re-summarize tool output the user already sees inline.
