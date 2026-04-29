@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.27.0](https://github.com/sinameraji/kimiflare/compare/v0.26.1...v0.27.0) (2026-04-29)
+
+
+### Features
+
+* **lsp:** add interactive LSP server configuration wizard ([a060d45](https://github.com/sinameraji/kimiflare/commit/a060d456a8339da93549761fcbf69a305ec29849))
+* **lsp:** auto-gitignore project config and add tests ([34acf05](https://github.com/sinameraji/kimiflare/commit/34acf050dcc7a68996f3ac755f7f036fc50ade89))
+* **lsp:** auto-nudge when user references code files without LSP ([86736e7](https://github.com/sinameraji/kimiflare/commit/86736e74f5fc72ee823bcf0aee83aa1169855bdc))
+* **lsp:** integrate Language Server Protocol for semantic code intelligence ([91fe95f](https://github.com/sinameraji/kimiflare/commit/91fe95f82d74950dd1f3cc87d4987f8d63093e8a))
+* **lsp:** integrate Language Server Protocol for semantic code intelligence ([faa7e16](https://github.com/sinameraji/kimiflare/commit/faa7e164ecc89f3338b30a257c541204e2831e79))
+* **lsp:** per-project LSP config with wizard scope selection ([e15416e](https://github.com/sinameraji/kimiflare/commit/e15416e36952006c756dc9ce83be9f47517728b0))
+* security hardening for custom slash commands ([30a997e](https://github.com/sinameraji/kimiflare/commit/30a997e4260653ed04ace703e1ae57c927e9ac2f))
+* security hardening for custom slash commands ([7b1c684](https://github.com/sinameraji/kimiflare/commit/7b1c684bb20768ee5e9de12fa44d3fc5a4a18260))
+
+
+### Bug Fixes
+
+* **lsp:** address PR review feedback ([d420970](https://github.com/sinameraji/kimiflare/commit/d42097046758c596c9c13a3fdcce496fa57c5f6b))
+* **lsp:** mark already-configured presets in Add list ([e1ca073](https://github.com/sinameraji/kimiflare/commit/e1ca073accbdaea206e989c1645034f28297413c))
+* **lsp:** remove conditional useMemo calls causing hooks-order crash ([3b610ce](https://github.com/sinameraji/kimiflare/commit/3b610cec0c0656a0b15ea5631b9d98d6eec94887))
+* **lsp:** resolve yoga-layout crash and add reload feedback ([83f7bec](https://github.com/sinameraji/kimiflare/commit/83f7becb9af831f8eb137f3abcd7e1226e89e997))
+
 ## [0.26.1](https://github.com/sinameraji/kimiflare/compare/v0.26.0...v0.26.1) (2026-04-28)
 
 
