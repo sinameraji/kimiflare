@@ -35,16 +35,18 @@ function categoryLabel(cat: TaskCategory): string {
 export function renderTerminal(report: CostAttributionReport): string {
   const lines: string[] = [];
   const catWidth = 22;
-  const numWidth = 10;
+  const numWidth = 12;
+  const arrWidth = 3;
+  const totalWidth = catWidth + 1 + numWidth + 1 + numWidth + 1 + arrWidth;
 
   lines.push(`Period: ${report.period.start} → ${report.period.end}`);
   lines.push("");
 
   // Header
   lines.push(
-    `${pad("Category", catWidth)} ${padLeft("This period", numWidth)} ${padLeft("Last period", numWidth)}`,
+    `${pad("Category", catWidth)} ${padLeft("This period", numWidth)} ${padLeft("Last period", numWidth)} ${pad("", arrWidth)}`,
   );
-  lines.push("─".repeat(catWidth + numWidth * 2 + 2));
+  lines.push("─".repeat(totalWidth));
 
   let totalThis = 0;
   let totalLast = 0;
@@ -55,13 +57,13 @@ export function renderTerminal(report: CostAttributionReport): string {
     const label = pad(categoryLabel(entry.category), catWidth);
     const thisStr = padLeft(fmtCost(entry.thisPeriod.cost), numWidth);
     const lastStr = padLeft(fmtCost(entry.lastPeriod.cost), numWidth);
-    const arr = arrow(entry.changePct);
-    lines.push(`${label} ${thisStr} ${lastStr}  ${arr}`);
+    const arr = pad(arrow(entry.changePct), arrWidth);
+    lines.push(`${label} ${thisStr} ${lastStr} ${arr}`);
   }
 
-  lines.push("─".repeat(catWidth + numWidth * 2 + 2));
+  lines.push("─".repeat(totalWidth));
   lines.push(
-    `${pad("Total", catWidth)} ${padLeft(fmtCost(totalThis), numWidth)} ${padLeft(fmtCost(totalLast), numWidth)}`,
+    `${pad("Total", catWidth)} ${padLeft(fmtCost(totalThis), numWidth)} ${padLeft(fmtCost(totalLast), numWidth)} ${pad("", arrWidth)}`,
   );
 
   if (report.topSessions.length > 0) {

@@ -47,6 +47,9 @@ program
     await runCostCommand({ ...cmdOpts, config: cfg });
   });
 
+program.action(async () => {
+  await main();
+});
 program.parse();
 
 const opts = program.opts<{
@@ -218,7 +221,4 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
   process.stdout.write("\n");
 }
 
-main().catch((e) => {
-  console.error(`kimiflare: ${e instanceof Error ? e.message : String(e)}`);
-  process.exit(1);
-});
+

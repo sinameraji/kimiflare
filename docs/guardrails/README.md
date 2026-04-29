@@ -38,6 +38,11 @@
 - **Rule:** No CommonJS `require()` or `module.exports` — ESM only.
 - **Acceptance Criteria:** `npm run build` produces a valid `dist/` and `bin/kimiflare.mjs`.
 
+### 1.5 CLI Entry Point Preservation
+- **Rule:** Bare `kimiflare` (no args, no subcommand) must enter the interactive TUI — never print commander help and exit.
+- **Rule:** Any PR that adds a `program.command(...)` subcommand must also ensure the root command has an explicit `.action(() => {})` (or equivalent) before `program.parse()`. Commander auto-prints help when subcommands exist and no root action is defined, which silently kills the TUI.
+- **Acceptance Criteria:** Running `node bin/kimiflare.mjs` in a TTY must reach `main()`. In a non-TTY context the process must exit with the "interactive mode requires a TTY" message (proves the entry point was reached, not commander help). Regression precedent: v0.20.0 shipped this bug; see Appendix A.
+
 ### 1.3 Runtime Error Prevention
 - **Rule:** Every `JSON.parse()` must be wrapped in `try/catch` or validated with a schema guard.
 - **Rule:** Every `await` on a potentially failing operation (file I/O, network, DB) must have error handling.
@@ -334,6 +339,7 @@ These are past failures that informed the guardrails above. New code must not re
 | Ctrl+C hung the app | Global SIGINT handler conflicted with Ink's handler | 3.4 |
 | Memory growth in long sessions | Images and reasoning content never stripped from history | 2.2.2, 2.2.3 |
 | Invalid JSON 400 loops | Model generated malformed JSON, no validation before retry | 3.4 |
+| Bare `kimiflare` printed help instead of TUI (v0.20.0, recurred on `feat/cost-attribution`) | Adding a `program.command(...)` subcommand without an explicit root `.action(() => {})` makes commander auto-print help and skip `main()` | 1.5 |
 
 ---
 

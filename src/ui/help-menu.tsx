@@ -13,6 +13,7 @@ interface Props {
   themes: { name: string; label: string }[];
   currentThemeName: string;
   customCommands?: CustomCommandSummary[];
+  costAttributionEnabled?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -24,6 +25,7 @@ type Page =
   | "theme"
   | "session"
   | "memory"
+  | "cost"
   | "mcp"
   | "lsp"
   | "gateway"
@@ -86,6 +88,15 @@ const CATEGORIES: Category[] = [
       { command: "/memory off", description: "disable memory" },
       { command: "/memory clear", description: "wipe memories for this repo" },
       { command: "/memory search <query>", description: "search stored memories", selectable: false },
+    ],
+  },
+  {
+    key: "cost",
+    label: "Cost",
+    commands: [
+      { command: "/cost", description: "show cost report" },
+      { command: "/cost on", description: "enable cost attribution by task type" },
+      { command: "/cost off", description: "disable cost attribution by task type" },
     ],
   },
   {
@@ -158,7 +169,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, customCommands, onDone, onCommand }: Props) {
+export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 

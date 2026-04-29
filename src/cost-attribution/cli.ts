@@ -10,7 +10,7 @@ import type { SessionUsage, UsageLog } from "../usage-tracker.js";
 import { buildReport } from "./report.js";
 import { renderTerminal, renderJson } from "./renderer.js";
 import { reconcileWithCloudflare } from "./reconcile.js";
-import { classifySession } from "./heuristic.js";
+import { classifyFromSessionFile } from "./classify-from-session.js";
 import type { TaskCategory } from "./types.js";
 
 interface CostCommandOptions {
@@ -100,12 +100,11 @@ export async function runCostCommand(opts: CostCommandOptions): Promise<void> {
 
   for (const s of sessions) {
     if (!s.category || opts.reclassify) {
-      // Heuristic classification using limited session metadata
-      // Full classification would read session files; here we use a simple heuristic
-      const result = classifySession([], { totalTurns: 5, totalToolCalls: 5 });
+      const result = await classifyFromSessionFile(s.id);
       s.category = result.category;
       s.confidence = result.confidence;
       s.classifiedBy = result.classifiedBy;
+      s.summary = result.summary;
       s.classifiedAt = new Date().toISOString();
     }
   }

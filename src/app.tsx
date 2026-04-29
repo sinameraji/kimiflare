@@ -108,6 +108,7 @@ interface Cfg {
   codeMode?: boolean;
   lspEnabled?: boolean;
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
+  costAttribution?: boolean;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -1276,11 +1277,34 @@ function App({
         return true;
       }
       if (c === "/cost") {
+        if (!cfg) return true;
+        if (arg === "on") {
+          const next = { ...cfg, costAttribution: true };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cost attribution enabled" }]);
+          return true;
+        }
+        if (arg === "off") {
+          const next = { ...cfg, costAttribution: false };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cost attribution disabled" }]);
+          return true;
+        }
         void getCostReport(sessionIdRef.current ?? undefined)
-          .then((report) => {
+          .then(async (report) => {
+            const lines = [formatCostReport(report)];
+            if (cfg?.costAttribution) {
+              const { getCategoryReportText } = await import("./cost-attribution/tui-report.js");
+              const catReport = await getCategoryReportText(sessionIdRef.current ?? undefined);
+              if (catReport) {
+                lines.push("", "─── Cost by task type ───", catReport);
+              }
+            }
             setEvents((e) => [
               ...e,
-              { kind: "info", key: mkKey(), text: formatCostReport(report) },
+              { kind: "info", key: mkKey(), text: lines.join("\n") },
             ]);
           })
           .catch((err) => {
@@ -2244,6 +2268,7 @@ function App({
           customCommands={customCommandsRef.current
             .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
             .map((c) => ({ name: c.name, description: c.description }))}
+          costAttributionEnabled={cfg?.costAttribution}
           onDone={() => setShowHelpMenu(false)}
           onCommand={handleHelpCommand}
         />

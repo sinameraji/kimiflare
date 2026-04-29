@@ -286,6 +286,8 @@
 - [ ] `--dangerously-allow-all` only works in print mode
 - [ ] `--reasoning` only works in print mode
 - [ ] Version from `getAppVersion()`
+- [ ] If a `program.command(...)` subcommand is added, the root `program` retains an explicit `.action(() => {})` before `program.parse()` — otherwise commander auto-prints help and bare `kimiflare` never reaches `main()` (Guardrail 1.5 / CRIT-7; v0.20.0 regression)
+- [ ] Smoke-tested: `node bin/kimiflare.mjs </dev/null` exits with "interactive mode requires a TTY", NOT the commander `Usage:` block
 
 ---
 

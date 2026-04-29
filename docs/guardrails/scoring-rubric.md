@@ -82,6 +82,16 @@ These rules are non-negotiable. A score of 0 or 1 blocks the PR.
   - 1: Adds data to prompt but argues it's necessary.
   - 0: Adds timestamps, random IDs, or unordered data to cache-stable sections.
 
+### CRIT-7: CLI Entry Point Reaches TUI
+- **Source:** Guardrail 1.5
+- **Check:** Bare `kimiflare` invocation must enter `main()` (the TUI), not print commander help. If the diff adds a `program.command(...)` subcommand, it must also add or preserve a root `program.action(() => {})` before `program.parse()`.
+- **Auto-check:** ✅ Yes — `grep -E 'program\.command\(' src/index.tsx` triggers a required check for `program.action(` in the same file. Smoke: `node bin/kimiflare.mjs </dev/null` must exit with the "interactive mode requires a TTY" message, not the commander `Usage:` block.
+- **Scoring:**
+  - 3: Adds a subcommand AND a regression test that asserts bare invocation reaches `main()`.
+  - 2: Adds a subcommand with the root `.action()` preserved; or no CLI surface change.
+  - 1: Adds a subcommand with the root `.action()` preserved but no smoke test.
+  - 0: Adds a subcommand without a root `.action()` — bare `kimiflare` will print help and exit (v0.20.0 / `feat/cost-attribution` regression).
+
 ---
 
 ## High-Priority Rules (Average Must Be ≥ 2)
