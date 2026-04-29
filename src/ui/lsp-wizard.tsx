@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
@@ -240,16 +240,13 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
     onSave(next, true);
   };
 
-  const mainItems = useMemo(
-    () => [
-      { label: "Add server", value: "add", key: "add" },
-      { label: "Edit server", value: "edit", key: "edit" },
-      { label: "Delete server", value: "delete", key: "delete" },
-      { label: "List servers", value: "list", key: "list" },
-      { label: "(close)", value: "__close__", key: "__close__" },
-    ],
-    [],
-  );
+  const mainItems = [
+    { label: "Add server", value: "add", key: "add" },
+    { label: "Edit server", value: "edit", key: "edit" },
+    { label: "Delete server", value: "delete", key: "delete" },
+    { label: "List servers", value: "list", key: "list" },
+    { label: "(close)", value: "__close__", key: "__close__" },
+  ];
 
   // ─── Main menu ─────────────────────────────────────────────────────────────
 
@@ -281,17 +278,14 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
   // ─── Add ───────────────────────────────────────────────────────────────────
 
   if (page === "add") {
-    const items = useMemo(
-      () => [
-        ...PRESETS.map((p) => ({
-          label: `${p.name.padEnd(20)} ${p.description}`,
-          value: p.id,
-          key: p.id,
-        })),
-        { label: "← Back", value: "__back__", key: "__back__" },
-      ],
-      [],
-    );
+    const items = [
+      ...PRESETS.map((p) => ({
+        label: `${p.name.padEnd(20)} ${p.description}`,
+        value: p.id,
+        key: p.id,
+      })),
+      { label: "← Back", value: "__back__", key: "__back__" },
+    ];
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -325,19 +319,16 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
     const isDone = installState.status === "success" || installState.status === "error";
     const isSuccess = installState.status === "success";
 
-    const items = useMemo(() => {
-      if (!isDone) {
-        return [
+    const items = !isDone
+      ? [
           { label: isRunning ? "Installing..." : "Run install command", value: "run", key: "run" },
           { label: "Skip install (already installed)", value: "skip", key: "skip" },
           { label: "← Back", value: "__back__", key: "__back__" },
+        ]
+      : [
+          { label: isSuccess ? "Save to config ✓" : "Save anyway", value: "save", key: "save" },
+          { label: "← Back", value: "__back__", key: "__back__" },
         ];
-      }
-      return [
-        { label: isSuccess ? "Save to config ✓" : "Save anyway", value: "save", key: "save" },
-        { label: "← Back", value: "__back__", key: "__back__" },
-      ];
-    }, [isDone, isRunning, isSuccess]);
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -480,21 +471,18 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
       );
     }
 
-    const items = useMemo(
-      () => [
-        ...keys.map((k) => {
-          const s = servers[k]!;
-          const status = s.enabled !== false ? "enabled" : "disabled";
-          return {
-            label: `${k.padEnd(16)} ${status}  ${s.command.join(" ")}`,
-            value: k,
-            key: k,
-          };
-        }),
-        { label: "← Back", value: "__back__", key: "__back__" },
-      ],
-      [keys, servers],
-    );
+    const items = [
+      ...keys.map((k) => {
+        const s = servers[k]!;
+        const status = s.enabled !== false ? "enabled" : "disabled";
+        return {
+          label: `${k.padEnd(16)} ${status}  ${s.command.join(" ")}`,
+          value: k,
+          key: k,
+        };
+      }),
+      { label: "← Back", value: "__back__", key: "__back__" },
+    ];
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -541,17 +529,14 @@ export function LspWizard({ theme, servers, onDone, onSave }: Props) {
       );
     }
 
-    const items = useMemo(
-      () => [
-        ...keys.map((k) => ({
-          label: `${k.padEnd(16)} ${servers[k]!.command.join(" ")}`,
-          value: k,
-          key: k,
-        })),
-        { label: "← Back", value: "__back__", key: "__back__" },
-      ],
-      [keys, servers],
-    );
+    const items = [
+      ...keys.map((k) => ({
+        label: `${k.padEnd(16)} ${servers[k]!.command.join(" ")}`,
+        value: k,
+        key: k,
+      })),
+      { label: "← Back", value: "__back__", key: "__back__" },
+    ];
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
