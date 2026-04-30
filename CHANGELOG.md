@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.29.0](https://github.com/sinameraji/kimiflare/compare/v0.28.0...v0.29.0) (2026-04-30)
+
+
+### Features
+
+* @ file mention picker with inline filtering and navigation ([#217](https://github.com/sinameraji/kimiflare/issues/217)) ([f2728c2](https://github.com/sinameraji/kimiflare/commit/f2728c248e7c04b0cf0480544d5de8d07d306c34))
+* add automated PR guardrail review agent ([#215](https://github.com/sinameraji/kimiflare/issues/215)) ([8e709ca](https://github.com/sinameraji/kimiflare/commit/8e709ca01626d6f1410e23ffe4a06ff8ceb03a06))
+* multi-agent system with specialized plan/build/general agents ([#220](https://github.com/sinameraji/kimiflare/issues/220)) ([1fe8c3c](https://github.com/sinameraji/kimiflare/commit/1fe8c3cfd99a6bdab5d12d12bd2d0472f526f14b))
+
+
+### Reverts
+
+* remove automated guardrail review agent ([#219](https://github.com/sinameraji/kimiflare/issues/219)) ([35ea7e0](https://github.com/sinameraji/kimiflare/commit/35ea7e037ec4a8b6e295793c37912fa5663aa87f))
+
 ## [0.28.0](https://github.com/sinameraji/kimiflare/compare/v0.27.0...v0.28.0) (2026-04-30)
 
 
