@@ -80,6 +80,8 @@ import { CommandList } from "./ui/command-list.js";
 import { LspWizard } from "./ui/lsp-wizard.js";
 import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
+import fg from "fast-glob";
+import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 
 interface Cfg {
   accountId: string;
@@ -306,6 +308,12 @@ function App({
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
 
+  // File mention picker state
+  const [cursorOffset, setCursorOffset] = useState(0);
+  const [pickerItems, setPickerItems] = useState<FilePickerItem[]>([]);
+  const [pickerSelected, setPickerSelected] = useState(0);
+  const [pickerAnchor, setPickerAnchor] = useState<number | null>(null);
+
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
   const messagesRef = useRef<ChatMessage[]>(
     makePrefixMessages(cacheStableRef.current, cfg?.model ?? DEFAULT_MODEL, "edit", ALL_TOOLS),
@@ -340,6 +348,125 @@ function App({
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customCommandsRef = useRef<CustomCommand[]>([]);
+  const pickerCancelRef = useRef<number | null>(null);
+
+  // ── File mention picker logic ────────────────────────────────────────────
+  const mentionState = React.useMemo(() => {
+    if (pickerAnchor === null) return null;
+    const query = input.slice(pickerAnchor + 1, cursorOffset);
+    return { query, anchor: pickerAnchor };
+  }, [input, cursorOffset, pickerAnchor]);
+
+  const filteredPickerItems = React.useMemo(() => {
+    if (!mentionState) return [];
+    const q = mentionState.query.toLowerCase();
+    return pickerItems
+      .filter((item) => item.name.toLowerCase().includes(q))
+      .slice(0, 50);
+  }, [pickerItems, mentionState]);
+
+  // Detect @ mention opening/closing
+  useEffect(() => {
+    if (pickerAnchor !== null) {
+      // If cursor moved before anchor, close picker
+      if (cursorOffset < pickerAnchor) {
+        setPickerAnchor(null);
+        return;
+      }
+      // If the @ was deleted, close picker
+      if (input[pickerAnchor] !== "@") {
+        setPickerAnchor(null);
+        return;
+      }
+      // If user typed a space inside the mention query, close picker
+      const query = input.slice(pickerAnchor + 1, cursorOffset);
+      if (query.includes(" ")) {
+        setPickerAnchor(null);
+        return;
+      }
+      return;
+    }
+
+    // Prevent immediate reopen after cancel at the same cursor position
+    if (pickerCancelRef.current === cursorOffset) {
+      pickerCancelRef.current = null;
+      return;
+    }
+
+    // Look for @ just before cursor
+    if (cursorOffset > 0 && input[cursorOffset - 1] === "@") {
+      const beforeAt = cursorOffset - 2;
+      if (beforeAt < 0 || /\s/.test(input[beforeAt]!)) {
+        setPickerAnchor(cursorOffset - 1);
+        setPickerSelected(0);
+        // Load files lazily on first open
+        if (pickerItems.length === 0) {
+          const cwd = process.cwd();
+          void fg("**/*", {
+            cwd,
+            ignore: [
+              "node_modules/**",
+              ".git/**",
+              "dist/**",
+              ".kimiflare/**",
+              "coverage/**",
+              ".next/**",
+              "build/**",
+              "out/**",
+            ],
+            dot: false,
+            absolute: false,
+            onlyFiles: false,
+            markDirectories: true,
+          } as fg.Options).then((entries) => {
+            const strings = (entries as string[]).slice(0, 300);
+            const items: FilePickerItem[] = strings.map((e) => ({
+              name: e.endsWith("/") ? e.slice(0, -1) : e,
+              isDirectory: e.endsWith("/"),
+            }));
+            // Sort directories first, then alphabetically
+            items.sort((a, b) => {
+              if (a.isDirectory && !b.isDirectory) return -1;
+              if (!a.isDirectory && b.isDirectory) return 1;
+              return a.name.localeCompare(b.name);
+            });
+            setPickerItems(items);
+          });
+        }
+      }
+    }
+  }, [input, cursorOffset, pickerAnchor, pickerItems.length]);
+
+  // Clamp selected index when filtered list changes
+  useEffect(() => {
+    if (pickerAnchor !== null) {
+      setPickerSelected((prev) => Math.min(prev, Math.max(0, filteredPickerItems.length - 1)));
+    }
+  }, [filteredPickerItems.length, pickerAnchor]);
+
+  const handlePickerUp = useCallback(() => {
+    setPickerSelected((i) => Math.max(0, i - 1));
+  }, []);
+
+  const handlePickerDown = useCallback(() => {
+    setPickerSelected((i) => Math.min(filteredPickerItems.length - 1, i + 1));
+  }, [filteredPickerItems.length]);
+
+  const handlePickerSelect = useCallback(() => {
+    if (!mentionState || filteredPickerItems.length === 0) return;
+    const item = filteredPickerItems[pickerSelected];
+    if (!item) return;
+    const insert = item.name + (item.isDirectory ? "/" : " ");
+    const newInput = input.slice(0, mentionState.anchor) + insert + input.slice(cursorOffset);
+    setInput(newInput);
+    setCursorOffset(mentionState.anchor + insert.length);
+    setPickerAnchor(null);
+  }, [mentionState, filteredPickerItems, pickerSelected, input, cursorOffset]);
+
+  const handlePickerCancel = useCallback(() => {
+    pickerCancelRef.current = cursorOffset;
+    setPickerAnchor(null);
+  }, [cursorOffset]);
 
   useEffect(() => {
     if (!cfg) return;
@@ -2533,6 +2660,14 @@ function App({
             gatewayMeta={gatewayMeta}
             codeMode={codeMode}
           />
+          {pickerAnchor !== null && (
+            <FilePicker
+              items={filteredPickerItems}
+              selectedIndex={pickerSelected}
+              theme={theme}
+              query={mentionState?.query ?? ""}
+            />
+          )}
           <Box marginTop={1}>
             <Text color={theme.accent}>› </Text>
             <CustomTextInput
@@ -2540,6 +2675,13 @@ function App({
               onChange={setInput}
               onSubmit={submit}
               enablePaste
+              cursorOffset={cursorOffset}
+              onCursorChange={setCursorOffset}
+              pickerActive={pickerAnchor !== null}
+              onPickerUp={handlePickerUp}
+              onPickerDown={handlePickerDown}
+              onPickerSelect={handlePickerSelect}
+              onPickerCancel={handlePickerCancel}
               onHistoryUp={() => {
                 if (history.length === 0) return;
                 if (historyIndex === -1) {
