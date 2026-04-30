@@ -1,6 +1,6 @@
 # Multi-Agent System Implementation Plan
 
-**Status:** Phases 1-2 Complete → Phase 3 In Progress (Single PR #220)  
+**Status:** Phases 1-3 Complete → Phase 4 In Progress (Single PR #220)  
 **Feature Flag:** `multiAgent` (default: `false`)  
 **Env Override:** `KIMIFLARE_MULTI_AGENT=1`  
 **Branch:** `feat/multi-agent-system`
@@ -81,16 +81,16 @@ The multi-agent system introduces specialized agents with isolated message buffe
 
 ---
 
-### Phase 3: Integrations ⏳ PENDING
+### Phase 3: Integrations ✅ COMPLETE
 
 **Goal:** Multi-agent awareness in existing features.
 
 **Deliverables:**
-- [ ] **Compiled context** (`compiledContext`): per-agent artifact stores
-- [ ] **Memory**: `memory_remember` tags memories with agent role; recall filters by role
-- [ ] **Cost attribution**: category mapping (`plan` → `exploring-codebase`, `build` → `editing-source-code`)
-- [ ] **LSP**: agent-specific LSP tool subsets (already partially done via tool lists)
-- [ ] **Code mode**: per-agent API generation (plan agent gets read-only API)
+- [x] **Compiled context** (`compiledContext`): per-agent artifact stores
+- [x] **Memory**: `memory_remember` tags memories with agent role; recall filters by role
+- [x] **Cost attribution**: category mapping (`plan` → `exploring-codebase`, `build` → `editing-source-code`)
+- [x] **LSP**: agent-specific LSP tool subsets (already partially done via tool lists)
+- [x] **Code mode**: per-agent API generation (plan agent gets read-only API) — already works via `opts.tools` filtering
 
 ---
 
@@ -112,35 +112,46 @@ The multi-agent system introduces specialized agents with isolated message buffe
 ### Start Here
 
 1. Read this doc fully — it is the source of truth
-2. Phases 1-2 are DONE. Start Phase 3.
+2. Phases 1-3 are DONE. Start Phase 4.
 3. All work stays on branch `feat/multi-agent-system` — do not create new branches
 
 ### Files: Finished (Don't Touch Without Discussion)
 
 | File | Status | Why |
 |------|--------|-----|
-| `src/agent/agent-session.ts` | ✅ Complete | Clean abstraction, 100% tested |
+| `src/agent/agent-session.ts` | ✅ Complete | Clean abstraction, per-agent artifact stores |
 | `src/agent/agent-session.test.ts` | ✅ Complete | Covers tool subsets, determinism, session creation |
 | `src/agent/intent-classifier.ts` | ✅ Complete | Heuristic keyword classification with tie-breaking |
 | `src/agent/intent-classifier.test.ts` | ✅ Complete | Covers plan/build/general classification, thresholds |
-| `src/agent/orchestrator.ts` | ✅ Complete | Auto-routing, agentModels wiring, error handling, forced hand-off |
+| `src/agent/orchestrator.ts` | ✅ Complete | Auto-routing, agentModels wiring, error handling, forced hand-off, per-agent artifact stores |
 | `src/agent/orchestrator.test.ts` | ✅ Complete | Auto-switching, forced hand-off, error recovery tests |
 | `src/config.ts` | ✅ Complete | All multi-agent fields added, validated |
 | `src/config.test.ts` | ✅ Complete | Model validation tests |
-| `src/sessions.ts` | ✅ Complete | `multiAgentState` field added |
+| `src/sessions.ts` | ✅ Complete | `multiAgentState` with per-agent artifact stores |
 | `src/usage-tracker.ts` | ✅ Complete | `agentRole` field added |
 | `src/cost-debug.ts` | ✅ Complete | `agentRole` field added |
-| `src/memory/manager.ts` | ✅ Complete | `redactSecrets` exported |
-| `src/app.tsx` | ✅ Complete | `/agent auto` toggle, auto-switch UI feedback |
+| `src/memory/manager.ts` | ✅ Complete | `redactSecrets` exported, agent role tagging, recall filtering |
+| `src/memory/schema.ts` | ✅ Complete | `agentRole` field added |
+| `src/memory/db.ts` | ✅ Complete | `agent_role` column with migration |
+| `src/memory/retrieval.ts` | ✅ Complete | `agentRole` filter in retrieval |
+| `src/tools/registry.ts` | ✅ Complete | `agentRole` in ToolContext |
+| `src/tools/memory.ts` | ✅ Complete | Passes `agentRole` to remember/recall |
+| `src/cost-attribution/types.ts` | ✅ Complete | `exploring-codebase` category added |
+| `src/cost-attribution/heuristic.ts` | ✅ Complete | Agent role signal in classification |
+| `src/cost-attribution/classify-from-session.ts` | ✅ Complete | Accepts `agentRole` parameter |
+| `src/cost-attribution/cli.ts` | ✅ Complete | Passes `agentRole` from usage log |
+| `src/app.tsx` | ✅ Complete | `/agent auto` toggle, auto-switch UI feedback, per-agent compaction |
 
 ### Files: Intentionally Incomplete (Your Work)
 
 | File | What's Missing | Priority |
 |------|---------------|----------|
-| `src/agent/session-state.ts` | Per-agent artifact stores for compiled context | **P0** |
-| `src/memory/manager.ts` | Tag memories with agent role; recall filters by role | **P0** |
-| `src/cost-attribution/` | Category mapping (`plan` → `exploring-codebase`, `build` → `editing-source-code`) | **P1** |
-| `src/agent/orchestrator.ts` | Per-agent API generation for code mode (plan agent gets read-only API) | **P1** |
+| `src/config.ts` | `customAgents` array for user-defined roles | **P0** |
+| `src/agent/agent-session.ts` | Dynamic tool resolution for custom agents | **P0** |
+| `src/agent/orchestrator.ts` | Parallel agent execution (plan + build concurrently) | **P1** |
+| `src/agent/orchestrator.ts` | Agent replay with different model/effort | **P1** |
+| `src/ui/` | Diff view to compare outputs between agents | **P2** |
+| `src/cost-attribution/` | Per-agent metrics dashboard (token usage, latency, cache hit ratio) | **P2** |
 
 ### Known Debt / Traps
 
@@ -155,6 +166,11 @@ The multi-agent system introduces specialized agents with isolated message buffe
 3. **LLM fallback for intent classifier**
    - Currently heuristic only; LLM fallback mentioned in plan but deferred
    - Can be added in Phase 4 if ambiguity becomes a real problem
+
+4. **SessionState is still global in multi-agent mode**
+   - `sessionStateRef` in `app.tsx` is shared across all agents
+   - For full isolation, each agent should have its own `SessionState`
+   - Deferred to Phase 4 as it requires broader refactoring
 
 ### Testing Strategy
 
@@ -192,16 +208,16 @@ KIMIFLARE_MULTI_AGENT=1 npm run dev
 
 | Guardrail | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
 |-----------|---------|---------|---------|---------|
-| CRIT-1 TypeScript strict | ✅ | ✅ | TBD | TBD |
-| CRIT-2 Tests | ✅ | ✅ | TBD | TBD |
-| CRIT-3 Build | ✅ | ✅ | TBD | TBD |
+| CRIT-1 TypeScript strict | ✅ | ✅ | ✅ | TBD |
+| CRIT-2 Tests | ✅ | ✅ | ✅ | TBD |
+| CRIT-3 Build | ✅ | ✅ | ✅ | TBD |
 | CRIT-6 Cache stability (sorted tools) | ✅ | — | — | — |
-| CRIT-7 CLI entry point unchanged | ✅ | ✅ | — | — |
+| CRIT-7 CLI entry point unchanged | ✅ | ✅ | ✅ | — |
 | HP-1 Token efficiency | ✅ | — | — | — |
-| HP-2 Agent loop safety | ✅ | ✅ | — | — |
-| HP-4 Data integrity (additive format) | ✅ | ✅ | — | — |
-| SEC-1 Secret redaction | ✅ | ✅ | — | — |
-| CFG-1 Backward compatibility | ✅ | ✅ | — | — |
+| HP-2 Agent loop safety | ✅ | ✅ | ✅ | — |
+| HP-4 Data integrity (additive format) | ✅ | ✅ | ✅ | — |
+| SEC-1 Secret redaction | ✅ | ✅ | ✅ | — |
+| CFG-1 Backward compatibility | ✅ | ✅ | ✅ | — |
 
 ---
 
