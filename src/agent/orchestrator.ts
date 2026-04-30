@@ -8,7 +8,7 @@ import { shouldCompact } from "./compaction.js";
 import { runKimi } from "./client.js";
 import type { AiGatewayOptions } from "./client.js";
 import { createAgentSession, getAgentTools, type AgentRole, type AgentSession } from "./agent-session.js";
-import { serializeArtifactStore, deserializeArtifactStore } from "./session-state.js";
+import { serializeArtifactStore, deserializeArtifactStore, ArtifactStore } from "./session-state.js";
 import { classifyIntent, shouldSwitchRole } from "./intent-classifier.js";
 
 export interface AgentOrchestratorOpts {
@@ -289,20 +289,83 @@ export class AgentOrchestrator {
     return summary;
   }
 
+  /**
+   * Replay an agent's user messages with optional model/effort overrides.
+   * Returns the number of turns replayed.
+   */
+  async replayAgent(
+    role: AgentRole,
+    opts: { model?: string; reasoningEffort?: "low" | "medium" | "high" } = {}
+  ): Promise<number> {
+    const session = this.sessions.get(role);
+    if (!session) return 0;
+
+    // Extract user messages (skip system and hand-off messages)
+    const userMessages = session.messages.filter((m) => m.role === "user");
+    if (userMessages.length === 0) return 0;
+
+    // Reset session state
+    session.messages = [];
+    session.recentToolCalls = [];
+    session.artifactStore = new ArtifactStore();
+    this.turnCounts.set(role, 0);
+
+    // Switch to this agent if not already active
+    const previousRole = this.activeRole;
+    this.activeRole = role;
+
+    const tools = this.getToolsForRole(role);
+    const customAgent = this.opts.customAgents?.find((a) => a.name === role);
+    const model = opts.model ?? customAgent?.model ?? this.opts.agentModels?.[role] ?? this.opts.model;
+    const reasoningEffort = opts.reasoningEffort ?? customAgent?.reasoningEffort ?? this.opts.agentReasoningEffort?.[role] ?? this.opts.reasoningEffort;
+
+    for (const msg of userMessages) {
+      session.messages.push(msg);
+      await runAgentTurn({
+        accountId: this.opts.accountId,
+        apiToken: this.opts.apiToken,
+        model,
+        gateway: this.opts.gateway,
+        messages: session.messages,
+        tools: [...tools, ...this.opts.mcpTools],
+        executor: this.opts.executor,
+        cwd: this.opts.cwd,
+        signal: this.opts.signal,
+        reasoningEffort,
+        coauthor: this.opts.coauthor,
+        sessionId: this.opts.sessionId,
+        memoryManager: this.opts.memoryManager,
+        keepLastImageTurns: this.opts.keepLastImageTurns,
+        codeMode: this.opts.codeMode,
+        onFileChange: this.opts.onFileChange,
+        callbacks: this.opts.callbacks,
+        recentToolCalls: session.recentToolCalls,
+        agentRole: role,
+      });
+      session.recentToolCalls = session.recentToolCalls.slice(-8);
+      this.turnCounts.set(role, (this.turnCounts.get(role) ?? 0) + 1);
+    }
+
+    // Restore previous active role
+    this.activeRole = previousRole;
+
+    return userMessages.length;
+  }
+
   serialize(): {
     activeRole: AgentRole;
     autoSwitch: boolean;
     turnCounts: Record<AgentRole, number>;
     agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[]; artifactStore: ReturnType<typeof serializeArtifactStore> }>;
   } {
+    const turnCounts: Record<string, number> = {};
+    for (const [role, count] of this.turnCounts.entries()) {
+      turnCounts[role] = count;
+    }
     return {
       activeRole: this.activeRole,
       autoSwitch: this.autoSwitch,
-      turnCounts: {
-        plan: this.turnCounts.get("plan") ?? 0,
-        build: this.turnCounts.get("build") ?? 0,
-        general: this.turnCounts.get("general") ?? 0,
-      },
+      turnCounts,
       agents: Array.from(this.sessions.entries()).map(([role, session]) => ({
         role,
         messages: session.messages,

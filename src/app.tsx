@@ -1935,9 +1935,27 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `auto-switch ${next ? "enabled" : "disabled"}` }]);
           return true;
         }
+        if (sub === "replay" && rest[1]) {
+          const replayRole = rest[1].toLowerCase();
+          const allRoles = ["plan", "build", "general", ...customNames];
+          if (!allRoles.includes(replayRole)) {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent: ${replayRole}` }]);
+            return true;
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `replaying ${replayRole} agent turns...` }]);
+          void (async () => {
+            try {
+              const count = await orchestratorRef.current?.replayAgent(replayRole);
+              setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `replayed ${count} turn(s) for ${replayRole} agent` }]);
+            } catch (err) {
+              setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `replay failed: ${(err as Error).message}` }]);
+            }
+          })();
+          return true;
+        }
         const builtIn = "plan | build | general";
         const custom = customNames.length > 0 ? ` | ${customNames.join(" | ")}` : "";
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto` }]);
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto | replay <role>` }]);
         return true;
       }
       if (c === "/plan") {
