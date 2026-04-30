@@ -166,6 +166,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 5. **Parallel agents not implemented**
    - Plan + build running concurrently was deferred
    - The current architecture supports it but the TUI event loop would need significant changes
+   - See "Future Work: Parallel Agent Execution" below for the implementation plan
 
 ### Testing Strategy
 
@@ -244,6 +245,51 @@ KIMIFLARE_MULTI_AGENT=1 npm run dev
 | 2026-04-30 | Sorted arrays (not Sets) for tool subsets | Deterministic ordering for cache-stable prompt prefixes |
 
 ---
+
+## Future Work: Parallel Agent Execution
+
+**Status:** Deferred — not in PR #220
+
+### Why Deferred
+
+The current TUI event loop (`src/app.tsx`) is built around a single `runAgentTurn()` call per user message. The `sharedCallbacks` object (onTextDelta, onToolCallStart, onUsage, etc.) feeds into a single React state tree. Running two agents concurrently would require:
+
+1. **Event stream isolation** — each agent needs its own event array or prefixed event keys to prevent React reconciliation conflicts
+2. **Permission queue multiplexing** — two agents could simultaneously ask for permission; the modal system assumes a single pending request
+3. **Usage tracking aggregation** — `usageRef` and `messagesRef` are singletons; parallel agents need per-agent refs with aggregation
+4. **Abort signal granularity** — `activeControllerRef` is a single AbortController; parallel agents need per-agent controllers plus a master controller
+5. **Session save consistency** — `messagesRef.current` is synced from the active agent after each turn; parallel agents would need atomic multi-agent snapshotting
+
+### Implementation Plan (for future PR)
+
+**Phase A: Callback Isolation**
+- Change `sharedCallbacks` from a singleton to a factory: `makeCallbacks(agentRole: string)`
+- Each callback prefixes event keys with agent role (e.g., `plan_asst_123` vs `build_asst_456`)
+- Add `agentRole` field to all event kinds in the UI
+
+**Phase B: Permission Queue**
+- Change `permResolveRef` from a single resolver to a FIFO queue of pending permission requests
+- Permission modal shows which agent is asking: `[build agent] Allow write to src/foo.ts?`
+
+**Phase C: Parallel Orchestrator API**
+- Add `runParallelTurn(userMessage, roles: AgentRole[])` to `AgentOrchestrator`
+- Internally runs `Promise.all(roles.map(r => this.runAgentTurn(r, userMessage)))`
+- Each agent gets its own AbortSignal (child of master signal)
+
+**Phase D: UI Layout**
+- Add split-pane or tabbed view for parallel agent outputs
+- Or: show one agent in main pane, others in collapsed side panels
+- Status bar shows all active agents with turn counts
+
+**Phase E: Synchronization Point**
+- After parallel execution, user can review both outputs
+- `/agent merge <role1> <role2>` command to synthesize a combined response
+- Or: automatic synthesis by orchestrator model
+
+### Trigger for Implementation
+
+- Open a new GitHub issue when users request concurrent exploration + implementation
+- Priority increases if single-agent latency becomes a bottleneck (e.g., 20+ turn sessions)
 
 ## Related Documents
 
