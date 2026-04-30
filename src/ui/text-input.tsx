@@ -93,23 +93,6 @@ export function CustomTextInput({
       if (key.ctrl && input === "o") return;
       if (key.tab) return;
 
-      if (key.return) {
-        let full = value;
-        let hasPastes = false;
-        if (enablePaste && pastesRef.current.size > 0) {
-          for (const [placeholder, fullText] of pastesRef.current) {
-            if (full.includes(placeholder)) {
-              full = full.split(placeholder).join(fullText);
-              hasPastes = true;
-            }
-          }
-        }
-        onSubmit(full, hasPastes ? value : undefined);
-        pastesRef.current.clear();
-        setCursorOffset(0);
-        return;
-      }
-
       if (pickerActive) {
         if (key.upArrow) {
           onPickerUp?.();
@@ -127,6 +110,23 @@ export function CustomTextInput({
           onPickerCancel?.();
           return;
         }
+      }
+
+      if (key.return) {
+        let full = value;
+        let hasPastes = false;
+        if (enablePaste && pastesRef.current.size > 0) {
+          for (const [placeholder, fullText] of pastesRef.current) {
+            if (full.includes(placeholder)) {
+              full = full.split(placeholder).join(fullText);
+              hasPastes = true;
+            }
+          }
+        }
+        onSubmit(full, hasPastes ? value : undefined);
+        pastesRef.current.clear();
+        setCursorOffset(0);
+        return;
       }
 
       if (key.upArrow) {

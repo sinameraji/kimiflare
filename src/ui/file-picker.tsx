@@ -17,8 +17,15 @@ interface Props {
 const VISIBLE_LIMIT = 12;
 
 export function FilePicker({ items, selectedIndex, theme, query }: Props) {
-  const visible = items.slice(0, VISIBLE_LIMIT);
-  const hasMore = items.length > VISIBLE_LIMIT;
+  // Scroll the visible window so the selected item is always in view.
+  // Keep the selected item at the bottom edge when scrolling down.
+  let startIndex = 0;
+  if (selectedIndex >= VISIBLE_LIMIT) {
+    startIndex = selectedIndex - VISIBLE_LIMIT + 1;
+  }
+  const visible = items.slice(startIndex, startIndex + VISIBLE_LIMIT);
+  const hasMoreAbove = startIndex > 0;
+  const hasMoreBelow = items.length > startIndex + VISIBLE_LIMIT;
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -34,19 +41,25 @@ export function FilePicker({ items, selectedIndex, theme, query }: Props) {
             No matches
           </Text>
         )}
+        {hasMoreAbove && (
+          <Text color={theme.info.color} dimColor>
+            … {startIndex} more above
+          </Text>
+        )}
         {visible.map((item, i) => {
-          const isSelected = i === selectedIndex;
+          const actualIndex = startIndex + i;
+          const isSelected = actualIndex === selectedIndex;
           const label = item.isDirectory ? `${item.name}/` : item.name;
           return (
-            <Text key={item.name + i} color={isSelected ? theme.accent : undefined} bold={isSelected}>
+            <Text key={item.name + actualIndex} color={isSelected ? theme.accent : undefined} bold={isSelected}>
               {isSelected ? "› " : "  "}
               {label}
             </Text>
           );
         })}
-        {hasMore && (
+        {hasMoreBelow && (
           <Text color={theme.info.color} dimColor>
-            … and {items.length - VISIBLE_LIMIT} more
+            … {items.length - (startIndex + VISIBLE_LIMIT)} more below
           </Text>
         )}
       </Box>
