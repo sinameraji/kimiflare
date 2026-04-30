@@ -88,6 +88,18 @@ export class AgentOrchestrator {
     return this.getActiveSession().artifactStore;
   }
 
+  getLastAssistantMessage(role: AgentRole): string | null {
+    const session = this.sessions.get(role);
+    if (!session) return null;
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i];
+      if (m && m.role === "assistant" && typeof m.content === "string") {
+        return m.content;
+      }
+    }
+    return null;
+  }
+
   switchTo(role: AgentRole): void {
     this.activeRole = role;
     this.turnCounts.set(role, 0);

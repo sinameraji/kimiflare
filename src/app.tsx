@@ -1953,9 +1953,35 @@ function App({
           })();
           return true;
         }
+        if (sub === "diff" && rest[1] && rest[2]) {
+          const roleA = rest[1].toLowerCase();
+          const roleB = rest[2].toLowerCase();
+          const allRoles = ["plan", "build", "general", ...customNames];
+          if (!allRoles.includes(roleA) || !allRoles.includes(roleB)) {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent in diff command` }]);
+            return true;
+          }
+          const msgA = orchestratorRef.current?.getLastAssistantMessage(roleA);
+          const msgB = orchestratorRef.current?.getLastAssistantMessage(roleB);
+          if (!msgA || !msgB) {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `one or both agents have no assistant messages to compare` }]);
+            return true;
+          }
+          void (async () => {
+            const { createTwoFilesPatch } = await import("diff");
+            const patch = createTwoFilesPatch(roleA, roleB, msgA, msgB, "", "", { context: 2 });
+            const lines = patch.split("\n").slice(4).filter((l) => !l.startsWith("\\ No newline"));
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `diff: ${roleA} vs ${roleB}` },
+              ...lines.map((line) => ({ kind: "info" as const, key: mkKey(), text: line })),
+            ]);
+          })();
+          return true;
+        }
         const builtIn = "plan | build | general";
         const custom = customNames.length > 0 ? ` | ${customNames.join(" | ")}` : "";
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto | replay <role>` }]);
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto | replay <role> | diff <role1> <role2>` }]);
         return true;
       }
       if (c === "/plan") {
