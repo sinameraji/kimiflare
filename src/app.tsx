@@ -82,6 +82,106 @@ import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
+import { readFileSync } from "node:fs";
+
+/**
+ * Build a comprehensive ignore list for the @ file mention picker.
+ * Combines common noise patterns (dependencies, build output, caches, etc.)
+ * with patterns read from the project's .gitignore file.
+ */
+function buildFilePickerIgnoreList(cwd: string): string[] {
+  // Hardcoded common patterns that are almost never useful to mention
+  const hardcoded = [
+    // Dependencies
+    "node_modules/**",
+    "vendor/**",
+    ".bundle/**",
+    "bower_components/**",
+    // Version control
+    ".git/**",
+    ".svn/**",
+    ".hg/**",
+    // Build / output directories
+    "dist/**",
+    "build/**",
+    "out/**",
+    "public/**",
+    ".next/**",
+    ".nuxt/**",
+    ".svelte-kit/**",
+    ".vercel/**",
+    ".netlify/**",
+    "target/**",
+    "bin/**",
+    "obj/**",
+    "Debug/**",
+    "Release/**",
+    ".gradle/**",
+    // Caches
+    ".cache/**",
+    ".parcel-cache/**",
+    ".turbo/**",
+    ".eslintcache",
+    ".stylelintcache",
+    ".rpt2_cache/**",
+    ".rts2_cache/**",
+    // Temporary
+    "tmp/**",
+    "temp/**",
+    "*.tmp",
+    // Coverage
+    "coverage/**",
+    ".nyc_output/**",
+    // OS files
+    ".DS_Store",
+    "Thumbs.db",
+    // Logs
+    "*.log",
+    "logs/**",
+    // Lock files (auto-generated, usually huge)
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+    "Cargo.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "Pipfile.lock",
+    "poetry.lock",
+    "go.sum",
+    // Minified / source maps
+    "*.min.js",
+    "*.min.css",
+    "*.map",
+    // kimiflare internal
+    ".kimiflare/**",
+    // IDE (usually not relevant to mention)
+    ".idea/**",
+  ];
+
+  // Try to read .gitignore for project-specific ignores
+  const gitignorePatterns: string[] = [];
+  try {
+    const gitignorePath = join(cwd, ".gitignore");
+    const content = readFileSync(gitignorePath, "utf-8");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      // Convert directory patterns to glob recursive patterns
+      if (trimmed.endsWith("/")) {
+        gitignorePatterns.push(trimmed + "**");
+      } else {
+        gitignorePatterns.push(trimmed);
+        // Also add a directory variant in case it's a dir
+        gitignorePatterns.push(trimmed + "/**");
+      }
+    }
+  } catch {
+    // No .gitignore found — that's fine
+  }
+
+  return [...hardcoded, ...gitignorePatterns];
+}
 
 interface Cfg {
   accountId: string;
@@ -404,16 +504,7 @@ function App({
           const cwd = process.cwd();
           void fg("**/*", {
             cwd,
-            ignore: [
-              "node_modules/**",
-              ".git/**",
-              "dist/**",
-              ".kimiflare/**",
-              "coverage/**",
-              ".next/**",
-              "build/**",
-              "out/**",
-            ],
+            ignore: buildFilePickerIgnoreList(cwd),
             dot: false,
             absolute: false,
             onlyFiles: false,
