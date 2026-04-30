@@ -78,9 +78,11 @@ export function CustomTextInput({
 
   useEffect(() => {
     if (!focus) return;
-    if (controlledCursor !== undefined) return;
-    setInternalCursor((prev) => (prev > value.length ? value.length : prev));
-  }, [value, focus, controlledCursor]);
+    const next = cursorOffset > value.length ? value.length : cursorOffset;
+    if (next !== cursorOffset) {
+      setCursorOffset(next);
+    }
+  }, [value, focus, cursorOffset]);
 
   useInput(
     (input, key) => {
