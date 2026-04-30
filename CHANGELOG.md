@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.28.0](https://github.com/sinameraji/kimiflare/compare/v0.27.0...v0.28.0) (2026-04-30)
+
+
+### Features
+
+* add stay-in-the-loop and shipping-fast sections to README ([#195](https://github.com/sinameraji/kimiflare/issues/195)) ([bb499f2](https://github.com/sinameraji/kimiflare/commit/bb499f25a4ac4e8ae98221a1e17fb73b8eb913c5))
+* cost attribution by task type ([#196](https://github.com/sinameraji/kimiflare/issues/196)) ([#207](https://github.com/sinameraji/kimiflare/issues/207)) ([43d24d0](https://github.com/sinameraji/kimiflare/commit/43d24d0ed8119c806b2946309870c9b489655db1))
+* interrupt current turn with Ctrl+C or Escape without exiting session ([#208](https://github.com/sinameraji/kimiflare/issues/208)) ([3667b2e](https://github.com/sinameraji/kimiflare/commit/3667b2ed646793eb6f693181a486efa1e4ace9de))
+* **landing:** redesign with email capture, changelog, Cloudflare Pages ([ae7aaa2](https://github.com/sinameraji/kimiflare/commit/ae7aaa2ad190315f6aab7ae44b69c1e5ae497d1e))
+* **landing:** redesign with email capture, changelog, discord, cloudflare pages ([7384d48](https://github.com/sinameraji/kimiflare/commit/7384d487644ee040f6e9769a80aafa93c767ea57))
+
+
+### Bug Fixes
+
+* avoid isolated-vm build failure in Pages deploy ([20b763e](https://github.com/sinameraji/kimiflare/commit/20b763e3562e2e6fa9ad045657bb059226a08246))
+* avoid isolated-vm build failure in Pages deploy action ([7121e12](https://github.com/sinameraji/kimiflare/commit/7121e12ac0002103dfda85df18629cadcee1781e))
+* prevent perf_hooks memory leak in long-running TUI sessions ([#211](https://github.com/sinameraji/kimiflare/issues/211)) ([ae8845c](https://github.com/sinameraji/kimiflare/commit/ae8845cc8141d3580bd23395368b350eecfa23fb))
+
 ## [0.27.0](https://github.com/sinameraji/kimiflare/compare/v0.26.1...v0.27.0) (2026-04-29)
 
 
