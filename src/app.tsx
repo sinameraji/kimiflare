@@ -445,6 +445,20 @@ function App({
     });
   }, [cfg, setEvents]);
 
+  // Periodically clear performance marks to prevent perf_hooks buffer overflow
+  // in long-running sessions (react-devtools-core causes marks on every render).
+  useEffect(() => {
+    const id = setInterval(() => {
+      try {
+        performance.clearMarks();
+        performance.clearMeasures();
+      } catch {
+        // ignore — not all Node versions expose these globally
+      }
+    }, 300_000); // every 5 minutes
+    return () => clearInterval(id);
+  }, []);
+
   const reloadCustomCommands = useCallback(async () => {
     const { commands, warnings } = await loadCustomCommands(process.cwd());
     customCommandsRef.current = commands;
