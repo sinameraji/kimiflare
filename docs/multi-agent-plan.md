@@ -1,6 +1,6 @@
 # Multi-Agent System Implementation Plan
 
-**Status:** Phase 1 Complete → Phases 2-4 In Progress (Single PR #220)  
+**Status:** Phases 1-2 Complete → Phase 3 In Progress (Single PR #220)  
 **Feature Flag:** `multiAgent` (default: `false`)  
 **Env Override:** `KIMIFLARE_MULTI_AGENT=1`  
 **Branch:** `feat/multi-agent-system`
@@ -59,19 +59,19 @@ The multi-agent system introduces specialized agents with isolated message buffe
 
 ---
 
-### Phase 2: Automatic Orchestration 🔄 IN PROGRESS
+### Phase 2: Automatic Orchestration ✅ COMPLETE
 
 **Goal:** The system decides which agent should handle each turn based on intent classification.
 
 **Deliverables:**
-- [ ] Intent classifier (`src/agent/intent-classifier.ts`) — heuristic + optional LLM fallback
-- [ ] Auto-switching logic in `AgentOrchestrator.runTurn()`
-- [ ] `/agent auto` toggle command
-- [ ] Forced hand-off after configurable turn limit (default: 20)
-- [ ] User confirmation for auto-switches (configurable: `autoSwitchConfirm: true|false`)
-- [ ] Wire `agentModels[role]` into `runAgentTurn()`
-- [ ] Error handling in `synthesizeHandoff()` with fallback to raw transcript
-- [ ] Tests for intent classifier and auto-switching
+- [x] Intent classifier (`src/agent/intent-classifier.ts`) — heuristic (LLM fallback deferred to Phase 4)
+- [x] Auto-switching logic in `AgentOrchestrator.runTurn()`
+- [x] `/agent auto` toggle command
+- [x] Forced hand-off after configurable turn limit (default: 20)
+- [x] User confirmation for auto-switches (`autoSwitchConfirm` + `onAutoSwitchSuggestion` callback)
+- [x] Wire `agentModels[role]` into `runAgentTurn()`
+- [x] Error handling in `synthesizeHandoff()` with fallback to raw transcript
+- [x] Tests for intent classifier and auto-switching
 
 **Implementation Notes:**
 - Intent classifier should be lightweight (heuristic first, LLM fallback only for ambiguous cases)
@@ -112,7 +112,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 ### Start Here
 
 1. Read this doc fully — it is the source of truth
-2. Phase 1 is DONE. Start Phase 2.
+2. Phases 1-2 are DONE. Start Phase 3.
 3. All work stays on branch `feat/multi-agent-system` — do not create new branches
 
 ### Files: Finished (Don't Touch Without Discussion)
@@ -121,44 +121,40 @@ The multi-agent system introduces specialized agents with isolated message buffe
 |------|--------|-----|
 | `src/agent/agent-session.ts` | ✅ Complete | Clean abstraction, 100% tested |
 | `src/agent/agent-session.test.ts` | ✅ Complete | Covers tool subsets, determinism, session creation |
+| `src/agent/intent-classifier.ts` | ✅ Complete | Heuristic keyword classification with tie-breaking |
+| `src/agent/intent-classifier.test.ts` | ✅ Complete | Covers plan/build/general classification, thresholds |
+| `src/agent/orchestrator.ts` | ✅ Complete | Auto-routing, agentModels wiring, error handling, forced hand-off |
+| `src/agent/orchestrator.test.ts` | ✅ Complete | Auto-switching, forced hand-off, error recovery tests |
 | `src/config.ts` | ✅ Complete | All multi-agent fields added, validated |
 | `src/config.test.ts` | ✅ Complete | Model validation tests |
 | `src/sessions.ts` | ✅ Complete | `multiAgentState` field added |
 | `src/usage-tracker.ts` | ✅ Complete | `agentRole` field added |
 | `src/cost-debug.ts` | ✅ Complete | `agentRole` field added |
 | `src/memory/manager.ts` | ✅ Complete | `redactSecrets` exported |
+| `src/app.tsx` | ✅ Complete | `/agent auto` toggle, auto-switch UI feedback |
 
 ### Files: Intentionally Incomplete (Your Work)
 
 | File | What's Missing | Priority |
 |------|---------------|----------|
-| `src/agent/orchestrator.ts` | Auto-routing, `agentModels` wiring, error handling in `synthesizeHandoff()` | **P0** |
-| `src/agent/orchestrator.test.ts` | Tests for auto-switching, forced hand-off, error recovery | **P0** |
-| `src/app.tsx` | `/agent auto` command, auto-switch UI feedback | **P0** |
-| `src/agent/intent-classifier.ts` | **Does not exist yet** — create this | **P0** |
-| `src/agent/intent-classifier.test.ts` | **Does not exist yet** — create this | **P0** |
+| `src/agent/session-state.ts` | Per-agent artifact stores for compiled context | **P0** |
+| `src/memory/manager.ts` | Tag memories with agent role; recall filters by role | **P0** |
+| `src/cost-attribution/` | Category mapping (`plan` → `exploring-codebase`, `build` → `editing-source-code`) | **P1** |
+| `src/agent/orchestrator.ts` | Per-agent API generation for code mode (plan agent gets read-only API) | **P1** |
 
 ### Known Debt / Traps
 
-1. **`agentModels` is parsed but unused**
-   - Config has it, `AgentOrchestrator` ignores it
-   - Fix: In `runTurn()`, use `cfg.agentModels?.[role] ?? this.opts.model`
-
-2. **`synthesizeHandoff()` has no error handling**
-   - If `runKimi` throws, the whole hand-off crashes
-   - Fix: Wrap in try/catch, fallback to raw transcript on failure
-
-3. **Resume path creates a dummy orchestrator with no-op callbacks**
+1. **Resume path creates a dummy orchestrator with no-op callbacks**
    - In `handleResumePick`, a dummy orchestrator is instantiated just to call `deserialize()`
    - This is wasteful but harmless — could be refactored to a static method
 
-4. **`orchestratorModel` is not validated**
+2. **`orchestratorModel` is not validated**
    - If user sets an invalid model ID, it crashes at runtime during hand-off
    - Fix: Add validation in `loadConfig()` alongside `agentModels` validation
 
-5. **No forced turn limit**
-   - An agent could run indefinitely in one role
-   - Fix: Add turn counter per agent, auto-hand-off after threshold
+3. **LLM fallback for intent classifier**
+   - Currently heuristic only; LLM fallback mentioned in plan but deferred
+   - Can be added in Phase 4 if ambiguity becomes a real problem
 
 ### Testing Strategy
 
@@ -196,16 +192,16 @@ KIMIFLARE_MULTI_AGENT=1 npm run dev
 
 | Guardrail | Phase 1 | Phase 2 | Phase 3 | Phase 4 |
 |-----------|---------|---------|---------|---------|
-| CRIT-1 TypeScript strict | ✅ | TBD | TBD | TBD |
-| CRIT-2 Tests | ✅ | TBD | TBD | TBD |
-| CRIT-3 Build | ✅ | TBD | TBD | TBD |
+| CRIT-1 TypeScript strict | ✅ | ✅ | TBD | TBD |
+| CRIT-2 Tests | ✅ | ✅ | TBD | TBD |
+| CRIT-3 Build | ✅ | ✅ | TBD | TBD |
 | CRIT-6 Cache stability (sorted tools) | ✅ | — | — | — |
-| CRIT-7 CLI entry point unchanged | ✅ | — | — | — |
+| CRIT-7 CLI entry point unchanged | ✅ | ✅ | — | — |
 | HP-1 Token efficiency | ✅ | — | — | — |
-| HP-2 Agent loop safety | ✅ | — | — | — |
-| HP-4 Data integrity (additive format) | ✅ | — | — | — |
-| SEC-1 Secret redaction | ✅ | — | — | — |
-| CFG-1 Backward compatibility | ✅ | — | — | — |
+| HP-2 Agent loop safety | ✅ | ✅ | — | — |
+| HP-4 Data integrity (additive format) | ✅ | ✅ | — | — |
+| SEC-1 Secret redaction | ✅ | ✅ | — | — |
+| CFG-1 Backward compatibility | ✅ | ✅ | — | — |
 
 ---
 
