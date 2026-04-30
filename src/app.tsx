@@ -1037,7 +1037,7 @@ function App({
         updatedAt: new Date().toISOString(),
         messages: messagesRef.current,
         sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
-        artifactStore: serializeArtifactStore(artifactStoreRef.current),
+        artifactStore: cfg.multiAgent ? undefined : serializeArtifactStore(artifactStoreRef.current),
         multiAgentState: cfg.multiAgent ? orchestratorRef.current?.serialize() : undefined,
       });
     } catch {
@@ -1187,10 +1187,13 @@ function App({
     activeControllerRef.current = controller;
     try {
       if (compiledContextRef.current) {
+        const store = cfg?.multiAgent
+          ? orchestratorRef.current?.getActiveArtifactStore() ?? artifactStoreRef.current
+          : artifactStoreRef.current;
         const result = compactCompiled({
           messages: messagesRef.current,
           state: sessionStateRef.current,
-          store: artifactStoreRef.current,
+          store,
         });
         if (result.metrics.rawTurnsRemoved === 0) {
           setEvents((e) => [
@@ -2559,10 +2562,13 @@ function App({
         // LLM summarizer so users have a safety net regardless of the flag.
         if (shouldCompact({ messages: messagesRef.current })) {
           if (compiledContextRef.current) {
+            const store = cfg?.multiAgent
+              ? orchestratorRef.current?.getActiveArtifactStore() ?? artifactStoreRef.current
+              : artifactStoreRef.current;
             const result = compactCompiled({
               messages: messagesRef.current,
               state: sessionStateRef.current,
-              store: artifactStoreRef.current,
+              store,
             });
             if (result.metrics.rawTurnsRemoved > 0) {
               messagesRef.current = result.newMessages;

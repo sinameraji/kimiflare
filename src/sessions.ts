@@ -29,7 +29,7 @@ export interface SessionFile {
   /** Multi-agent session state (optional). */
   multiAgentState?: {
     activeRole: AgentRole;
-    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
+    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[]; artifactStore?: SerializedArtifact[] }>;
   };
 }
 

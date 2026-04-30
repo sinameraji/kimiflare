@@ -42,10 +42,11 @@ describe("getAgentTools", () => {
 });
 
 describe("createAgentSession", () => {
-  it("creates a session with empty messages and recentToolCalls", () => {
+  it("creates a session with empty messages, recentToolCalls, and artifactStore", () => {
     const session = createAgentSession("general");
     assert.strictEqual(session.role, "general");
     assert.deepStrictEqual(session.messages, []);
     assert.deepStrictEqual(session.recentToolCalls, []);
+    assert.ok(session.artifactStore, "should have an artifact store");
   });
 });

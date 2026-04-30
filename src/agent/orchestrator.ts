@@ -8,6 +8,7 @@ import { shouldCompact } from "./compaction.js";
 import { runKimi } from "./client.js";
 import type { AiGatewayOptions } from "./client.js";
 import { createAgentSession, getAgentTools, type AgentRole, type AgentSession } from "./agent-session.js";
+import { serializeArtifactStore, deserializeArtifactStore } from "./session-state.js";
 import { classifyIntent, shouldSwitchRole } from "./intent-classifier.js";
 
 export interface AgentOrchestratorOpts {
@@ -75,6 +76,10 @@ export class AgentOrchestrator {
 
   getActiveSession(): AgentSession {
     return this.sessions.get(this.activeRole)!;
+  }
+
+  getActiveArtifactStore(): import("./session-state.js").ArtifactStore {
+    return this.getActiveSession().artifactStore;
   }
 
   switchTo(role: AgentRole): void {
@@ -272,7 +277,7 @@ export class AgentOrchestrator {
     activeRole: AgentRole;
     autoSwitch: boolean;
     turnCounts: Record<AgentRole, number>;
-    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
+    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[]; artifactStore: ReturnType<typeof serializeArtifactStore> }>;
   } {
     return {
       activeRole: this.activeRole,
@@ -286,6 +291,7 @@ export class AgentOrchestrator {
         role,
         messages: session.messages,
         recentToolCalls: session.recentToolCalls,
+        artifactStore: serializeArtifactStore(session.artifactStore),
       })),
     };
   }
@@ -294,7 +300,7 @@ export class AgentOrchestrator {
     activeRole: AgentRole;
     autoSwitch?: boolean;
     turnCounts?: Record<AgentRole, number>;
-    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
+    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[]; artifactStore?: ReturnType<typeof serializeArtifactStore> }>;
   }): void {
     this.activeRole = data.activeRole;
     this.autoSwitch = data.autoSwitch ?? false;
@@ -308,6 +314,9 @@ export class AgentOrchestrator {
       if (session) {
         session.messages = agent.messages;
         session.recentToolCalls = agent.recentToolCalls;
+        if (agent.artifactStore) {
+          session.artifactStore = deserializeArtifactStore(agent.artifactStore);
+        }
       }
     }
   }

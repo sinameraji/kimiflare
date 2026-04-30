@@ -1,6 +1,7 @@
 import type { ChatMessage } from "./messages.js";
 import type { ToolSpec } from "../tools/registry.js";
 import { ALL_TOOLS } from "../tools/executor.js";
+import { ArtifactStore } from "./session-state.js";
 
 export type AgentRole = "plan" | "build" | "general";
 
@@ -8,6 +9,8 @@ export interface AgentSession {
   role: AgentRole;
   messages: ChatMessage[];
   recentToolCalls: string[];
+  /** Per-agent artifact store for compiled context. */
+  artifactStore: ArtifactStore;
 }
 
 /** Sorted tool names per role for cache-stable prompt prefixes. */
@@ -84,5 +87,6 @@ export function createAgentSession(role: AgentRole): AgentSession {
     role,
     messages: [],
     recentToolCalls: [],
+    artifactStore: new ArtifactStore(),
   };
 }
