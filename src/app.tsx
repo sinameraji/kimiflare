@@ -1968,14 +1968,18 @@ function App({
             return true;
           }
           void (async () => {
-            const { createTwoFilesPatch } = await import("diff");
-            const patch = createTwoFilesPatch(roleA, roleB, msgA, msgB, "", "", { context: 2 });
-            const lines = patch.split("\n").slice(4).filter((l) => !l.startsWith("\\ No newline"));
-            setEvents((e) => [
-              ...e,
-              { kind: "info", key: mkKey(), text: `diff: ${roleA} vs ${roleB}` },
-              ...lines.map((line) => ({ kind: "info" as const, key: mkKey(), text: line })),
-            ]);
+            try {
+              const { createTwoFilesPatch } = await import("diff");
+              const patch = createTwoFilesPatch(roleA, roleB, msgA, msgB, "", "", { context: 2 });
+              const lines = patch.split("\n").slice(4).filter((l) => !l.startsWith("\\ No newline"));
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: `diff: ${roleA} vs ${roleB}` },
+                ...lines.map((line) => ({ kind: "info" as const, key: mkKey(), text: line })),
+              ]);
+            } catch (err) {
+              setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `diff failed: ${(err as Error).message}` }]);
+            }
           })();
           return true;
         }
