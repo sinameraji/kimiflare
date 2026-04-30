@@ -23,6 +23,7 @@ export type TaskCategory =
   | "running-shell-commands"
   | "searching-code"
   | "searching-web"
+  | "exploring-codebase"
   | "other";
 
 export const ALL_CATEGORIES: TaskCategory[] = [
@@ -46,6 +47,7 @@ export const ALL_CATEGORIES: TaskCategory[] = [
   "running-shell-commands",
   "searching-code",
   "searching-web",
+  "exploring-codebase",
   "other",
 ];
 
