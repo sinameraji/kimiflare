@@ -1890,11 +1890,27 @@ function App({
         return true;
       }
       if (c === "/agent") {
-        if (!cfg?.multiAgent) {
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent is disabled. Enable it in config or set KIMIFLARE_MULTI_AGENT=1" }]);
+        const sub = rest[0]?.toLowerCase() ?? "";
+        if (sub === "on") {
+          if (!cfg) return true;
+          const next = { ...cfg, multiAgent: true };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent enabled. Restart session to activate orchestrator." }]);
           return true;
         }
-        const sub = rest[0]?.toLowerCase() ?? "";
+        if (sub === "off") {
+          if (!cfg) return true;
+          const next = { ...cfg, multiAgent: false };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent disabled." }]);
+          return true;
+        }
+        if (!cfg?.multiAgent) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent is disabled. Run /agent on to enable it." }]);
+          return true;
+        }
         if (!sub || sub === "status") {
           const role = orchestratorRef.current?.getActiveRole() ?? "general";
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `active agent: ${role}` }]);

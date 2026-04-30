@@ -168,6 +168,8 @@ const CATEGORIES: Category[] = [
     key: "multi-agent",
     label: "Multi-Agent",
     commands: [
+      { command: "/agent on", description: "enable multi-agent mode" },
+      { command: "/agent off", description: "disable multi-agent mode" },
       { command: "/agent status", description: "show active agent" },
       { command: "/agent plan", description: "switch to plan agent (read-only exploration)" },
       { command: "/agent build", description: "switch to build agent (full editing)" },
@@ -206,13 +208,11 @@ export function HelpMenu({ theme, themes, currentThemeName, customCommands, cost
   };
 
   if (page === "main") {
-    const items: { label: string; value: string; key: string }[] = CATEGORIES
-      .filter((cat) => cat.key !== "multi-agent" || multiAgentEnabled)
-      .map((cat) => ({
-        label: cat.label,
-        value: cat.key,
-        key: cat.key,
-      }));
+    const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
+      label: cat.key === "multi-agent" ? `${cat.label} ${multiAgentEnabled ? "· on" : "· off"}` : cat.label,
+      value: cat.key,
+      key: cat.key,
+    }));
     if (customs.length > 0) {
       items.push({ label: "Run custom commands", value: "custom", key: "custom" });
     }
