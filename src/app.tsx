@@ -271,6 +271,9 @@ interface Cfg {
     general?: ReasoningEffort;
   };
   orchestratorModel?: string;
+  autoSwitch?: boolean;
+  autoSwitchConfirm?: boolean;
+  maxTurnsPerAgent?: number;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -1540,6 +1543,8 @@ function App({
               executor: executorRef.current,
               mcpTools: mcpToolsRef.current,
               lspTools: lspToolsRef.current,
+              autoSwitch: cfg.autoSwitch ?? false,
+              autoSwitchConfirm: cfg.autoSwitchConfirm ?? false,
             });
           }
           orchestratorRef.current.deserialize(file.multiAgentState);
@@ -1920,7 +1925,19 @@ function App({
           })();
           return true;
         }
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /agent plan | build | general | status" }]);
+        if (sub === "auto") {
+          const current = orchestratorRef.current?.getAutoSwitch() ?? false;
+          const next = !current;
+          orchestratorRef.current?.setAutoSwitch(next);
+          if (cfg) {
+            const nextCfg = { ...cfg, autoSwitch: next };
+            setCfg(nextCfg);
+            void saveConfig(nextCfg).catch(() => {});
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `auto-switch ${next ? "enabled" : "disabled"}` }]);
+          return true;
+        }
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /agent plan | build | general | status | auto" }]);
         return true;
       }
       if (c === "/plan") {
@@ -2487,6 +2504,14 @@ function App({
               executor: executorRef.current,
               mcpTools: mcpToolsRef.current,
               lspTools: lspToolsRef.current,
+              autoSwitch: cfg.autoSwitch ?? false,
+              autoSwitchConfirm: cfg.autoSwitchConfirm ?? false,
+              onAutoSwitchSuggestion: (from, to, reason) => {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: `suggested switch: ${from} → ${to} (${reason}). Run /agent ${to} to switch.` },
+                ]);
+              },
             });
           }
           await orchestratorRef.current.runTurn({ role: "user", content });

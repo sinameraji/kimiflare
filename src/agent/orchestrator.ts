@@ -8,6 +8,7 @@ import { shouldCompact } from "./compaction.js";
 import { runKimi } from "./client.js";
 import type { AiGatewayOptions } from "./client.js";
 import { createAgentSession, getAgentTools, type AgentRole, type AgentSession } from "./agent-session.js";
+import { classifyIntent, shouldSwitchRole } from "./intent-classifier.js";
 
 export interface AgentOrchestratorOpts {
   accountId: string;
@@ -28,6 +29,20 @@ export interface AgentOrchestratorOpts {
   executor: import("../tools/executor.js").ToolExecutor;
   mcpTools: ToolSpec[];
   lspTools: ToolSpec[];
+  /** Per-agent model overrides. Falls back to the global model if not specified. */
+  agentModels?: {
+    plan?: string;
+    build?: string;
+    general?: string;
+  };
+  /** Enable automatic agent switching based on intent classification. Default: false. */
+  autoSwitch?: boolean;
+  /** Ask for user confirmation before auto-switching agents. When true, the orchestrator emits a suggestion instead of switching. Default: false. */
+  autoSwitchConfirm?: boolean;
+  /** Callback fired when an auto-switch is suggested but needs confirmation. Only used when autoSwitchConfirm is true. */
+  onAutoSwitchSuggestion?: (from: AgentRole, to: AgentRole, reason: string) => void;
+  /** Maximum turns per agent before forced hand-off. Default: 20. */
+  maxTurnsPerAgent?: number;
 }
 
 const HANDOFF_SYSTEM = `You are synthesizing a concise hand-off summary for another specialized agent. Summarize the key context, decisions, and open tasks from the previous agent's work so the next agent can continue effectively. Be terse. Include file paths and specific details that matter. Do not include pleasantries.`;
@@ -36,12 +51,22 @@ export class AgentOrchestrator {
   private sessions: Map<AgentRole, AgentSession> = new Map();
   private activeRole: AgentRole = "general";
   private opts: AgentOrchestratorOpts;
+  private autoSwitch: boolean;
+  private autoSwitchConfirm: boolean;
+  private maxTurnsPerAgent: number;
+  private turnCounts: Map<AgentRole, number> = new Map();
 
   constructor(opts: AgentOrchestratorOpts) {
     this.opts = opts;
+    this.autoSwitch = opts.autoSwitch ?? false;
+    this.autoSwitchConfirm = opts.autoSwitchConfirm ?? false;
+    this.maxTurnsPerAgent = opts.maxTurnsPerAgent ?? 20;
     this.sessions.set("plan", createAgentSession("plan"));
     this.sessions.set("build", createAgentSession("build"));
     this.sessions.set("general", createAgentSession("general"));
+    this.turnCounts.set("plan", 0);
+    this.turnCounts.set("build", 0);
+    this.turnCounts.set("general", 0);
   }
 
   getActiveRole(): AgentRole {
@@ -54,6 +79,15 @@ export class AgentOrchestrator {
 
   switchTo(role: AgentRole): void {
     this.activeRole = role;
+    this.turnCounts.set(role, 0);
+  }
+
+  setAutoSwitch(enabled: boolean): void {
+    this.autoSwitch = enabled;
+  }
+
+  getAutoSwitch(): boolean {
+    return this.autoSwitch;
   }
 
   private getToolsForRole(role: AgentRole): ToolSpec[] {
@@ -104,49 +138,93 @@ export class AgentOrchestrator {
       })
       .join("\n");
 
-    let summary = "";
-    const events = runKimi({
-      accountId: this.opts.accountId,
-      apiToken: this.opts.apiToken,
-      model: this.opts.orchestratorModel,
-      messages: [
-        { role: "system", content: HANDOFF_SYSTEM },
-        {
-          role: "user",
-          content: `Previous ${fromRole} agent transcript:\n${transcript}\n\nSynthesize a hand-off summary for the ${toRole} agent.`,
-        },
-      ],
-      signal: this.opts.signal,
-      temperature: 0.1,
-      reasoningEffort: "low",
-      gateway: this.opts.gateway,
-    });
+    try {
+      let summary = "";
+      const events = runKimi({
+        accountId: this.opts.accountId,
+        apiToken: this.opts.apiToken,
+        model: this.opts.orchestratorModel,
+        messages: [
+          { role: "system", content: HANDOFF_SYSTEM },
+          {
+            role: "user",
+            content: `Previous ${fromRole} agent transcript:\n${transcript}\n\nSynthesize a hand-off summary for the ${toRole} agent.`,
+          },
+        ],
+        signal: this.opts.signal,
+        temperature: 0.1,
+        reasoningEffort: "low",
+        gateway: this.opts.gateway,
+      });
 
-    for await (const ev of events) {
-      if (ev.type === "text") summary += ev.delta;
-      if (this.opts.signal.aborted) throw new DOMException("aborted", "AbortError");
+      for await (const ev of events) {
+        if (ev.type === "text") summary += ev.delta;
+        if (this.opts.signal.aborted) throw new DOMException("aborted", "AbortError");
+      }
+
+      return redactSecrets(summary.trim());
+    } catch (err) {
+      // Fallback: return raw transcript on synthesis failure
+      const fallback = `[${fromRole} agent work — synthesis failed, using raw transcript]\n${transcript.slice(0, 2000)}`;
+      return redactSecrets(fallback);
     }
-
-    return redactSecrets(summary.trim());
   }
 
   async runTurn(userMessage: ChatMessage): Promise<void> {
     const session = this.getActiveSession();
 
-    // If switching from another agent, synthesize hand-off
-    // For now, hand-offs are triggered explicitly by slash commands in app.tsx
-    // This method just runs a turn for the current active agent
+    // Auto-switching: classify intent on user messages
+    if (this.autoSwitch && userMessage.role === "user") {
+      const content = typeof userMessage.content === "string" ? userMessage.content : "";
+      const classification = classifyIntent({ text: content });
+      const targetRole = shouldSwitchRole(this.activeRole, classification);
+
+      if (targetRole && targetRole !== this.activeRole) {
+        const fromRole = this.activeRole;
+        if (this.autoSwitchConfirm) {
+          this.opts.onAutoSwitchSuggestion?.(fromRole, targetRole, `Detected ${classification.role} intent (${classification.method}, confidence ${(classification.confidence * 100).toFixed(0)}%)`);
+        } else {
+          const summary = await this.synthesizeHandoff(fromRole, targetRole);
+          this.activeRole = targetRole;
+          const newSession = this.getActiveSession();
+          if (summary) {
+            newSession.messages.push({
+              role: "system",
+              content: `[hand-off from ${fromRole} agent]\n${summary}`,
+            });
+          }
+          this.turnCounts.set(targetRole, 0);
+        }
+      }
+    }
+
+    // Forced hand-off: if turn count exceeds threshold, switch to general
+    const currentTurns = this.turnCounts.get(this.activeRole) ?? 0;
+    if (currentTurns >= this.maxTurnsPerAgent) {
+      const fromRole = this.activeRole;
+      const summary = await this.synthesizeHandoff(fromRole, "general");
+      this.activeRole = "general";
+      const generalSession = this.getActiveSession();
+      if (summary) {
+        generalSession.messages.push({
+          role: "system",
+          content: `[hand-off from ${fromRole} agent — forced after ${currentTurns} turns]\n${summary}`,
+        });
+      }
+      this.turnCounts.set("general", 0);
+    }
 
     await this.maybeCompact(session);
 
     session.messages.push(userMessage);
 
     const tools = this.getToolsForRole(this.activeRole);
+    const model = this.opts.agentModels?.[this.activeRole] ?? this.opts.model;
 
     await runAgentTurn({
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.model,
+      model,
       gateway: this.opts.gateway,
       messages: session.messages,
       tools: [...tools, ...this.opts.mcpTools],
@@ -167,6 +245,9 @@ export class AgentOrchestrator {
 
     // Update recentToolCalls from the session (runAgentTurn mutates it)
     session.recentToolCalls = session.recentToolCalls.slice(-8);
+
+    // Increment turn count
+    this.turnCounts.set(this.activeRole, (this.turnCounts.get(this.activeRole) ?? 0) + 1);
   }
 
   async handOff(toRole: AgentRole): Promise<string> {
@@ -189,10 +270,18 @@ export class AgentOrchestrator {
 
   serialize(): {
     activeRole: AgentRole;
+    autoSwitch: boolean;
+    turnCounts: Record<AgentRole, number>;
     agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
   } {
     return {
       activeRole: this.activeRole,
+      autoSwitch: this.autoSwitch,
+      turnCounts: {
+        plan: this.turnCounts.get("plan") ?? 0,
+        build: this.turnCounts.get("build") ?? 0,
+        general: this.turnCounts.get("general") ?? 0,
+      },
       agents: Array.from(this.sessions.entries()).map(([role, session]) => ({
         role,
         messages: session.messages,
@@ -203,9 +292,17 @@ export class AgentOrchestrator {
 
   deserialize(data: {
     activeRole: AgentRole;
+    autoSwitch?: boolean;
+    turnCounts?: Record<AgentRole, number>;
     agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
   }): void {
     this.activeRole = data.activeRole;
+    this.autoSwitch = data.autoSwitch ?? false;
+    if (data.turnCounts) {
+      for (const [role, count] of Object.entries(data.turnCounts)) {
+        this.turnCounts.set(role as AgentRole, count);
+      }
+    }
     for (const agent of data.agents) {
       const session = this.sessions.get(agent.role);
       if (session) {

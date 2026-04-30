@@ -80,6 +80,12 @@ export interface KimiConfig {
   };
   /** Model used for orchestrator synthesis (hand-off summaries). Defaults to plumbingModel. */
   orchestratorModel?: string;
+  /** Enable automatic agent switching based on intent classification. Default: false. */
+  autoSwitch?: boolean;
+  /** Ask for user confirmation before auto-switching agents. Default: false. */
+  autoSwitchConfirm?: boolean;
+  /** Maximum turns per agent before forced hand-off. Default: 20. */
+  maxTurnsPerAgent?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
