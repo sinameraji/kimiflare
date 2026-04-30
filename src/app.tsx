@@ -2831,6 +2831,7 @@ function App({
             .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
             .map((c) => ({ name: c.name, description: c.description }))}
           costAttributionEnabled={cfg?.costAttribution}
+          multiAgentEnabled={cfg?.multiAgent}
           onDone={() => setShowHelpMenu(false)}
           onCommand={handleHelpCommand}
         />

@@ -14,6 +14,7 @@ interface Props {
   currentThemeName: string;
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
+  multiAgentEnabled?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -32,7 +33,8 @@ type Page =
   | "info"
   | "config"
   | "commands"
-  | "custom";
+  | "custom"
+  | "multi-agent";
 
 interface CommandItem {
   command: string;
@@ -162,6 +164,20 @@ const CATEGORIES: Category[] = [
       { command: "filePicker", description: "enable with KIMIFLARE_FILE_PICKER=1 or filePicker: true in config", selectable: false },
     ],
   },
+  {
+    key: "multi-agent",
+    label: "Multi-Agent",
+    commands: [
+      { command: "/agent status", description: "show active agent" },
+      { command: "/agent plan", description: "switch to plan agent (read-only exploration)" },
+      { command: "/agent build", description: "switch to build agent (full editing)" },
+      { command: "/agent general", description: "switch to general agent (chat & coordination)" },
+      { command: "/agent auto", description: "toggle automatic agent switching" },
+      { command: "/agent replay <role>", description: "re-run an agent's turns", selectable: false },
+      { command: "/agent diff <a> <b>", description: "compare last outputs of two agents", selectable: false },
+      { command: "customAgents", description: "define in config: [{name, tools, model, systemPrompt}]", selectable: false },
+    ],
+  },
 ];
 
 const SINGLE_COMMANDS: CommandItem[] = [
@@ -170,7 +186,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, multiAgentEnabled, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 
@@ -190,11 +206,13 @@ export function HelpMenu({ theme, themes, currentThemeName, customCommands, cost
   };
 
   if (page === "main") {
-    const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
-      label: cat.label,
-      value: cat.key,
-      key: cat.key,
-    }));
+    const items: { label: string; value: string; key: string }[] = CATEGORIES
+      .filter((cat) => cat.key !== "multi-agent" || multiAgentEnabled)
+      .map((cat) => ({
+        label: cat.label,
+        value: cat.key,
+        key: cat.key,
+      }));
     if (customs.length > 0) {
       items.push({ label: "Run custom commands", value: "custom", key: "custom" });
     }
