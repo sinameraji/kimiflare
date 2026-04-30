@@ -137,7 +137,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
 /** Validate that a model ID looks like a legitimate Cloudflare Workers AI model.
  *  Prevents path traversal via malicious model strings. */
-function validateModelId(model: string): void {
+export function validateModelId(model: string): void {
   // Cloudflare model IDs: @namespace/name or @namespace/name/version
   // Allowed chars: @ a-z A-Z 0-9 _ - . /
   if (!/^@[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(model)) {

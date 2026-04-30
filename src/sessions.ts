@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChatMessage } from "./agent/messages.js";
 import type { SessionState, SerializedArtifact } from "./agent/session-state.js";
+import type { AgentRole } from "./agent/agent-session.js";
 import { listFilesByMtime, pruneFiles, RETENTION } from "./storage-limits.js";
 
 export interface SessionSummary {
@@ -25,6 +26,11 @@ export interface SessionFile {
   sessionState?: SessionState;
   /** Persisted artifact store for recalled raw tool outputs (optional). */
   artifactStore?: SerializedArtifact[];
+  /** Multi-agent session state (optional). */
+  multiAgentState?: {
+    activeRole: AgentRole;
+    agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[] }>;
+  };
 }
 
 function sessionsDir(): string {

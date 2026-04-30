@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { validateModelId } from "./agent/client.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
@@ -63,6 +64,22 @@ export interface KimiConfig {
   costAttribution?: boolean;
   /** Enable @ file mention picker in chat input. Default: false. */
   filePicker?: boolean;
+  /** Enable multi-agent system with specialized plan/build/general agents. Default: false. */
+  multiAgent?: boolean;
+  /** Per-agent model overrides. Falls back to the global model if not specified. */
+  agentModels?: {
+    plan?: string;
+    build?: string;
+    general?: string;
+  };
+  /** Per-agent reasoning effort overrides. */
+  agentReasoningEffort?: {
+    plan?: ReasoningEffort;
+    build?: ReasoningEffort;
+    general?: ReasoningEffort;
+  };
+  /** Model used for orchestrator synthesis (hand-off summaries). Defaults to plumbingModel. */
+  orchestratorModel?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -126,6 +143,21 @@ function readGatewayMetadataEnv(): Record<string, string | number | boolean> | u
   }
 }
 
+function validateAgentModels(models: KimiConfig["agentModels"]): NonNullable<KimiConfig["agentModels"]> {
+  if (!models) return {};
+  const out: NonNullable<KimiConfig["agentModels"]> = {};
+  for (const [role, model] of Object.entries(models)) {
+    if (!model) continue;
+    try {
+      validateModelId(model);
+      (out as Record<string, string>)[role] = model;
+    } catch {
+      console.warn(`[kimiflare] Invalid agentModels.${role}: "${model}" — falling back to default model`);
+    }
+  }
+  return out;
+}
+
 export async function loadConfig(): Promise<KimiConfig | null> {
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
@@ -159,6 +191,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
+  const envMultiAgent = readBooleanEnv("KIMIFLARE_MULTI_AGENT");
 
   if (envAccount && envToken) {
     return {
@@ -187,6 +220,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? false,
+      multiAgent: envMultiAgent ?? false,
     };
   }
 
@@ -222,6 +256,10 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? false,
+        multiAgent: envMultiAgent ?? parsed.multiAgent ?? false,
+        agentModels: validateAgentModels(parsed.agentModels),
+        agentReasoningEffort: parsed.agentReasoningEffort,
+        orchestratorModel: parsed.orchestratorModel,
       };
     }
   } catch {

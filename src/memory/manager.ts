@@ -69,7 +69,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\b[0-9a-f]{32,64}\b/g, replacement: "[REDACTED_HEX_KEY]" },
 ];
 
-function redactSecrets(text: string): string {
+export function redactSecrets(text: string): string {
   let result = text;
   for (const { pattern, replacement } of SECRET_PATTERNS) {
     result = result.replace(pattern, replacement);

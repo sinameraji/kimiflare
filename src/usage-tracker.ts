@@ -37,6 +37,8 @@ export interface SessionUsage {
   classifiedAt?: string;
   summary?: string;
   tags?: string[];
+  /** Agent role for multi-agent sessions. */
+  agentRole?: string;
 }
 
 export interface GatewayUsageSnapshot {
@@ -193,6 +195,7 @@ export async function recordUsage(
   sessionId: string,
   usage: Usage,
   gateway?: GatewayUsageLookup,
+  agentRole?: string,
 ): Promise<void> {
   const log = pruneUsageLog(await loadLog());
   const date = today();
@@ -214,6 +217,7 @@ export async function recordUsage(
   }
 
   const session = getOrCreateSession(log, sessionId, date);
+  if (agentRole) session.agentRole = agentRole;
   session.promptTokens += usage.prompt_tokens;
   session.completionTokens += usage.completion_tokens;
   session.cachedTokens += usage.prompt_tokens_details?.cached_tokens ?? 0;

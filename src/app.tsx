@@ -5,6 +5,8 @@ import SelectInput from "ink-select-input";
 import { runAgentTurn } from "./agent/loop.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
+import { AgentOrchestrator } from "./agent/orchestrator.js";
+import type { AgentRole } from "./agent/agent-session.js";
 import { compactMessages } from "./agent/compact.js";
 import {
   compactMessages as compactCompiled,
@@ -257,6 +259,18 @@ interface Cfg {
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
   costAttribution?: boolean;
   filePicker?: boolean;
+  multiAgent?: boolean;
+  agentModels?: {
+    plan?: string;
+    build?: string;
+    general?: string;
+  };
+  agentReasoningEffort?: {
+    plan?: ReasoningEffort;
+    build?: ReasoningEffort;
+    general?: ReasoningEffort;
+  };
+  orchestratorModel?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -386,6 +400,7 @@ const BUILTIN_COMMAND_NAMES = new Set([
   "exit", "quit", "clear", "reasoning", "cost", "model", "thinking", "effort",
   "theme", "mode", "plan", "auto", "edit", "resume", "compact", "init",
   "update", "mcp", "logout", "help", "memory", "gateway", "hello", "community",
+  "agent",
 ]);
 
 const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
@@ -490,6 +505,7 @@ function App({
   const lspInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
+  const orchestratorRef = useRef<AgentOrchestrator | null>(null);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -1019,6 +1035,7 @@ function App({
         messages: messagesRef.current,
         sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
         artifactStore: serializeArtifactStore(artifactStoreRef.current),
+        multiAgentState: cfg.multiAgent ? orchestratorRef.current?.serialize() : undefined,
       });
     } catch {
       /* non-fatal */
@@ -1489,6 +1506,44 @@ function App({
         } else {
           artifactStoreRef.current = new ArtifactStore();
         }
+        if (file.multiAgentState && cfg?.multiAgent) {
+          if (!orchestratorRef.current) {
+            orchestratorRef.current = new AgentOrchestrator({
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              model: cfg.model,
+              orchestratorModel: cfg.orchestratorModel ?? cfg.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
+              gateway: gatewayFromConfig(cfg),
+              cwd: process.cwd(),
+              signal: new AbortController().signal,
+              reasoningEffort: effortRef.current,
+              coauthor: cfg.coauthor !== false ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" } : undefined,
+              sessionId: file.id,
+              memoryManager: memoryManagerRef.current,
+              keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+              codeMode,
+              callbacks: {
+                onAssistantStart: () => {},
+                onReasoningDelta: () => {},
+                onTextDelta: () => {},
+                onToolCallStart: () => {},
+                onToolCallArgs: () => {},
+                onToolCallFinalized: () => {},
+                onUsage: () => {},
+                onUsageFinal: () => {},
+                onGatewayMeta: () => {},
+                onAssistantFinal: () => {},
+                onToolResult: () => {},
+                onTasks: () => {},
+                askPermission: async () => "allow",
+              },
+              executor: executorRef.current,
+              mcpTools: mcpToolsRef.current,
+              lspTools: lspToolsRef.current,
+            });
+          }
+          orchestratorRef.current.deserialize(file.multiAgentState);
+        }
 
         // Recall memories for resumed session so the model has context
         const manager = memoryManagerRef.current;
@@ -1582,6 +1637,7 @@ function App({
         sessionStateRef.current = emptySessionState();
         artifactStoreRef.current = new ArtifactStore();
         executorRef.current.clearArtifacts();
+        orchestratorRef.current = null;
         setEvents([]);
         setUsage(null);
         setSessionUsage(null);
@@ -1829,6 +1885,42 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto" },
         ]);
+        return true;
+      }
+      if (c === "/agent") {
+        if (!cfg?.multiAgent) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent is disabled. Enable it in config or set KIMIFLARE_MULTI_AGENT=1" }]);
+          return true;
+        }
+        const sub = rest[0]?.toLowerCase() ?? "";
+        if (!sub || sub === "status") {
+          const role = orchestratorRef.current?.getActiveRole() ?? "general";
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `active agent: ${role}` }]);
+          return true;
+        }
+        if (sub === "plan" || sub === "build" || sub === "general") {
+          const role = sub as AgentRole;
+          const fromRole = orchestratorRef.current?.getActiveRole();
+          if (fromRole === role) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `already on ${role} agent` }]);
+            return true;
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `switching to ${role} agent...` }]);
+          void (async () => {
+            try {
+              const summary = await orchestratorRef.current?.handOff(role);
+              if (summary) {
+                setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `hand-off summary: ${summary.slice(0, 200)}${summary.length > 200 ? "..." : ""}` }]);
+              } else {
+                setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `switched to ${role} agent` }]);
+              }
+            } catch (err) {
+              setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `hand-off failed: ${(err as Error).message}` }]);
+            }
+          })();
+          return true;
+        }
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /agent plan | build | general | status" }]);
         return true;
       }
       if (c === "/plan") {
@@ -2254,142 +2346,187 @@ function App({
       const controller = new AbortController();
       activeControllerRef.current = controller;
 
-      try {
-        await runAgentTurn({
-          accountId: cfg.accountId,
-          apiToken: cfg.apiToken,
-          model: overrideModel ?? cfg.model,
-          gateway: gatewayFromConfig(cfg),
-          messages: messagesRef.current,
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-          executor: executorRef.current,
-          cwd: process.cwd(),
-          signal: controller.signal,
-          reasoningEffort: overrideEffort ?? effortRef.current,
-          coauthor:
-            cfg.coauthor !== false
-              ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
-              : undefined,
-          sessionId: ensureSessionId(),
-          memoryManager: memoryManagerRef.current,
-          keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-          codeMode,
-          onFileChange: (path, content) => {
-            if (content) {
-              lspManagerRef.current.notifyChange(path, content);
-            } else {
-              void import("node:fs/promises").then(({ readFile }) =>
-                readFile(path, "utf8")
-                  .then((c) => lspManagerRef.current.notifyChange(path, c))
-                  .catch(() => {}),
-              );
+      const sharedCallbacks = {
+        onAssistantStart: () => {
+          const id = nextAssistantId++;
+          activeAsstIdRef.current = id;
+          setEvents((e) => [
+            ...e,
+            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+          ]);
+        },
+        onReasoningDelta: (d: string) => {
+          const id = activeAsstIdRef.current;
+          if (id !== null) updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
+        },
+        onTextDelta: (d: string) => {
+          const id = activeAsstIdRef.current;
+          if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
+        },
+        onAssistantFinal: () => {
+          const id = activeAsstIdRef.current;
+          if (id !== null) updateAssistant(id, () => ({ streaming: false }));
+        },
+        onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
+          pendingToolCallsRef.current.set(call.id, call.function.name);
+          const spec = executorRef.current.list().find((t) => t.name === call.function.name);
+          let renderMeta: ToolRender | undefined;
+          try {
+            const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+            renderMeta = spec?.render?.(args);
+          } catch {
+            /* ignore render failure */
+          }
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "tool",
+              key: `tool_${call.id}`,
+              id: call.id,
+              name: call.function.name,
+              args: call.function.arguments,
+              status: "running",
+              render: renderMeta,
+              expanded: false,
+            },
+          ]);
+        },
+        onToolResult: (r: import("./tools/executor.js").ToolResult) => {
+          pendingToolCallsRef.current.delete(r.tool_call_id);
+          updateTool(r.tool_call_id, {
+            status: r.ok ? "done" : "error",
+            result: r.content,
+          });
+        },
+        onUsage: (u: Usage) => {
+          usageRef.current = u;
+          setUsage(u);
+        },
+        onUsageFinal: (u: Usage, meta?: GatewayMeta) => {
+          const sid = ensureSessionId();
+          const role = cfg.multiAgent ? orchestratorRef.current?.getActiveRole() : undefined;
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), role);
+          void getCostReport(sid).then((report) => setSessionUsage(report.session));
+        },
+        onGatewayMeta: updateGatewayMeta,
+        onTasks: (nextTasks: Task[]) => {
+          const prevEmpty = tasksRef.current.length === 0;
+          const prevAllDone =
+            tasksRef.current.length > 0 &&
+            tasksRef.current.every((t) => t.status === "completed");
+          tasksRef.current = nextTasks;
+          setTasks(nextTasks);
+          if ((prevEmpty || prevAllDone) && nextTasks.length > 0) {
+            setTasksStartedAt(Date.now());
+            setTasksStartTokens(usageRef.current?.prompt_tokens ?? 0);
+          }
+          if (nextTasks.length === 0) {
+            setTasksStartedAt(null);
+            setTasksStartTokens(0);
+          }
+        },
+        askPermission: (req: import("./tools/executor.js").PermissionRequest) =>
+          new Promise<PermissionDecision>((resolve) => {
+            if (modeRef.current === "auto") {
+              resolve("allow");
+              return;
             }
-          },
-          callbacks: {
-            onAssistantStart: () => {
-              const id = nextAssistantId++;
-              activeAsstIdRef.current = id;
-              setEvents((e) => [
-                ...e,
-                { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
-              ]);
-            },
-            onReasoningDelta: (d) => {
-              const id = activeAsstIdRef.current;
-              if (id !== null) updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
-            },
-            onTextDelta: (d) => {
-              const id = activeAsstIdRef.current;
-              if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
-            },
-            onAssistantFinal: () => {
-              const id = activeAsstIdRef.current;
-              if (id !== null) updateAssistant(id, () => ({ streaming: false }));
-            },
-            onToolCallFinalized: (call) => {
-              pendingToolCallsRef.current.set(call.id, call.function.name);
-              const spec = executorRef.current.list().find((t) => t.name === call.function.name);
-              let renderMeta: ToolRender | undefined;
-              try {
-                const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-                renderMeta = spec?.render?.(args);
-              } catch {
-                /* ignore render failure */
+            if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+              if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
+                resolve("allow");
+                return;
               }
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "tool",
-                  key: `tool_${call.id}`,
-                  id: call.id,
-                  name: call.function.name,
-                  args: call.function.arguments,
-                  status: "running",
-                  render: renderMeta,
-                  expanded: false,
+                  kind: "info",
+                  key: mkKey(),
+                  text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
                 },
               ]);
-            },
-            onToolResult: (r) => {
-              pendingToolCallsRef.current.delete(r.tool_call_id);
-              updateTool(r.tool_call_id, {
-                status: r.ok ? "done" : "error",
-                result: r.content,
-              });
-            },
-            onUsage: (u) => {
-              usageRef.current = u;
-              setUsage(u);
-            },
-            onUsageFinal: (u, meta) => {
-              const sid = ensureSessionId();
-              void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
-              void getCostReport(sid).then((report) => setSessionUsage(report.session));
-            },
-            onGatewayMeta: updateGatewayMeta,
-            onTasks: (nextTasks) => {
-              const prevEmpty = tasksRef.current.length === 0;
-              const prevAllDone =
-                tasksRef.current.length > 0 &&
-                tasksRef.current.every((t) => t.status === "completed");
-              tasksRef.current = nextTasks;
-              setTasks(nextTasks);
-              if ((prevEmpty || prevAllDone) && nextTasks.length > 0) {
-                setTasksStartedAt(Date.now());
-                setTasksStartTokens(usageRef.current?.prompt_tokens ?? 0);
-              }
-              if (nextTasks.length === 0) {
-                setTasksStartedAt(null);
-                setTasksStartTokens(0);
-              }
-            },
-            askPermission: (req) =>
-              new Promise<PermissionDecision>((resolve) => {
-                if (modeRef.current === "auto") {
-                  resolve("allow");
-                  return;
+              resolve("deny");
+              return;
+            }
+            permResolveRef.current = resolve;
+            setPerm({ tool: req.tool, args: req.args, resolve });
+          }),
+      };
+
+      try {
+        if (cfg.multiAgent) {
+          if (!orchestratorRef.current) {
+            orchestratorRef.current = new AgentOrchestrator({
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              model: overrideModel ?? cfg.model,
+              orchestratorModel: cfg.orchestratorModel ?? cfg.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
+              gateway: gatewayFromConfig(cfg),
+              cwd: process.cwd(),
+              signal: controller.signal,
+              reasoningEffort: overrideEffort ?? effortRef.current,
+              coauthor:
+                cfg.coauthor !== false
+                  ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
+                  : undefined,
+              sessionId: ensureSessionId(),
+              memoryManager: memoryManagerRef.current,
+              keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+              codeMode,
+              onFileChange: (path, content) => {
+                if (content) {
+                  lspManagerRef.current.notifyChange(path, content);
+                } else {
+                  void import("node:fs/promises").then(({ readFile }) =>
+                    readFile(path, "utf8")
+                      .then((c) => lspManagerRef.current.notifyChange(path, c))
+                      .catch(() => {}),
+                  );
                 }
-                if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
-                  if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
-                    resolve("allow");
-                    return;
-                  }
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "info",
-                      key: mkKey(),
-                      text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
-                    },
-                  ]);
-                  resolve("deny");
-                  return;
-                }
-                permResolveRef.current = resolve;
-                setPerm({ tool: req.tool, args: req.args, resolve });
-              }),
-          },
-        });
+              },
+              callbacks: sharedCallbacks,
+              executor: executorRef.current,
+              mcpTools: mcpToolsRef.current,
+              lspTools: lspToolsRef.current,
+            });
+          }
+          await orchestratorRef.current.runTurn({ role: "user", content });
+          // Sync active agent messages to messagesRef for session saving
+          const activeSession = orchestratorRef.current.getActiveSession();
+          messagesRef.current = activeSession.messages.slice();
+        } else {
+          await runAgentTurn({
+            accountId: cfg.accountId,
+            apiToken: cfg.apiToken,
+            model: overrideModel ?? cfg.model,
+            gateway: gatewayFromConfig(cfg),
+            messages: messagesRef.current,
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            executor: executorRef.current,
+            cwd: process.cwd(),
+            signal: controller.signal,
+            reasoningEffort: overrideEffort ?? effortRef.current,
+            coauthor:
+              cfg.coauthor !== false
+                ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
+                : undefined,
+            sessionId: ensureSessionId(),
+            memoryManager: memoryManagerRef.current,
+            keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+            codeMode,
+            onFileChange: (path, content) => {
+              if (content) {
+                lspManagerRef.current.notifyChange(path, content);
+              } else {
+                void import("node:fs/promises").then(({ readFile }) =>
+                  readFile(path, "utf8")
+                    .then((c) => lspManagerRef.current.notifyChange(path, c))
+                    .catch(() => {}),
+                );
+              }
+            },
+            callbacks: sharedCallbacks,
+          });
+        }
         await saveSessionSafe();
 
         // Auto-compact after turn when thresholds are met. With compiled
