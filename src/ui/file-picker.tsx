@@ -51,7 +51,7 @@ export function FilePicker({ items, selectedIndex, theme, query }: Props) {
           const isSelected = actualIndex === selectedIndex;
           const label = item.isDirectory ? `${item.name}/` : item.name;
           return (
-            <Text key={item.name + actualIndex} color={isSelected ? theme.accent : undefined} bold={isSelected}>
+            <Text key={item.name} color={isSelected ? theme.accent : undefined} bold={isSelected}>
               {isSelected ? "› " : "  "}
               {label}
             </Text>

@@ -61,6 +61,8 @@ export interface KimiConfig {
   lspServers?: Record<string, LspServerConfig>;
   /** Enable cost attribution by task type. Default: false. Once stable for 2 releases, consider defaulting to true. */
   costAttribution?: boolean;
+  /** Enable @ file mention picker in chat input. Default: false. */
+  filePicker?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -156,6 +158,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envPlumbingModel = process.env.KIMIFLARE_PLUMBING_MODEL;
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
+  const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
 
   if (envAccount && envToken) {
     return {
@@ -183,6 +186,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       plumbingModel: envPlumbingModel,
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
+      filePicker: envFilePicker ?? false,
     };
   }
 
@@ -217,6 +221,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
+        filePicker: envFilePicker ?? parsed.filePicker ?? false,
       };
     }
   } catch {

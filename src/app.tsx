@@ -34,7 +34,7 @@ import { ResumePicker } from "./ui/resume-picker.js";
 import { ThemePicker } from "./ui/theme-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
@@ -92,7 +92,9 @@ import { readFileSync } from "node:fs";
  * All hardcoded patterns use the `** /` prefix so they match at any depth
  * (e.g. `** /node_modules/ *` catches both root and nested node_modules).
  */
-function buildFilePickerIgnoreList(cwd: string): string[] {
+const MAX_GITIGNORE_SIZE = 1 * 1024 * 1024; // 1 MB
+
+export function buildFilePickerIgnoreList(cwd: string): string[] {
   const hardcoded = [
     // Dependencies
     "**/node_modules/**",
@@ -168,6 +170,11 @@ function buildFilePickerIgnoreList(cwd: string): string[] {
   const gitignorePatterns: string[] = [];
   try {
     const gitignorePath = join(cwd, ".gitignore");
+    const stats = statSync(gitignorePath);
+    if (stats.size > MAX_GITIGNORE_SIZE) {
+      // Guardrail 1.4: skip oversized .gitignore files
+      return hardcoded;
+    }
     const content = readFileSync(gitignorePath, "utf-8");
     for (const line of content.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -203,6 +210,24 @@ function buildFilePickerIgnoreList(cwd: string): string[] {
   return [...hardcoded, ...gitignorePatterns];
 }
 
+export function filterPickerItems(items: FilePickerItem[], query: string): FilePickerItem[] {
+  const q = query.toLowerCase();
+  return items.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 50);
+}
+
+export function shouldOpenMentionPicker(
+  input: string,
+  cursorOffset: number,
+  pickerCancelOffset: number | null,
+): boolean {
+  if (pickerCancelOffset === cursorOffset) return false;
+  if (cursorOffset > 0 && input[cursorOffset - 1] === "@") {
+    const beforeAt = cursorOffset - 2;
+    return beforeAt < 0 || /\s/.test(input[beforeAt]!);
+  }
+  return false;
+}
+
 interface Cfg {
   accountId: string;
   apiToken: string;
@@ -231,6 +256,7 @@ interface Cfg {
   lspEnabled?: boolean;
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
   costAttribution?: boolean;
+  filePicker?: boolean;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -407,6 +433,7 @@ function App({
 
   const [mode, setMode] = useState<Mode>("edit");
   const [codeMode, setCodeMode] = useState<boolean>(initialCfg?.codeMode ?? false);
+  const filePickerEnabled = initialCfg?.filePicker ?? false;
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
@@ -479,10 +506,7 @@ function App({
 
   const filteredPickerItems = React.useMemo(() => {
     if (!mentionState) return [];
-    const q = mentionState.query.toLowerCase();
-    return pickerItems
-      .filter((item) => item.name.toLowerCase().includes(q))
-      .slice(0, 50);
+    return filterPickerItems(pickerItems, mentionState.query);
   }, [pickerItems, mentionState]);
 
   // Detect @ mention opening/closing
@@ -513,23 +537,22 @@ function App({
       return;
     }
 
-    // Look for @ just before cursor
-    if (cursorOffset > 0 && input[cursorOffset - 1] === "@") {
-      const beforeAt = cursorOffset - 2;
-      if (beforeAt < 0 || /\s/.test(input[beforeAt]!)) {
-        setPickerAnchor(cursorOffset - 1);
-        setPickerSelected(0);
-        // Load files lazily on first open
-        if (pickerItems.length === 0) {
-          const cwd = process.cwd();
-          void fg("**/*", {
-            cwd,
-            ignore: buildFilePickerIgnoreList(cwd),
-            dot: false,
-            absolute: false,
-            onlyFiles: false,
-            markDirectories: true,
-          } as fg.Options).then((entries) => {
+    // Look for @ just before cursor (only when feature flag is enabled)
+    if (filePickerEnabled && shouldOpenMentionPicker(input, cursorOffset, pickerCancelRef.current)) {
+      setPickerAnchor(cursorOffset - 1);
+      setPickerSelected(0);
+      // Load files lazily on first open
+      if (pickerItems.length === 0) {
+        const cwd = process.cwd();
+        void fg("**/*", {
+          cwd,
+          ignore: buildFilePickerIgnoreList(cwd),
+          dot: false,
+          absolute: false,
+          onlyFiles: false,
+          markDirectories: true,
+        } as fg.Options)
+          .then((entries) => {
             const strings = (entries as string[]).slice(0, 300);
             const items: FilePickerItem[] = strings.map((e) => ({
               name: e.endsWith("/") ? e.slice(0, -1) : e,
@@ -542,11 +565,13 @@ function App({
               return a.name.localeCompare(b.name);
             });
             setPickerItems(items);
+          })
+          .catch(() => {
+            setPickerItems([]);
           });
-        }
       }
     }
-  }, [input, cursorOffset, pickerAnchor, pickerItems.length]);
+  }, [input, cursorOffset, pickerAnchor, pickerItems.length, filePickerEnabled]);
 
   // Clamp selected index when filtered list changes
   useEffect(() => {
