@@ -313,6 +313,8 @@ function App({
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
+  const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
@@ -748,14 +750,42 @@ function App({
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
+      const hadPerm = permResolveRef.current !== null;
+      if (hadPerm) {
+        permResolveRef.current!("deny");
+        permResolveRef.current = null;
+        setPerm(null);
+      }
       if (busy && activeControllerRef.current) {
         activeControllerRef.current.abort();
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-      } else {
+      } else if (!hadPerm) {
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
+    }
+    if (key.escape) {
+      const modalOpen =
+        perm !== null ||
+        showHelpMenu ||
+        showThemePicker ||
+        showLspWizard ||
+        showCommandList ||
+        commandWizard !== null ||
+        commandToDelete !== null ||
+        resumeSessions !== null;
+      if (!modalOpen && busy && activeControllerRef.current) {
+        if (permResolveRef.current) {
+          permResolveRef.current("deny");
+          permResolveRef.current = null;
+          setPerm(null);
+        }
+        activeControllerRef.current.abort();
+        setQueue([]);
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        return;
+      }
     }
     if (key.ctrl && inputChar === "r") {
       setShowReasoning((s) => !s);
@@ -931,6 +961,8 @@ function App({
       setBusy(false);
       setTurnStartedAt(null);
       activeControllerRef.current = null;
+      permResolveRef.current = null;
+      pendingToolCallsRef.current.clear();
     }
   }, [cfg, busy, saveSessionSafe]);
 
@@ -1035,6 +1067,7 @@ function App({
             if (id !== null) updateAssistant(id, () => ({ streaming: false }));
           },
           onToolCallFinalized: (call) => {
+            pendingToolCallsRef.current.set(call.id, call.function.name);
             const spec = executorRef.current.list().find((t) => t.name === call.function.name);
             let renderMeta: ToolRender | undefined;
             try {
@@ -1058,6 +1091,7 @@ function App({
             ]);
           },
           onToolResult: (r) => {
+            pendingToolCallsRef.current.delete(r.tool_call_id);
             updateTool(r.tool_call_id, { status: r.ok ? "done" : "error", result: r.content });
           },
           onUsage: (u) => {
@@ -1083,6 +1117,7 @@ function App({
                 }
                 if (req.tool.name === "bash") {
                   // Non-whitelisted bash in plan mode: ask for temporary permission
+                  permResolveRef.current = resolve;
                   setPerm({ tool: req.tool, args: req.args, resolve });
                   return;
                 }
@@ -1097,6 +1132,7 @@ function App({
                 resolve("deny");
                 return;
               }
+              permResolveRef.current = resolve;
               setPerm({ tool: req.tool, args: req.args, resolve });
             }),
         },
@@ -1130,17 +1166,33 @@ function App({
         ]);
       }
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
+      if ((e as Error).name === "AbortError") {
+        for (const [tcId, tcName] of pendingToolCallsRef.current) {
+          messagesRef.current.push({
+            role: "tool",
+            tool_call_id: tcId,
+            content: "(interrupted)",
+            name: tcName,
+          });
+        }
+        setEvents((evts) =>
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+        );
+      } else {
         setEvents((es) => [
           ...es,
           { kind: "error", key: mkKey(), text: `init failed: ${(e as Error).message}` },
         ]);
       }
     } finally {
+      const asstId = activeAsstIdRef.current;
+      if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
       setTurnStartedAt(null);
       activeAsstIdRef.current = null;
       activeControllerRef.current = null;
+      permResolveRef.current = null;
+      pendingToolCallsRef.current.clear();
     }
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
@@ -1978,6 +2030,7 @@ function App({
               if (id !== null) updateAssistant(id, () => ({ streaming: false }));
             },
             onToolCallFinalized: (call) => {
+              pendingToolCallsRef.current.set(call.id, call.function.name);
               const spec = executorRef.current.list().find((t) => t.name === call.function.name);
               let renderMeta: ToolRender | undefined;
               try {
@@ -2001,6 +2054,7 @@ function App({
               ]);
             },
             onToolResult: (r) => {
+              pendingToolCallsRef.current.delete(r.tool_call_id);
               updateTool(r.tool_call_id, {
                 status: r.ok ? "done" : "error",
                 result: r.content,
@@ -2054,6 +2108,7 @@ function App({
                   resolve("deny");
                   return;
                 }
+                permResolveRef.current = resolve;
                 setPerm({ tool: req.tool, args: req.args, resolve });
               }),
           },
@@ -2148,7 +2203,19 @@ function App({
         }
       } catch (e) {
         if ((e as Error).name === "AbortError") {
-          setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "(aborted)" }]);
+          // Inject synthetic tool results for any pending tool calls so message
+          // history remains valid (assistant msg with tool_calls needs 1:1 results).
+          for (const [tcId, tcName] of pendingToolCallsRef.current) {
+            messagesRef.current.push({
+              role: "tool",
+              tool_call_id: tcId,
+              content: "(interrupted)",
+              name: tcName,
+            });
+          }
+          setEvents((evts) =>
+            evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+          );
         } else {
           const isInvalidJson400 =
             e instanceof KimiApiError &&
@@ -2172,10 +2239,14 @@ function App({
           }
         }
       } finally {
+        const asstId = activeAsstIdRef.current;
+        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
         setTurnStartedAt(null);
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
+        permResolveRef.current = null;
+        pendingToolCallsRef.current.clear();
       }
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
@@ -2410,6 +2481,7 @@ function App({
           theme={theme}
           onDecide={(d) => {
             perm.resolve(d);
+            permResolveRef.current = null;
             setPerm(null);
           }}
         />

@@ -13,6 +13,16 @@ export async function* readSSE(
   const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+
+  const onAbort = () => {
+    try {
+      reader.cancel(new DOMException("aborted", "AbortError"));
+    } catch {
+      /* reader may already be closed */
+    }
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException("aborted", "AbortError");
@@ -34,6 +44,7 @@ export async function* readSSE(
     const tail = extractData(buffer.trim());
     if (tail !== null) yield tail;
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     reader.releaseLock();
   }
 }

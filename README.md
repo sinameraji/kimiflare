@@ -309,7 +309,7 @@ Supported formats: PNG, JPG, JPEG, WebP, GIF, BMP (up to 5 MB each, 10 per messa
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+C` | Interrupt current turn (press again to exit) |
+| `Ctrl+C` / `Esc` | Interrupt current turn when busy; exit when idle |
 | `Ctrl+R` | Toggle reasoning display |
 | `Ctrl+O` | Toggle verbose tool output |
 | `Ctrl+T` | Open theme picker |

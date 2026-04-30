@@ -218,6 +218,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       }
     }
 
+    if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
+
     if (lastUsage) opts.callbacks.onUsageFinal?.(lastUsage, gatewayMeta);
 
     const assistantMsg: ChatMessage = {
