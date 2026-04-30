@@ -88,78 +88,83 @@ import { readFileSync } from "node:fs";
  * Build a comprehensive ignore list for the @ file mention picker.
  * Combines common noise patterns (dependencies, build output, caches, etc.)
  * with patterns read from the project's .gitignore file.
+ *
+ * All hardcoded patterns use the `** /` prefix so they match at any depth
+ * (e.g. `** /node_modules/ *` catches both root and nested node_modules).
  */
 function buildFilePickerIgnoreList(cwd: string): string[] {
-  // Hardcoded common patterns that are almost never useful to mention
   const hardcoded = [
     // Dependencies
-    "node_modules/**",
-    "vendor/**",
-    ".bundle/**",
-    "bower_components/**",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/.bundle/**",
+    "**/bower_components/**",
     // Version control
-    ".git/**",
-    ".svn/**",
-    ".hg/**",
+    "**/.git/**",
+    "**/.svn/**",
+    "**/.hg/**",
     // Build / output directories
-    "dist/**",
-    "build/**",
-    "out/**",
-    "public/**",
-    ".next/**",
-    ".nuxt/**",
-    ".svelte-kit/**",
-    ".vercel/**",
-    ".netlify/**",
-    "target/**",
-    "bin/**",
-    "obj/**",
-    "Debug/**",
-    "Release/**",
-    ".gradle/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/out/**",
+    "**/public/**",
+    "**/.next/**",
+    "**/.nuxt/**",
+    "**/.svelte-kit/**",
+    "**/.vercel/**",
+    "**/.netlify/**",
+    "**/target/**",
+    "**/bin/**",
+    "**/obj/**",
+    "**/Debug/**",
+    "**/Release/**",
+    "**/.gradle/**",
     // Caches
-    ".cache/**",
-    ".parcel-cache/**",
-    ".turbo/**",
-    ".eslintcache",
-    ".stylelintcache",
-    ".rpt2_cache/**",
-    ".rts2_cache/**",
+    "**/.cache/**",
+    "**/.parcel-cache/**",
+    "**/.turbo/**",
+    "**/.eslintcache",
+    "**/.stylelintcache",
+    "**/.rpt2_cache/**",
+    "**/.rts2_cache/**",
     // Temporary
-    "tmp/**",
-    "temp/**",
-    "*.tmp",
+    "**/tmp/**",
+    "**/temp/**",
+    "**/*.tmp",
     // Coverage
-    "coverage/**",
-    ".nyc_output/**",
+    "**/coverage/**",
+    "**/.nyc_output/**",
     // OS files
-    ".DS_Store",
-    "Thumbs.db",
+    "**/.DS_Store",
+    "**/Thumbs.db",
     // Logs
-    "*.log",
-    "logs/**",
+    "**/*.log",
+    "**/logs/**",
     // Lock files (auto-generated, usually huge)
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "bun.lockb",
-    "Cargo.lock",
-    "Gemfile.lock",
-    "composer.lock",
-    "Pipfile.lock",
-    "poetry.lock",
-    "go.sum",
+    "**/package-lock.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/bun.lockb",
+    "**/Cargo.lock",
+    "**/Gemfile.lock",
+    "**/composer.lock",
+    "**/Pipfile.lock",
+    "**/poetry.lock",
+    "**/go.sum",
     // Minified / source maps
-    "*.min.js",
-    "*.min.css",
-    "*.map",
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/*.map",
     // kimiflare internal
-    ".kimiflare/**",
+    "**/.kimiflare/**",
     // IDE (usually not relevant to mention)
-    ".idea/**",
+    "**/.idea/**",
   ];
 
-  // Try to read .gitignore for project-specific ignores
+  // Try to read .gitignore for project-specific ignores.
+  // Gitignore patterns are relative to the repo root and may match at any
+  // depth. We approximate that by prefixing with `** /`. Patterns that
+  // already start with `*` or `/` are handled carefully.
   const gitignorePatterns: string[] = [];
   try {
     const gitignorePath = join(cwd, ".gitignore");
@@ -167,13 +172,28 @@ function buildFilePickerIgnoreList(cwd: string): string[] {
     for (const line of content.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
-      // Convert directory patterns to glob recursive patterns
-      if (trimmed.endsWith("/")) {
-        gitignorePatterns.push(trimmed + "**");
+
+      // Skip negation patterns — fast-glob ignore doesn't support them
+      if (trimmed.startsWith("!")) continue;
+
+      let pattern = trimmed;
+      const isAnchored = pattern.startsWith("/");
+      const isDir = pattern.endsWith("/");
+
+      // Remove leading slash for processing
+      if (isAnchored) pattern = pattern.slice(1);
+      // Remove trailing slash for processing
+      if (isDir) pattern = pattern.slice(0, -1);
+
+      // Skip patterns that are already wildcards or empty
+      if (!pattern) continue;
+
+      if (isAnchored) {
+        // Anchored patterns only match at root, so keep them relative to cwd
+        gitignorePatterns.push(isDir ? pattern + "/**" : pattern);
       } else {
-        gitignorePatterns.push(trimmed);
-        // Also add a directory variant in case it's a dir
-        gitignorePatterns.push(trimmed + "/**");
+        // Unanchored patterns match at any depth — prepend `**/`
+        gitignorePatterns.push(isDir ? "**/" + pattern + "/**" : "**/" + pattern);
       }
     }
   } catch {
