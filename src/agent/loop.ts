@@ -297,7 +297,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -338,7 +338,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
           opts.onFileChange,
         );
         toolResults.push(result);

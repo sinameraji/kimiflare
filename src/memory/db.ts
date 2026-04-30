@@ -22,7 +22,8 @@ function initSchema(db: Database.Database): void {
       topic_key TEXT,
       superseded_by TEXT,
       forgotten INTEGER NOT NULL DEFAULT 0,
-      vectorized INTEGER NOT NULL DEFAULT 0
+      vectorized INTEGER NOT NULL DEFAULT 0,
+      agent_role TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_memories_repo ON memories(repo_path);
@@ -73,6 +74,9 @@ function migrateV1(db: Database.Database): void {
   }
   if (!names.has("vectorized")) {
     db.exec("ALTER TABLE memories ADD COLUMN vectorized INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("agent_role")) {
+    db.exec("ALTER TABLE memories ADD COLUMN agent_role TEXT");
   }
   // Create new indexes if missing
   db.exec(`
@@ -128,6 +132,7 @@ function rowToMemory(row: Database.RunResult & Record<string, unknown>): Memory 
     supersededBy: (row.superseded_by as string | null) ?? null,
     forgotten: (row.forgotten as number) === 1,
     vectorized: (row.vectorized as number) === 1,
+    agentRole: (row.agent_role as string | null) ?? null,
   };
 }
 
@@ -149,11 +154,12 @@ export function insertMemory(db: Database.Database, mem: MemoryInput, embedding:
     supersededBy: null,
     forgotten: false,
     vectorized: true,
+    agentRole: mem.agentRole ?? null,
   };
 
   db.prepare(
-    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized, agent_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     memory.id,
     memory.content,
@@ -168,7 +174,8 @@ export function insertMemory(db: Database.Database, mem: MemoryInput, embedding:
     memory.topicKey,
     memory.supersededBy,
     memory.forgotten ? 1 : 0,
-    memory.vectorized ? 1 : 0
+    memory.vectorized ? 1 : 0,
+    memory.agentRole
   );
 
   return memory;
@@ -176,8 +183,8 @@ export function insertMemory(db: Database.Database, mem: MemoryInput, embedding:
 
 export function insertMemories(db: Database.Database, items: { input: MemoryInput; embedding: Float32Array }[]): Memory[] {
   const insert = db.prepare(
-    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO memories (id, content, embedding, category, source_session_id, repo_path, created_at, accessed_at, importance, related_files, topic_key, superseded_by, forgotten, vectorized, agent_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   const inserted: Memory[] = [];
@@ -200,6 +207,7 @@ export function insertMemories(db: Database.Database, items: { input: MemoryInpu
         supersededBy: null,
         forgotten: false,
         vectorized: true,
+        agentRole: input.agentRole ?? null,
       };
       insert.run(
         memory.id,
@@ -215,7 +223,8 @@ export function insertMemories(db: Database.Database, items: { input: MemoryInpu
         memory.topicKey,
         memory.supersededBy,
         memory.forgotten ? 1 : 0,
-        memory.vectorized ? 1 : 0
+        memory.vectorized ? 1 : 0,
+        memory.agentRole
       );
       inserted.push(memory);
     }
@@ -241,21 +250,28 @@ export function searchMemoriesFts(
   db: Database.Database,
   query: string,
   repoPath?: string,
-  limit = 50
+  limit = 50,
+  agentRole?: string
 ): Array<{ memory: Memory; rank: number }> {
-  const sql = repoPath
-    ? `SELECT m.*, rank FROM memories m
-       JOIN memories_fts fts ON m.rowid = fts.rowid
-       WHERE memories_fts MATCH ? AND m.repo_path = ? AND m.forgotten = 0 AND m.superseded_by IS NULL AND m.category != 'task'
-       ORDER BY rank
-       LIMIT ?`
-    : `SELECT m.*, rank FROM memories m
-       JOIN memories_fts fts ON m.rowid = fts.rowid
-       WHERE memories_fts MATCH ? AND m.forgotten = 0 AND m.superseded_by IS NULL AND m.category != 'task'
-       ORDER BY rank
-       LIMIT ?`;
+  const conditions: string[] = ["memories_fts MATCH ?", "m.forgotten = 0", "m.superseded_by IS NULL", "m.category != 'task'"];
+  const params: (string | number)[] = [`${query}*`];
 
-  const params = repoPath ? [`${query}*`, repoPath, limit] : [`${query}*`, limit];
+  if (repoPath) {
+    conditions.push("m.repo_path = ?");
+    params.push(repoPath);
+  }
+  if (agentRole) {
+    conditions.push("m.agent_role = ?");
+    params.push(agentRole);
+  }
+
+  const sql = `SELECT m.*, rank FROM memories m
+     JOIN memories_fts fts ON m.rowid = fts.rowid
+     WHERE ${conditions.join(" AND ")}
+     ORDER BY rank
+     LIMIT ?`;
+  params.push(limit);
+
   const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     memory: rowToMemory(row as Database.RunResult & Record<string, unknown>),
@@ -267,16 +283,25 @@ export function listMemoriesForVectorSearch(
   db: Database.Database,
   repoPath: string,
   since: number,
-  limit = 2000
+  limit = 2000,
+  agentRole?: string
 ): Memory[] {
+  const conditions = ["repo_path = ?", "created_at >= ?", "forgotten = 0", "superseded_by IS NULL", "category != 'task'"];
+  const params: (string | number)[] = [repoPath, since];
+
+  if (agentRole) {
+    conditions.push("agent_role = ?");
+    params.push(agentRole);
+  }
+
   const rows = db
     .prepare(
       `SELECT * FROM memories
-       WHERE repo_path = ? AND created_at >= ? AND forgotten = 0 AND superseded_by IS NULL AND category != 'task'
+       WHERE ${conditions.join(" AND ")}
        ORDER BY accessed_at DESC
        LIMIT ?`
     )
-    .all(repoPath, since, limit) as Array<Database.RunResult & Record<string, unknown>>;
+    .all(...params, limit) as Array<Database.RunResult & Record<string, unknown>>;
   return rows.map(rowToMemory);
 }
 

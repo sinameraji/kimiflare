@@ -75,12 +75,12 @@ export async function retrieveMemories(opts: RetrieveOpts): Promise<HybridResult
   const since = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
 
   // 1. FTS5 search
-  const ftsResults = searchMemoriesFts(db, query.text, repoPath, limit * 3);
+  const ftsResults = searchMemoriesFts(db, query.text, repoPath, limit * 3, query.agentRole);
 
   // 2. Vector search candidates (recent memories in repo)
   let vectorCandidates: Memory[] = [];
   if (query.embedding) {
-    vectorCandidates = listMemoriesForVectorSearch(db, repoPath, since, 2000);
+    vectorCandidates = listMemoriesForVectorSearch(db, repoPath, since, 2000, query.agentRole);
   }
 
   // 3. Combine and score using RRF across channels

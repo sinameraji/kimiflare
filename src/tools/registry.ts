@@ -8,6 +8,8 @@ export interface ToolContext {
   coauthor?: { name: string; email: string };
   memoryManager?: import("../memory/manager.js").MemoryManager | null;
   sessionId?: string;
+  /** Agent role for multi-agent context (plan, build, general). */
+  agentRole?: string;
 }
 
 export interface ToolRender {
