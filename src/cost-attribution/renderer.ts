@@ -88,7 +88,7 @@ export function renderTerminal(report: CostAttributionReport): string {
     const latWidth = 10;
     const cacheWidth = 8;
     lines.push(
-      `${pad("Role", roleWidth)} ${padLeft("Sess", sessWidth)} ${padLeft("Cost", costWidth)} ${padLeft("Tokens", tokWidth)} ${padLeft("Latency", latWidth)} ${padLeft("Cache", cacheWidth)}`,
+      `${pad("Agent", roleWidth)} ${padLeft("Sess", sessWidth)} ${padLeft("Cost", costWidth)} ${padLeft("Tokens", tokWidth)} ${padLeft("Latency", latWidth)} ${padLeft("Cache", cacheWidth)}`,
     );
     lines.push("─".repeat(roleWidth + sessWidth + costWidth + tokWidth + latWidth + cacheWidth + 5));
     for (const m of report.agentMetrics) {

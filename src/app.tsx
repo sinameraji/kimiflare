@@ -1893,7 +1893,7 @@ function App({
         const sub = rest[0]?.toLowerCase() ?? "";
         if (sub === "on") {
           if (!cfg) return true;
-          const next = { ...cfg, multiAgent: true };
+          const next = { ...cfg, multiAgent: true, autoSwitch: true };
           setCfg(next);
           void saveConfig(next).catch(() => {});
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent enabled. Restart session to activate orchestrator." }]);
@@ -1912,12 +1912,13 @@ function App({
           return true;
         }
         if (!sub || sub === "status") {
-          const role = orchestratorRef.current?.getActiveRole() ?? "general";
+          const role = orchestratorRef.current?.getActiveRole() ?? "generalist";
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `active agent: ${role}` }]);
           return true;
         }
         const customNames = cfg?.customAgents?.map((a) => a.name) ?? [];
-        if (sub === "plan" || sub === "build" || sub === "general" || customNames.includes(sub)) {
+        // Manual switching is reserved for custom agents only; built-in agents auto-switch
+        if (customNames.includes(sub)) {
           const role = sub as AgentRole;
           const fromRole = orchestratorRef.current?.getActiveRole();
           if (fromRole === role) {
@@ -1939,21 +1940,9 @@ function App({
           })();
           return true;
         }
-        if (sub === "auto") {
-          const current = orchestratorRef.current?.getAutoSwitch() ?? false;
-          const next = !current;
-          orchestratorRef.current?.setAutoSwitch(next);
-          if (cfg) {
-            const nextCfg = { ...cfg, autoSwitch: next };
-            setCfg(nextCfg);
-            void saveConfig(nextCfg).catch(() => {});
-          }
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `auto-switch ${next ? "enabled" : "disabled"}` }]);
-          return true;
-        }
         if (sub === "replay" && rest[1]) {
           const replayRole = rest[1].toLowerCase();
-          const allRoles = ["plan", "build", "general", ...customNames];
+          const allRoles = ["research", "coding", "generalist", ...customNames];
           if (!allRoles.includes(replayRole)) {
             setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent: ${replayRole}` }]);
             return true;
@@ -1972,7 +1961,7 @@ function App({
         if (sub === "diff" && rest[1] && rest[2]) {
           const roleA = rest[1].toLowerCase();
           const roleB = rest[2].toLowerCase();
-          const allRoles = ["plan", "build", "general", ...customNames];
+          const allRoles = ["research", "coding", "generalist", ...customNames];
           if (!allRoles.includes(roleA) || !allRoles.includes(roleB)) {
             setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent in diff command` }]);
             return true;
@@ -1999,9 +1988,8 @@ function App({
           })();
           return true;
         }
-        const builtIn = "plan | build | general";
         const custom = customNames.length > 0 ? ` | ${customNames.join(" | ")}` : "";
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto | replay <role> | diff <role1> <role2>` }]);
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent on | off | status${custom} | replay <role> | diff <role1> <role2>` }]);
         return true;
       }
       if (c === "/plan") {

@@ -6,7 +6,7 @@ import { ArtifactStore } from "./session-state.js";
 export type AgentRole = string;
 
 /** Built-in agent roles. */
-export const BUILTIN_ROLES = ["plan", "build", "general"] as const;
+export const BUILTIN_ROLES = ["research", "coding", "generalist"] as const;
 
 export interface AgentSession {
   role: AgentRole;
@@ -17,7 +17,7 @@ export interface AgentSession {
 }
 
 /** Sorted tool names per role for cache-stable prompt prefixes. */
-const PLAN_TOOL_NAMES: readonly string[] = [
+const RESEARCH_TOOL_NAMES: readonly string[] = [
   "glob",
   "grep",
   "lsp_codeAction",
@@ -36,7 +36,7 @@ const PLAN_TOOL_NAMES: readonly string[] = [
   "web_fetch",
 ].sort((a, b) => a.localeCompare(b));
 
-const BUILD_TOOL_NAMES: readonly string[] = [
+const CODING_TOOL_NAMES: readonly string[] = [
   "bash",
   "edit",
   "lsp_codeAction",
@@ -55,7 +55,7 @@ const BUILD_TOOL_NAMES: readonly string[] = [
   "write",
 ].sort((a, b) => a.localeCompare(b));
 
-const GENERAL_TOOL_NAMES: readonly string[] = [
+const GENERALIST_TOOL_NAMES: readonly string[] = [
   "memory_forget",
   "memory_recall",
   "memory_remember",
@@ -83,14 +83,14 @@ export function getAgentTools(role: AgentRole, customAgents?: { name: string; to
     }
   }
   switch (role) {
-    case "plan":
-      return resolveTools(PLAN_TOOL_NAMES);
-    case "build":
-      return resolveTools(BUILD_TOOL_NAMES);
-    case "general":
-      return resolveTools(GENERAL_TOOL_NAMES);
+    case "research":
+      return resolveTools(RESEARCH_TOOL_NAMES);
+    case "coding":
+      return resolveTools(CODING_TOOL_NAMES);
+    case "generalist":
+      return resolveTools(GENERALIST_TOOL_NAMES);
     default:
-      return resolveTools(GENERAL_TOOL_NAMES);
+      return resolveTools(GENERALIST_TOOL_NAMES);
   }
 }
 

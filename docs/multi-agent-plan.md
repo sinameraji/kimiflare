@@ -17,9 +17,9 @@ The multi-agent system introduces specialized agents with isolated message buffe
 
 | Role | Purpose | Tools | Mutating? |
 |------|---------|-------|-----------|
-| `plan` | Exploration, research, architecture | `read`, `grep`, `glob`, `lsp_*`, `web_fetch`, `tasks_set`, `memory_recall` | ❌ Read-only |
-| `build` | Implementation, editing, testing | `read`, `write`, `edit`, `bash`, `lsp_*`, `memory_remember`, `memory_recall` | ✅ Full |
-| `general` | Chat, Q&A, light coordination | `tasks_set`, `web_fetch`, `memory_remember`, `memory_recall`, `memory_forget` | ⚠️ Limited |
+| `research` | Exploration, research, architecture | `read`, `grep`, `glob`, `lsp_*`, `web_fetch`, `tasks_set`, `memory_recall` | ❌ Read-only |
+| `coding` | Implementation, editing, testing | `read`, `write`, `edit`, `bash`, `lsp_*`, `memory_remember`, `memory_recall` | ✅ Full |
+| `generalist` | Chat, Q&A, light coordination | `tasks_set`, `web_fetch`, `memory_remember`, `memory_recall`, `memory_forget` | ⚠️ Limited |
 
 ### Key Components
 
@@ -40,7 +40,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 **Deliverables:**
 - [x] `AgentSession` abstraction with per-agent tool subsets
 - [x] `AgentOrchestrator` with hand-off synthesis (plumbing model)
-- [x] `/agent plan|build|general|status` slash commands
+- [x] `/agent on|off|status` slash commands (built-in agents auto-switch)
 - [x] Secret redaction in hand-off summaries
 - [x] Per-agent anti-loop guard (`recentToolCalls` in `AgentSession`)
 - [x] Per-agent compaction via `shouldCompact()`
@@ -75,7 +75,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 
 **Implementation Notes:**
 - Intent classifier should be lightweight (heuristic first, LLM fallback only for ambiguous cases)
-- Keywords: "explore", "research", "find", "understand" → plan; "implement", "fix", "add", "write" → build
+- Keywords: "explore", "research", "find", "understand" → research; "implement", "fix", "add", "write" → coding
 - Auto-switch should only trigger on user messages, not assistant continuations
 - Forced hand-off counter resets on explicit `/agent` command
 
@@ -88,9 +88,9 @@ The multi-agent system introduces specialized agents with isolated message buffe
 **Deliverables:**
 - [x] **Compiled context** (`compiledContext`): per-agent artifact stores
 - [x] **Memory**: `memory_remember` tags memories with agent role; recall filters by role
-- [x] **Cost attribution**: category mapping (`plan` → `exploring-codebase`, `build` → `editing-source-code`)
+- [x] **Cost attribution**: category mapping (`research` → `exploring-codebase`, `coding` → `editing-source-code`)
 - [x] **LSP**: agent-specific LSP tool subsets (already partially done via tool lists)
-- [x] **Code mode**: per-agent API generation (plan agent gets read-only API) — already works via `opts.tools` filtering
+- [x] **Code mode**: per-agent API generation (research agent gets read-only API) — already works via `opts.tools` filtering
 
 ---
 
@@ -100,7 +100,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 
 **Deliverables:**
 - [x] **Custom agents**: user-defined roles in config (`customAgents: [{ name, tools, model, systemPrompt }]`)
-- [ ] **Parallel agents**: plan + build running concurrently — *deferred to future release*
+- [ ] **Parallel agents**: research + coding running concurrently — *deferred to future release*
 - [x] **Agent replay**: re-run a specific agent's turns with different model/effort
 - [x] **Diff view**: compare outputs between agents
 - [x] **Agent metrics dashboard**: token usage, latency, cache hit ratio per role
@@ -122,7 +122,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 | `src/agent/agent-session.ts` | ✅ Complete | Clean abstraction, per-agent artifact stores, dynamic roles |
 | `src/agent/agent-session.test.ts` | ✅ Complete | Covers tool subsets, determinism, session creation |
 | `src/agent/intent-classifier.ts` | ✅ Complete | Heuristic keyword classification with tie-breaking |
-| `src/agent/intent-classifier.test.ts` | ✅ Complete | Covers plan/build/general classification, thresholds |
+| `src/agent/intent-classifier.test.ts` | ✅ Complete | Covers research/coding/generalist classification, thresholds |
 | `src/agent/orchestrator.ts` | ✅ Complete | Auto-routing, custom agents, replay, diff, metrics, error handling |
 | `src/agent/orchestrator.test.ts` | ✅ Complete | Auto-switching, forced hand-off, error recovery tests |
 | `src/config.ts` | ✅ Complete | All multi-agent fields + customAgents validation |
@@ -142,7 +142,7 @@ The multi-agent system introduces specialized agents with isolated message buffe
 | `src/cost-attribution/cli.ts` | ✅ Complete | Passes `agentRole` from usage log |
 | `src/cost-attribution/report.ts` | ✅ Complete | Per-agent metrics aggregation |
 | `src/cost-attribution/renderer.ts` | ✅ Complete | Per-agent metrics table rendering |
-| `src/app.tsx` | ✅ Complete | `/agent auto/replay/diff` commands, custom agent switching |
+| `src/app.tsx` | ✅ Complete | `/agent on/off/status/replay/diff` commands, custom agent switching |
 
 ### Known Debt / Traps
 
@@ -264,12 +264,12 @@ The current TUI event loop (`src/app.tsx`) is built around a single `runAgentTur
 
 **Phase A: Callback Isolation**
 - Change `sharedCallbacks` from a singleton to a factory: `makeCallbacks(agentRole: string)`
-- Each callback prefixes event keys with agent role (e.g., `plan_asst_123` vs `build_asst_456`)
+- Each callback prefixes event keys with agent role (e.g., `research_asst_123` vs `coding_asst_456`)
 - Add `agentRole` field to all event kinds in the UI
 
 **Phase B: Permission Queue**
 - Change `permResolveRef` from a single resolver to a FIFO queue of pending permission requests
-- Permission modal shows which agent is asking: `[build agent] Allow write to src/foo.ts?`
+- Permission modal shows which agent is asking: `[coding agent] Allow write to src/foo.ts?`
 
 **Phase C: Parallel Orchestrator API**
 - Add `runParallelTurn(userMessage, roles: AgentRole[])` to `AgentOrchestrator`

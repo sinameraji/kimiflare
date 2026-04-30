@@ -50,7 +50,7 @@ const HANDOFF_SYSTEM = `You are synthesizing a concise hand-off summary for anot
 
 export class AgentOrchestrator {
   private sessions: Map<AgentRole, AgentSession> = new Map();
-  private activeRole: AgentRole = "general";
+  private activeRole: AgentRole = "generalist";
   private opts: AgentOrchestratorOpts;
   private autoSwitch: boolean;
   private autoSwitchConfirm: boolean;
@@ -63,12 +63,12 @@ export class AgentOrchestrator {
     this.autoSwitchConfirm = opts.autoSwitchConfirm ?? false;
     this.maxTurnsPerAgent = opts.maxTurnsPerAgent ?? 20;
     // Built-in agents
-    this.sessions.set("plan", createAgentSession("plan"));
-    this.sessions.set("build", createAgentSession("build"));
-    this.sessions.set("general", createAgentSession("general"));
-    this.turnCounts.set("plan", 0);
-    this.turnCounts.set("build", 0);
-    this.turnCounts.set("general", 0);
+    this.sessions.set("research", createAgentSession("research"));
+    this.sessions.set("coding", createAgentSession("coding"));
+    this.sessions.set("generalist", createAgentSession("generalist"));
+    this.turnCounts.set("research", 0);
+    this.turnCounts.set("coding", 0);
+    this.turnCounts.set("generalist", 0);
     // Custom agents
     for (const agent of opts.customAgents ?? []) {
       this.sessions.set(agent.name, createAgentSession(agent.name));
@@ -122,6 +122,16 @@ export class AgentOrchestrator {
       return [...base, ...lspAdditions];
     }
     return base;
+  }
+
+  /** Backward-compat: map old role names to new ones for config lookups. */
+  private resolveAgentConfig(role: AgentRole): { model?: string; reasoningEffort?: import("../config.js").ReasoningEffort } {
+    const legacyMap: Record<string, string> = { plan: "research", build: "coding", general: "generalist" };
+    const legacyRole = Object.entries(legacyMap).find(([, v]) => v === role)?.[0];
+    return {
+      model: this.opts.agentModels?.[role] ?? (legacyRole ? this.opts.agentModels?.[legacyRole] : undefined),
+      reasoningEffort: this.opts.agentReasoningEffort?.[role] ?? (legacyRole ? this.opts.agentReasoningEffort?.[legacyRole] : undefined),
+    };
   }
 
   private async maybeCompact(session: AgentSession): Promise<void> {
@@ -221,20 +231,20 @@ export class AgentOrchestrator {
       }
     }
 
-    // Forced hand-off: if turn count exceeds threshold, switch to general
+    // Forced hand-off: if turn count exceeds threshold, switch to generalist
     const currentTurns = this.turnCounts.get(this.activeRole) ?? 0;
     if (currentTurns >= this.maxTurnsPerAgent) {
       const fromRole = this.activeRole;
-      const summary = await this.synthesizeHandoff(fromRole, "general");
-      this.activeRole = "general";
-      const generalSession = this.getActiveSession();
+      const summary = await this.synthesizeHandoff(fromRole, "generalist");
+      this.activeRole = "generalist";
+      const generalistSession = this.getActiveSession();
       if (summary) {
-        generalSession.messages.push({
+        generalistSession.messages.push({
           role: "system",
           content: `[hand-off from ${fromRole} agent — forced after ${currentTurns} turns]\n${summary}`,
         });
       }
-      this.turnCounts.set("general", 0);
+      this.turnCounts.set("generalist", 0);
     }
 
     await this.maybeCompact(session);
@@ -243,8 +253,9 @@ export class AgentOrchestrator {
 
     const tools = this.getToolsForRole(this.activeRole);
     const customAgent = this.opts.customAgents?.find((a) => a.name === this.activeRole);
-    const model = customAgent?.model ?? this.opts.agentModels?.[this.activeRole] ?? this.opts.model;
-    const reasoningEffort = customAgent?.reasoningEffort ?? this.opts.agentReasoningEffort?.[this.activeRole] ?? this.opts.reasoningEffort;
+    const agentConfig = this.resolveAgentConfig(this.activeRole);
+    const model = customAgent?.model ?? agentConfig.model ?? this.opts.model;
+    const reasoningEffort = customAgent?.reasoningEffort ?? agentConfig.reasoningEffort ?? this.opts.reasoningEffort;
 
     // Inject custom system prompt if defined
     if (customAgent?.systemPrompt && !session.messages.some((m) => m.role === "system" && m.content === customAgent.systemPrompt)) {
@@ -328,8 +339,9 @@ export class AgentOrchestrator {
 
     const tools = this.getToolsForRole(role);
     const customAgent = this.opts.customAgents?.find((a) => a.name === role);
-    const model = opts.model ?? customAgent?.model ?? this.opts.agentModels?.[role] ?? this.opts.model;
-    const reasoningEffort = opts.reasoningEffort ?? customAgent?.reasoningEffort ?? this.opts.agentReasoningEffort?.[role] ?? this.opts.reasoningEffort;
+    const agentConfig = this.resolveAgentConfig(role);
+    const model = opts.model ?? customAgent?.model ?? agentConfig.model ?? this.opts.model;
+    const reasoningEffort = opts.reasoningEffort ?? customAgent?.reasoningEffort ?? agentConfig.reasoningEffort ?? this.opts.reasoningEffort;
 
     for (const msg of userMessages) {
       session.messages.push(msg);
@@ -393,15 +405,19 @@ export class AgentOrchestrator {
     turnCounts?: Record<AgentRole, number>;
     agents: Array<{ role: AgentRole; messages: ChatMessage[]; recentToolCalls: string[]; artifactStore?: ReturnType<typeof serializeArtifactStore> }>;
   }): void {
-    this.activeRole = data.activeRole;
+    // Backward-compat: map old role names to new ones
+    const legacyRoleMap: Record<string, string> = { plan: "research", build: "coding", general: "generalist" };
+    const mapRole = (role: string): string => legacyRoleMap[role] ?? role;
+
+    this.activeRole = mapRole(data.activeRole);
     this.autoSwitch = data.autoSwitch ?? false;
     if (data.turnCounts) {
       for (const [role, count] of Object.entries(data.turnCounts)) {
-        this.turnCounts.set(role as AgentRole, count);
+        this.turnCounts.set(mapRole(role) as AgentRole, count);
       }
     }
     for (const agent of data.agents) {
-      const session = this.sessions.get(agent.role);
+      const session = this.sessions.get(mapRole(agent.role));
       if (session) {
         session.messages = agent.messages;
         session.recentToolCalls = agent.recentToolCalls;

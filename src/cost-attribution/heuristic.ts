@@ -161,6 +161,10 @@ export function classifyTurn(turn: TurnData): SignalEntry[] {
 }
 
 const AGENT_ROLE_CATEGORY_MAP: Record<string, TaskCategory> = {
+  research: "exploring-codebase",
+  coding: "editing-source-code",
+  generalist: "other",
+  // Backward-compat for old role names
   plan: "exploring-codebase",
   build: "editing-source-code",
   general: "other",

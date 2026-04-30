@@ -7,7 +7,7 @@ export interface ClassifyResult {
 }
 
 // Keyword-based intent signals
-const PLAN_KEYWORDS = [
+const RESEARCH_KEYWORDS = [
   "explore", "research", "investigate", "understand", "analyze",
   "find", "search", "look", "check", "review", "audit",
   "what", "how does", "explain", "describe", "document",
@@ -15,7 +15,7 @@ const PLAN_KEYWORDS = [
   "compare", "evaluate", "assess", "survey",
 ];
 
-const BUILD_KEYWORDS = [
+const CODING_KEYWORDS = [
   "implement", "fix", "add", "write", "create", "build",
   "edit", "modify", "update", "change", "refactor",
   "remove", "delete", "rename", "move", "extract",
@@ -23,7 +23,7 @@ const BUILD_KEYWORDS = [
   "migrate", "upgrade", "downgrade", "patch",
 ];
 
-const GENERAL_KEYWORDS = [
+const GENERALIST_KEYWORDS = [
   "hello", "hi", "help", "thanks", "thank you",
   "what is", "who", "when", "where", "why",
   "general", "chat", "talk", "question",
@@ -40,33 +40,33 @@ function countMatches(text: string, keywords: string[]): number {
 }
 
 function heuristicClassify(text: string): ClassifyResult {
-  const planScore = countMatches(text, PLAN_KEYWORDS);
-  const buildScore = countMatches(text, BUILD_KEYWORDS);
-  const generalScore = countMatches(text, GENERAL_KEYWORDS);
+  const researchScore = countMatches(text, RESEARCH_KEYWORDS);
+  const codingScore = countMatches(text, CODING_KEYWORDS);
+  const generalistScore = countMatches(text, GENERALIST_KEYWORDS);
 
-  const total = planScore + buildScore + generalScore;
+  const total = researchScore + codingScore + generalistScore;
 
   if (total === 0) {
-    // No strong signals — default to general for safety
-    return { role: "general", confidence: 0.3, method: "heuristic" };
+    // No strong signals — default to generalist for safety
+    return { role: "generalist", confidence: 0.3, method: "heuristic" };
   }
 
-  const maxScore = Math.max(planScore, buildScore, generalScore);
+  const maxScore = Math.max(researchScore, codingScore, generalistScore);
 
   if (maxScore === 0) {
-    return { role: "general", confidence: 0.3, method: "heuristic" };
+    return { role: "generalist", confidence: 0.3, method: "heuristic" };
   }
 
-  // Tie-breaking: prefer build > plan > general when scores are equal
-  if (buildScore === maxScore) {
-    return { role: "build", confidence: buildScore / total, method: "heuristic" };
+  // Tie-breaking: prefer coding > research > generalist when scores are equal
+  if (codingScore === maxScore) {
+    return { role: "coding", confidence: codingScore / total, method: "heuristic" };
   }
 
-  if (planScore === maxScore) {
-    return { role: "plan", confidence: planScore / total, method: "heuristic" };
+  if (researchScore === maxScore) {
+    return { role: "research", confidence: researchScore / total, method: "heuristic" };
   }
 
-  return { role: "general", confidence: generalScore / total, method: "heuristic" };
+  return { role: "generalist", confidence: generalistScore / total, method: "heuristic" };
 }
 
 export interface ClassifyOpts {
@@ -86,7 +86,7 @@ export function classifyIntent(opts: ClassifyOpts): ClassifyResult {
   const result = heuristicClassify(opts.text);
 
   if (result.confidence < minConfidence) {
-    return { role: "general", confidence: result.confidence, method: "heuristic" };
+    return { role: "generalist", confidence: result.confidence, method: "heuristic" };
   }
 
   return result;
@@ -102,12 +102,12 @@ export function shouldSwitchRole(
   opts?: {
     /** Only switch if confidence exceeds this threshold */
     switchThreshold?: number;
-    /** Never auto-switch away from general (user is just chatting) */
-    preserveGeneral?: boolean;
+    /** Never auto-switch away from generalist (user is just chatting) */
+    preserveGeneralist?: boolean;
   },
 ): AgentRole | null {
   const threshold = opts?.switchThreshold ?? 0.6;
-  const preserveGeneral = opts?.preserveGeneral ?? true;
+  const preserveGeneralist = opts?.preserveGeneralist ?? true;
 
   if (classification.confidence < threshold) {
     return null;
@@ -117,8 +117,8 @@ export function shouldSwitchRole(
     return null;
   }
 
-  if (preserveGeneral && currentRole === "general") {
-    // General is the "safe" state; only switch if very confident
+  if (preserveGeneralist && currentRole === "generalist") {
+    // Generalist is the "safe" state; only switch if very confident
     if (classification.confidence < 0.75) {
       return null;
     }

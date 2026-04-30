@@ -64,38 +64,38 @@ describe("AgentOrchestrator", () => {
     };
   }
 
-  it("starts with general agent active", () => {
+  it("starts with generalist agent active", () => {
     const orch = makeOrchestrator();
-    assert.strictEqual(orch.getActiveRole(), "general");
+    assert.strictEqual(orch.getActiveRole(), "generalist");
   });
 
   it("can switch active role", () => {
     const orch = makeOrchestrator();
-    orch.switchTo("plan");
-    assert.strictEqual(orch.getActiveRole(), "plan");
+    orch.switchTo("research");
+    assert.strictEqual(orch.getActiveRole(), "research");
   });
 
   it("serializes and deserializes state", () => {
     const orch = makeOrchestrator();
-    orch.switchTo("plan");
+    orch.switchTo("research");
     orch.getActiveSession().messages.push({ role: "user", content: "hello" });
     orch.getActiveSession().recentToolCalls.push("read:{}");
 
     const serialized = orch.serialize();
-    assert.strictEqual(serialized.activeRole, "plan");
+    assert.strictEqual(serialized.activeRole, "research");
     assert.strictEqual(serialized.agents.length, 3);
 
     const orch2 = makeOrchestrator();
     orch2.deserialize(serialized);
-    assert.strictEqual(orch2.getActiveRole(), "plan");
+    assert.strictEqual(orch2.getActiveRole(), "research");
     assert.strictEqual(orch2.getActiveSession().messages.length, 1);
     assert.strictEqual(orch2.getActiveSession().recentToolCalls.length, 1);
   });
 
   it("handOff switches role and returns empty string when no prior messages", async () => {
     const orch = makeOrchestrator();
-    const summary = await orch.handOff("build");
-    assert.strictEqual(orch.getActiveRole(), "build");
+    const summary = await orch.handOff("coding");
+    assert.strictEqual(orch.getActiveRole(), "coding");
     assert.strictEqual(summary, "");
   });
 
@@ -117,44 +117,44 @@ describe("AgentOrchestrator", () => {
 
     const orch = makeOrchestrator();
     orch.getActiveSession().messages.push({ role: "user", content: "test" });
-    const summary = await orch.handOff("build");
-    assert.strictEqual(orch.getActiveRole(), "build");
+    const summary = await orch.handOff("coding");
+    assert.strictEqual(orch.getActiveRole(), "coding");
     assert.strictEqual(summary, "Summary of prior work.");
-    const buildSession = orch.getActiveSession();
-    const systemMsg = buildSession.messages.find((m) => m.role === "system");
+    const codingSession = orch.getActiveSession();
+    const systemMsg = codingSession.messages.find((m) => m.role === "system");
     assert.ok(systemMsg, "should have added a system hand-off message");
-    assert.ok((systemMsg!.content as string).includes("hand-off from general agent"));
+    assert.ok((systemMsg!.content as string).includes("hand-off from generalist agent"));
   });
 
-  it("auto-switches from general to plan on exploration intent", async () => {
+  it("auto-switches from generalist to research on exploration intent", async () => {
     mockFetchWithAssistantResponse();
     const orch = makeOrchestrator({ autoSwitch: true });
     orch.getActiveSession().messages.push({ role: "user", content: "previous work" });
     await orch.runTurn({ role: "user", content: "Explore the codebase structure" });
-    assert.strictEqual(orch.getActiveRole(), "plan");
-    const planSession = orch.getActiveSession();
-    const systemMsg = planSession.messages.find((m) => m.role === "system");
+    assert.strictEqual(orch.getActiveRole(), "research");
+    const researchSession = orch.getActiveSession();
+    const systemMsg = researchSession.messages.find((m) => m.role === "system");
     assert.ok(systemMsg, "should have hand-off system message");
-    assert.ok((systemMsg!.content as string).includes("hand-off from general agent"));
+    assert.ok((systemMsg!.content as string).includes("hand-off from generalist agent"));
   });
 
-  it("auto-switches from general to build on implementation intent", async () => {
+  it("auto-switches from generalist to coding on implementation intent", async () => {
     mockFetchWithAssistantResponse();
     const orch = makeOrchestrator({ autoSwitch: true });
     orch.getActiveSession().messages.push({ role: "user", content: "previous work" });
     await orch.runTurn({ role: "user", content: "Implement a new logging system" });
-    assert.strictEqual(orch.getActiveRole(), "build");
-    const buildSession = orch.getActiveSession();
-    const systemMsg = buildSession.messages.find((m) => m.role === "system");
+    assert.strictEqual(orch.getActiveRole(), "coding");
+    const codingSession = orch.getActiveSession();
+    const systemMsg = codingSession.messages.find((m) => m.role === "system");
     assert.ok(systemMsg, "should have hand-off system message");
-    assert.ok((systemMsg!.content as string).includes("hand-off from general agent"));
+    assert.ok((systemMsg!.content as string).includes("hand-off from generalist agent"));
   });
 
   it("does not auto-switch when autoSwitch is disabled", async () => {
     mockFetchWithAssistantResponse();
     const orch = makeOrchestrator({ autoSwitch: false });
     await orch.runTurn({ role: "user", content: "Implement a new logging system" });
-    assert.strictEqual(orch.getActiveRole(), "general");
+    assert.strictEqual(orch.getActiveRole(), "generalist");
   });
 
   it("emits suggestion instead of switching when autoSwitchConfirm is true", async () => {
@@ -168,27 +168,27 @@ describe("AgentOrchestrator", () => {
       },
     });
     await orch.runTurn({ role: "user", content: "Implement a new logging system" });
-    assert.strictEqual(orch.getActiveRole(), "general");
+    assert.strictEqual(orch.getActiveRole(), "generalist");
     assert.ok(suggestion, "should have emitted auto-switch suggestion");
-    assert.strictEqual((suggestion as { from: AgentRole; to: AgentRole; reason: string }).from, "general");
-    assert.strictEqual((suggestion as { from: AgentRole; to: AgentRole; reason: string }).to, "build");
-    assert.ok((suggestion as { from: AgentRole; to: AgentRole; reason: string }).reason.includes("build"));
+    assert.strictEqual((suggestion as { from: AgentRole; to: AgentRole; reason: string }).from, "generalist");
+    assert.strictEqual((suggestion as { from: AgentRole; to: AgentRole; reason: string }).to, "coding");
+    assert.ok((suggestion as { from: AgentRole; to: AgentRole; reason: string }).reason.includes("coding"));
   });
 
-  it("forces hand-off to general after maxTurnsPerAgent", async () => {
+  it("forces hand-off to generalist after maxTurnsPerAgent", async () => {
     mockFetchWithAssistantResponse();
     const orch = makeOrchestrator({ autoSwitch: true, maxTurnsPerAgent: 2 });
-    // First turn: auto-switches to build
+    // First turn: auto-switches to coding
     await orch.runTurn({ role: "user", content: "Implement feature A" });
-    assert.strictEqual(orch.getActiveRole(), "build");
-    // Second turn: stays on build
+    assert.strictEqual(orch.getActiveRole(), "coding");
+    // Second turn: stays on coding
     await orch.runTurn({ role: "user", content: "Continue implementing" });
-    assert.strictEqual(orch.getActiveRole(), "build");
-    // Third turn: forced hand-off to general
+    assert.strictEqual(orch.getActiveRole(), "coding");
+    // Third turn: forced hand-off to generalist
     await orch.runTurn({ role: "user", content: "More work" });
-    assert.strictEqual(orch.getActiveRole(), "general");
-    const generalSession = orch.getActiveSession();
-    const systemMsg = generalSession.messages.find((m) => m.role === "system");
+    assert.strictEqual(orch.getActiveRole(), "generalist");
+    const generalistSession = orch.getActiveSession();
+    const systemMsg = generalistSession.messages.find((m) => m.role === "system");
     assert.ok(systemMsg, "should have forced hand-off system message");
     assert.ok((systemMsg!.content as string).includes("forced after 2 turns"));
   });
@@ -197,13 +197,13 @@ describe("AgentOrchestrator", () => {
     mockFetchWithAssistantResponse();
     const orch = makeOrchestrator({ autoSwitch: true, maxTurnsPerAgent: 2 });
     await orch.runTurn({ role: "user", content: "Implement feature A" });
-    assert.strictEqual(orch.getActiveRole(), "build");
+    assert.strictEqual(orch.getActiveRole(), "coding");
     await orch.runTurn({ role: "user", content: "Continue implementing" });
     // Explicit switch resets count
-    orch.switchTo("plan");
+    orch.switchTo("research");
     await orch.runTurn({ role: "user", content: "Explore the codebase" });
     // Should not force hand-off because turn count was reset
-    assert.strictEqual(orch.getActiveRole(), "plan");
+    assert.strictEqual(orch.getActiveRole(), "research");
   });
 
   it("synthesizeHandoff falls back to raw transcript on fetch failure", async () => {
@@ -213,7 +213,7 @@ describe("AgentOrchestrator", () => {
 
     const orch = makeOrchestrator();
     orch.getActiveSession().messages.push({ role: "user", content: "test message" });
-    const summary = await orch.handOff("build");
+    const summary = await orch.handOff("coding");
     assert.ok(summary.includes("synthesis failed"), "should indicate synthesis failure");
     assert.ok(summary.includes("test message"), "should include raw transcript fallback");
   });

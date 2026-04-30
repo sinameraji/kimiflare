@@ -64,7 +64,7 @@ export interface KimiConfig {
   costAttribution?: boolean;
   /** Enable @ file mention picker in chat input. Default: false. */
   filePicker?: boolean;
-  /** Enable multi-agent system with specialized plan/build/general agents. Default: false. */
+  /** Enable multi-agent system with specialized research/coding/generalist agents. Default: false. */
   multiAgent?: boolean;
   /** Per-agent model overrides. Falls back to the global model if not specified. */
   agentModels?: Record<string, string>;
@@ -185,7 +185,7 @@ function validateCustomAgents(agents: KimiConfig["customAgents"]): KimiConfig["c
       console.warn(`[kimiflare] Skipping duplicate custom agent: "${name}"`);
       continue;
     }
-    if (["plan", "build", "general"].includes(name)) {
+    if (["research", "coding", "generalist"].includes(name)) {
       console.warn(`[kimiflare] Skipping custom agent "${name}": reserved built-in role name`);
       continue;
     }
