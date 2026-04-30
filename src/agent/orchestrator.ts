@@ -31,11 +31,9 @@ export interface AgentOrchestratorOpts {
   mcpTools: ToolSpec[];
   lspTools: ToolSpec[];
   /** Per-agent model overrides. Falls back to the global model if not specified. */
-  agentModels?: {
-    plan?: string;
-    build?: string;
-    general?: string;
-  };
+  agentModels?: Record<string, string>;
+  /** Per-agent reasoning effort overrides. */
+  agentReasoningEffort?: Record<string, import("../config.js").ReasoningEffort>;
   /** Enable automatic agent switching based on intent classification. Default: false. */
   autoSwitch?: boolean;
   /** Ask for user confirmation before auto-switching agents. When true, the orchestrator emits a suggestion instead of switching. Default: false. */
@@ -44,6 +42,8 @@ export interface AgentOrchestratorOpts {
   onAutoSwitchSuggestion?: (from: AgentRole, to: AgentRole, reason: string) => void;
   /** Maximum turns per agent before forced hand-off. Default: 20. */
   maxTurnsPerAgent?: number;
+  /** User-defined custom agents. */
+  customAgents?: { name: string; tools: string[]; model?: string; systemPrompt?: string; reasoningEffort?: import("../config.js").ReasoningEffort }[];
 }
 
 const HANDOFF_SYSTEM = `You are synthesizing a concise hand-off summary for another specialized agent. Summarize the key context, decisions, and open tasks from the previous agent's work so the next agent can continue effectively. Be terse. Include file paths and specific details that matter. Do not include pleasantries.`;
@@ -62,12 +62,18 @@ export class AgentOrchestrator {
     this.autoSwitch = opts.autoSwitch ?? false;
     this.autoSwitchConfirm = opts.autoSwitchConfirm ?? false;
     this.maxTurnsPerAgent = opts.maxTurnsPerAgent ?? 20;
+    // Built-in agents
     this.sessions.set("plan", createAgentSession("plan"));
     this.sessions.set("build", createAgentSession("build"));
     this.sessions.set("general", createAgentSession("general"));
     this.turnCounts.set("plan", 0);
     this.turnCounts.set("build", 0);
     this.turnCounts.set("general", 0);
+    // Custom agents
+    for (const agent of opts.customAgents ?? []) {
+      this.sessions.set(agent.name, createAgentSession(agent.name));
+      this.turnCounts.set(agent.name, 0);
+    }
   }
 
   getActiveRole(): AgentRole {
@@ -96,7 +102,7 @@ export class AgentOrchestrator {
   }
 
   private getToolsForRole(role: AgentRole): ToolSpec[] {
-    const base = getAgentTools(role);
+    const base = getAgentTools(role, this.opts.customAgents);
     // LSP tools are additive if available
     if (this.opts.lspTools.length > 0) {
       const baseNames = new Set(base.map((t) => t.name));
@@ -224,7 +230,17 @@ export class AgentOrchestrator {
     session.messages.push(userMessage);
 
     const tools = this.getToolsForRole(this.activeRole);
-    const model = this.opts.agentModels?.[this.activeRole] ?? this.opts.model;
+    const customAgent = this.opts.customAgents?.find((a) => a.name === this.activeRole);
+    const model = customAgent?.model ?? this.opts.agentModels?.[this.activeRole] ?? this.opts.model;
+    const reasoningEffort = customAgent?.reasoningEffort ?? this.opts.agentReasoningEffort?.[this.activeRole] ?? this.opts.reasoningEffort;
+
+    // Inject custom system prompt if defined
+    if (customAgent?.systemPrompt && !session.messages.some((m) => m.role === "system" && m.content === customAgent.systemPrompt)) {
+      session.messages.unshift({
+        role: "system",
+        content: customAgent.systemPrompt,
+      });
+    }
 
     await runAgentTurn({
       accountId: this.opts.accountId,
@@ -236,7 +252,7 @@ export class AgentOrchestrator {
       executor: this.opts.executor,
       cwd: this.opts.cwd,
       signal: this.opts.signal,
-      reasoningEffort: this.opts.reasoningEffort,
+      reasoningEffort,
       coauthor: this.opts.coauthor,
       sessionId: this.opts.sessionId,
       memoryManager: this.opts.memoryManager,

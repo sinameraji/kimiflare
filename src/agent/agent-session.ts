@@ -3,7 +3,10 @@ import type { ToolSpec } from "../tools/registry.js";
 import { ALL_TOOLS } from "../tools/executor.js";
 import { ArtifactStore } from "./session-state.js";
 
-export type AgentRole = "plan" | "build" | "general";
+export type AgentRole = string;
+
+/** Built-in agent roles. */
+export const BUILTIN_ROLES = ["plan", "build", "general"] as const;
 
 export interface AgentSession {
   role: AgentRole;
@@ -71,13 +74,22 @@ function resolveTools(names: readonly string[]): ToolSpec[] {
   return out;
 }
 
-export function getAgentTools(role: AgentRole): ToolSpec[] {
+export function getAgentTools(role: AgentRole, customAgents?: { name: string; tools: string[] }[]): ToolSpec[] {
+  // Check for custom agent first
+  if (customAgents) {
+    const custom = customAgents.find((a) => a.name === role);
+    if (custom) {
+      return resolveTools(custom.tools.sort((a, b) => a.localeCompare(b)));
+    }
+  }
   switch (role) {
     case "plan":
       return resolveTools(PLAN_TOOL_NAMES);
     case "build":
       return resolveTools(BUILD_TOOL_NAMES);
     case "general":
+      return resolveTools(GENERAL_TOOL_NAMES);
+    default:
       return resolveTools(GENERAL_TOOL_NAMES);
   }
 }

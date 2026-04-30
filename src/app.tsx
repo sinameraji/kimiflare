@@ -260,20 +260,13 @@ interface Cfg {
   costAttribution?: boolean;
   filePicker?: boolean;
   multiAgent?: boolean;
-  agentModels?: {
-    plan?: string;
-    build?: string;
-    general?: string;
-  };
-  agentReasoningEffort?: {
-    plan?: ReasoningEffort;
-    build?: ReasoningEffort;
-    general?: ReasoningEffort;
-  };
+  agentModels?: Record<string, string>;
+  agentReasoningEffort?: Record<string, ReasoningEffort>;
   orchestratorModel?: string;
   autoSwitch?: boolean;
   autoSwitchConfirm?: boolean;
   maxTurnsPerAgent?: number;
+  customAgents?: { name: string; tools: string[]; model?: string; systemPrompt?: string; reasoningEffort?: ReasoningEffort }[];
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -1548,6 +1541,7 @@ function App({
               lspTools: lspToolsRef.current,
               autoSwitch: cfg.autoSwitch ?? false,
               autoSwitchConfirm: cfg.autoSwitchConfirm ?? false,
+              customAgents: cfg.customAgents,
             });
           }
           orchestratorRef.current.deserialize(file.multiAgentState);
@@ -1906,7 +1900,8 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `active agent: ${role}` }]);
           return true;
         }
-        if (sub === "plan" || sub === "build" || sub === "general") {
+        const customNames = cfg?.customAgents?.map((a) => a.name) ?? [];
+        if (sub === "plan" || sub === "build" || sub === "general" || customNames.includes(sub)) {
           const role = sub as AgentRole;
           const fromRole = orchestratorRef.current?.getActiveRole();
           if (fromRole === role) {
@@ -1940,7 +1935,9 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `auto-switch ${next ? "enabled" : "disabled"}` }]);
           return true;
         }
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /agent plan | build | general | status | auto" }]);
+        const builtIn = "plan | build | general";
+        const custom = customNames.length > 0 ? ` | ${customNames.join(" | ")}` : "";
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent ${builtIn}${custom} | status | auto` }]);
         return true;
       }
       if (c === "/plan") {
@@ -2515,6 +2512,7 @@ function App({
                   { kind: "info", key: mkKey(), text: `suggested switch: ${from} → ${to} (${reason}). Run /agent ${to} to switch.` },
                 ]);
               },
+              customAgents: cfg.customAgents,
             });
           }
           await orchestratorRef.current.runTurn({ role: "user", content });

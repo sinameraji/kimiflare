@@ -67,17 +67,9 @@ export interface KimiConfig {
   /** Enable multi-agent system with specialized plan/build/general agents. Default: false. */
   multiAgent?: boolean;
   /** Per-agent model overrides. Falls back to the global model if not specified. */
-  agentModels?: {
-    plan?: string;
-    build?: string;
-    general?: string;
-  };
+  agentModels?: Record<string, string>;
   /** Per-agent reasoning effort overrides. */
-  agentReasoningEffort?: {
-    plan?: ReasoningEffort;
-    build?: ReasoningEffort;
-    general?: ReasoningEffort;
-  };
+  agentReasoningEffort?: Record<string, ReasoningEffort>;
   /** Model used for orchestrator synthesis (hand-off summaries). Defaults to plumbingModel. */
   orchestratorModel?: string;
   /** Enable automatic agent switching based on intent classification. Default: false. */
@@ -86,6 +78,21 @@ export interface KimiConfig {
   autoSwitchConfirm?: boolean;
   /** Maximum turns per agent before forced hand-off. Default: 20. */
   maxTurnsPerAgent?: number;
+  /** User-defined custom agents with their own tool sets and models. */
+  customAgents?: CustomAgentConfig[];
+}
+
+export interface CustomAgentConfig {
+  /** Unique name for the custom agent (e.g. "tester", "docs"). */
+  name: string;
+  /** Tool names this agent can use. */
+  tools: string[];
+  /** Model override for this agent. Falls back to global model. */
+  model?: string;
+  /** Custom system prompt for this agent. */
+  systemPrompt?: string;
+  /** Reasoning effort override for this agent. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -162,6 +169,47 @@ function validateAgentModels(models: KimiConfig["agentModels"]): NonNullable<Kim
     }
   }
   return out;
+}
+
+function validateCustomAgents(agents: KimiConfig["customAgents"]): KimiConfig["customAgents"] {
+  if (!agents || !Array.isArray(agents)) return undefined;
+  const out: CustomAgentConfig[] = [];
+  const seen = new Set<string>();
+  for (const agent of agents) {
+    if (!agent || typeof agent.name !== "string" || !agent.name.trim()) {
+      console.warn("[kimiflare] Skipping invalid custom agent: missing name");
+      continue;
+    }
+    const name = agent.name.trim().toLowerCase();
+    if (seen.has(name)) {
+      console.warn(`[kimiflare] Skipping duplicate custom agent: "${name}"`);
+      continue;
+    }
+    if (["plan", "build", "general"].includes(name)) {
+      console.warn(`[kimiflare] Skipping custom agent "${name}": reserved built-in role name`);
+      continue;
+    }
+    seen.add(name);
+    const tools = Array.isArray(agent.tools) ? agent.tools.filter((t): t is string => typeof t === "string") : [];
+    if (tools.length === 0) {
+      console.warn(`[kimiflare] Custom agent "${name}" has no valid tools`);
+    }
+    const cfg: CustomAgentConfig = { name, tools };
+    if (agent.model) {
+      try {
+        validateModelId(agent.model);
+        cfg.model = agent.model;
+      } catch {
+        console.warn(`[kimiflare] Invalid custom agent model for "${name}": "${agent.model}" — falling back to default`);
+      }
+    }
+    if (agent.systemPrompt) cfg.systemPrompt = agent.systemPrompt;
+    if (agent.reasoningEffort && EFFORTS.includes(agent.reasoningEffort)) {
+      cfg.reasoningEffort = agent.reasoningEffort;
+    }
+    out.push(cfg);
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 export async function loadConfig(): Promise<KimiConfig | null> {
@@ -266,6 +314,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         agentModels: validateAgentModels(parsed.agentModels),
         agentReasoningEffort: parsed.agentReasoningEffort,
         orchestratorModel: parsed.orchestratorModel,
+        customAgents: validateCustomAgents(parsed.customAgents),
       };
     }
   } catch {
