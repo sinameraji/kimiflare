@@ -69,7 +69,7 @@ const SECRET_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\b[0-9a-f]{32,64}\b/g, replacement: "[REDACTED_HEX_KEY]" },
 ];
 
-function redactSecrets(text: string): string {
+export function redactSecrets(text: string): string {
   let result = text;
   for (const { pattern, replacement } of SECRET_PATTERNS) {
     result = result.replace(pattern, replacement);
@@ -186,7 +186,8 @@ export class MemoryManager {
     importance: number,
     repoPath: string,
     sessionId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    agentRole?: string
   ): Promise<{ id: string; superseded?: string[] }> {
     if (!this.db) throw new Error("Memory DB not open");
 
@@ -240,6 +241,7 @@ export class MemoryManager {
       repoPath,
       importance: Math.max(1, Math.min(5, importance)),
       topicKey: topicKey ?? undefined,
+      agentRole,
     };
 
     const memory = insertMemory(this.db, input, embeddings[0]!);
@@ -274,6 +276,13 @@ export class MemoryManager {
     }
 
     return retrieveMemories({ db: this.db, query });
+  }
+
+  /**
+   * Recall memories created by a specific agent role.
+   */
+  async recallByRole(query: MemoryQuery, agentRole: string): Promise<HybridResult[]> {
+    return this.recall({ ...query, agentRole });
   }
 
   /**

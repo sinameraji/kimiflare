@@ -23,6 +23,7 @@ export type TaskCategory =
   | "running-shell-commands"
   | "searching-code"
   | "searching-web"
+  | "exploring-codebase"
   | "other";
 
 export const ALL_CATEGORIES: TaskCategory[] = [
@@ -46,6 +47,7 @@ export const ALL_CATEGORIES: TaskCategory[] = [
   "running-shell-commands",
   "searching-code",
   "searching-web",
+  "exploring-codebase",
   "other",
 ];
 
@@ -86,11 +88,24 @@ export interface ReconciliationResult {
   message?: string;
 }
 
+export interface AgentMetricsEntry {
+  role: string;
+  sessions: number;
+  cost: number;
+  tokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  avgLatencyMs?: number;
+  cacheHitRatio?: number;
+}
+
 export interface CostAttributionReport {
   period: { start: string; end: string };
   categories: CategoryReportEntry[];
   topSessions: TopSessionEntry[];
   reconciliation: ReconciliationResult;
+  /** Per-agent metrics (only populated when multi-agent sessions exist). */
+  agentMetrics?: AgentMetricsEntry[];
 }
 
 export interface SignalEntry {

@@ -14,6 +14,7 @@ interface Props {
   currentThemeName: string;
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
+  multiAgentEnabled?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -32,7 +33,8 @@ type Page =
   | "info"
   | "config"
   | "commands"
-  | "custom";
+  | "custom"
+  | "multi-agent";
 
 interface CommandItem {
   command: string;
@@ -162,6 +164,16 @@ const CATEGORIES: Category[] = [
       { command: "filePicker", description: "enable with KIMIFLARE_FILE_PICKER=1 or filePicker: true in config", selectable: false },
     ],
   },
+  {
+    key: "multi-agent",
+    label: "Multi-Agent",
+    commands: [
+      { command: "/agent on", description: "enable multi-agent mode (auto-switching)" },
+      { command: "/agent off", description: "disable multi-agent mode" },
+      { command: "/agent status", description: "show active agent" },
+      { command: "customAgents", description: "define in config: [{name, tools, model, systemPrompt}]", selectable: false },
+    ],
+  },
 ];
 
 const SINGLE_COMMANDS: CommandItem[] = [
@@ -170,7 +182,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, multiAgentEnabled, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 
@@ -191,7 +203,7 @@ export function HelpMenu({ theme, themes, currentThemeName, customCommands, cost
 
   if (page === "main") {
     const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
-      label: cat.label,
+      label: cat.key === "multi-agent" ? `${cat.label} ${multiAgentEnabled ? "· on" : "· off"}` : cat.label,
       value: cat.key,
       key: cat.key,
     }));

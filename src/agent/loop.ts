@@ -50,6 +50,10 @@ export interface AgentTurnOpts {
   codeMode?: boolean;
   /** Called after write/edit tools succeed so LSP document sync can fire. */
   onFileChange?: (path: string, content: string) => void;
+  /** Per-agent anti-loop guard state. If provided, runAgentTurn reads from and writes to this array. */
+  recentToolCalls?: string[];
+  /** Agent role for cost tracking. */
+  agentRole?: string;
 }
 
 const codeModeApiCache = new Map<string, string>();
@@ -105,7 +109,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let lastUsage: Usage | null = null;
 
   // Anti-loop guardrail: track recent tool call signatures to detect thrashing
-  const recentToolCalls: string[] = [];
+  const recentToolCalls = opts.recentToolCalls ?? [];
   const LOOP_WINDOW = 8;
   const LOOP_THRESHOLD = 2; // 3rd identical call triggers the guardrail
 
@@ -251,6 +255,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           toolResults,
           usage: lastUsage,
           shadowStrip: shadowStripMetrics,
+          agentRole: opts.agentRole,
         });
       }
       return;
@@ -292,7 +297,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -333,7 +338,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
           opts.onFileChange,
         );
         toolResults.push(result);
@@ -358,6 +363,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         toolResults,
         usage: lastUsage,
         shadowStrip: shadowStripMetrics,
+        agentRole: opts.agentRole,
       });
     }
   }

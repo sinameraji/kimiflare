@@ -100,7 +100,7 @@ export async function runCostCommand(opts: CostCommandOptions): Promise<void> {
 
   for (const s of sessions) {
     if (!s.category || opts.reclassify) {
-      const result = await classifyFromSessionFile(s.id);
+      const result = await classifyFromSessionFile(s.id, s.agentRole);
       s.category = result.category;
       s.confidence = result.confidence;
       s.classifiedBy = result.classifiedBy;

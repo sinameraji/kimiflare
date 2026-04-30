@@ -15,6 +15,8 @@ export interface Memory {
   supersededBy: string | null;
   forgotten: boolean;
   vectorized: boolean;
+  /** Agent role that created this memory (plan, build, general). */
+  agentRole: string | null;
 }
 
 export interface MemoryInput {
@@ -25,6 +27,8 @@ export interface MemoryInput {
   importance: number;
   relatedFiles?: string[];
   topicKey?: string;
+  /** Agent role that created this memory (plan, build, general). */
+  agentRole?: string;
 }
 
 export interface MemoryQuery {
@@ -34,6 +38,8 @@ export interface MemoryQuery {
   category?: MemoryCategory;
   limit?: number;
   maxAgeDays?: number;
+  /** Filter recalled memories by the agent role that created them. */
+  agentRole?: string;
 }
 
 export interface HybridResult {

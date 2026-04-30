@@ -43,6 +43,8 @@ interface ToolCall {
 interface TurnData {
   toolCalls: ToolCall[];
   tokens?: number;
+  /** Agent role for multi-agent sessions (plan, build, general). */
+  agentRole?: string;
 }
 
 function extOf(path: string): string {
@@ -158,6 +160,16 @@ export function classifyTurn(turn: TurnData): SignalEntry[] {
   return signals;
 }
 
+const AGENT_ROLE_CATEGORY_MAP: Record<string, TaskCategory> = {
+  research: "exploring-codebase",
+  coding: "editing-source-code",
+  generalist: "other",
+  // Backward-compat for old role names
+  plan: "exploring-codebase",
+  build: "editing-source-code",
+  general: "other",
+};
+
 export function classifySession(
   turns: TurnData[],
   opts?: { totalTurns?: number; totalToolCalls?: number },
@@ -168,6 +180,13 @@ export function classifySession(
     const signals = classifyTurn(turn);
     for (const s of signals) {
       scores.set(s.category, (scores.get(s.category) ?? 0) + s.weight * s.confidence);
+    }
+    // Agent role signal: nudges category based on which agent was active
+    if (turn.agentRole) {
+      const roleCat = AGENT_ROLE_CATEGORY_MAP[turn.agentRole];
+      if (roleCat) {
+        scores.set(roleCat, (scores.get(roleCat) ?? 0) + (turn.tokens ?? 1) * 0.4);
+      }
     }
   }
 

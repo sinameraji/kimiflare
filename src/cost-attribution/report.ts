@@ -79,10 +79,45 @@ export function buildReport(opts: BuildReportOptions): CostAttributionReport {
       summary: s.summary,
     }));
 
+  // Per-agent metrics
+  const agentMap = new Map<string, { sessions: number; cost: number; tokens: number; promptTokens: number; completionTokens: number; latencies: number[]; cacheHits: number; cacheTotal: number }>();
+  for (const s of opts.sessions) {
+    if (!s.agentRole) continue;
+    const entry = agentMap.get(s.agentRole) ?? { sessions: 0, cost: 0, tokens: 0, promptTokens: 0, completionTokens: 0, latencies: [], cacheHits: 0, cacheTotal: 0 };
+    entry.sessions += 1;
+    entry.cost += s.cost;
+    entry.tokens += s.promptTokens + s.completionTokens;
+    entry.promptTokens += s.promptTokens;
+    entry.completionTokens += s.completionTokens;
+    for (const log of s.gatewayLogs ?? []) {
+      if (typeof log.duration === "number") entry.latencies.push(log.duration);
+      entry.cacheTotal += 1;
+      if (log.cached) entry.cacheHits += 1;
+    }
+    agentMap.set(s.agentRole, entry);
+  }
+  const agentMetrics = agentMap.size > 0
+    ? Array.from(agentMap.entries()).map(([role, data]) => ({
+        role,
+        sessions: data.sessions,
+        cost: data.cost,
+        tokens: data.tokens,
+        promptTokens: data.promptTokens,
+        completionTokens: data.completionTokens,
+        avgLatencyMs: data.latencies.length > 0
+          ? Math.round(data.latencies.reduce((a, b) => a + b, 0) / data.latencies.length)
+          : undefined,
+        cacheHitRatio: data.cacheTotal > 0
+          ? Math.round((data.cacheHits / data.cacheTotal) * 1000) / 1000
+          : undefined,
+      })).sort((a, b) => b.cost - a.cost)
+    : undefined;
+
   return {
     period: { start: opts.startDate, end: opts.endDate },
     categories,
     topSessions,
     reconciliation: opts.reconciliation ?? { status: "local-only", localCost: 0 },
+    agentMetrics,
   };
 }

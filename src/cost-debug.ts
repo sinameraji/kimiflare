@@ -58,6 +58,7 @@ export interface CostDebugEntry {
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
   signals?: string[]; // Literal categories detected this turn (cost attribution)
+  agentRole?: string;
 }
 
 function debugDir(): string {
@@ -149,6 +150,7 @@ export interface TurnDebugContext {
   previousMessages?: ChatMessage[];
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
+  agentRole?: string;
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -254,5 +256,6 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     cacheDiagnostics,
     compaction: ctx.compaction,
     shadowStrip: ctx.shadowStrip,
+    agentRole: ctx.agentRole,
   });
 }
