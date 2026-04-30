@@ -3,16 +3,10 @@ name: Guardrail Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - 'src/**'
-      - 'bin/**'
-      - 'feedback-worker/**'
-      - 'docs/**'
-      - 'package.json'
-      - 'tsconfig.json'
 
 jobs:
   guardrail-review:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
