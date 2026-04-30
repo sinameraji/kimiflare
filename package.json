@@ -43,7 +43,7 @@
     "build": "tsup",
     "dev": "tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "tsx --test src/**/*.test.ts src/**/*.test.tsx",
     "start": "node bin/kimiflare.mjs",
     "prepublishOnly": "npm run build"
   },

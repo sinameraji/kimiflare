@@ -39,6 +39,12 @@
 - Classification is lazy (runs on first `cost` invocation), deterministic heuristic with optional LLM fallback.
 - Results cached in `usage.json`; no runtime cost when disabled.
 
+**@ File Mention Picker (opt-in)**
+- Enable with `filePicker: true` in config or `KIMIFLARE_FILE_PICKER=1`.
+- Type `@` in the chat input to open a file picker with inline filtering and keyboard navigation.
+- Searches the current working directory, respecting `.gitignore` and common ignore patterns.
+- No runtime cost when disabled.
+
 **Do / Don't**
 - Do keep agent responses terse; don't re-summarize tool output the user already sees inline.
 - Do call `tasks_set` at the start of multi-step work and update it as steps complete; skip for trivial one-offs.
