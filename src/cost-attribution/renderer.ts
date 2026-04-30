@@ -77,6 +77,31 @@ export function renderTerminal(report: CostAttributionReport): string {
     }
   }
 
+  // Agent metrics
+  if (report.agentMetrics && report.agentMetrics.length > 0) {
+    lines.push("");
+    lines.push("Per-agent metrics:");
+    const roleWidth = 12;
+    const sessWidth = 6;
+    const costWidth = 10;
+    const tokWidth = 10;
+    const latWidth = 10;
+    const cacheWidth = 8;
+    lines.push(
+      `${pad("Role", roleWidth)} ${padLeft("Sess", sessWidth)} ${padLeft("Cost", costWidth)} ${padLeft("Tokens", tokWidth)} ${padLeft("Latency", latWidth)} ${padLeft("Cache", cacheWidth)}`,
+    );
+    lines.push("─".repeat(roleWidth + sessWidth + costWidth + tokWidth + latWidth + cacheWidth + 5));
+    for (const m of report.agentMetrics) {
+      const role = pad(m.role.slice(0, roleWidth), roleWidth);
+      const sess = padLeft(String(m.sessions), sessWidth);
+      const cost = padLeft(fmtCost(m.cost), costWidth);
+      const tok = padLeft(fmtTokens(m.tokens), tokWidth);
+      const lat = padLeft(m.avgLatencyMs ? `${m.avgLatencyMs}ms` : "—", latWidth);
+      const cache = padLeft(m.cacheHitRatio ? `${(m.cacheHitRatio * 100).toFixed(0)}%` : "—", cacheWidth);
+      lines.push(`${role} ${sess} ${cost} ${tok} ${lat} ${cache}`);
+    }
+  }
+
   // Reconciliation line
   lines.push("");
   const rec = report.reconciliation;
