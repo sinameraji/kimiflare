@@ -136,6 +136,30 @@ export class AgentOrchestrator {
     return null;
   }
 
+  /** Extract the last substantial assistant message (the deliverable) from a session.
+   *  If the agent produced a Brief or other long-form output, return it in full.
+   *  Otherwise return null so the caller falls back to synthesis. */
+  private extractDeliverable(session: AgentSession): string | null {
+    // Walk backwards to find the last assistant message with substantial content
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i]!;
+      if (m.role === "assistant" && typeof m.content === "string" && m.content.length > 200) {
+        // Heuristic: if it looks like a structured deliverable, return it in full
+        const hasDeliverableMarkers =
+          m.content.includes("DECISION:") ||
+          m.content.includes("RECOMMENDATION:") ||
+          m.content.includes("FINDINGS:") ||
+          m.content.includes("RESEARCH BRIEF") ||
+          m.content.includes("IMPLEMENTATION PLAN") ||
+          m.content.includes("---");
+        if (hasDeliverableMarkers || m.content.length > 800) {
+          return m.content;
+        }
+      }
+    }
+    return null;
+  }
+
   private getToolsForRole(role: AgentRole): ToolSpec[] {
     const base = getAgentTools(role, this.opts.customAgents);
     // LSP tools are additive if available
@@ -317,13 +341,24 @@ export class AgentOrchestrator {
     const handOffTarget = this.detectHandOff(session.messages);
     if (handOffTarget && handOffTarget !== this.activeRole) {
       const fromRole = this.activeRole;
-      const summary = await this.synthesizeHandoff(fromRole, handOffTarget);
+      const fromSession = this.sessions.get(fromRole)!;
+
+      // Prefer the agent's actual deliverable (Brief, Plan, etc.) over a lossy synthesis
+      const deliverable = this.extractDeliverable(fromSession);
+      let handoffContent = "";
+      if (deliverable) {
+        handoffContent = `[hand-off from ${fromRole} agent — agent requested hand-off]\n\nThe ${fromRole} agent completed its work. Here is their full deliverable:\n\n${deliverable}`;
+      } else {
+        const summary = await this.synthesizeHandoff(fromRole, handOffTarget);
+        handoffContent = `[hand-off from ${fromRole} agent — agent requested hand-off]\n${summary}`;
+      }
+
       this.activeRole = handOffTarget;
       const newSession = this.getActiveSession();
-      if (summary) {
+      if (handoffContent) {
         newSession.messages.push({
           role: "system",
-          content: `[hand-off from ${fromRole} agent — agent requested hand-off]\n${summary}`,
+          content: handoffContent,
         });
       }
       // Carry the original user message into the target session so the agent
