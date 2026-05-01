@@ -136,25 +136,14 @@ export class AgentOrchestrator {
     return null;
   }
 
-  /** Extract the last substantial assistant message (the deliverable) from a session.
-   *  If the agent produced a Brief or other long-form output, return it in full.
-   *  Otherwise return null so the caller falls back to synthesis. */
+  /** Extract the last assistant message content from a session.
+   *  Returns the full text in its entirety — no truncation, no summarization.
+   *  If the agent has no text content, falls back to synthesis. */
   private extractDeliverable(session: AgentSession): string | null {
-    // Walk backwards to find the last assistant message with substantial content
     for (let i = session.messages.length - 1; i >= 0; i--) {
       const m = session.messages[i]!;
-      if (m.role === "assistant" && typeof m.content === "string" && m.content.length > 200) {
-        // Heuristic: if it looks like a structured deliverable, return it in full
-        const hasDeliverableMarkers =
-          m.content.includes("DECISION:") ||
-          m.content.includes("RECOMMENDATION:") ||
-          m.content.includes("FINDINGS:") ||
-          m.content.includes("RESEARCH BRIEF") ||
-          m.content.includes("IMPLEMENTATION PLAN") ||
-          m.content.includes("---");
-        if (hasDeliverableMarkers || m.content.length > 800) {
-          return m.content;
-        }
+      if (m.role === "assistant" && typeof m.content === "string" && m.content.trim().length > 0) {
+        return m.content;
       }
     }
     return null;
