@@ -316,16 +316,56 @@ export class AgentOrchestrator {
     // Detect hand_off requests from the agent and trigger orchestrated hand-off
     const handOffTarget = this.detectHandOff(session.messages);
     if (handOffTarget && handOffTarget !== this.activeRole) {
-      const summary = await this.synthesizeHandoff(this.activeRole, handOffTarget);
+      const fromRole = this.activeRole;
+      const summary = await this.synthesizeHandoff(fromRole, handOffTarget);
       this.activeRole = handOffTarget;
       const newSession = this.getActiveSession();
       if (summary) {
         newSession.messages.push({
           role: "system",
-          content: `[hand-off from ${this.activeRole} agent — agent requested hand-off]\n${summary}`,
+          content: `[hand-off from ${fromRole} agent — agent requested hand-off]\n${summary}`,
         });
       }
+      // Carry the original user message into the target session so the agent
+      // has context on what to do — otherwise it sees only the summary and
+      // may ask "what should I do?" instead of acting.
+      newSession.messages.push(userMessage);
       this.turnCounts.set(handOffTarget, 0);
+
+      // Run the target agent immediately so the user sees continuous progress
+      const targetTools = this.getToolsForRole(this.activeRole);
+      const targetCustomAgent = this.opts.customAgents?.find((a) => a.name === this.activeRole);
+      const targetConfig = this.resolveAgentConfig(this.activeRole);
+      const targetModel = targetCustomAgent?.model ?? targetConfig.model ?? this.opts.model;
+      const targetReasoning = targetCustomAgent?.reasoningEffort ?? targetConfig.reasoningEffort ?? this.opts.reasoningEffort;
+      if (targetCustomAgent?.systemPrompt && !newSession.messages.some((m) => m.role === "system" && m.content === targetCustomAgent.systemPrompt)) {
+        newSession.messages.unshift({
+          role: "system",
+          content: targetCustomAgent.systemPrompt,
+        });
+      }
+      await runAgentTurn({
+        accountId: this.opts.accountId,
+        apiToken: this.opts.apiToken,
+        model: targetModel,
+        gateway: this.opts.gateway,
+        messages: newSession.messages,
+        tools: [...targetTools, ...this.opts.mcpTools],
+        executor: this.opts.executor,
+        cwd: this.opts.cwd,
+        signal: this.opts.signal,
+        reasoningEffort: targetReasoning,
+        coauthor: this.opts.coauthor,
+        sessionId: this.opts.sessionId,
+        memoryManager: this.opts.memoryManager,
+        keepLastImageTurns: this.opts.keepLastImageTurns,
+        codeMode: this.opts.codeMode,
+        onFileChange: this.opts.onFileChange,
+        callbacks: this.opts.callbacks,
+        recentToolCalls: newSession.recentToolCalls,
+        agentRole: this.activeRole,
+      });
+      newSession.recentToolCalls = newSession.recentToolCalls.slice(-8);
     }
 
     // Increment turn count
