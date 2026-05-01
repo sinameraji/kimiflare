@@ -48,7 +48,12 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
     prefixEnd++;
   }
   const prefix = messages.slice(0, prefixEnd);
-  if (prefix.length === 0) throw new Error("compact: no system message found");
+  if (prefix.length === 0) {
+    // No system message found — skip compaction rather than crash.
+    // This can happen in multi-agent sessions where per-agent buffers
+    // lack the prefix system messages.
+    return { summary: "", newMessages: messages, replacedCount: 0 };
+  }
 
   const cutoffUserIdx = indexOfNthUserFromEnd(messages, keep);
   const firstKeepIdx = cutoffUserIdx >= 0 ? cutoffUserIdx : messages.length;

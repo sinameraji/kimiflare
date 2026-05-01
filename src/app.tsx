@@ -502,6 +502,7 @@ function App({
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
   const orchestratorRef = useRef<AgentOrchestrator | null>(null);
+  const pendingOrchestratorStateRef = useRef<Parameters<AgentOrchestrator["deserialize"]>[0] | null>(null);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -1505,46 +1506,19 @@ function App({
         } else {
           artifactStoreRef.current = new ArtifactStore();
         }
-        if (file.multiAgentState && cfg?.multiAgent) {
-          if (!orchestratorRef.current) {
-            orchestratorRef.current = new AgentOrchestrator({
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              model: cfg.model,
-              orchestratorModel: cfg.orchestratorModel ?? cfg.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
-              gateway: gatewayFromConfig(cfg),
-              cwd: process.cwd(),
-              signal: new AbortController().signal,
-              reasoningEffort: effortRef.current,
-              coauthor: cfg.coauthor !== false ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" } : undefined,
-              sessionId: file.id,
-              memoryManager: memoryManagerRef.current,
-              keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-              codeMode,
-              callbacks: {
-                onAssistantStart: () => {},
-                onReasoningDelta: () => {},
-                onTextDelta: () => {},
-                onToolCallStart: () => {},
-                onToolCallArgs: () => {},
-                onToolCallFinalized: () => {},
-                onUsage: () => {},
-                onUsageFinal: () => {},
-                onGatewayMeta: () => {},
-                onAssistantFinal: () => {},
-                onToolResult: () => {},
-                onTasks: () => {},
-                askPermission: async () => "allow",
-              },
-              executor: executorRef.current,
-              mcpTools: mcpToolsRef.current,
-              lspTools: lspToolsRef.current,
-              autoSwitch: cfg.autoSwitch ?? false,
-              autoSwitchConfirm: cfg.autoSwitchConfirm ?? false,
-              customAgents: cfg.customAgents,
-            });
+        if (cfg?.multiAgent) {
+          // Stash state so processMessage can hydrate the orchestrator with
+          // proper callbacks (sharedCallbacks) instead of the no-op callbacks
+          // we would have to use here during resume.
+          if (file.multiAgentState) {
+            pendingOrchestratorStateRef.current = file.multiAgentState;
+          } else {
+            // Migrate legacy session: seed the default agent with global history
+            pendingOrchestratorStateRef.current = {
+              activeRole: "generalist",
+              agents: [{ role: "generalist", messages: file.messages, recentToolCalls: [] }],
+            };
           }
-          orchestratorRef.current.deserialize(file.multiAgentState);
         }
 
         // Recall memories for resumed session so the model has context
@@ -1640,6 +1614,7 @@ function App({
         artifactStoreRef.current = new ArtifactStore();
         executorRef.current.clearArtifacts();
         orchestratorRef.current = null;
+        pendingOrchestratorStateRef.current = null;
         setEvents([]);
         setUsage(null);
         setSessionUsage(null);
@@ -2566,6 +2541,23 @@ function App({
               },
               customAgents: cfg.customAgents,
             });
+            if (pendingOrchestratorStateRef.current) {
+              orchestratorRef.current.deserialize(pendingOrchestratorStateRef.current);
+              pendingOrchestratorStateRef.current = null;
+            }
+            // Ensure active agent has system messages. New multi-agent sessions
+            // start with empty per-agent buffers, but compactMessages (and the
+            // model itself) expect a leading system message.
+            const activeSession = orchestratorRef.current.getActiveSession();
+            if (!activeSession.messages.some((m) => m.role === "system")) {
+              const prefix = makePrefixMessages(
+                cacheStableRef.current,
+                overrideModel ?? cfg.model,
+                modeRef.current,
+                [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+              );
+              activeSession.messages.unshift(...prefix);
+            }
           }
           await orchestratorRef.current.runTurn({ role: "user", content });
           // Sync active agent messages to messagesRef for session saving
