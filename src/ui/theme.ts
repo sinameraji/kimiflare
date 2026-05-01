@@ -226,6 +226,74 @@ const rosePine: Theme = {
   modeBadge: { plan: "#31748f", auto: "#9ccfd8", edit: "#ebbcba" },
 };
 
+const oneDark: Theme = {
+  name: "one-dark",
+  label: "one-dark (Atom's iconic dark — blue & purple)",
+  user: "#61afef",
+  assistant: undefined,
+  reasoning: { color: "#5c6370", dim: true },
+  info: { color: "#5c6370", dim: true },
+  error: "#e06c75",
+  warn: "#e5c07b",
+  tool: "#c678dd",
+  spinner: "#61afef",
+  permission: "#e5c07b",
+  queue: { color: "#5c6370", dim: true },
+  accent: "#c678dd",
+  modeBadge: { plan: "#61afef", auto: "#98c379", edit: "#c678dd" },
+};
+
+const ayu: Theme = {
+  name: "ayu",
+  label: "ayu (clean modern — orange & cyan)",
+  user: "#39bae6",
+  assistant: undefined,
+  reasoning: { color: "#4d5566", dim: true },
+  info: { color: "#4d5566", dim: true },
+  error: "#f07178",
+  warn: "#ffb454",
+  tool: "#73b8ff",
+  spinner: "#39bae6",
+  permission: "#ffb454",
+  queue: { color: "#4d5566", dim: true },
+  accent: "#39bae6",
+  modeBadge: { plan: "#39bae6", auto: "#7ee787", edit: "#ffb454" },
+};
+
+const nightOwl: Theme = {
+  name: "night-owl",
+  label: "night-owl (deep navy — cyan & red)",
+  user: "#82aaff",
+  assistant: undefined,
+  reasoning: { color: "#4d6885", dim: true },
+  info: { color: "#4d6885", dim: true },
+  error: "#ef5350",
+  warn: "#ffca28",
+  tool: "#c792ea",
+  spinner: "#82aaff",
+  permission: "#ffca28",
+  queue: { color: "#4d6885", dim: true },
+  accent: "#c792ea",
+  modeBadge: { plan: "#82aaff", auto: "#7ee787", edit: "#c792ea" },
+};
+
+const palenight: Theme = {
+  name: "palenight",
+  label: "palenight (Material pale — purple & cyan)",
+  user: "#82b1ff",
+  assistant: undefined,
+  reasoning: { color: "#4c566a", dim: true },
+  info: { color: "#4c566a", dim: true },
+  error: "#f07178",
+  warn: "#ffcb6b",
+  tool: "#c792ea",
+  spinner: "#82b1ff",
+  permission: "#ffcb6b",
+  queue: { color: "#4c566a", dim: true },
+  accent: "#c792ea",
+  modeBadge: { plan: "#82b1ff", auto: "#c3e88d", edit: "#c792ea" },
+};
+
 export const THEMES: Record<string, Theme> = {
   dark,
   light,
@@ -239,6 +307,10 @@ export const THEMES: Record<string, Theme> = {
   "gruvbox-dark": gruvboxDark,
   "catppuccin-mocha": catppuccinMocha,
   "rose-pine": rosePine,
+  "one-dark": oneDark,
+  ayu,
+  "night-owl": nightOwl,
+  palenight,
 };
 
 export const DEFAULT_THEME_NAME = "dark";

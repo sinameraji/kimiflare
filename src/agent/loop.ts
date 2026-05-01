@@ -114,6 +114,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const LOOP_WINDOW = 8;
   const LOOP_THRESHOLD = 2; // 3rd identical call triggers the guardrail
 
+  // Web-fetch anti-loop: track domains and URL patterns to prevent research spirals
+  const webFetchHistory: { url: string; domain: string }[] = [];
+  const MAX_WEB_FETCH_PER_TURN = 5;
+  const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
+
   for (let iter = 0; iter < max; iter++) {
     turn++;
     const previousMessages = opts.messages.slice();
@@ -287,6 +292,63 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
         continue;
+      }
+
+      // Web-fetch spiral guardrail
+      if (tc.function.name === "web_fetch") {
+        const args = JSON.parse(tc.function.arguments || "{}") as { url?: string };
+        const url = args.url || "";
+        try {
+          const domain = new URL(url).hostname;
+          const domainCount = webFetchHistory.filter((h) => h.domain === domain).length;
+          const totalWebFetches = webFetchHistory.length;
+
+          if (totalWebFetches >= MAX_WEB_FETCH_PER_TURN) {
+            const warning = `Research budget exceeded: you have already made ${MAX_WEB_FETCH_PER_TURN} web requests this turn. Synthesize what you have learned instead of fetching more pages.`;
+            const budgetResult: ToolResult = {
+              tool_call_id: tc.id,
+              name: "web_fetch",
+              content: warning,
+              ok: false,
+            };
+            toolResults.push(budgetResult);
+            opts.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: sanitizeString(warning),
+              name: "web_fetch",
+            });
+            opts.callbacks.onToolResult?.(budgetResult);
+            recentToolCalls.push(loopSignature);
+            if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+            continue;
+          }
+
+          if (domainCount >= WEB_FETCH_DOMAIN_THRESHOLD) {
+            const warning = `Loop detected: you have fetched from ${domain} multiple times. Consider a different approach or synthesize existing findings.`;
+            const loopResult: ToolResult = {
+              tool_call_id: tc.id,
+              name: "web_fetch",
+              content: warning,
+              ok: false,
+            };
+            toolResults.push(loopResult);
+            opts.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: sanitizeString(warning),
+              name: "web_fetch",
+            });
+            opts.callbacks.onToolResult?.(loopResult);
+            recentToolCalls.push(loopSignature);
+            if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+            continue;
+          }
+
+          webFetchHistory.push({ url, domain });
+        } catch {
+          // Invalid URL, let it fail normally
+        }
       }
 
       if (codeMode && tc.function.name === "execute_code") {
