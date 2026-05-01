@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.0](https://github.com/sinameraji/kimiflare/compare/v0.30.0...v0.31.0) (2026-05-01)
+
+
+### Features
+
+* / slash command picker with inline filtering and navigation ([#228](https://github.com/sinameraji/kimiflare/issues/228)) ([ac462fd](https://github.com/sinameraji/kimiflare/commit/ac462fd8b62107b781966d7b353ebd44c5936b66))
+* **agents:** Coding Agent and General Agent personas ([#227](https://github.com/sinameraji/kimiflare/issues/227)) ([0a7346a](https://github.com/sinameraji/kimiflare/commit/0a7346ad6c54efe85664fce713200703a801b560))
+
 ## [0.30.0](https://github.com/sinameraji/kimiflare/compare/v0.29.1...v0.30.0) (2026-05-01)
 
 

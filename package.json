@@ -1,6 +1,6 @@
 {
   "name": "kimiflare",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Kimiflare — a terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. Image understanding, plan mode, MCP server integration, 262k context.",
   "keywords": [
     "ai",
