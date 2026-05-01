@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/sinameraji/kimiflare/compare/v0.29.0...v0.29.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* **multi-agent:** resume context loss, missing system messages, compact crash ([#223](https://github.com/sinameraji/kimiflare/issues/223)) ([77828bb](https://github.com/sinameraji/kimiflare/commit/77828bbe0204fe345df61bc766bf1a5f58fe8342))
+
 ## [0.29.0](https://github.com/sinameraji/kimiflare/compare/v0.28.0...v0.29.0) (2026-04-30)
 
 
