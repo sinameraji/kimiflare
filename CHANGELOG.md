@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/sinameraji/kimiflare/compare/v0.29.1...v0.30.0) (2026-05-01)
+
+
+### Features
+
+* **research-agent:** deliverable-driven persona with hand_off, budget checks, and graceful pause ([#225](https://github.com/sinameraji/kimiflare/issues/225)) ([08fd777](https://github.com/sinameraji/kimiflare/commit/08fd77744092661579af5d2c3e4fa1d699d86f1f))
+
 ## [0.29.1](https://github.com/sinameraji/kimiflare/compare/v0.29.0...v0.29.1) (2026-05-01)
 
 
