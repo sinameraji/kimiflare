@@ -217,4 +217,55 @@ describe("AgentOrchestrator", () => {
     assert.ok(summary.includes("synthesis failed"), "should indicate synthesis failure");
     assert.ok(summary.includes("test message"), "should include raw transcript fallback");
   });
+
+  it("auto-handoffs specialist to generalist when hand_off was forgotten", async () => {
+    const longDeliverable = "A".repeat(400);
+    globalThis.fetch = async () => {
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(encoder.encode(`data: {"choices":[{"delta":{"content":"${longDeliverable}"}}]}\n\n`));
+          c.enqueue(encoder.encode('data: {"choices":[{"finish_reason":"stop"}]}\n\n'));
+          c.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const orch = makeOrchestrator();
+    orch.switchTo("research");
+    await orch.runTurn({ role: "user", content: "Research terminal themes" });
+    assert.strictEqual(orch.getActiveRole(), "generalist");
+    const generalistSession = orch.getActiveSession();
+    const systemMsg = generalistSession.messages.find((m) => m.role === "system");
+    assert.ok(systemMsg, "should have auto hand-off system message");
+    assert.ok((systemMsg!.content as string).includes("auto-detected completion"), "should indicate auto-detected completion");
+    assert.ok((systemMsg!.content as string).includes(longDeliverable), "should include the full deliverable");
+  });
+
+  it("does not auto-handoff specialist when deliverable is too short", async () => {
+    const shortResponse = "ok";
+    globalThis.fetch = async () => {
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(encoder.encode(`data: {"choices":[{"delta":{"content":"${shortResponse}"}}]}\n\n`));
+          c.enqueue(encoder.encode('data: {"choices":[{"finish_reason":"stop"}]}\n\n'));
+          c.close();
+        },
+      });
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    };
+
+    const orch = makeOrchestrator();
+    orch.switchTo("research");
+    await orch.runTurn({ role: "user", content: "Research terminal themes" });
+    assert.strictEqual(orch.getActiveRole(), "research");
+  });
 });

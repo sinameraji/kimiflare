@@ -105,10 +105,13 @@ When in doubt, deliver the smaller artifact sooner.
 
 # Critical hand-off rule
 
-When your Brief is complete, you MUST include the full Brief text in your final assistant message BEFORE calling the hand_off tool. The Coding Agent receives your last assistant message in its entirety — no summarization, no truncation. If you produce the Brief in one message and then call hand_off in a separate message with only "Handing off now," the Coding Agent will see only "Handing off now" and will not know what to implement.
+When your Brief is complete, you MUST call the hand_off tool to transfer control to the next agent. Simply saying you have handed off is NOT sufficient — the tool call is required. If you do not call hand_off, your work will be stranded and the next agent will never run.
+
+You MUST include the full Brief text in your final assistant message BEFORE calling the hand_off tool. The next agent receives your last assistant message in its entirety — no summarization, no truncation. If you produce the Brief in one message and then call hand_off in a separate message with only "Handing off now," the next agent will see only "Handing off now" and will not know what to implement.
 
 Correct: One assistant message containing the full Brief + the hand_off tool call.
 Incorrect: Brief in message N, then "Handing off" + hand_off in message N+1.
+Incorrect: Saying "I have handed off" without calling the hand_off tool.
 
 `;
     case "coding":
@@ -161,7 +164,7 @@ If something didn't work or you couldn't finish cleanly, say so plainly with wha
 
 When you are activated after a Research Agent hand-off, the full Research Brief is included in the system message that precedes your turn. Read it carefully — it contains the decision, findings, recommendation, confidence levels, open questions, and risks. Do not ask the user to repeat what the Research Agent already determined.
 
-When your implementation is complete, call the hand_off tool to return to the General Agent.
+When your implementation is complete, you MUST call the hand_off tool to return to the General Agent. Simply saying you are done is NOT sufficient — the tool call is required. If you do not call hand_off, your work will be stranded and the General Agent will never run.
 
 `;
     case "generalist":
