@@ -1344,9 +1344,10 @@ function App({
           onAssistantStart: () => {
             const id = nextAssistantId++;
             activeAsstIdRef.current = id;
+            const role = orchestratorRef.current?.getActiveRole();
             setEvents((e) => [
               ...e,
-              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, agentRole: role },
             ]);
           },
           onReasoningDelta: (d) => {
@@ -2395,9 +2396,10 @@ function App({
         onAssistantStart: () => {
           const id = nextAssistantId++;
           activeAsstIdRef.current = id;
+          const role = orchestratorRef.current?.getActiveRole();
           setEvents((e) => [
             ...e,
-            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, agentRole: role },
           ]);
         },
         onReasoningDelta: (d: string) => {
