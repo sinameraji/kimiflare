@@ -273,7 +273,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       plumbingModel: envPlumbingModel,
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
-      filePicker: envFilePicker ?? false,
+      filePicker: envFilePicker ?? true,
       multiAgent: envMultiAgent ?? false,
     };
   }
@@ -309,7 +309,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
-        filePicker: envFilePicker ?? parsed.filePicker ?? false,
+        filePicker: envFilePicker ?? parsed.filePicker ?? true,
         multiAgent: envMultiAgent ?? parsed.multiAgent ?? false,
         agentModels: validateAgentModels(parsed.agentModels),
         agentReasoningEffort: parsed.agentReasoningEffort,
