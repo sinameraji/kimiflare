@@ -2916,6 +2916,7 @@ function App({
   if (!cfg) {
     return (
       <Onboarding
+        theme={theme}
         onDone={(newCfg) => {
           setCfg(newCfg);
           setEvents((e) => [

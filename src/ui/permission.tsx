@@ -32,7 +32,7 @@ export function PermissionModal({ tool, args, onDecide, theme }: Props) {
       {render?.title ? <Text>action: {render.title}</Text> : null}
       {render?.diff ? (
         <Box marginTop={1} flexDirection="column">
-          <DiffView {...render.diff} />
+          <DiffView {...render.diff} theme={theme} />
         </Box>
       ) : (
         <Text color={theme.info.color} dimColor={theme.info.dim}>args: {JSON.stringify(args)}</Text>

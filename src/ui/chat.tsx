@@ -148,7 +148,7 @@ const EventView = React.memo(function EventView({
     );
   }
   if (evt.kind === "tool") {
-    return <ToolView evt={evt} verbose={verbose} />;
+    return <ToolView evt={evt} theme={theme} verbose={verbose} />;
   }
   if (evt.kind === "info") {
     return (

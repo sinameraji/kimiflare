@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
+import type { Theme } from "./theme.js";
 
 export interface ToolEventState {
   id: string;
@@ -16,19 +17,20 @@ export interface ToolEventState {
 
 interface Props {
   evt: ToolEventState;
+  theme: Theme;
   verbose?: boolean;
 }
 
-export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
+export const ToolView = React.memo(function ToolView({ evt, theme, verbose }: Props) {
   const statusIcon =
     evt.status === "running" ? (
-      <Text color="gray">
+      <Text color={theme.muted.color} dimColor={theme.muted.dim}>
         <Spinner type="dots" />
       </Text>
     ) : evt.status === "error" ? (
-      <Text color="red">✗</Text>
+      <Text color={theme.error}>✗</Text>
     ) : (
-      <Text color="green">✓</Text>
+      <Text color={theme.success}>✓</Text>
     );
   const title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
   const expand = Boolean(evt.expanded || verbose);
@@ -39,11 +41,13 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
     <Box flexDirection="column" marginLeft={2}>
       <Text>
         {statusIcon}{" "}
-        <Text color="gray">{title}</Text>
+        <Text color={theme.muted.color} dimColor={theme.muted.dim}>
+          {title}
+        </Text>
       </Text>
       {evt.render?.diff ? (
         <Box marginLeft={2}>
-          <DiffView {...evt.render.diff} />
+          <DiffView {...evt.render.diff} theme={theme} />
         </Box>
       ) : null}
       {evt.result && expand ? (
@@ -52,23 +56,23 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
           marginTop={1}
           flexDirection="column"
           borderStyle="single"
-          borderColor="gray"
+          borderColor={theme.border}
           paddingX={1}
         >
           {lines.slice(0, showLimit).map((l, i) => (
-            <Text key={i} color="gray" dimColor>
+            <Text key={i} color={theme.muted.color} dimColor={theme.muted.dim}>
               {l}
             </Text>
           ))}
           {lines.length > showLimit && (
-            <Text color="gray" dimColor>
+            <Text color={theme.muted.color} dimColor={theme.muted.dim}>
               … ({lines.length - showLimit} more lines)
             </Text>
           )}
         </Box>
       ) : null}
       {evt.result && !expand && evt.status !== "running" ? (
-        <Text color="gray" dimColor>
+        <Text color={theme.muted.color} dimColor={theme.muted.dim}>
           {"  "}{firstLine(evt.result)}
         </Text>
       ) : null}

@@ -141,7 +141,9 @@ const Block = React.memo(function Block({ block, theme }: { block: Block; theme:
       </Box>
     );
   }
-  return <Text>{renderInline(block.text, theme)}</Text>;
+  return (
+    <Text color={theme.assistant}>{renderInline(block.text, theme)}</Text>
+  );
 });
 
 function renderInline(src: string, theme: Theme): React.ReactNode {

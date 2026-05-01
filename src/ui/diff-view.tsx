@@ -1,15 +1,17 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { createTwoFilesPatch } from "diff";
+import type { Theme } from "./theme.js";
 
 interface Props {
   path: string;
   before: string;
   after: string;
   maxLines?: number;
+  theme: Theme;
 }
 
-export function DiffView({ path, before, after, maxLines = 40 }: Props) {
+export function DiffView({ path, before, after, maxLines = 40, theme }: Props) {
   const patch = createTwoFilesPatch(path, path, before, after, "", "", { context: 2 });
   const raw = patch.split("\n").slice(4);
   const lines = raw.filter((l) => {
@@ -29,9 +31,13 @@ export function DiffView({ path, before, after, maxLines = 40 }: Props) {
 
   return (
     <Box flexDirection="column">
-      {truncated.map((line, i) => <DiffLine key={i} line={line} />)}
+      {truncated.map((line, i) => (
+        <DiffLine key={i} line={line} theme={theme} />
+      ))}
       {filtered.length > maxLines && (
-        <Text color="gray">... ({filtered.length - maxLines} more lines)</Text>
+        <Text color={theme.muted.color} dimColor={theme.muted.dim}>
+          ... ({filtered.length - maxLines} more lines)
+        </Text>
       )}
     </Box>
   );
@@ -49,9 +55,9 @@ function countChanges(lines: string[]): { changed: number; context: number; hunk
   return { changed, context, hunks };
 }
 
-function DiffLine({ line }: { line: string }) {
-  if (line.startsWith("+")) return <Text color="green">{line}</Text>;
-  if (line.startsWith("-")) return <Text color="red">{line}</Text>;
-  if (line.startsWith("@@")) return <Text color="cyan">{line}</Text>;
-  return <Text color="gray">{line}</Text>;
+function DiffLine({ line, theme }: { line: string; theme: Theme }) {
+  if (line.startsWith("+")) return <Text color={theme.diffAdded}>{line}</Text>;
+  if (line.startsWith("-")) return <Text color={theme.diffRemoved}>{line}</Text>;
+  if (line.startsWith("@@")) return <Text color={theme.diffMeta}>{line}</Text>;
+  return <Text color={theme.muted.color} dimColor={theme.muted.dim}>{line}</Text>;
 }
