@@ -119,6 +119,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
+  // Budget tracking for research-agent self-assessment prompts
+  let totalToolCallsThisTurn = 0;
+  const BUDGET_CHECK_INTERVAL = 3;
+  const SOFT_BUDGET = 5;
+  const HARD_BUDGET = 15;
+
   for (let iter = 0; iter < max; iter++) {
     turn++;
     const previousMessages = opts.messages.slice();
@@ -414,7 +420,21 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+        totalToolCallsThisTurn++;
       }
+    }
+
+    // Budget self-assessment: inject reminder after every N tool calls
+    if (totalToolCallsThisTurn > 0 && totalToolCallsThisTurn % BUDGET_CHECK_INTERVAL === 0) {
+      let budgetMsg = "";
+      if (totalToolCallsThisTurn >= HARD_BUDGET) {
+        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. This is the substantial-question budget. Produce your deliverable now unless you can name a specific gap that would change the recommendation.`;
+      } else if (totalToolCallsThisTurn >= SOFT_BUDGET) {
+        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. If this is a routine question, produce your deliverable now. If substantial, justify the next call in one sentence.`;
+      } else {
+        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. Assess: is the next call worth more than what you already have? If yes, justify in one sentence. If no, produce your deliverable.`;
+      }
+      opts.messages.push({ role: "system", content: budgetMsg });
     }
 
     if (opts.sessionId && lastUsage) {
@@ -431,7 +451,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
   }
 
-  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50})`);
+  // Tool iteration limit reached: commit a graceful pause message so the agent
+  // retains context when the user says "go on".
+  const pauseMsg = `Paused after ${opts.maxToolIterations ?? 50} tool calls. The user may say "go on" to continue. If you have a partial deliverable (Research Brief, Implementation Notes, etc.), include it in your next response.`;
+  opts.messages.push({ role: "system", content: pauseMsg });
+  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50}). Say "go on" to continue, or ask me to focus on a specific area.`);
 }
 
 function validateToolArguments(raw: string): string {
