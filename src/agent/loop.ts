@@ -6,6 +6,7 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { AgentRole } from "./agent-session.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
@@ -53,7 +54,7 @@ export interface AgentTurnOpts {
   /** Per-agent anti-loop guard state. If provided, runAgentTurn reads from and writes to this array. */
   recentToolCalls?: string[];
   /** Agent role for cost tracking. */
-  agentRole?: string;
+  agentRole?: AgentRole;
 }
 
 const codeModeApiCache = new Map<string, string>();

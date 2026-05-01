@@ -349,14 +349,15 @@ function makePrefixMessages(
   model: string,
   mode: Mode,
   tools: ToolSpec[],
+  role?: AgentRole,
 ): ChatMessage[] {
   if (cacheStable) {
-    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
+    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode, role });
   }
   return [
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode, role }),
     },
   ];
 }
@@ -2555,6 +2556,7 @@ function App({
                 overrideModel ?? cfg.model,
                 modeRef.current,
                 [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+                orchestratorRef.current.getActiveRole(),
               );
               activeSession.messages.unshift(...prefix);
             }

@@ -4,6 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 import type { ToolSpec } from "../tools/registry.js";
 import { systemPromptForMode, type Mode } from "../mode.js";
 import type { ChatMessage } from "./messages.js";
+import type { AgentRole } from "./agent-session.js";
 
 export interface SystemPromptOpts {
   cwd: string;
@@ -11,6 +12,7 @@ export interface SystemPromptOpts {
   model: string;
   now?: Date;
   mode?: Mode;
+  role?: AgentRole;
 }
 
 const CONTEXT_FILENAMES = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"];
@@ -38,10 +40,38 @@ export function loadContextFile(cwd: string): ContextFile | null {
   return null;
 }
 
+/** Role-specific persona instructions to prevent audience confusion.
+ *  Research output is an internal memo to the coding agent, not a README. */
+export function buildRolePrefix(role?: AgentRole): string {
+  switch (role) {
+    case "research":
+      return `You are the Research Sub-Agent of kimiflare. Your output is consumed ONLY by the Coding Agent (kimiflare), NOT by the human user.
+
+CRITICAL AUDIENCE RULES:
+- Do NOT address the human user. Never use phrases like "you need to", "you should", "start by", "find the code that", or any imperative directed at the user.
+- Present findings as objective, third-party research: "The error originates in...", "The codebase uses...", "Option C is preferable because..."
+- When referring to the entity that will implement changes, say "kimiflare" or "the coding agent". When referring to yourself, say "the research agent" or "I".
+- Do not issue commands or step-by-step tutorials. Synthesize and analyze so kimiflare can act directly.
+- Your output is an internal memo to your coworker, not a README to the user.
+
+`;
+    case "coding":
+      return `You are the Coding Agent of kimiflare. You write code, edit files, and execute tools directly. Do not ask the user to do your work for you. Implement the changes yourself.
+
+`;
+    case "generalist":
+      return `You are the Generalist Agent of kimiflare. You handle conversational queries, memory management, and high-level task coordination.
+
+`;
+    default:
+      return "";
+  }
+}
+
 /** Build the truly static prefix that should remain byte-for-byte identical
  *  across all turns in a session. Contains identity and invariant rules only. */
-export function buildStaticPrefix(opts: Pick<SystemPromptOpts, "model">): string {
-  return `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
+export function buildStaticPrefix(opts: Pick<SystemPromptOpts, "model" | "role">): string {
+  return buildRolePrefix(opts.role) + `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
 
 How to work:
 - Prefer calling tools over guessing. Read files before editing them. Use \`glob\` and \`grep\` to explore code before assuming structure.
