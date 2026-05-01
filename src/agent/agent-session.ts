@@ -40,6 +40,7 @@ const RESEARCH_TOOL_NAMES: readonly string[] = [
 const CODING_TOOL_NAMES: readonly string[] = [
   "bash",
   "edit",
+  "hand_off",
   "lsp_codeAction",
   "lsp_definition",
   "lsp_diagnostics",
@@ -57,6 +58,7 @@ const CODING_TOOL_NAMES: readonly string[] = [
 ].sort((a, b) => a.localeCompare(b));
 
 const GENERALIST_TOOL_NAMES: readonly string[] = [
+  "hand_off",
   "memory_forget",
   "memory_recall",
   "memory_remember",
