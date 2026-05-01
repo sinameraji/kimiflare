@@ -113,6 +113,29 @@ export class AgentOrchestrator {
     return this.autoSwitch;
   }
 
+  /** Scan the session's last assistant message for a hand_off tool call.
+   *  Returns the target role if found, null otherwise. */
+  private detectHandOff(messages: ChatMessage[]): AgentRole | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.role === "assistant" && m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          if (tc.function.name === "hand_off") {
+            try {
+              const args = JSON.parse(tc.function.arguments) as { target?: string };
+              if (args.target) return args.target;
+            } catch {
+              // ignore parse errors
+            }
+          }
+        }
+        // Only check the most recent assistant message with tool_calls
+        break;
+      }
+    }
+    return null;
+  }
+
   private getToolsForRole(role: AgentRole): ToolSpec[] {
     const base = getAgentTools(role, this.opts.customAgents);
     // LSP tools are additive if available
@@ -289,6 +312,21 @@ export class AgentOrchestrator {
 
     // Update recentToolCalls from the session (runAgentTurn mutates it)
     session.recentToolCalls = session.recentToolCalls.slice(-8);
+
+    // Detect hand_off requests from the agent and trigger orchestrated hand-off
+    const handOffTarget = this.detectHandOff(session.messages);
+    if (handOffTarget && handOffTarget !== this.activeRole) {
+      const summary = await this.synthesizeHandoff(this.activeRole, handOffTarget);
+      this.activeRole = handOffTarget;
+      const newSession = this.getActiveSession();
+      if (summary) {
+        newSession.messages.push({
+          role: "system",
+          content: `[hand-off from ${this.activeRole} agent — agent requested hand-off]\n${summary}`,
+        });
+      }
+      this.turnCounts.set(handOffTarget, 0);
+    }
 
     // Increment turn count
     this.turnCounts.set(this.activeRole, (this.turnCounts.get(this.activeRole) ?? 0) + 1);

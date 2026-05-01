@@ -30,6 +30,7 @@ const RESEARCH_TOOL_NAMES: readonly string[] = [
   "lsp_rename",
   "lsp_typeDefinition",
   "lsp_workspaceSymbol",
+  "hand_off",
   "memory_recall",
   "read",
   "tasks_set",
