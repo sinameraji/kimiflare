@@ -350,14 +350,19 @@ function makePrefixMessages(
   mode: Mode,
   tools: ToolSpec[],
   role?: AgentRole,
+  multiAgent?: boolean,
 ): ChatMessage[] {
+  // In multi-agent mode, plan mode is functionally edit mode (Research Agent
+  // handles exploration, Coding Agent handles edits). Keep the visual badge
+  // but don't inject plan-mode restrictions into the system prompt.
+  const effectiveMode = multiAgent && mode === "plan" ? "edit" : mode;
   if (cacheStable) {
-    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode, role });
+    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode: effectiveMode, role });
   }
   return [
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode, role }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode: effectiveMode, role }),
     },
   ];
 }
@@ -809,6 +814,8 @@ function App({
 
   useEffect(() => {
     modeRef.current = mode;
+    // In multi-agent mode, plan mode is functionally edit mode.
+    const effectiveMode = cfg?.multiAgent && mode === "plan" ? "edit" : mode;
     if (cacheStableRef.current) {
       messagesRef.current[1] = {
         role: "system",
@@ -816,7 +823,7 @@ function App({
           cwd: process.cwd(),
           tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           model: cfg?.model ?? DEFAULT_MODEL,
-          mode,
+          mode: effectiveMode,
         }),
       };
     } else {
@@ -826,7 +833,7 @@ function App({
           cwd: process.cwd(),
           tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           model: cfg?.model ?? DEFAULT_MODEL,
-          mode,
+          mode: effectiveMode,
         }),
       };
     }
@@ -905,6 +912,7 @@ function App({
       }
     }
     if (totalTools > 0) {
+      const effectiveMode = cfg?.multiAgent && modeRef.current === "plan" ? "edit" : modeRef.current;
       if (cacheStableRef.current) {
         messagesRef.current[1] = {
           role: "system",
@@ -912,7 +920,7 @@ function App({
             cwd: process.cwd(),
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
+            mode: effectiveMode,
           }),
         };
       } else {
@@ -922,7 +930,7 @@ function App({
             cwd: process.cwd(),
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
+            mode: effectiveMode,
           }),
         };
       }
@@ -964,6 +972,7 @@ function App({
         executorRef.current.register(tool);
       }
       lspToolsRef.current = tools;
+      const effectiveMode = cfg?.multiAgent && modeRef.current === "plan" ? "edit" : modeRef.current;
       if (cacheStableRef.current) {
         messagesRef.current[1] = {
           role: "system",
@@ -971,7 +980,7 @@ function App({
             cwd: process.cwd(),
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
+            mode: effectiveMode,
           }),
         };
       } else {
@@ -981,7 +990,7 @@ function App({
             cwd: process.cwd(),
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
+            mode: effectiveMode,
           }),
         };
       }
@@ -1406,7 +1415,10 @@ function App({
                 resolve("allow");
                 return;
               }
-              if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+              // In multi-agent mode, plan mode is functionally equivalent to edit mode
+              // (the Research Agent handles exploration; the Coding Agent handles edits).
+              // We keep the visual "plan" badge for familiarity but don't block tools.
+              if (modeRef.current === "plan" && !cfg?.multiAgent && isBlockedInPlanMode(req.tool.name)) {
                 if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
                   resolve("allow");
                   return;
@@ -1435,6 +1447,7 @@ function App({
       });
 
       if (existsSync(join(cwd, "KIMI.md"))) {
+        const effectiveMode = cfg?.multiAgent && modeRef.current === "plan" ? "edit" : modeRef.current;
         if (cacheStableRef.current) {
           messagesRef.current[1] = {
             role: "system",
@@ -1442,7 +1455,7 @@ function App({
               cwd,
               tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
               model: cfg.model,
-              mode: modeRef.current,
+              mode: effectiveMode,
             }),
           };
         } else {
@@ -1452,7 +1465,7 @@ function App({
               cwd,
               tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
               model: cfg.model,
-              mode: modeRef.current,
+              mode: effectiveMode,
             }),
           };
         }
@@ -2478,7 +2491,10 @@ function App({
               resolve("allow");
               return;
             }
-            if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
+            // In multi-agent mode, plan mode is functionally equivalent to edit mode
+            // (the Research Agent handles exploration; the Coding Agent handles edits).
+            // We keep the visual "plan" badge for familiarity but don't block tools.
+            if (modeRef.current === "plan" && !cfg?.multiAgent && isBlockedInPlanMode(req.tool.name)) {
               if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
                 resolve("allow");
                 return;
@@ -2559,6 +2575,7 @@ function App({
                 modeRef.current,
                 [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
                 orchestratorRef.current.getActiveRole(),
+                true,
               );
               activeSession.messages.unshift(...prefix);
             }
