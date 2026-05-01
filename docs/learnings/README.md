@@ -24,4 +24,5 @@ Short notes, one-paragraph learnings, "we hit X and the fix was Y" observations,
 
 | Date | Document |
 |---|---|
+| 2026-05-01 | [Research Agent spiral and persona design](2026-05-01-research-agent-spiral-and-persona-design.md) — post-mortem of the 150-tool-call web-fetch spiral; proposes the Research Brief format and Senior Staff Engineer personality |
 | 2026-04-27 | [Agent-system integration research](2026-04-27-agent-system-integration.md) — how `compact`, compiled context, code mode, and agent memory should work together |
