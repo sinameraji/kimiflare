@@ -106,10 +106,14 @@
 - **Rule:** The agent loop must detect repeated identical tool calls (same name + stable-stringified args) within a sliding window of 8 calls.
 - **Rule:** On the 3rd identical call, inject a synthetic error: `"Loop detected: you have called {tool} with the same arguments multiple times in a row. Consider a different approach."`
 - **Rule:** The loop detector must not block legitimate retries with different args.
+- **Rule:** Pattern-based detection for `web_fetch`: 5+ fetches within any 8-call window, or 3+ fetches from the same domain, triggers a warning (not a hard stop).
 - **Acceptance Criteria:** Merge-conflict resolution scenarios must not exceed 10 tool iterations.
 
 ### 3.2 Iteration Limits
 - **Rule:** Hard cap of 50 tool iterations per turn.
+- **Rule:** Budget self-assessment: after every 3 tool calls, inject a system message prompting the agent to assess whether the next call is worth more than what it already has.
+- **Rule:** Soft budget warning at 5 calls (routine questions), hard budget warning at 15 calls (substantial questions). These are warnings, not hard stops — the agent can override by justifying the next call.
+- **Rule:** On hitting the 50-call limit, inject a graceful pause system message ("Paused after 50 tool calls. Say 'go on' to continue.") so the agent retains context.
 - **Rule:** Bash timeout default 120s, max 600s.
 - **Rule:** Code Mode sandbox timeout 30s, memory limit 128MB.
 - **Acceptance Criteria:** No user-visible hang beyond configured timeouts.
@@ -126,6 +130,14 @@
 - **Rule:** JSON parse errors in tool arguments must return a clear error message, not crash.
 - **Rule:** API 400 errors with "invalid escaped character" must pop the offending message and suggest `/clear`.
 - **Acceptance Criteria:** Error messages must be actionable for the model.
+
+### 3.5 Deliverable-Driven Agents (Multi-Agent)
+- **Rule:** The Research Agent must produce a structured Research Brief (DECISION, FINDINGS, RECOMMENDATION, CONFIDENCE, OPEN QUESTIONS, RISKS) before considering its work complete.
+- **Rule:** The Research Agent stops when the named decision can be made from its findings, not when it has exhausted all sources.
+- **Rule:** The `hand_off` tool allows an agent to signal completion and request a hand-off to another agent. The orchestrator must detect `hand_off` calls and trigger automatic hand-off.
+- **Rule:** Hand-off summaries must preserve the agent's deliverable (Brief, Implementation Notes, etc.) rather than replacing it with a lossy synthesis.
+- **Rule:** Agents must not address the human user with imperatives ("you need to", "you should", "start by"). Their audience is the next agent in the pipeline.
+- **Acceptance Criteria:** Research Agent must produce a Brief within 15 tool calls for routine questions; must call `hand_off` when complete.
 
 ---
 

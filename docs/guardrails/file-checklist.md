@@ -11,6 +11,9 @@
 - [ ] Anti-loop guardrail still tracks signatures with `stableStringify()`
 - [ ] `LOOP_WINDOW` (8) and `LOOP_THRESHOLD` (2) constants unchanged unless justified
 - [ ] `maxToolIterations` (50) cap preserved
+- [ ] Budget self-assessment messages injected every 3 tool calls
+- [ ] Soft budget warning (5 calls) and hard budget warning (15 calls) present
+- [ ] Graceful pause message injected before tool-limit throw
 - [ ] New tool call sites include `recentToolCalls.push()` and window trimming
 - [ ] Code Mode API cache uses `stableStringify(opts.tools)` as key
 - [ ] `validateToolArguments()` handles empty/malformed JSON
@@ -80,6 +83,24 @@
 - [ ] Permission check happens before tool execution
 - [ ] `sessionAllowed` cleared on mode change to `plan`
 - [ ] Unknown tool returns helpful error with valid tool list
+
+---
+
+## `src/tools/hand-off.ts`
+
+- [ ] `hand_off` tool has `needsPermission: false`
+- [ ] `target` parameter is required and validated
+- [ ] Tool returns clear confirmation message with target and optional reason
+
+---
+
+## `src/agent/orchestrator.ts`
+
+- [ ] `detectHandOff()` scans only the most recent assistant message with tool_calls
+- [ ] Hand-off triggered only when target differs from current role
+- [ ] `synthesizeHandoff()` preserves deliverables (Brief, Notes) rather than replacing them
+- [ ] `maxTurnsPerAgent` (20) still triggers forced hand-off as fallback
+- [ ] Per-agent turn counts reset on hand-off
 
 ---
 
