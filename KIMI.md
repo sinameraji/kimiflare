@@ -45,6 +45,10 @@
 - Searches the current working directory, respecting `.gitignore` and common ignore patterns.
 - No runtime cost when disabled.
 
+**/ Slash Command Picker**
+- Type `/` at the start of the chat input to open a picker with all built-in and custom slash commands.
+- Filters as you type (fuzzy match); arrow keys navigate, Enter inserts the command name (does not auto-submit), Esc cancels.
+
 **Do / Don't**
 - Do keep agent responses terse; don't re-summarize tool output the user already sees inline.
 - Do call `tasks_set` at the start of multi-step work and update it as steps complete; skip for trivial one-offs.

@@ -7,6 +7,8 @@ import {
   buildFilePickerIgnoreList,
   filterPickerItems,
   shouldOpenMentionPicker,
+  shouldOpenSlashPicker,
+  insertSlashCommand,
 } from "./app.js";
 import type { FilePickerItem } from "./ui/file-picker.js";
 
@@ -99,5 +101,68 @@ describe("shouldOpenMentionPicker", () => {
 
   it("does not open when cursor is at 0", () => {
     assert.strictEqual(shouldOpenMentionPicker("", 0, null), false);
+  });
+});
+
+describe("shouldOpenSlashPicker", () => {
+  it("opens when / is the first char", () => {
+    assert.strictEqual(shouldOpenSlashPicker("/", 1, null), true);
+  });
+
+  it("opens when / follows leading whitespace", () => {
+    assert.strictEqual(shouldOpenSlashPicker("  /", 3, null), true);
+  });
+
+  it("does not open when / is mid-message", () => {
+    assert.strictEqual(shouldOpenSlashPicker("hello /", 7, null), false);
+    assert.strictEqual(shouldOpenSlashPicker("path/to", 5, null), false);
+  });
+
+  it("does not open immediately after cancel at same offset", () => {
+    assert.strictEqual(shouldOpenSlashPicker("/", 1, 1), false);
+  });
+
+  it("does not open when cursor is at 0", () => {
+    assert.strictEqual(shouldOpenSlashPicker("", 0, null), false);
+  });
+
+  it("does not open when char before cursor isn't /", () => {
+    assert.strictEqual(shouldOpenSlashPicker("hello", 5, null), false);
+  });
+});
+
+describe("insertSlashCommand", () => {
+  it("inserts and appends a trailing space when input ends at the token", () => {
+    const { value, cursor } = insertSlashCommand("/mod", 0, "model");
+    assert.strictEqual(value, "/model ");
+    assert.strictEqual(cursor, "/model ".length);
+  });
+
+  it("preserves args past the typed command token", () => {
+    // user typed `/m|od rest` (cursor mid-token) and picked "model"
+    const { value, cursor } = insertSlashCommand("/mod rest", 0, "model");
+    assert.strictEqual(value, "/model rest");
+    assert.strictEqual(cursor, "/model ".length);
+  });
+
+  it("does not duplicate spaces if a space already follows the token", () => {
+    const { value } = insertSlashCommand("/m foo", 0, "model");
+    assert.strictEqual(value, "/model foo");
+  });
+
+  it("works with leading whitespace before the slash", () => {
+    const { value, cursor } = insertSlashCommand("  /he arg", 2, "help");
+    assert.strictEqual(value, "  /help arg");
+    assert.strictEqual(cursor, "  /help ".length);
+  });
+
+  it("collapses multi-space tails to a single separator", () => {
+    const { value } = insertSlashCommand("/m  foo", 0, "model");
+    assert.strictEqual(value, "/model foo");
+  });
+
+  it("normalizes tab/newline tails to a single space", () => {
+    const { value } = insertSlashCommand("/m\tfoo", 0, "model");
+    assert.strictEqual(value, "/model foo");
   });
 });

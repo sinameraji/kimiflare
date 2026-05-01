@@ -73,7 +73,8 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
-import type { CustomCommand } from "./commands/types.js";
+import type { CustomCommand, SlashItem } from "./commands/types.js";
+import { BUILTIN_COMMANDS, BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { CommandWizard } from "./ui/command-wizard.js";
@@ -84,6 +85,8 @@ import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
+import { SlashPicker } from "./ui/slash-picker.js";
+import { fuzzyFilter } from "./util/fuzzy.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -229,6 +232,46 @@ export function shouldOpenMentionPicker(
   }
   return false;
 }
+
+/**
+ * Slash picker triggers when:
+ *   - the char immediately before the cursor is "/"
+ *   - everything before that "/" is whitespace-only
+ * This matches handleSlash() dispatch (it only runs on inputs where the
+ * trimmed text starts with "/"), so the picker can't surface commands
+ * that won't actually fire.
+ */
+export function shouldOpenSlashPicker(
+  input: string,
+  cursorOffset: number,
+  cancelOffset: number | null,
+): boolean {
+  if (cancelOffset === cursorOffset) return false;
+  if (cursorOffset === 0 || input[cursorOffset - 1] !== "/") return false;
+  return /^\s*$/.test(input.slice(0, cursorOffset - 1));
+}
+
+/**
+ * Insert a picked slash-command name into the input, replacing the entire
+ * command token (from `/` through the next whitespace or EOL). Preserves
+ * any args the user already typed past the cursor and ensures exactly one
+ * separating space.
+ */
+export function insertSlashCommand(
+  input: string,
+  anchor: number,
+  name: string,
+): { value: string; cursor: number } {
+  let tokenEnd = anchor + 1;
+  while (tokenEnd < input.length && !/\s/.test(input[tokenEnd]!)) tokenEnd++;
+  const head = input.slice(0, anchor + 1) + name;
+  const tail = " " + input.slice(tokenEnd).replace(/^\s+/, "");
+  return { value: head + tail, cursor: head.length + 1 };
+}
+
+type ActivePicker =
+  | { kind: "file"; anchor: number; selected: number }
+  | { kind: "slash"; anchor: number; selected: number };
 
 interface Cfg {
   accountId: string;
@@ -392,12 +435,6 @@ function findImagePaths(text: string): string[] {
   return paths;
 }
 
-const BUILTIN_COMMAND_NAMES = new Set([
-  "exit", "quit", "clear", "reasoning", "cost", "model", "thinking", "effort",
-  "theme", "mode", "plan", "auto", "edit", "resume", "compact", "init",
-  "update", "mcp", "logout", "help", "memory", "gateway", "hello", "community",
-  "agent",
-]);
 
 const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   low: "low — fastest; lightest reasoning. Best for simple Q&A, small edits, quick coordination.",
@@ -466,11 +503,12 @@ function App({
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
 
-  // File mention picker state
+  // Picker state — single popup at a time (file mention or slash command).
   const [cursorOffset, setCursorOffset] = useState(0);
-  const [pickerItems, setPickerItems] = useState<FilePickerItem[]>([]);
-  const [pickerSelected, setPickerSelected] = useState(0);
-  const [pickerAnchor, setPickerAnchor] = useState<number | null>(null);
+  const [activePicker, setActivePicker] = useState<ActivePicker | null>(null);
+  const [filePickerItems, setFilePickerItems] = useState<FilePickerItem[]>([]);
+  const filePickerLoadedRef = useRef(false);
+  const [customCommandsVersion, setCustomCommandsVersion] = useState(0);
 
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
   const messagesRef = useRef<ChatMessage[]>(
@@ -510,52 +548,70 @@ function App({
   const customCommandsRef = useRef<CustomCommand[]>([]);
   const pickerCancelRef = useRef<number | null>(null);
 
-  // ── File mention picker logic ────────────────────────────────────────────
-  const mentionState = React.useMemo(() => {
+  // ── Picker logic (file mention `@` and slash command `/`) ──────────────
+  // Depend on stable fields (kind, anchor) — not the activePicker reference,
+  // which churns on every arrow-key press.
+  const pickerAnchor = activePicker?.anchor ?? null;
+  const pickerKind = activePicker?.kind ?? null;
+  const pickerQuery = React.useMemo(() => {
     if (pickerAnchor === null) return null;
-    const query = input.slice(pickerAnchor + 1, cursorOffset);
-    return { query, anchor: pickerAnchor };
+    return input.slice(pickerAnchor + 1, cursorOffset);
   }, [input, cursorOffset, pickerAnchor]);
 
-  const filteredPickerItems = React.useMemo(() => {
-    if (!mentionState) return [];
-    return filterPickerItems(pickerItems, mentionState.query);
-  }, [pickerItems, mentionState]);
+  const filteredFileItems = React.useMemo(() => {
+    if (pickerKind !== "file" || pickerQuery === null) return [];
+    return filterPickerItems(filePickerItems, pickerQuery);
+  }, [pickerKind, filePickerItems, pickerQuery]);
 
-  // Detect @ mention opening/closing
+  // Custom commands that shadow built-ins are warned about and won't run, so
+  // don't surface them in the picker either. customCommandsVersion is bumped
+  // by every customCommandsRef mutation — keep that invariant intact.
+  const allSlashCommands = React.useMemo<SlashItem[]>(() => {
+    const customs: SlashItem[] = customCommandsRef.current
+      .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
+      .map((c) => ({
+        name: c.name,
+        description: c.description ?? "",
+        source: c.source,
+      }));
+    return [...BUILTIN_COMMANDS, ...customs];
+  }, [customCommandsVersion]);
+
+  const filteredSlashItems = React.useMemo(() => {
+    if (pickerKind !== "slash" || pickerQuery === null) return [];
+    return fuzzyFilter(allSlashCommands, pickerQuery, (c) => c.name).slice(0, 50);
+  }, [pickerKind, allSlashCommands, pickerQuery]);
+
   useEffect(() => {
-    if (pickerAnchor !== null) {
-      // If cursor moved before anchor, close picker
-      if (cursorOffset < pickerAnchor) {
-        setPickerAnchor(null);
+    if (activePicker !== null) {
+      const trigger = activePicker.kind === "file" ? "@" : "/";
+      if (cursorOffset < activePicker.anchor) {
+        setActivePicker(null);
         return;
       }
-      // If the @ was deleted, close picker
-      if (input[pickerAnchor] !== "@") {
-        setPickerAnchor(null);
+      if (input[activePicker.anchor] !== trigger) {
+        setActivePicker(null);
         return;
       }
-      // If user typed a space inside the mention query, close picker
-      const query = input.slice(pickerAnchor + 1, cursorOffset);
-      if (query.includes(" ")) {
-        setPickerAnchor(null);
+      // Whitespace ends the token (start of args for slash, end of mention for @).
+      const query = input.slice(activePicker.anchor + 1, cursorOffset);
+      if (/\s/.test(query)) {
+        setActivePicker(null);
         return;
       }
       return;
     }
 
-    // Prevent immediate reopen after cancel at the same cursor position
+    // Drop sticky-cancel once the cursor moves away from the cancel offset.
     if (pickerCancelRef.current === cursorOffset) {
       pickerCancelRef.current = null;
       return;
     }
 
-    // Look for @ just before cursor (only when feature flag is enabled)
     if (filePickerEnabled && shouldOpenMentionPicker(input, cursorOffset, pickerCancelRef.current)) {
-      setPickerAnchor(cursorOffset - 1);
-      setPickerSelected(0);
-      // Load files lazily on first open
-      if (pickerItems.length === 0) {
+      setActivePicker({ kind: "file", anchor: cursorOffset - 1, selected: 0 });
+      if (!filePickerLoadedRef.current) {
+        filePickerLoadedRef.current = true;
         const cwd = process.cwd();
         void fg("**/*", {
           cwd,
@@ -571,51 +627,116 @@ function App({
               name: e.endsWith("/") ? e.slice(0, -1) : e,
               isDirectory: e.endsWith("/"),
             }));
-            // Sort directories first, then alphabetically
             items.sort((a, b) => {
               if (a.isDirectory && !b.isDirectory) return -1;
               if (!a.isDirectory && b.isDirectory) return 1;
               return a.name.localeCompare(b.name);
             });
-            setPickerItems(items);
+            setFilePickerItems(items);
           })
           .catch(() => {
-            setPickerItems([]);
+            setFilePickerItems([]);
           });
       }
+      return;
     }
-  }, [input, cursorOffset, pickerAnchor, pickerItems.length, filePickerEnabled]);
 
-  // Clamp selected index when filtered list changes
-  useEffect(() => {
-    if (pickerAnchor !== null) {
-      setPickerSelected((prev) => Math.min(prev, Math.max(0, filteredPickerItems.length - 1)));
+    if (shouldOpenSlashPicker(input, cursorOffset, pickerCancelRef.current)) {
+      setActivePicker({ kind: "slash", anchor: cursorOffset - 1, selected: 0 });
+      return;
     }
-  }, [filteredPickerItems.length, pickerAnchor]);
+  }, [input, cursorOffset, activePicker, filePickerEnabled]);
+
+  // Clamp selected index when filtered list shrinks below the current selection.
+  useEffect(() => {
+    if (activePicker?.kind !== "file") return;
+    const max = Math.max(0, filteredFileItems.length - 1);
+    if (activePicker.selected > max) {
+      setActivePicker({ ...activePicker, selected: max });
+    }
+  }, [filteredFileItems.length, activePicker]);
+
+  useEffect(() => {
+    if (activePicker?.kind !== "slash") return;
+    const max = Math.max(0, filteredSlashItems.length - 1);
+    if (activePicker.selected > max) {
+      setActivePicker({ ...activePicker, selected: max });
+    }
+  }, [filteredSlashItems.length, activePicker]);
 
   const handlePickerUp = useCallback(() => {
-    setPickerSelected((i) => Math.max(0, i - 1));
+    setActivePicker((p) => {
+      if (!p) return null;
+      const next = Math.max(0, p.selected - 1);
+      return next === p.selected ? p : { ...p, selected: next };
+    });
   }, []);
 
   const handlePickerDown = useCallback(() => {
-    setPickerSelected((i) => Math.min(filteredPickerItems.length - 1, i + 1));
-  }, [filteredPickerItems.length]);
+    setActivePicker((p) => {
+      if (!p) return null;
+      const max = p.kind === "file"
+        ? Math.max(0, filteredFileItems.length - 1)
+        : Math.max(0, filteredSlashItems.length - 1);
+      const next = Math.min(max, p.selected + 1);
+      return next === p.selected ? p : { ...p, selected: next };
+    });
+  }, [filteredFileItems.length, filteredSlashItems.length]);
 
   const handlePickerSelect = useCallback(() => {
-    if (!mentionState || filteredPickerItems.length === 0) return;
-    const item = filteredPickerItems[pickerSelected];
+    if (!activePicker) return;
+    if (activePicker.kind === "file") {
+      const item = filteredFileItems[activePicker.selected];
+      if (!item) return;
+      const insert = item.name + (item.isDirectory ? "/" : " ");
+      const newInput = input.slice(0, activePicker.anchor) + insert + input.slice(cursorOffset);
+      setInput(newInput);
+      setCursorOffset(activePicker.anchor + insert.length);
+      setActivePicker(null);
+      return;
+    }
+    // slash
+    const item = filteredSlashItems[activePicker.selected];
     if (!item) return;
-    const insert = item.name + (item.isDirectory ? "/" : " ");
-    const newInput = input.slice(0, mentionState.anchor) + insert + input.slice(cursorOffset);
-    setInput(newInput);
-    setCursorOffset(mentionState.anchor + insert.length);
-    setPickerAnchor(null);
-  }, [mentionState, filteredPickerItems, pickerSelected, input, cursorOffset]);
+    const { value, cursor } = insertSlashCommand(input, activePicker.anchor, item.name);
+    setInput(value);
+    setCursorOffset(cursor);
+    setActivePicker(null);
+  }, [activePicker, filteredFileItems, filteredSlashItems, input, cursorOffset]);
 
   const handlePickerCancel = useCallback(() => {
     pickerCancelRef.current = cursorOffset;
-    setPickerAnchor(null);
+    setActivePicker(null);
   }, [cursorOffset]);
+
+  // Close any open picker when a modal takes over the input. Without this,
+  // picker state would survive the modal and re-render on close.
+  useEffect(() => {
+    const modalActive =
+      showThemePicker ||
+      showHelpMenu ||
+      commandWizard !== null ||
+      commandPicker !== null ||
+      commandToDelete !== null ||
+      showCommandList ||
+      showLspWizard ||
+      resumeSessions !== null ||
+      perm !== null;
+    if (modalActive && activePicker !== null) {
+      setActivePicker(null);
+    }
+  }, [
+    showThemePicker,
+    showHelpMenu,
+    commandWizard,
+    commandPicker,
+    commandToDelete,
+    showCommandList,
+    showLspWizard,
+    resumeSessions,
+    perm,
+    activePicker,
+  ]);
 
   useEffect(() => {
     if (!cfg) return;
@@ -710,6 +831,7 @@ function App({
 
     void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
       customCommandsRef.current = commands;
+      setCustomCommandsVersion((v) => v + 1);
       for (const w of warnings) {
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `commands: ${w}` }]);
       }
@@ -740,6 +862,7 @@ function App({
   const reloadCustomCommands = useCallback(async () => {
     const { commands, warnings } = await loadCustomCommands(process.cwd());
     customCommandsRef.current = commands;
+    setCustomCommandsVersion((v) => v + 1);
     for (const w of warnings) {
       setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `commands: ${w}` }]);
     }
@@ -3007,12 +3130,20 @@ function App({
             gatewayMeta={gatewayMeta}
             codeMode={codeMode}
           />
-          {pickerAnchor !== null && (
+          {activePicker?.kind === "file" && (
             <FilePicker
-              items={filteredPickerItems}
-              selectedIndex={pickerSelected}
+              items={filteredFileItems}
+              selectedIndex={activePicker.selected}
               theme={theme}
-              query={mentionState?.query ?? ""}
+              query={pickerQuery ?? ""}
+            />
+          )}
+          {activePicker?.kind === "slash" && (
+            <SlashPicker
+              items={filteredSlashItems}
+              selectedIndex={activePicker.selected}
+              theme={theme}
+              query={pickerQuery ?? ""}
             />
           )}
           <Box marginTop={1}>
@@ -3024,7 +3155,7 @@ function App({
               enablePaste
               cursorOffset={cursorOffset}
               onCursorChange={setCursorOffset}
-              pickerActive={pickerAnchor !== null}
+              pickerActive={activePicker !== null}
               onPickerUp={handlePickerUp}
               onPickerDown={handlePickerDown}
               onPickerSelect={handlePickerSelect}

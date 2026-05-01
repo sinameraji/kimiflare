@@ -25,3 +25,12 @@ export type LoadResult = {
   commands: CustomCommand[];
   warnings: string[];
 };
+
+export type SlashItemSource = "builtin" | CommandSource;
+
+export type SlashItem = {
+  name: string;
+  description: string;
+  argHint?: string;
+  source: SlashItemSource;
+};
