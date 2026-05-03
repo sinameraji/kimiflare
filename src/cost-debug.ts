@@ -41,6 +41,13 @@ export interface CompactionMetrics {
   memoriesStored?: number;
 }
 
+export interface IntentClassification {
+  intent: string;
+  tier: "light" | "medium" | "heavy";
+  rawScore: number;
+  confidence: number;
+}
+
 export interface CostDebugEntry {
   v: number;
   ts: string;
@@ -58,6 +65,9 @@ export interface CostDebugEntry {
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
   signals?: string[]; // Literal categories detected this turn (cost attribution)
+  durationMs?: number; // NEW: wall-clock time for this turn
+  intentClassification?: IntentClassification; // NEW: what we predicted
+  codeMode?: boolean; // NEW: was Code Mode enabled this turn
 }
 
 function debugDir(): string {
@@ -149,6 +159,9 @@ export interface TurnDebugContext {
   previousMessages?: ChatMessage[];
   compaction?: CompactionMetrics;
   shadowStrip?: ShadowStripMetrics;
+  durationMs?: number;
+  intentClassification?: IntentClassification;
+  codeMode?: boolean;
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -254,5 +267,8 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     cacheDiagnostics,
     compaction: ctx.compaction,
     shadowStrip: ctx.shadowStrip,
+    durationMs: ctx.durationMs,
+    intentClassification: ctx.intentClassification,
+    codeMode: ctx.codeMode,
   });
 }

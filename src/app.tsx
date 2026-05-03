@@ -50,6 +50,7 @@ import {
   type ReasoningEffort,
 } from "./config.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
+import { classifyIntent } from "./intent/classify.js";
 import {
   listSessions,
   loadSession,
@@ -1404,6 +1405,14 @@ function App({
     const controller = new AbortController();
     activeControllerRef.current = controller;
 
+    const initClassification = classifyIntent(prompt);
+    const initEffortForTier: Record<string, ReasoningEffort> = {
+      light: "low",
+      medium: "medium",
+      heavy: "high",
+    };
+    const initReasoningEffort = initEffortForTier[initClassification.tier] ?? effortRef.current;
+
     try {
       await runAgentTurn({
         accountId: cfg.accountId,
@@ -1415,7 +1424,8 @@ function App({
         executor: executorRef.current,
         cwd,
         signal: controller.signal,
-        reasoningEffort: effortRef.current,
+        reasoningEffort: initReasoningEffort,
+        intentClassification: initClassification,
         coauthor:
           cfg.coauthor !== false
             ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
@@ -2361,6 +2371,14 @@ function App({
       setGatewayMeta(null);
       setTurnStartedAt(Date.now());
 
+      const classification = classifyIntent(trimmed);
+      const effortForTier: Record<string, ReasoningEffort> = {
+        light: "low",
+        medium: "medium",
+        heavy: "high",
+      };
+      const turnReasoningEffort = overrideEffort ?? effortForTier[classification.tier] ?? effortRef.current;
+
       const controller = new AbortController();
       activeControllerRef.current = controller;
 
@@ -2480,7 +2498,7 @@ function App({
             executor: executorRef.current,
             cwd: process.cwd(),
             signal: controller.signal,
-            reasoningEffort: overrideEffort ?? effortRef.current,
+            reasoningEffort: turnReasoningEffort,
             coauthor:
               cfg.coauthor !== false
                 ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
@@ -2489,6 +2507,7 @@ function App({
             memoryManager: memoryManagerRef.current,
             keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
             codeMode,
+            intentClassification: classification,
             onFileChange: (path, content) => {
               if (content) {
                 lspManagerRef.current.notifyChange(path, content);

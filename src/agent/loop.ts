@@ -55,6 +55,8 @@ export interface AgentTurnOpts {
   continueOnLimit?: boolean;
   /** Cumulative prompt token budget. When exceeded, a final synthesis turn is run and then BudgetExhaustedError is thrown. */
   maxInputTokens?: number;
+  /** Intent classification result for this turn, for telemetry. */
+  intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
 }
 
 export class BudgetExhaustedError extends Error {
@@ -67,6 +69,7 @@ export class BudgetExhaustedError extends Error {
 const codeModeApiCache = new Map<string, string>();
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
+  const turnStart = performance.now();
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
 
@@ -508,6 +511,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         toolResults,
         usage: lastUsage,
         shadowStrip: shadowStripMetrics,
+        durationMs: Math.round(performance.now() - turnStart),
+        intentClassification: opts.intentClassification,
+        codeMode: opts.codeMode,
       });
     }
 
