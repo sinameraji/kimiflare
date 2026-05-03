@@ -1,0 +1,28 @@
+name = "kimiflare-remote"
+main = "src/index.ts"
+compatibility_date = "2024-10-22"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDO"
+
+# Artifacts binding
+[[artifacts]]
+binding = "ARTIFACTS"
+
+# Sandbox binding
+[[sandbox]]
+binding = "SANDBOX"
+
+# KV for OAuth state (optional, can use DO instead)
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = ""
+
+[vars]
+# Set via wrangler secret put:
+# REMOTE_AUTH_SECRET
+# CF_API_TOKEN
+# GITHUB_APP_CLIENT_SECRET
