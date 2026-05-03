@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
+import { runParallelResearch } from "./agent/research.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -2488,8 +2489,62 @@ function App({
           }),
       };
 
+      const useParallelResearch =
+        (classification.intent === "explore" && classification.tier === "heavy") ||
+        /\bparallel research\b/i.test(trimmed);
+
       try {
-        await runAgentTurn({
+        if (useParallelResearch) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `parallel research: ${classification.intent} (${classification.tier}) — spawning agents` },
+          ]);
+
+          const asstId = nextAssistantId++;
+          activeAsstIdRef.current = asstId;
+          setEvents((e) => [
+            ...e,
+            { kind: "assistant", key: `asst_${asstId}`, id: asstId, text: "", reasoning: "", streaming: true },
+          ]);
+
+          const researchResult = await runParallelResearch({
+            accountId: cfg.accountId,
+            apiToken: cfg.apiToken,
+            model: overrideModel ?? cfg.model,
+            query: trimmed,
+            cwd: process.cwd(),
+            signal: controller.signal,
+            gateway: gatewayFromConfig(cfg),
+            reasoningEffort: turnReasoningEffort,
+            sessionId: ensureSessionId(),
+          });
+
+          messagesRef.current.push({
+            role: "assistant",
+            content: sanitizeString(researchResult.content),
+          });
+
+          setEvents((e) =>
+            e.map((ev) =>
+              ev.kind === "assistant" && ev.id === asstId
+                ? { ...ev, text: researchResult.content, streaming: false }
+                : ev,
+            ),
+          );
+
+          usageRef.current = researchResult.usage;
+          setUsage(researchResult.usage);
+          const sid = ensureSessionId();
+          void recordUsage(sid, researchResult.usage, gatewayUsageLookupFromConfig(cfg, researchResult.gatewayMeta ?? gatewayMetaRef.current));
+          void getCostReport(sid).then((report) => setSessionUsage(report.session));
+          if (researchResult.gatewayMeta) {
+            gatewayMetaRef.current = researchResult.gatewayMeta;
+            setGatewayMeta(researchResult.gatewayMeta);
+          }
+
+          await saveSessionSafe();
+        } else {
+          await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: overrideModel ?? cfg.model,
@@ -2523,6 +2578,7 @@ function App({
             callbacks: sharedCallbacks,
           });
           await saveSessionSafe();
+        }
 
         // Auto-compact after turn when thresholds are met. With compiled
         // context on, use the heuristic compactor; otherwise fall back to the
