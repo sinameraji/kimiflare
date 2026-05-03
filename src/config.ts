@@ -80,6 +80,24 @@ export interface KimiConfig {
   maxTurnsPerAgent?: number;
   /** User-defined custom agents with their own tool sets and models. */
   customAgents?: CustomAgentConfig[];
+
+  // ── Remote feature ──────────────────────────────────────────────────
+  /** URL of the remote orchestrator Worker. */
+  remoteWorkerUrl?: string;
+  /** Enable remote mode. Default: false. */
+  remoteEnabled?: boolean;
+  /** Shared secret for authenticating with the remote Worker. */
+  remoteAuthSecret?: string;
+
+  // ── GitHub auth (OAuth device flow) ─────────────────────────────────
+  /** GitHub OAuth access token. */
+  githubOAuthToken?: string;
+  /** GitHub OAuth refresh token. */
+  githubRefreshToken?: string;
+  /** GitHub OAuth token expiry (Unix timestamp). */
+  githubTokenExpiry?: number;
+  /** Cached GitHub repo identifier (owner/repo). */
+  githubRepo?: string;
 }
 
 export interface CustomAgentConfig {

@@ -9,6 +9,8 @@ import type { ChatMessage } from "./agent/messages.js";
 import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { getAppVersion } from "./util/version.js";
+import { createRemoteCommand } from "./remote/cli.js";
+import { githubDeviceFlow } from "./auth/github.js";
 
 const program = new Command();
 program
@@ -46,6 +48,24 @@ program
     const { runCostCommand } = await import("./cost-attribution/cli.js");
     await runCostCommand({ ...cmdOpts, config: cfg });
   });
+
+program.addCommand(createRemoteCommand());
+
+program
+  .command("auth")
+  .description("Authenticate with external services")
+  .addCommand(
+    new Command("github")
+      .description("Authenticate with GitHub via OAuth device flow")
+      .action(async () => {
+        try {
+          await githubDeviceFlow();
+        } catch (err) {
+          console.error(`Authentication failed: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      }),
+  );
 
 program.action(async () => {
   await main();

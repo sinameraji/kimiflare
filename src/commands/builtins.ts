@@ -28,6 +28,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "clear", description: "Clear current conversation", source: "builtin" },
   { name: "init", description: "Scan repo and write KIMI.md", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },
+  { name: "remote", argHint: "[status|cancel <id>]", description: "Start or manage a remote session", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
   { name: "logout", description: "Clear stored credentials", source: "builtin" },
   { name: "exit", description: "Exit kimiflare", source: "builtin" },

@@ -28,6 +28,8 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
+import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client.js";
+import { saveRemoteSession } from "./remote/session-store.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -63,6 +65,7 @@ import {
   type SessionSummary,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
@@ -343,6 +346,25 @@ function openBrowser(url: string): void {
   const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
   const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
   child.unref();
+}
+
+function detectGitHubRepo(cachedRepo?: string): { owner: string; name: string } | null {
+  if (cachedRepo) {
+    const parts = cachedRepo.split("/");
+    if (parts.length === 2) return { owner: parts[0]!, name: parts[1]! };
+  }
+  try {
+    const remoteUrl = execSync("git remote get-url origin", { cwd: process.cwd(), encoding: "utf8" }).trim();
+    // Parse HTTPS: https://github.com/owner/repo.git
+    // Parse SSH: git@github.com:owner/repo.git
+    const httpsMatch = remoteUrl.match(/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?$/);
+    if (httpsMatch) return { owner: httpsMatch[1]!, name: httpsMatch[2]! };
+    const sshMatch = remoteUrl.match(/github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/);
+    if (sshMatch) return { owner: sshMatch[1]!, name: sshMatch[2]! };
+  } catch {
+    // not a git repo or no origin remote
+  }
+  return null;
 }
 
 interface PendingPermission {
@@ -2342,6 +2364,123 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "usage: /command create | edit | delete | list" },
         ]);
+        return true;
+      }
+      if (c === "/remote") {
+        if (!cfg?.remoteWorkerUrl) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "Remote worker not configured. Set remoteWorkerUrl in ~/.config/kimiflare/config.json" },
+          ]);
+          return true;
+        }
+        if (!cfg?.githubOAuthToken) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "GitHub not authenticated. Run `kimiflare auth github` first." },
+          ]);
+          return true;
+        }
+        if (arg === "status" || arg === "cancel") {
+          // Handled by CLI subcommands; in TUI just show info
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `Use \`kimiflare remote ${arg}\` from your shell.` },
+          ]);
+          return true;
+        }
+        // Start remote session with the rest of the input as prompt
+        const prompt = rest.join(" ").trim();
+        if (!prompt) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "usage: /remote <prompt>" },
+          ]);
+          return true;
+        }
+
+        const repo = detectGitHubRepo(cfg.githubRepo);
+        if (!repo) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "Could not detect GitHub repo. Set githubRepo in config (owner/repo)." },
+          ]);
+          return true;
+        }
+
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `Starting remote session for ${repo.owner}/${repo.name}...` },
+        ]);
+
+        startRemoteSession({ prompt, repo, cfg })
+          .then(async (data) => {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `Remote session started: ${data.sessionId}` },
+              { kind: "info", key: mkKey(), text: `Streaming from ${data.streamUrl}` },
+            ]);
+
+            // Stream progress
+            try {
+              for await (const ev of streamRemoteProgress(cfg.remoteWorkerUrl!, data.sessionId)) {
+                const event = ev as Record<string, unknown>;
+                if (event.type === "text_delta") {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: String(event.text ?? "") },
+                  ]);
+                } else if (event.type === "tool_call") {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: `→ ${String(event.name ?? "")}` },
+                  ]);
+                } else if (event.type === "done") {
+                  const prUrl = event.prUrl as string | undefined;
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: prUrl ? `✅ Done — PR: ${prUrl}` : "✅ Done" },
+                  ]);
+                  await saveRemoteSession({
+                    sessionId: data.sessionId,
+                    prompt,
+                    repo: `${repo.owner}/${repo.name}`,
+                    workerUrl: cfg.remoteWorkerUrl!,
+                    status: "done",
+                    prUrl,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  });
+                } else if (event.type === "error") {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "error", key: mkKey(), text: `Remote error: ${String(event.message ?? "")}` },
+                  ]);
+                  await saveRemoteSession({
+                    sessionId: data.sessionId,
+                    prompt,
+                    repo: `${repo.owner}/${repo.name}`,
+                    workerUrl: cfg.remoteWorkerUrl!,
+                    status: "error",
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  });
+                }
+              }
+            } catch (err) {
+              setEvents((e) => [
+                ...e,
+                { kind: "error", key: mkKey(), text: `Stream error: ${err instanceof Error ? err.message : String(err)}` },
+              ]);
+            }
+          })
+          .catch((err) => {
+            setEvents((e) => [
+              ...e,
+              { kind: "error", key: mkKey(), text: `Failed to start remote session: ${err instanceof Error ? err.message : String(err)}` },
+            ]);
+          });
+
         return true;
       }
       if (c === "/help") {
