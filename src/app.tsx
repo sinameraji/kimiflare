@@ -527,6 +527,7 @@ function App({
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
+  const submitRef = useRef<(full: string, display?: string) => void>(() => {});
   const lspManagerRef = useRef(new LspManager());
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
@@ -690,10 +691,9 @@ function App({
     // slash
     const item = filteredSlashItems[activePicker.selected];
     if (!item) return;
-    const { value, cursor } = insertSlashCommand(input, activePicker.anchor, item.name);
-    setInput(value);
-    setCursorOffset(cursor);
+    const { value } = insertSlashCommand(input, activePicker.anchor, item.name);
     setActivePicker(null);
+    submitRef.current(value);
   }, [activePicker, filteredFileItems, filteredSlashItems, input, cursorOffset]);
 
   const handlePickerCancel = useCallback(() => {
@@ -2729,6 +2729,7 @@ function App({
     },
     [busy, processMessage],
   );
+  submitRef.current = submit;
 
   useEffect(() => {
     if (compactSuggestedRef.current) return;
