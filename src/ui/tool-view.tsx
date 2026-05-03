@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
+import { useTheme } from "./theme-context.js";
 
 export interface ToolEventState {
   id: string;
@@ -20,15 +21,16 @@ interface Props {
 }
 
 export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
+  const theme = useTheme();
   const statusIcon =
     evt.status === "running" ? (
-      <Text color="gray">
+      <Text color={theme.palette.muted}>
         <Spinner type="dots" />
       </Text>
     ) : evt.status === "error" ? (
-      <Text color="red">✗</Text>
+      <Text color={theme.palette.error}>✗</Text>
     ) : (
-      <Text color="green">✓</Text>
+      <Text color={theme.palette.success}>✓</Text>
     );
   const title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
   const expand = Boolean(evt.expanded || verbose);

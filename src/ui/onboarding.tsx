@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
   onDone: (cfg: { accountId: string; apiToken: string; model: string }) => void;
@@ -12,6 +13,7 @@ type Step = "accountId" | "apiToken" | "model" | "confirm";
 const STEPS: Step[] = ["accountId", "apiToken", "model", "confirm"];
 
 export function Onboarding({ onDone }: Props) {
+  const theme = useTheme();
   const [step, setStep] = useState<Step>("accountId");
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -54,15 +56,15 @@ export function Onboarding({ onDone }: Props) {
   return (
     <Box flexDirection="column" paddingY={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">
+        <Text bold color={theme.palette.primary}>
           kimiflare
         </Text>
-        <Text color="gray" dimColor>
+        <Text color={theme.palette.muted} dimColor>
           {"  "}Terminal coding agent
         </Text>
       </Box>
 
-      <Text color="gray" dimColor>
+      <Text color={theme.palette.muted} dimColor>
         Step {stepIndex} of {STEPS.length}
       </Text>
 
@@ -71,7 +73,7 @@ export function Onboarding({ onDone }: Props) {
           <>
             <Text>Enter your Cloudflare Account ID</Text>
             <Box marginTop={1}>
-              <Text color="cyan">› </Text>
+              <Text color={theme.palette.primary}>› </Text>
               <CustomTextInput
                 value={accountId}
                 onChange={setAccountId}
@@ -84,11 +86,11 @@ export function Onboarding({ onDone }: Props) {
         {step === "apiToken" && (
           <>
             <Text>Enter your Cloudflare API Token</Text>
-            <Text color="gray" dimColor>
+            <Text color={theme.palette.muted} dimColor>
               Create one at https://dash.cloudflare.com/profile/api-tokens
             </Text>
             <Box marginTop={1}>
-              <Text color="cyan">› </Text>
+              <Text color={theme.palette.primary}>› </Text>
               <CustomTextInput
                 value={apiToken}
                 onChange={setApiToken}
@@ -102,11 +104,11 @@ export function Onboarding({ onDone }: Props) {
         {step === "model" && (
           <>
             <Text>Model ID (press Enter for default)</Text>
-            <Text color="gray" dimColor>
+            <Text color={theme.palette.muted} dimColor>
               default: {DEFAULT_MODEL}
             </Text>
             <Box marginTop={1}>
-              <Text color="cyan">› </Text>
+              <Text color={theme.palette.primary}>› </Text>
               <CustomTextInput
                 value={model}
                 onChange={setModel}
@@ -124,16 +126,16 @@ export function Onboarding({ onDone }: Props) {
               marginTop={1}
               marginBottom={1}
               borderStyle="single"
-              borderColor="gray"
+              borderColor={theme.palette.muted}
               paddingX={1}
             >
-              <Text color="gray">Account ID: {accountId}</Text>
-              <Text color="gray">API Token: {"•".repeat(apiToken.length)}</Text>
-              <Text color="gray">Model: {model}</Text>
+              <Text color={theme.palette.muted}>Account ID: {accountId}</Text>
+              <Text color={theme.palette.muted}>API Token: {"•".repeat(apiToken.length)}</Text>
+              <Text color={theme.palette.muted}>Model: {model}</Text>
             </Box>
             <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
             <Box marginTop={1}>
-              <Text color="cyan">› </Text>
+              <Text color={theme.palette.primary}>› </Text>
               <CustomTextInput
                 value=""
                 onChange={() => {}}
@@ -144,7 +146,7 @@ export function Onboarding({ onDone }: Props) {
         )}
 
         {savedPath && (
-          <Text color="green">Config saved to {savedPath}</Text>
+          <Text color={theme.palette.success}>Config saved to {savedPath}</Text>
         )}
       </Box>
     </Box>

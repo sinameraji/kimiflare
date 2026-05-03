@@ -1,9 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
-  theme: Theme;
   accountId?: string;
 }
 
@@ -13,7 +12,8 @@ const SUGGESTIONS = [
   "Refactor a file",
 ];
 
-export function Welcome({ theme, accountId }: Props) {
+export function Welcome({ accountId }: Props) {
+  const theme = useTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>

@@ -1,15 +1,15 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import type { CustomCommand } from "../commands/types.js";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
-  theme: Theme;
   commands: CustomCommand[];
   onDone: () => void;
 }
 
-export function CommandList({ theme, commands, onDone }: Props) {
+export function CommandList({ commands, onDone }: Props) {
+  const theme = useTheme();
   useInput((_input, key) => {
     if (key.escape) {
       onDone();

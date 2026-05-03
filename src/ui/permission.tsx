@@ -4,16 +4,16 @@ import SelectInput from "ink-select-input";
 import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
   tool: ToolSpec;
   args: Record<string, unknown>;
   onDecide: (decision: PermissionDecision) => void;
-  theme: Theme;
 }
 
-export function PermissionModal({ tool, args, onDecide, theme }: Props) {
+export function PermissionModal({ tool, args, onDecide }: Props) {
+  const theme = useTheme();
   const render = tool.render?.(args);
   const items = [
     { label: "Allow once", value: "allow" as const },

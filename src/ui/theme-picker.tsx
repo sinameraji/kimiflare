@@ -2,15 +2,36 @@ import React from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
   themes: Theme[];
-  current: Theme;
   onPick: (theme: Theme | null) => void;
   onPreview?: (theme: Theme) => void;
 }
 
-export function ThemePicker({ themes, current, onPick, onPreview }: Props) {
+function PaletteSwatches({ palette }: { palette: Theme["palette"] }) {
+  const colors = [
+    palette.primary,
+    palette.secondary,
+    palette.success,
+    palette.error,
+    palette.warning,
+    palette.info,
+  ];
+  return (
+    <Box>
+      {colors.map((c, i) => (
+        <Text key={i} color={c}>
+          █
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+export function ThemePicker({ themes, onPick, onPreview }: Props) {
+  const current = useTheme();
   const items = themes.map((t) => ({
     label: t.label,
     value: t.name,
@@ -48,6 +69,11 @@ export function ThemePicker({ themes, current, onPick, onPreview }: Props) {
                 <Text color={color} bold={isSelected} dimColor={!isSelected}>
                   {label}
                 </Text>
+                {theme && (
+                  <Box marginLeft={1}>
+                    <PaletteSwatches palette={theme.palette} />
+                  </Box>
+                )}
               </Box>
             );
           }}

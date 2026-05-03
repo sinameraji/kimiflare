@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 export interface FilePickerItem {
   name: string;
@@ -10,13 +10,13 @@ export interface FilePickerItem {
 interface Props {
   items: FilePickerItem[];
   selectedIndex: number;
-  theme: Theme;
   query: string;
 }
 
 const VISIBLE_LIMIT = 12;
 
-export function FilePicker({ items, selectedIndex, theme, query }: Props) {
+export function FilePicker({ items, selectedIndex, query }: Props) {
+  const theme = useTheme();
   // Scroll the visible window so the selected item is always in view.
   // Keep the selected item at the bottom edge when scrolling down.
   let startIndex = 0;

@@ -53,6 +53,7 @@ import {
   type ReasoningEffort,
 } from "./config.js";
 import { resolveTheme, themeNames, themeList, type Theme } from "./ui/theme.js";
+import { ThemeProvider } from "./ui/theme-context.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import {
   listSessions,
@@ -2929,114 +2930,122 @@ function App({
 
   if (resumeSessions !== null) {
     return (
-      <Box flexDirection="column">
-        <ResumePicker sessions={resumeSessions} onPick={handleResumePick} theme={theme} />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ResumePicker sessions={resumeSessions} onPick={handleResumePick} />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   if (showThemePicker) {
     return (
-      <Box flexDirection="column">
-        <ThemePicker themes={themeList()} current={theme} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ThemePicker themes={themeList()} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   if (showHelpMenu) {
     return (
-      <Box flexDirection="column">
-        <HelpMenu
-          theme={theme}
-          themes={themeList().map((t) => ({ name: t.name, label: t.label }))}
-          currentThemeName={theme.name}
-          customCommands={customCommandsRef.current
-            .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
-            .map((c) => ({ name: c.name, description: c.description }))}
-          costAttributionEnabled={cfg?.costAttribution}
-          multiAgentEnabled={cfg?.multiAgent}
-          onDone={() => setShowHelpMenu(false)}
-          onCommand={handleHelpCommand}
-        />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <HelpMenu
+            themes={themeList().map((t) => ({ name: t.name, label: t.label }))}
+            currentThemeName={theme.name}
+            customCommands={customCommandsRef.current
+              .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
+              .map((c) => ({ name: c.name, description: c.description }))}
+            costAttributionEnabled={cfg?.costAttribution}
+            multiAgentEnabled={cfg?.multiAgent}
+            onDone={() => setShowHelpMenu(false)}
+            onCommand={handleHelpCommand}
+          />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   if (showLspWizard) {
     return (
-      <Box flexDirection="column">
-        <LspWizard
-          theme={theme}
-          servers={cfg?.lspServers ?? {}}
-          currentScope={lspScope}
-          hasProjectDir={existsSync(join(process.cwd(), ".kimiflare"))}
-          onDone={() => setShowLspWizard(false)}
-          onSave={(servers, enabled, scope) => {
-            setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
-            setLspScope(scope);
-            if (scope === "project") {
-              void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
-                .then((path) => {
-                  setLspProjectPath(path);
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
-                  ]);
-                })
-                .catch(() => {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
-                  ]);
-                });
-            } else if (cfg) {
-              void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
-              setEvents((e) => [
-                ...e,
-                { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
-              ]);
-            }
-            setShowLspWizard(false);
-          }}
-        />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <LspWizard
+            servers={cfg?.lspServers ?? {}}
+            currentScope={lspScope}
+            hasProjectDir={existsSync(join(process.cwd(), ".kimiflare"))}
+            onDone={() => setShowLspWizard(false)}
+            onSave={(servers, enabled, scope) => {
+              setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
+              setLspScope(scope);
+              if (scope === "project") {
+                void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
+                  .then((path) => {
+                    setLspProjectPath(path);
+                    setEvents((e) => [
+                      ...e,
+                      { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
+                    ]);
+                  })
+                  .catch(() => {
+                    setEvents((e) => [
+                      ...e,
+                      { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
+                    ]);
+                  });
+              } else if (cfg) {
+                void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
+                ]);
+              }
+              setShowLspWizard(false);
+            }}
+          />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   if (commandWizard) {
     return (
-      <Box flexDirection="column">
-        <CommandWizard
-          theme={theme}
-          mode={commandWizard.mode}
-          initial={commandWizard.initial}
-          existingNames={customCommandsRef.current.map((c) => c.name)}
-          builtinNames={BUILTIN_COMMAND_NAMES}
-          onDone={() => setCommandWizard(null)}
-          onSave={handleCommandSave}
-        />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <CommandWizard
+            mode={commandWizard.mode}
+            initial={commandWizard.initial}
+            existingNames={customCommandsRef.current.map((c) => c.name)}
+            builtinNames={BUILTIN_COMMAND_NAMES}
+            onDone={() => setCommandWizard(null)}
+            onSave={handleCommandSave}
+          />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   if (commandPicker) {
     return (
-      <Box flexDirection="column">
-        <CommandPicker
-          theme={theme}
-          commands={customCommandsRef.current}
-          title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
-          onPick={(cmd) => {
-            setCommandPicker(null);
-            if (!cmd) return;
-            if (commandPicker.mode === "edit") {
-              setCommandWizard({ mode: "edit", initial: cmd });
-            } else {
-              setCommandToDelete(cmd);
-            }
-          }}
-        />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <CommandPicker
+            commands={customCommandsRef.current}
+            title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
+            onPick={(cmd) => {
+              setCommandPicker(null);
+              if (!cmd) return;
+              if (commandPicker.mode === "edit") {
+                setCommandWizard({ mode: "edit", initial: cmd });
+              } else {
+                setCommandToDelete(cmd);
+              }
+            }}
+          />
+        </Box>
+      </ThemeProvider>
     );
   }
 
@@ -3070,86 +3079,83 @@ function App({
 
   if (showCommandList) {
     return (
-      <Box flexDirection="column">
-        <CommandList
-          theme={theme}
-          commands={customCommandsRef.current}
-          onDone={() => setShowCommandList(false)}
-        />
-      </Box>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <CommandList
+            commands={customCommandsRef.current}
+            onDone={() => setShowCommandList(false)}
+          />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   const hasConversation = events.some((e) => e.kind === "user" || e.kind === "assistant");
 
   return (
-    <Box flexDirection="column">
-      {!hasConversation && events.length === 0 ? (
-        <Welcome theme={theme} accountId={cfg.accountId} />
-      ) : (
-        <ChatView events={events} showReasoning={showReasoning} theme={theme} verbose={verbose} />
-      )}
-      {perm ? (
-        <PermissionModal
-          tool={perm.tool}
-          args={perm.args}
-          theme={theme}
-          onDecide={(d) => {
-            perm.resolve(d);
-            permResolveRef.current = null;
-            setPerm(null);
-          }}
-        />
-      ) : (
-        <Box flexDirection="column" marginTop={1}>
-          {tasks.length > 0 && (
-            <TaskList
-              tasks={tasks}
-              theme={theme}
-              startedAt={tasksStartedAt}
-              tokensDelta={Math.max(0, (usage?.prompt_tokens ?? 0) - tasksStartTokens)}
-            />
-          )}
-          {queue.length > 0 && (
-            <Box flexDirection="column" marginBottom={1}>
-              {queue.map((q, i) => (
-                <Text key={`queue_${i}`} color={theme.queue.color} dimColor={theme.queue.dim}>
-                  ⏳ {q.display}
-                </Text>
-              ))}
-            </Box>
-          )}
-          <StatusBar
-            model={cfg.model}
-            usage={usage}
-            sessionUsage={sessionUsage}
-            thinking={busy}
-            turnStartedAt={turnStartedAt}
-            theme={theme}
-            mode={mode}
-            effort={effort}
-            contextLimit={CONTEXT_LIMIT}
-            hasUpdate={hasUpdate}
-            latestVersion={latestVersion}
-            gatewayMeta={gatewayMeta}
-            codeMode={codeMode}
+    <ThemeProvider theme={theme}>
+      <Box flexDirection="column">
+        {!hasConversation && events.length === 0 ? (
+          <Welcome accountId={cfg.accountId} />
+        ) : (
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} />
+        )}
+        {perm ? (
+          <PermissionModal
+            tool={perm.tool}
+            args={perm.args}
+            onDecide={(d) => {
+              perm.resolve(d);
+              permResolveRef.current = null;
+              setPerm(null);
+            }}
           />
-          {activePicker?.kind === "file" && (
-            <FilePicker
-              items={filteredFileItems}
-              selectedIndex={activePicker.selected}
-              theme={theme}
-              query={pickerQuery ?? ""}
+        ) : (
+          <Box flexDirection="column" marginTop={1}>
+            {tasks.length > 0 && (
+              <TaskList
+                tasks={tasks}
+                startedAt={tasksStartedAt}
+                tokensDelta={Math.max(0, (usage?.prompt_tokens ?? 0) - tasksStartTokens)}
+              />
+            )}
+            {queue.length > 0 && (
+              <Box flexDirection="column" marginBottom={1}>
+                {queue.map((q, i) => (
+                  <Text key={`queue_${i}`} color={theme.queue.color} dimColor={theme.queue.dim}>
+                    ⏳ {q.display}
+                  </Text>
+                ))}
+              </Box>
+            )}
+            <StatusBar
+              model={cfg.model}
+              usage={usage}
+              sessionUsage={sessionUsage}
+              thinking={busy}
+              turnStartedAt={turnStartedAt}
+              mode={mode}
+              effort={effort}
+              contextLimit={CONTEXT_LIMIT}
+              hasUpdate={hasUpdate}
+              latestVersion={latestVersion}
+              gatewayMeta={gatewayMeta}
+              codeMode={codeMode}
             />
-          )}
-          {activePicker?.kind === "slash" && (
-            <SlashPicker
-              items={filteredSlashItems}
-              selectedIndex={activePicker.selected}
-              theme={theme}
-              query={pickerQuery ?? ""}
-            />
-          )}
+            {activePicker?.kind === "file" && (
+              <FilePicker
+                items={filteredFileItems}
+                selectedIndex={activePicker.selected}
+                query={pickerQuery ?? ""}
+              />
+            )}
+            {activePicker?.kind === "slash" && (
+              <SlashPicker
+                items={filteredSlashItems}
+                selectedIndex={activePicker.selected}
+                query={pickerQuery ?? ""}
+              />
+            )}
           <Box marginTop={1}>
             <Text color={theme.accent}>› </Text>
             <CustomTextInput
@@ -3204,6 +3210,7 @@ function App({
         </Box>
       )}
     </Box>
+    </ThemeProvider>
   );
 }
 

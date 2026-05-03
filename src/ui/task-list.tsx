@@ -2,18 +2,18 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Task } from "../tasks-state.js";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface Props {
   tasks: Task[];
-  theme: Theme;
   startedAt: number | null;
   tokensDelta: number;
 }
 
 const MAX_VISIBLE = 6;
 
-export function TaskList({ tasks, theme, startedAt, tokensDelta }: Props) {
+export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
+  const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -60,7 +60,7 @@ export function TaskList({ tasks, theme, startedAt, tokensDelta }: Props) {
         )}
       </Box>
       {visibleTasks.map((t) => (
-        <TaskRow key={t.id} task={t} theme={theme} />
+        <TaskRow key={t.id} task={t} />
       ))}
       {hiddenPending > 0 && (
         <Text color={theme.info.color} dimColor={theme.info.dim}>
@@ -71,7 +71,8 @@ export function TaskList({ tasks, theme, startedAt, tokensDelta }: Props) {
   );
 }
 
-function TaskRow({ task, theme }: { task: Task; theme: Theme }) {
+function TaskRow({ task }: { task: Task }) {
+  const theme = useTheme();
   if (task.status === "completed") {
     return (
       <Text color={theme.info.color} dimColor={theme.info.dim}>

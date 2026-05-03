@@ -1,3 +1,19 @@
+/**
+ * Theme system for kimiflare.
+ *
+ * Creating a new theme:
+ * 1. Pick 6-7 colors for the palette (primary, secondary, success, error,
+ *    warning, info, muted).
+ * 2. Call buildTheme(name, label, palette).
+ * 3. The mapping function distributes your palette across UI roles
+ *    automatically.
+ *
+ * Guidelines for diverse themes:
+ * - primary and secondary should contrast (e.g. blue + orange, purple + green).
+ * - success/error/warning should be clearly distinct (green/red/yellow).
+ * - muted should be a neutral gray so it doesn't compete with accent colors.
+ */
+
 export type ColorName = string;
 
 export interface DimColor {
@@ -5,9 +21,22 @@ export interface DimColor {
   dim: boolean;
 }
 
+/** The raw palette an author provides — only 6-7 colors. */
+export interface ColorPalette {
+  primary: string;
+  secondary: string;
+  success: string;
+  error: string;
+  warning: string;
+  info: string;
+  muted: string;
+}
+
+/** Full theme shape consumed by components. */
 export interface Theme {
   name: string;
   label: string;
+  palette: ColorPalette;
   user: ColorName;
   assistant: ColorName | undefined;
   reasoning: DimColor;
@@ -22,277 +51,260 @@ export interface Theme {
   modeBadge: { plan: ColorName; auto: ColorName; edit: ColorName };
 }
 
-const dark: Theme = {
-  name: "dark",
-  label: "dark (default — for dark terminals)",
-  user: "#61afef",
-  assistant: undefined,
-  reasoning: { color: "#5c6370", dim: true },
-  info: { color: "#5c6370", dim: true },
-  error: "#e06c75",
-  warn: "#e5c07b",
-  tool: "#61afef",
-  spinner: "#e5c07b",
-  permission: "#e5c07b",
-  queue: { color: "#5c6370", dim: true },
-  accent: "#56b6c2",
-  modeBadge: { plan: "#61afef", auto: "#98c379", edit: "#56b6c2" },
-};
+/** Build a full Theme from a concise ColorPalette. */
+export function buildTheme(
+  name: string,
+  label: string,
+  palette: ColorPalette,
+): Theme {
+  return {
+    name,
+    label,
+    palette,
+    user: palette.primary,
+    tool: palette.secondary,
+    spinner: palette.primary,
+    accent: palette.secondary,
+    error: palette.error,
+    warn: palette.warning,
+    info: { color: palette.info, dim: false },
+    reasoning: { color: palette.muted, dim: true },
+    permission: palette.warning,
+    queue: { color: palette.muted, dim: true },
+    assistant: undefined,
+    modeBadge: {
+      plan: palette.primary,
+      auto: palette.success,
+      edit: palette.secondary,
+    },
+  };
+}
 
-const light: Theme = {
-  name: "light",
-  label: "light (for bright terminal backgrounds)",
-  user: "#4078f2",
-  assistant: undefined,
-  reasoning: { color: "#a0a1a7", dim: false },
-  info: { color: "#a0a1a7", dim: false },
+const dark = buildTheme("dark", "dark (default — for dark terminals)", {
+  primary: "#61afef",
+  secondary: "#56b6c2",
+  success: "#98c379",
+  error: "#e06c75",
+  warning: "#e5c07b",
+  info: "#5c6370",
+  muted: "#5c6370",
+});
+
+const light = buildTheme("light", "light (for bright terminal backgrounds)", {
+  primary: "#4078f2",
+  secondary: "#a626a4",
+  success: "#50a14f",
   error: "#e45649",
-  warn: "#986801",
-  tool: "#a626a4",
-  spinner: "#4078f2",
-  permission: "#986801",
-  queue: { color: "#a0a1a7", dim: false },
-  accent: "#4078f2",
-  modeBadge: { plan: "#4078f2", auto: "#50a14f", edit: "#a626a4" },
-};
+  warning: "#986801",
+  info: "#a0a1a7",
+  muted: "#a0a1a7",
+});
 
-const highContrast: Theme = {
-  name: "high-contrast",
-  label: "high-contrast (bold, bright colors for low-vision)",
-  user: "#00ffff",
-  assistant: "#ffffff",
-  reasoning: { color: "#ffffff", dim: false },
-  info: { color: "#ffffff", dim: false },
-  error: "#ff0000",
-  warn: "#ffff00",
-  tool: "#ff00ff",
-  spinner: "#ffff00",
-  permission: "#ffff00",
-  queue: { color: "#ffffff", dim: false },
-  accent: "#00ffff",
-  modeBadge: { plan: "#0000ff", auto: "#00ff00", edit: "#00ffff" },
-};
+const highContrast = buildTheme(
+  "high-contrast",
+  "high-contrast (bold, bright colors for low-vision)",
+  {
+    primary: "#00ffff",
+    secondary: "#ff00ff",
+    success: "#00ff00",
+    error: "#ff0000",
+    warning: "#ffff00",
+    info: "#ffffff",
+    muted: "#ffffff",
+  },
+);
 
-const dracula: Theme = {
-  name: "dracula",
-  label: "dracula (pink & cyan, popular dark)",
-  user: "#8be9fd",
-  assistant: undefined,
-  reasoning: { color: "#6272a4", dim: true },
-  info: { color: "#6272a4", dim: true },
+const dracula = buildTheme("dracula", "dracula (pink & cyan, popular dark)", {
+  primary: "#8be9fd",
+  secondary: "#ff79c6",
+  success: "#50fa7b",
   error: "#ff5555",
-  warn: "#f1fa8c",
-  tool: "#bd93f9",
-  spinner: "#8be9fd",
-  permission: "#f1fa8c",
-  queue: { color: "#6272a4", dim: true },
-  accent: "#ff79c6",
-  modeBadge: { plan: "#8be9fd", auto: "#50fa7b", edit: "#ff79c6" },
-};
+  warning: "#f1fa8c",
+  info: "#6272a4",
+  muted: "#6272a4",
+});
 
-const nord: Theme = {
-  name: "nord",
-  label: "nord (arctic blue & frost, calm dark)",
-  user: "#88c0d0",
-  assistant: undefined,
-  reasoning: { color: "#4c566a", dim: true },
-  info: { color: "#4c566a", dim: true },
+const nord = buildTheme("nord", "nord (arctic blue & frost, calm dark)", {
+  primary: "#88c0d0",
+  secondary: "#5e81ac",
+  success: "#a3be8c",
   error: "#bf616a",
-  warn: "#ebcb8b",
-  tool: "#88c0d0",
-  spinner: "#88c0d0",
-  permission: "#ebcb8b",
-  queue: { color: "#4c566a", dim: true },
-  accent: "#88c0d0",
-  modeBadge: { plan: "#5e81ac", auto: "#a3be8c", edit: "#88c0d0" },
-};
+  warning: "#ebcb8b",
+  info: "#4c566a",
+  muted: "#4c566a",
+});
 
-const monokai: Theme = {
-  name: "monokai",
-  label: "monokai (vibrant pink & yellow)",
-  user: "#f92672",
-  assistant: undefined,
-  reasoning: { color: "#75715e", dim: true },
-  info: { color: "#75715e", dim: true },
+const monokai = buildTheme("monokai", "monokai (vibrant pink & yellow)", {
+  primary: "#f92672",
+  secondary: "#66d9ef",
+  success: "#a6e22e",
   error: "#f92672",
-  warn: "#e6db74",
-  tool: "#66d9ef",
-  spinner: "#e6db74",
-  permission: "#e6db74",
-  queue: { color: "#75715e", dim: true },
-  accent: "#f92672",
-  modeBadge: { plan: "#66d9ef", auto: "#a6e22e", edit: "#f92672" },
-};
+  warning: "#e6db74",
+  info: "#75715e",
+  muted: "#75715e",
+});
 
-const solarizedDark: Theme = {
-  name: "solarized-dark",
-  label: "solarized-dark (muted blue & yellow)",
-  user: "#2aa198",
-  assistant: undefined,
-  reasoning: { color: "#586e75", dim: true },
-  info: { color: "#586e75", dim: true },
-  error: "#dc322f",
-  warn: "#b58900",
-  tool: "#2aa198",
-  spinner: "#b58900",
-  permission: "#b58900",
-  queue: { color: "#586e75", dim: true },
-  accent: "#2aa198",
-  modeBadge: { plan: "#268bd2", auto: "#859900", edit: "#2aa198" },
-};
+const solarizedDark = buildTheme(
+  "solarized-dark",
+  "solarized-dark (muted blue & yellow)",
+  {
+    primary: "#2aa198",
+    secondary: "#268bd2",
+    success: "#859900",
+    error: "#dc322f",
+    warning: "#b58900",
+    info: "#586e75",
+    muted: "#586e75",
+  },
+);
 
-const solarizedLight: Theme = {
-  name: "solarized-light",
-  label: "solarized-light (light beige & cyan)",
-  user: "#268bd2",
-  assistant: undefined,
-  reasoning: { color: "#93a1a1", dim: false },
-  info: { color: "#93a1a1", dim: false },
-  error: "#dc322f",
-  warn: "#b58900",
-  tool: "#268bd2",
-  spinner: "#268bd2",
-  permission: "#b58900",
-  queue: { color: "#93a1a1", dim: false },
-  accent: "#268bd2",
-  modeBadge: { plan: "#268bd2", auto: "#859900", edit: "#268bd2" },
-};
+const solarizedLight = buildTheme(
+  "solarized-light",
+  "solarized-light (light beige & cyan)",
+  {
+    primary: "#268bd2",
+    secondary: "#2aa198",
+    success: "#859900",
+    error: "#dc322f",
+    warning: "#b58900",
+    info: "#93a1a1",
+    muted: "#93a1a1",
+  },
+);
 
-const tokyoNight: Theme = {
-  name: "tokyo-night",
-  label: "tokyo-night (deep blue & purple)",
-  user: "#7dcfff",
-  assistant: undefined,
-  reasoning: { color: "#565f89", dim: true },
-  info: { color: "#565f89", dim: true },
-  error: "#f7768e",
-  warn: "#e0af68",
-  tool: "#bb9af7",
-  spinner: "#7dcfff",
-  permission: "#e0af68",
-  queue: { color: "#565f89", dim: true },
-  accent: "#bb9af7",
-  modeBadge: { plan: "#7aa2f7", auto: "#9ece6a", edit: "#bb9af7" },
-};
+const tokyoNight = buildTheme(
+  "tokyo-night",
+  "tokyo-night (deep blue & purple)",
+  {
+    primary: "#7dcfff",
+    secondary: "#bb9af7",
+    success: "#9ece6a",
+    error: "#f7768e",
+    warning: "#e0af68",
+    info: "#565f89",
+    muted: "#565f89",
+  },
+);
 
-const gruvboxDark: Theme = {
-  name: "gruvbox-dark",
-  label: "gruvbox-dark (warm retro dark)",
-  user: "#fabd2f",
-  assistant: undefined,
-  reasoning: { color: "#928374", dim: true },
-  info: { color: "#928374", dim: true },
-  error: "#fb4934",
-  warn: "#fe8019",
-  tool: "#83a598",
-  spinner: "#fabd2f",
-  permission: "#fe8019",
-  queue: { color: "#928374", dim: true },
-  accent: "#fabd2f",
-  modeBadge: { plan: "#83a598", auto: "#b8bb26", edit: "#fabd2f" },
-};
+const gruvboxDark = buildTheme(
+  "gruvbox-dark",
+  "gruvbox-dark (warm retro dark)",
+  {
+    primary: "#fabd2f",
+    secondary: "#83a598",
+    success: "#b8bb26",
+    error: "#fb4934",
+    warning: "#fe8019",
+    info: "#928374",
+    muted: "#928374",
+  },
+);
 
-const catppuccinMocha: Theme = {
-  name: "catppuccin-mocha",
-  label: "catppuccin-mocha (pastel pink & lavender)",
-  user: "#f5c2e7",
-  assistant: undefined,
-  reasoning: { color: "#6c7086", dim: true },
-  info: { color: "#6c7086", dim: true },
-  error: "#f38ba8",
-  warn: "#f9e2af",
-  tool: "#89dceb",
-  spinner: "#89dceb",
-  permission: "#f9e2af",
-  queue: { color: "#6c7086", dim: true },
-  accent: "#cba6f7",
-  modeBadge: { plan: "#89b4fa", auto: "#a6e3a1", edit: "#f5c2e7" },
-};
+const catppuccinMocha = buildTheme(
+  "catppuccin-mocha",
+  "catppuccin-mocha (pastel pink & lavender)",
+  {
+    primary: "#f5c2e7",
+    secondary: "#cba6f7",
+    success: "#a6e3a1",
+    error: "#f38ba8",
+    warning: "#f9e2af",
+    info: "#6c7086",
+    muted: "#6c7086",
+  },
+);
 
-const rosePine: Theme = {
-  name: "rose-pine",
-  label: "rose-pine (soft rose & foam)",
-  user: "#ebbcba",
-  assistant: undefined,
-  reasoning: { color: "#6e6a86", dim: true },
-  info: { color: "#6e6a86", dim: true },
+const rosePine = buildTheme("rose-pine", "rose-pine (soft rose & foam)", {
+  primary: "#ebbcba",
+  secondary: "#9ccfd8",
+  success: "#9ccfd8",
   error: "#eb6f92",
-  warn: "#f6c177",
-  tool: "#9ccfd8",
-  spinner: "#ebbcba",
-  permission: "#f6c177",
-  queue: { color: "#6e6a86", dim: true },
-  accent: "#ebbcba",
-  modeBadge: { plan: "#31748f", auto: "#9ccfd8", edit: "#ebbcba" },
-};
+  warning: "#f6c177",
+  info: "#6e6a86",
+  muted: "#6e6a86",
+});
 
-const oneDark: Theme = {
-  name: "one-dark",
-  label: "one-dark (Atom's iconic dark — blue & purple)",
-  user: "#61afef",
-  assistant: undefined,
-  reasoning: { color: "#5c6370", dim: true },
-  info: { color: "#5c6370", dim: true },
-  error: "#e06c75",
-  warn: "#e5c07b",
-  tool: "#c678dd",
-  spinner: "#61afef",
-  permission: "#e5c07b",
-  queue: { color: "#5c6370", dim: true },
-  accent: "#c678dd",
-  modeBadge: { plan: "#61afef", auto: "#98c379", edit: "#c678dd" },
-};
+const oneDark = buildTheme(
+  "one-dark",
+  "one-dark (Atom's iconic dark — blue & purple)",
+  {
+    primary: "#61afef",
+    secondary: "#c678dd",
+    success: "#98c379",
+    error: "#e06c75",
+    warning: "#e5c07b",
+    info: "#5c6370",
+    muted: "#5c6370",
+  },
+);
 
-const ayu: Theme = {
-  name: "ayu",
-  label: "ayu (clean modern — orange & cyan)",
-  user: "#39bae6",
-  assistant: undefined,
-  reasoning: { color: "#4d5566", dim: true },
-  info: { color: "#4d5566", dim: true },
+const ayu = buildTheme("ayu", "ayu (clean modern — orange & cyan)", {
+  primary: "#39bae6",
+  secondary: "#ffb454",
+  success: "#7ee787",
   error: "#f07178",
-  warn: "#ffb454",
-  tool: "#73b8ff",
-  spinner: "#39bae6",
-  permission: "#ffb454",
-  queue: { color: "#4d5566", dim: true },
-  accent: "#39bae6",
-  modeBadge: { plan: "#39bae6", auto: "#7ee787", edit: "#ffb454" },
-};
+  warning: "#ffb454",
+  info: "#4d5566",
+  muted: "#4d5566",
+});
 
-const nightOwl: Theme = {
-  name: "night-owl",
-  label: "night-owl (deep navy — cyan & red)",
-  user: "#82aaff",
-  assistant: undefined,
-  reasoning: { color: "#4d6885", dim: true },
-  info: { color: "#4d6885", dim: true },
-  error: "#ef5350",
-  warn: "#ffca28",
-  tool: "#c792ea",
-  spinner: "#82aaff",
-  permission: "#ffca28",
-  queue: { color: "#4d6885", dim: true },
-  accent: "#c792ea",
-  modeBadge: { plan: "#82aaff", auto: "#7ee787", edit: "#c792ea" },
-};
+const nightOwl = buildTheme(
+  "night-owl",
+  "night-owl (deep navy — cyan & red)",
+  {
+    primary: "#82aaff",
+    secondary: "#c792ea",
+    success: "#7ee787",
+    error: "#ef5350",
+    warning: "#ffca28",
+    info: "#4d6885",
+    muted: "#4d6885",
+  },
+);
 
-const palenight: Theme = {
-  name: "palenight",
-  label: "palenight (Material pale — purple & cyan)",
-  user: "#82b1ff",
-  assistant: undefined,
-  reasoning: { color: "#4c566a", dim: true },
-  info: { color: "#4c566a", dim: true },
-  error: "#f07178",
-  warn: "#ffcb6b",
-  tool: "#c792ea",
-  spinner: "#82b1ff",
-  permission: "#ffcb6b",
-  queue: { color: "#4c566a", dim: true },
-  accent: "#c792ea",
-  modeBadge: { plan: "#82b1ff", auto: "#c3e88d", edit: "#c792ea" },
-};
+const palenight = buildTheme(
+  "palenight",
+  "palenight (Material pale — purple & cyan)",
+  {
+    primary: "#82b1ff",
+    secondary: "#c792ea",
+    success: "#c3e88d",
+    error: "#f07178",
+    warning: "#ffcb6b",
+    info: "#4c566a",
+    muted: "#4c566a",
+  },
+);
+
+const rainbow = buildTheme("rainbow", "rainbow (high diversity)", {
+  primary: "#ff6b6b",
+  secondary: "#4ecdc4",
+  success: "#2ecc71",
+  error: "#e74c3c",
+  warning: "#f1c40f",
+  info: "#9b59b6",
+  muted: "#7f8c8d",
+});
+
+const neon = buildTheme("neon", "neon (cyberpunk)", {
+  primary: "#ff00ff",
+  secondary: "#00ffff",
+  success: "#00ff00",
+  error: "#ff0000",
+  warning: "#ffff00",
+  info: "#bd00ff",
+  muted: "#555555",
+});
+
+const forest = buildTheme("forest", "forest (green & amber)", {
+  primary: "#a3be8c",
+  secondary: "#d08770",
+  success: "#88c0d0",
+  error: "#bf616a",
+  warning: "#ebcb8b",
+  info: "#4c566a",
+  muted: "#4c566a",
+});
 
 export const THEMES: Record<string, Theme> = {
   dark,
@@ -311,6 +323,9 @@ export const THEMES: Record<string, Theme> = {
   ayu,
   "night-owl": nightOwl,
   palenight,
+  rainbow,
+  neon,
+  forest,
 };
 
 export const DEFAULT_THEME_NAME = "dark";

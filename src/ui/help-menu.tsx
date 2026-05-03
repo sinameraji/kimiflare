@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 interface CustomCommandSummary {
   name: string;
@@ -9,7 +9,6 @@ interface CustomCommandSummary {
 }
 
 interface Props {
-  theme: Theme;
   themes: { name: string; label: string }[];
   currentThemeName: string;
   customCommands?: CustomCommandSummary[];
@@ -182,7 +181,8 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, multiAgentEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ themes, currentThemeName, customCommands, costAttributionEnabled, multiAgentEnabled, onDone, onCommand }: Props) {
+  const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 

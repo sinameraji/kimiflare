@@ -1,10 +1,10 @@
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
+import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
   text: string;
-  theme: Theme;
   streaming?: boolean;
 }
 
@@ -13,7 +13,8 @@ interface InlineSegment {
   text: string;
 }
 
-export function MD({ text, theme, streaming }: Props) {
+export function MD({ text, streaming }: Props) {
+  const theme = useTheme();
   if (streaming) {
     return <Text>{text}</Text>;
   }
@@ -21,7 +22,7 @@ export function MD({ text, theme, streaming }: Props) {
   return (
     <Box flexDirection="column">
       {blocks.map((b, i) => (
-        <Block key={i} block={b} theme={theme} />
+        <Block key={i} block={b} />
       ))}
     </Box>
   );
@@ -98,7 +99,8 @@ function parseBlocks(src: string): Block[] {
   return out;
 }
 
-const Block = React.memo(function Block({ block, theme }: { block: Block; theme: Theme }) {
+const Block = React.memo(function Block({ block }: { block: Block }) {
+  const theme = useTheme();
   if (block.kind === "blank") return <Text> </Text>;
   if (block.kind === "heading") {
     return (

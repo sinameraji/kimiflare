@@ -3,7 +3,7 @@ import { Box, Text, Static } from "ink";
 import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[] }
@@ -25,7 +25,6 @@ export type ChatEvent =
 interface Props {
   events: ChatEvent[];
   showReasoning: boolean;
-  theme: Theme;
   verbose?: boolean;
 }
 
@@ -35,7 +34,8 @@ interface StaticItem {
   showSeparator: boolean;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, theme, verbose }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
+  const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
 
@@ -65,7 +65,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
                 </Text>
               </Box>
             )}
-            <EventView evt={item.evt} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} />
           </Box>
         )}
       </Static>
@@ -82,7 +82,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} theme={theme} verbose={verbose} />
+            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} />
           </Box>
         );
       })}
@@ -93,14 +93,13 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, th
 const EventView = React.memo(function EventView({
   evt,
   showReasoning,
-  theme,
   verbose,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
-  theme: Theme;
   verbose?: boolean;
 }) {
+  const theme = useTheme();
   if (evt.kind === "user") {
     return (
       <Box flexDirection="column">
@@ -138,7 +137,7 @@ const EventView = React.memo(function EventView({
             </Text>
           </Box>
         ) : null}
-        {evt.text ? <MD text={evt.text} theme={theme} streaming={evt.streaming} /> : null}
+        {evt.text ? <MD text={evt.text} streaming={evt.streaming} /> : null}
         {evt.streaming && (
           <Text color={theme.spinner}>
             <Spinner type="dots" />

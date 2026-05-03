@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
@@ -15,7 +15,6 @@ interface Props {
   sessionUsage?: DailyUsage | null;
   thinking: boolean;
   turnStartedAt: number | null;
-  theme: Theme;
   mode: Mode;
   effort: ReasoningEffort;
   contextLimit: number;
@@ -25,7 +24,8 @@ interface Props {
   codeMode?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, theme, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+  const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
     mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;

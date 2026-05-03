@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
-import type { Theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
 import type { LspServerConfig } from "../config.js";
 import { CustomTextInput } from "./text-input.js";
 
@@ -125,7 +125,6 @@ const PRESETS: Preset[] = [
 type Page = "main" | "add" | "install" | "custom-name" | "custom-command" | "scope" | "edit" | "delete" | "list";
 
 interface Props {
-  theme: Theme;
   servers: Record<string, LspServerConfig>;
   currentScope: "project" | "global";
   hasProjectDir: boolean;
@@ -138,7 +137,8 @@ interface InstallState {
   output: string;
 }
 
-export function LspWizard({ theme, servers, currentScope, hasProjectDir, onDone, onSave }: Props) {
+export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave }: Props) {
+  const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const [selectedPreset, setSelectedPreset] = useState<Preset | null>(null);
   const [customName, setCustomName] = useState("");
