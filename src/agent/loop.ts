@@ -131,11 +131,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
-  // Budget tracking for research-agent self-assessment prompts
+  // Budget tracking for self-assessment prompts
   let totalToolCallsThisTurn = 0;
-  const BUDGET_CHECK_INTERVAL = 3;
-  const SOFT_BUDGET = 5;
-  const HARD_BUDGET = 15;
+  const softBudget = Math.floor(max * 0.7);
+  const hardBudget = max;
 
   for (let iter = 0; iter < max; iter++) {
     turn++;
@@ -476,17 +475,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
       }
     }
 
-    // Budget self-assessment: inject reminder after every N tool calls
-    if (totalToolCallsThisTurn > 0 && totalToolCallsThisTurn % BUDGET_CHECK_INTERVAL === 0) {
-      let budgetMsg = "";
-      if (totalToolCallsThisTurn >= HARD_BUDGET) {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. This is the substantial-question budget. Produce your deliverable now unless you can name a specific gap that would change the recommendation.`;
-      } else if (totalToolCallsThisTurn >= SOFT_BUDGET) {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. If this is a routine question, produce your deliverable now. If substantial, justify the next call in one sentence.`;
-      } else {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. Assess: is the next call worth more than what you already have? If yes, justify in one sentence. If no, produce your deliverable.`;
-      }
-      opts.messages.push({ role: "system", content: budgetMsg });
+    // Budget self-assessment: inject reminder at soft budget threshold
+    if (totalToolCallsThisTurn === softBudget) {
+      opts.messages.push({
+        role: "system",
+        content: `You have used ${totalToolCallsThisTurn} of ${max} tool calls. Consider whether to ask the user for direction or wrap up with what you have.`,
+      });
     }
 
     if (opts.sessionId && lastUsage) {
