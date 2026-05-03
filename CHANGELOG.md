@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.32.0](https://github.com/sinameraji/kimiflare/compare/v0.31.0...v0.32.0) (2026-05-03)
+
+
+### Features
+
+* add theme picker with 4-color palette ([#242](https://github.com/sinameraji/kimiflare/issues/242)) ([ddd1c30](https://github.com/sinameraji/kimiflare/commit/ddd1c3068202b6bd3799238018ac6e87f856c4a0))
+* enable filePicker by default ([#230](https://github.com/sinameraji/kimiflare/issues/230)) ([ab2fb32](https://github.com/sinameraji/kimiflare/commit/ab2fb32946953830681b0fcb3eed11f0a99437c1))
+* remove theme system ([#240](https://github.com/sinameraji/kimiflare/issues/240)) ([ff2705f](https://github.com/sinameraji/kimiflare/commit/ff2705f8e572b5e96fd415b857d7b796e3dec2e9))
+
+
+### Bug Fixes
+
+* **cost:** show big-picture week breakdown in ongoing TUI sessions ([#234](https://github.com/sinameraji/kimiflare/issues/234)) ([63e90f4](https://github.com/sinameraji/kimiflare/commit/63e90f4d09251109521f9529e8bdcf5c598c2b02)), closes [#230](https://github.com/sinameraji/kimiflare/issues/230)
+* slash picker Enter selects and runs command immediately ([#239](https://github.com/sinameraji/kimiflare/issues/239)) ([05c4550](https://github.com/sinameraji/kimiflare/commit/05c4550587062c44c26b18cc7abc9bce831858cf))
+* stream formatted markdown instead of raw text ([#238](https://github.com/sinameraji/kimiflare/issues/238)) ([7f96f7d](https://github.com/sinameraji/kimiflare/commit/7f96f7df1bf050d5a0b0b31e8b47e5efdb986396))
+
+
+### Reverts
+
+* remove multi-agent architecture and restore single agent ([#243](https://github.com/sinameraji/kimiflare/issues/243)) ([86e1c12](https://github.com/sinameraji/kimiflare/commit/86e1c12aa0c052a2e7d845e1288e153deba30420))
+
 ## [0.31.0](https://github.com/sinameraji/kimiflare/compare/v0.30.0...v0.31.0) (2026-05-01)
 
 
