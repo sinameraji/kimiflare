@@ -1397,7 +1397,7 @@ function App({
     ];
     const prompt = promptParts.filter((p): p is string => p !== null).join("\n");
 
-    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: "/init" }]);
+    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${existingName})` : "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
     setTurnStartedAt(Date.now());
