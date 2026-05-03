@@ -342,6 +342,12 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
+interface PendingAskUser {
+  question: string;
+  options?: string[];
+  resolve: (response: string) => void;
+}
+
 const CONTEXT_LIMIT = 262_000;
 const AUTO_COMPACT_SUGGEST_PCT = 0.8;
 const MAX_EVENTS = 500;
@@ -467,6 +473,7 @@ function App({
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
+  const [askUserPrompt, setAskUserPrompt] = useState<PendingAskUser | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -492,6 +499,7 @@ function App({
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [statusLine, setStatusLine] = useState<string | null>(null);
   const [verbose, setVerbose] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
@@ -511,6 +519,7 @@ function App({
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
+  const askUserResolveRef = useRef<((response: string) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
@@ -1156,16 +1165,22 @@ function App({
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       const hadPerm = permResolveRef.current !== null;
+      const hadAskUser = askUserResolveRef.current !== null;
       if (hadPerm) {
         permResolveRef.current!("deny");
         permResolveRef.current = null;
         setPerm(null);
       }
+      if (hadAskUser) {
+        askUserResolveRef.current!("(cancelled)");
+        askUserResolveRef.current = null;
+        setAskUserPrompt(null);
+      }
       if (busy && activeControllerRef.current) {
         activeControllerRef.current.abort();
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-      } else if (!hadPerm) {
+      } else if (!hadPerm && !hadAskUser) {
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
@@ -1173,6 +1188,7 @@ function App({
     if (key.escape) {
       const modalOpen =
         perm !== null ||
+        askUserPrompt !== null ||
         showHelpMenu ||
         showThemePicker ||
         showLspWizard ||
@@ -1455,6 +1471,7 @@ function App({
           onAssistantStart: () => {
             const id = nextAssistantId++;
             activeAsstIdRef.current = id;
+            setStatusLine(null);
             setEvents((e) => [
               ...e,
               { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
@@ -1466,11 +1483,22 @@ function App({
           },
           onTextDelta: (d) => {
             const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
+            if (id !== null) {
+              updateAssistant(id, (e) => {
+                const newText = e.text + d;
+                // Extract status lines like [Reading repository structure…]
+                const statusMatch = newText.match(/\[([^\]]+)\]/);
+                if (statusMatch) {
+                  setStatusLine(statusMatch[1]!);
+                }
+                return { text: newText };
+              });
+            }
           },
           onAssistantFinal: () => {
             const id = activeAsstIdRef.current;
             if (id !== null) updateAssistant(id, () => ({ streaming: false }));
+            setStatusLine(null);
           },
           onToolCallFinalized: (call) => {
             pendingToolCallsRef.current.set(call.id, call.function.name);
@@ -1544,11 +1572,11 @@ function App({
         },
       });
 
-      if (turnResult.paused) {
+      if (turnResult.paused && !turnResult.askUserHandled) {
         setEvents((e) => [
           ...e,
           {
-            kind: "info",
+            kind: "error",
             key: mkKey(),
             text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
           },
@@ -2401,6 +2429,7 @@ function App({
         onAssistantStart: () => {
           const id = nextAssistantId++;
           activeAsstIdRef.current = id;
+          setStatusLine(null);
           setEvents((e) => [
             ...e,
             { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
@@ -2412,11 +2441,21 @@ function App({
         },
         onTextDelta: (d: string) => {
           const id = activeAsstIdRef.current;
-          if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
+          if (id !== null) {
+            updateAssistant(id, (e) => {
+              const newText = e.text + d;
+              const statusMatch = newText.match(/\[([^\]]+)\]/);
+              if (statusMatch) {
+                setStatusLine(statusMatch[1]!);
+              }
+              return { text: newText };
+            });
+          }
         },
         onAssistantFinal: () => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));
+          setStatusLine(null);
         },
         onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
           pendingToolCallsRef.current.set(call.id, call.function.name);
@@ -2504,14 +2543,16 @@ function App({
           setEvents((e) => [
             ...e,
             {
-              kind: "info",
+              kind: "ask_user",
               key: mkKey(),
-              text: options && options.length > 0 ? `${question} [${options.join(" | ")}]` : question,
+              question,
+              options,
             },
           ]);
-          // For now, return a placeholder. In a future iteration, this should
-          // pause the turn and wait for actual user input via the input box.
-          return "User acknowledged. Please proceed with the best option.";
+          return new Promise<string>((resolve) => {
+            askUserResolveRef.current = resolve;
+            setAskUserPrompt({ question, options, resolve });
+          });
         },
       };
 
@@ -2548,11 +2589,11 @@ function App({
             },
             callbacks: sharedCallbacks,
           });
-          if (turnResult.paused) {
+          if (turnResult.paused && !turnResult.askUserHandled) {
             setEvents((e) => [
               ...e,
               {
-                kind: "info",
+                kind: "error",
                 key: mkKey(),
                 text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
               },
@@ -2711,6 +2752,16 @@ function App({
       const trimmedFull = full.trim();
       if (!trimmedFull) return;
       const trimmedDisplay = (display ?? full).trim() || trimmedFull;
+
+      // If an ask_user prompt is active, resolve it instead of processing as a normal message.
+      if (askUserResolveRef.current) {
+        askUserResolveRef.current(trimmedFull);
+        askUserResolveRef.current = null;
+        setAskUserPrompt(null);
+        setInput("");
+        setHistoryIndex(-1);
+        return;
+      }
 
       const historyEntry = trimmedDisplay;
 
@@ -2942,6 +2993,38 @@ function App({
               setPerm(null);
             }}
           />
+        ) : askUserPrompt ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor={theme.warn} paddingX={1}>
+              <Text bold color={theme.warn}>
+                ⓘ {askUserPrompt.question}
+              </Text>
+              {askUserPrompt.options && askUserPrompt.options.length > 0 && (
+                <Text color={theme.accent}>
+                  Options: {askUserPrompt.options.join(" | ")}
+                </Text>
+              )}
+              <Text color={theme.info.color} dimColor={theme.info.dim}>
+                Type your response and press Enter
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color={theme.accent}>› </Text>
+              <CustomTextInput
+                value={input}
+                onChange={setInput}
+                onSubmit={submit}
+                enablePaste
+                cursorOffset={cursorOffset}
+                onCursorChange={setCursorOffset}
+                pickerActive={activePicker !== null}
+                onPickerUp={handlePickerUp}
+                onPickerDown={handlePickerDown}
+                onPickerSelect={handlePickerSelect}
+                onPickerCancel={handlePickerCancel}
+              />
+            </Box>
+          </Box>
         ) : (
           <Box flexDirection="column" marginTop={1}>
             {tasks.length > 0 && (
@@ -2973,6 +3056,7 @@ function App({
               latestVersion={latestVersion}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
+              statusLine={statusLine}
             />
             {activePicker?.kind === "file" && (
               <FilePicker

@@ -22,9 +22,10 @@ interface Props {
   latestVersion?: string | null;
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
+  statusLine?: string | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, statusLine }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -44,6 +45,13 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
 
   return (
     <Box flexDirection="column">
+      {statusLine && (
+        <Box>
+          <Text color={theme.warn} bold>
+            [{statusLine}]
+          </Text>
+        </Box>
+      )}
       <Box>
         <Text color={modeColor} bold>
           [{mode}]

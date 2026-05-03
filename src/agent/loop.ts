@@ -67,6 +67,8 @@ const codeModeApiCache = new Map<string, string>();
 
 export interface TurnResult {
   paused?: boolean;
+  /** True if the turn paused after the user responded to a forced ask_user check-in. */
+  askUserHandled?: boolean;
 }
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
@@ -501,7 +503,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   // retains context when the user says "go on".
   const pauseMsg = `Paused after ${opts.maxToolIterations ?? 50} tool calls. The user may say "go on" to continue. If you have a partial deliverable (Research Brief, Implementation Notes, etc.), include it in your next response.`;
   opts.messages.push({ role: "system", content: pauseMsg });
-  return { paused: true };
+
+  // Force ask_user at hard limit so the user can decide what to do next.
+  let askUserHandled = false;
+  if (opts.callbacks.onAskUser) {
+    const response = await opts.callbacks.onAskUser(
+      "I've done substantial work on this. Want me to keep going, wrap up with what I have, or take a different approach?",
+      ["continue", "wrap up", "redirect"],
+    );
+    opts.messages.push({ role: "system", content: `User response to budget check-in: ${response}` });
+    askUserHandled = true;
+  }
+
+  return { paused: true, askUserHandled };
 }
 
 function validateToolArguments(raw: string): string {
