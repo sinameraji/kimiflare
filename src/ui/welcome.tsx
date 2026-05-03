@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   accountId?: string;
@@ -13,19 +14,20 @@ const SUGGESTIONS = [
 ];
 
 export function Welcome({ accountId }: Props) {
+  const theme = useTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>
         <Text bold color={theme.accent}>
           kimiflare
         </Text>
-        <Text color={theme.info.color} dimColor={theme.info.dim}>
+        <Text color={theme.info.color} >
           {"  "}Ready when you are.
         </Text>
       </Box>
       {accountId && (
         <Box marginBottom={1}>
-          <Text color={theme.info.color} dimColor={theme.info.dim}>
+          <Text color={theme.info.color} >
             {"  "}Check your Cloudflare billing: https://dash.cloudflare.com/{accountId}/billing/billable-usage
           </Text>
         </Box>
@@ -33,7 +35,7 @@ export function Welcome({ accountId }: Props) {
       <Box flexDirection="column">
         {SUGGESTIONS.map((s, i) => (
           <Box key={i}>
-            <Text color={theme.info.color} dimColor={theme.info.dim}>
+            <Text color={theme.info.color} >
               {"  "}›{" "}
             </Text>
             <Text color={theme.user}>{s}</Text>
@@ -41,12 +43,12 @@ export function Welcome({ accountId }: Props) {
         ))}
       </Box>
       <Box marginTop={1}>
-        <Text color={theme.info.color} dimColor={theme.info.dim}>
+        <Text color={theme.info.color} >
           Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
         </Text>
       </Box>
       <Box>
-        <Text color={theme.info.color} dimColor={theme.info.dim}>
+        <Text color={theme.info.color} >
           Tip: type /hello to send feedback to the creator
         </Text>
       </Box>

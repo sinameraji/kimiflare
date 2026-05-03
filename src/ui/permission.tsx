@@ -4,7 +4,8 @@ import SelectInput from "ink-select-input";
 import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   tool: ToolSpec;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function PermissionModal({ tool, args, onDecide }: Props) {
+  const theme = useTheme();
   const render = tool.render?.(args);
   const items = [
     { label: "Allow once", value: "allow" as const },
@@ -34,7 +36,7 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
           <DiffView {...render.diff} />
         </Box>
       ) : (
-        <Text color={theme.info.color} dimColor={theme.info.dim}>args: {JSON.stringify(args)}</Text>
+        <Text color={theme.info.color} >args: {JSON.stringify(args)}</Text>
       )}
       <Box marginTop={1}>
         <SelectInput items={items} onSelect={(item) => onDecide(item.value)} />

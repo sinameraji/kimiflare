@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 export interface FilePickerItem {
   name: string;
@@ -16,6 +17,7 @@ interface Props {
 const VISIBLE_LIMIT = 12;
 
 export function FilePicker({ items, selectedIndex, query }: Props) {
+  const theme = useTheme();
   // Scroll the visible window so the selected item is always in view.
   // Keep the selected item at the bottom edge when scrolling down.
   let startIndex = 0;
@@ -36,12 +38,12 @@ export function FilePicker({ items, selectedIndex, query }: Props) {
       </Text>
       <Box marginTop={1} flexDirection="column">
         {visible.length === 0 && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             No matches
           </Text>
         )}
         {hasMoreAbove && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             … {startIndex} more above
           </Text>
         )}
@@ -57,7 +59,7 @@ export function FilePicker({ items, selectedIndex, query }: Props) {
           );
         })}
         {hasMoreBelow && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             … {items.length - (startIndex + VISIBLE_LIMIT)} more below
           </Text>
         )}

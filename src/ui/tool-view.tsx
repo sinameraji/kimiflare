@@ -3,7 +3,8 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 export interface ToolEventState {
   id: string;
@@ -21,9 +22,10 @@ interface Props {
 }
 
 export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
+  const theme = useTheme();
   const statusIcon =
     evt.status === "running" ? (
-      <Text color={theme.palette.muted}>
+      <Text color={theme.info.color} >
         <Spinner type="dots" />
       </Text>
     ) : evt.status === "error" ? (
@@ -40,7 +42,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
     <Box flexDirection="column" marginLeft={2}>
       <Text>
         {statusIcon}{" "}
-        <Text color="gray">{title}</Text>
+        <Text color={theme.info.color}>{title}</Text>
       </Text>
       {evt.render?.diff ? (
         <Box marginLeft={2}>
@@ -53,23 +55,23 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
           marginTop={1}
           flexDirection="column"
           borderStyle="single"
-          borderColor="gray"
+          borderColor={theme.info.color}
           paddingX={1}
         >
           {lines.slice(0, showLimit).map((l, i) => (
-            <Text key={i} color="gray" dimColor>
+            <Text key={i} color={theme.info.color}>
               {l}
             </Text>
           ))}
           {lines.length > showLimit && (
-            <Text color="gray" dimColor>
+            <Text color={theme.info.color}>
               … ({lines.length - showLimit} more lines)
             </Text>
           )}
         </Box>
       ) : null}
       {evt.result && !expand && evt.status !== "running" ? (
-        <Text color="gray" dimColor>
+        <Text color={theme.info.color}>
           {"  "}{firstLine(evt.result)}
         </Text>
       ) : null}

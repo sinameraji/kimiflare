@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Task } from "../tasks-state.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   tasks: Task[];
@@ -13,6 +14,7 @@ interface Props {
 const MAX_VISIBLE = 6;
 
 export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
+  const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -53,7 +55,7 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
           {header}
         </Text>
         {headerStats && (
-          <Text color={theme.info.color} dimColor={theme.info.dim}>
+          <Text color={theme.info.color} >
             {"  "}({headerStats})
           </Text>
         )}
@@ -62,7 +64,7 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
         <TaskRow key={t.id} task={t} />
       ))}
       {hiddenPending > 0 && (
-        <Text color={theme.info.color} dimColor={theme.info.dim}>
+        <Text color={theme.info.color} >
           {"  "}… +{hiddenPending} more
         </Text>
       )}
@@ -71,9 +73,10 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
 }
 
 function TaskRow({ task }: { task: Task }) {
+  const theme = useTheme();
   if (task.status === "completed") {
     return (
-      <Text color={theme.info.color} dimColor={theme.info.dim}>
+      <Text color={theme.info.color} >
         {"  "}✓ <Text strikethrough>{task.title}</Text>
       </Text>
     );
@@ -86,7 +89,7 @@ function TaskRow({ task }: { task: Task }) {
     );
   }
   return (
-    <Text color={theme.info.color} dimColor={theme.info.dim}>
+    <Text color={theme.info.color} >
       {"  "}☐ {task.title}
     </Text>
   );

@@ -9,6 +9,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "help", description: "Show keybindings and command list", source: "builtin" },
   { name: "model", description: "Show current model", source: "builtin" },
   { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
+  { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
   { name: "plan", description: "Switch to plan mode", source: "builtin" },
   { name: "auto", description: "Switch to auto mode", source: "builtin" },
   { name: "edit", description: "Switch to edit mode", source: "builtin" },

@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 import type { LspServerConfig } from "../config.js";
 import { CustomTextInput } from "./text-input.js";
 
@@ -138,6 +139,7 @@ interface InstallState {
 }
 
 export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave }: Props) {
+  const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const [selectedPreset, setSelectedPreset] = useState<Preset | null>(null);
   const [customName, setCustomName] = useState("");

@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   onDone: (cfg: { accountId: string; apiToken: string; model: string }) => void;
@@ -13,6 +14,7 @@ type Step = "accountId" | "apiToken" | "model" | "confirm";
 const STEPS: Step[] = ["accountId", "apiToken", "model", "confirm"];
 
 export function Onboarding({ onDone }: Props) {
+  const theme = useTheme();
   const [step, setStep] = useState<Step>("accountId");
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -58,12 +60,12 @@ export function Onboarding({ onDone }: Props) {
         <Text bold color={theme.palette.primary}>
           kimiflare
         </Text>
-        <Text color={theme.palette.muted} dimColor>
+        <Text color={theme.info.color} >
           {"  "}Terminal coding agent
         </Text>
       </Box>
 
-      <Text color={theme.palette.muted} dimColor>
+      <Text color={theme.info.color} >
         Step {stepIndex} of {STEPS.length}
       </Text>
 
@@ -85,7 +87,7 @@ export function Onboarding({ onDone }: Props) {
         {step === "apiToken" && (
           <>
             <Text>Enter your Cloudflare API Token</Text>
-            <Text color={theme.palette.muted} dimColor>
+            <Text color={theme.info.color} >
               Create one at https://dash.cloudflare.com/profile/api-tokens
             </Text>
             <Box marginTop={1}>
@@ -103,7 +105,7 @@ export function Onboarding({ onDone }: Props) {
         {step === "model" && (
           <>
             <Text>Model ID (press Enter for default)</Text>
-            <Text color={theme.palette.muted} dimColor>
+            <Text color={theme.info.color} >
               default: {DEFAULT_MODEL}
             </Text>
             <Box marginTop={1}>
@@ -125,12 +127,12 @@ export function Onboarding({ onDone }: Props) {
               marginTop={1}
               marginBottom={1}
               borderStyle="single"
-              borderColor={theme.palette.muted}
+              borderColor={theme.info.color}
               paddingX={1}
             >
-              <Text color={theme.palette.muted}>Account ID: {accountId}</Text>
-              <Text color={theme.palette.muted}>API Token: {"•".repeat(apiToken.length)}</Text>
-              <Text color={theme.palette.muted}>Model: {model}</Text>
+              <Text color={theme.info.color} >Account ID: {accountId}</Text>
+              <Text color={theme.info.color} >API Token: {"•".repeat(apiToken.length)}</Text>
+              <Text color={theme.info.color} >Model: {model}</Text>
             </Box>
             <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
             <Box marginTop={1}>

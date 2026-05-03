@@ -1,7 +1,8 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { SlashItem } from "../commands/types.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   items: SlashItem[];
@@ -24,6 +25,7 @@ function commandLabel(item: SlashItem): string {
 }
 
 export function SlashPicker({ items, selectedIndex, query }: Props) {
+  const theme = useTheme();
   let startIndex = 0;
   if (selectedIndex >= VISIBLE_LIMIT) {
     startIndex = selectedIndex - VISIBLE_LIMIT + 1;
@@ -45,12 +47,12 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
       </Text>
       <Box marginTop={1} flexDirection="column">
         {visible.length === 0 && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             No matches
           </Text>
         )}
         {hasMoreAbove && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             … {startIndex} more above
           </Text>
         )}
@@ -63,7 +65,7 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
             <Text key={item.name} color={isSelected ? theme.accent : undefined} bold={isSelected}>
               {isSelected ? "› " : "  "}
               {nameCol}
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {item.description}
                 {badge && `  [${badge}]`}
               </Text>
@@ -71,7 +73,7 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
           );
         })}
         {hasMoreBelow && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             … {items.length - (startIndex + VISIBLE_LIMIT)} more below
           </Text>
         )}

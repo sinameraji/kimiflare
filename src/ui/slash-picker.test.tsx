@@ -4,10 +4,16 @@ import React from "react";
 import { renderToString } from "ink";
 import { SlashPicker } from "./slash-picker.js";
 import type { SlashItem } from "../commands/types.js";
+import { ThemeProvider } from "./theme-context.js";
+import { resolveTheme } from "./theme.js";
+
+const testTheme = resolveTheme();
 
 function render(items: SlashItem[], selectedIndex: number, query = ""): string {
   return renderToString(
-    <SlashPicker items={items} selectedIndex={selectedIndex} query={query} />,
+    <ThemeProvider theme={testTheme}>
+      <SlashPicker items={items} selectedIndex={selectedIndex} query={query} />
+    </ThemeProvider>,
   );
 }
 

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface CustomCommandSummary {
   name: string;
@@ -173,6 +174,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
 ];
 
 export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+  const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 
@@ -306,7 +308,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCom
       {staticCmds.length > 0 && (
         <Box marginTop={1} flexDirection="column">
           {staticCmds.map((cmd) => (
-            <Text key={cmd.command} color={theme.info.color} dimColor>
+            <Text key={cmd.command} color={theme.info.color}>
               {`  ${cmd.command.padEnd(28)} ${cmd.description}`}
             </Text>
           ))}

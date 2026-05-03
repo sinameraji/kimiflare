@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import { CustomTextInput } from "./text-input.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 import type { Mode } from "../mode.js";
 import type { ReasoningEffort } from "../config.js";
 import type { CommandSource, CustomCommand } from "../commands/types.js";
@@ -31,6 +32,7 @@ type Step =
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_\-/]*$/;
 
 export function CommandWizard({ mode, initial, existingNames, builtinNames, onDone, onSave }: Props) {
+  const theme = useTheme();
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -188,7 +190,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
                 focus
               />
             </Box>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               letters, numbers, _ - / only; must start with a letter
             </Text>
           </>
@@ -208,7 +210,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
                 focus
               />
             </Box>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               Press Enter to skip
             </Text>
           </>
@@ -220,20 +222,20 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             <Text color={theme.accent} bold>
               What is this?
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               A prompt template — instructions to the AI.
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               When you type /{name || "yourcommand"} later, this gets sent to the model.
             </Text>
             <Box marginTop={1} flexDirection="column">
               <Text color={theme.accent} bold>
                 Variables
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}$1, $2 ...     → arguments you type
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}$ARGUMENTS     → everything after the command
               </Text>
             </Box>
@@ -241,10 +243,10 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
               <Text color={theme.accent} bold>
                 Dynamic inlines
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}!`git diff`    → shell output inlined
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}@README.md     → file contents inlined
               </Text>
             </Box>
@@ -252,13 +254,13 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
               <Text color={theme.accent} bold>
                 Example
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 Review this PR diff:
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 !`git diff main...HEAD`
               </Text>
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 Focus on: $1
               </Text>
             </Box>
@@ -279,10 +281,10 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Box>
             {columns < 100 && (
               <>
-                <Text color={theme.info.color} dimColor>
+                <Text color={theme.info.color}>
                   Paste multi-line templates with Ctrl+V.
                 </Text>
-                <Text color={theme.info.color} dimColor>
+                <Text color={theme.info.color}>
                   Variables: $1 $2 ... $ARGUMENTS  Shell: !`cmd`  File: @path
                 </Text>
               </>
@@ -350,7 +352,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             <Text color={theme.accent} bold>
               Mode override ({stepIndex}/{totalSteps})
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               Saved to file but not yet enforced at runtime
             </Text>
             <Box marginTop={1}>
@@ -406,7 +408,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
                 focus
               />
             </Box>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               Press Enter to skip
             </Text>
           </>
@@ -432,7 +434,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
                 }}
               />
             </Box>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               Project: .kimiflare/commands/    Global: ~/.config/kimiflare/commands/
             </Text>
           </>
@@ -449,13 +451,13 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             <Text color={theme.accent} bold>
               {mode === "create" ? "Create" : "Edit"} custom command — Confirm ({stepIndex}/{totalSteps})
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               {source === "project" ? ".kimiflare/commands/" : "~/.config/kimiflare/commands/"}
               {name}.md
             </Text>
             <Box marginTop={1} flexDirection="column">
               {previewContent().split("\n").map((line, i) => (
-                <Text key={i} color={theme.info.color} dimColor>
+                <Text key={i} color={theme.info.color}>
                   {line || " "}
                 </Text>
               ))}

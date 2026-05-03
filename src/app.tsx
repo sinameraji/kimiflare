@@ -78,6 +78,10 @@ import { CommandWizard } from "./ui/command-wizard.js";
 import { CommandPicker } from "./ui/command-picker.js";
 import { CommandList } from "./ui/command-list.js";
 import { LspWizard } from "./ui/lsp-wizard.js";
+import { ThemeProvider } from "./ui/theme-context.js";
+import { ThemePicker } from "./ui/theme-picker.js";
+import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
+import type { Theme } from "./ui/theme.js";
 import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
@@ -298,6 +302,7 @@ interface Cfg {
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
   costAttribution?: boolean;
   filePicker?: boolean;
+  theme?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -488,6 +493,9 @@ function App({
   const [verbose, setVerbose] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
+  const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
 
   // Picker state — single popup at a time (file mention or slash command).
   const [cursorOffset, setCursorOffset] = useState(0);
@@ -1598,6 +1606,25 @@ function App({
     }
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
+  const handleThemePick = useCallback(
+    (picked: Theme | null) => {
+      setShowThemePicker(false);
+      setOriginalTheme(null);
+      if (!picked) {
+        if (originalTheme) setTheme(originalTheme);
+        return;
+      }
+      setTheme(picked);
+      setCfg((c) => (c ? { ...c, theme: picked.name } : c));
+      if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `theme: ${picked.label}` },
+      ]);
+    },
+    [cfg, originalTheme],
+  );
+
   const handleResumePick = useCallback(
     async (picked: SessionSummary | null) => {
       setResumeSessions(null);
@@ -1911,6 +1938,29 @@ function App({
         ]);
         return true;
       }
+      if (c === "/theme") {
+        if (!arg) {
+          setOriginalTheme(theme);
+          setShowThemePicker(true);
+          return true;
+        }
+        const next = resolveTheme(arg);
+        if (next.name === DEFAULT_THEME_NAME && arg !== DEFAULT_THEME_NAME) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `unknown theme "${arg}" — available: ${themeNames().join(", ")}` },
+          ]);
+          return true;
+        }
+        setTheme(next);
+        setCfg((c) => (c ? { ...c, theme: next.name } : c));
+        if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
+        ]);
+        return true;
+      }
       if (c === "/agent") {
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Multi-agent has been replaced with specialist delegation. The generalist automatically delegates to research or coding specialists when needed." }]);
         return true;
@@ -2172,7 +2222,7 @@ function App({
       }
       return false;
     },
-    [cfg, exit, usage, effort, mode, openResumePicker, runCompact, runInit, initMcp, setCfg],
+    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg],
   );
 
   const handleHelpCommand = useCallback(
@@ -2689,7 +2739,8 @@ function App({
 
   if (!cfg) {
     return (
-      <Onboarding
+      <ThemeProvider theme={theme}>
+        <Onboarding
         onDone={(newCfg) => {
           setCfg(newCfg);
           setEvents((e) => [
@@ -2698,22 +2749,23 @@ function App({
           ]);
         }}
       />
+      </ThemeProvider>
     );
   }
 
   if (resumeSessions !== null) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <ResumePicker sessions={resumeSessions} onPick={handleResumePick} />
         </Box>
-      </>
+      </ThemeProvider>
     );
   }
 
   if (showHelpMenu) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <HelpMenu
             customCommands={customCommandsRef.current
@@ -2724,13 +2776,13 @@ function App({
             onCommand={handleHelpCommand}
           />
         </Box>
-      </>
+      </ThemeProvider>
     );
   }
 
   if (showLspWizard) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <LspWizard
             servers={cfg?.lspServers ?? {}}
@@ -2766,13 +2818,13 @@ function App({
             }}
           />
         </Box>
-      </>
+      </ThemeProvider>
     );
   }
 
   if (commandWizard) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <CommandWizard
             mode={commandWizard.mode}
@@ -2783,13 +2835,13 @@ function App({
             onSave={handleCommandSave}
           />
         </Box>
-      </>
+      </ThemeProvider>
     );
   }
 
   if (commandPicker) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <CommandPicker
             commands={customCommandsRef.current}
@@ -2805,17 +2857,18 @@ function App({
             }}
           />
         </Box>
-      </>
+      </ThemeProvider>
     );
   }
 
   if (commandToDelete) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="#d699b6" paddingX={1}>
-        <Text color="#d699b6" bold>
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Text color={theme.accent} bold>
           Delete /{commandToDelete.name}?
         </Text>
-        <Text color="#7a8478" dimColor>
+        <Text color={theme.info.color}>
           {commandToDelete.filepath}
         </Text>
         <Box marginTop={1}>
@@ -2834,26 +2887,37 @@ function App({
           />
         </Box>
       </Box>
+      </ThemeProvider>
     );
   }
 
   if (showCommandList) {
     return (
-      <>
+      <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <CommandList
             commands={customCommandsRef.current}
             onDone={() => setShowCommandList(false)}
           />
         </Box>
-      </>
+      </ThemeProvider>
+    );
+  }
+
+  if (showThemePicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ThemePicker themes={themeList()} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   const hasConversation = events.some((e) => e.kind === "user" || e.kind === "assistant");
 
   return (
-    <>
+    <ThemeProvider theme={theme}>
       <Box flexDirection="column">
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} />
@@ -2882,7 +2946,7 @@ function App({
             {queue.length > 0 && (
               <Box flexDirection="column" marginBottom={1}>
                 {queue.map((q, i) => (
-                  <Text key={`queue_${i}`} color="#7a8478" dimColor={true}>
+                  <Text key={`queue_${i}`} color={theme.info.color}>
                     ⏳ {q.display}
                   </Text>
                 ))}
@@ -2970,7 +3034,7 @@ function App({
         </Box>
       )}
     </Box>
-    </>
+    </ThemeProvider>
   );
 }
 

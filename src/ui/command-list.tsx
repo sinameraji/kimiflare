@@ -1,7 +1,8 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import type { CustomCommand } from "../commands/types.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   commands: CustomCommand[];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function CommandList({ commands, onDone }: Props) {
+  const theme = useTheme();
   useInput((_input, key) => {
     if (key.escape) {
       onDone();
@@ -25,7 +27,7 @@ export function CommandList({ commands, onDone }: Props) {
       </Text>
       <Box marginTop={1} flexDirection="column">
         {commands.length === 0 && (
-          <Text color={theme.info.color} dimColor>
+          <Text color={theme.info.color}>
             No custom commands found.
           </Text>
         )}
@@ -34,42 +36,42 @@ export function CommandList({ commands, onDone }: Props) {
             <Text color={theme.accent} bold>
               /{cmd.name}
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               {"  "}source:  {cmd.source}
             </Text>
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               {"  "}path:    {cmd.filepath}
             </Text>
             {cmd.description && (
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}desc:    {cmd.description}
               </Text>
             )}
             {cmd.mode && (
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}mode:    {cmd.mode}
               </Text>
             )}
             {cmd.effort && (
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}effort:  {cmd.effort}
               </Text>
             )}
             {cmd.model && (
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"  "}model:   {cmd.model}
               </Text>
             )}
-            <Text color={theme.info.color} dimColor>
+            <Text color={theme.info.color}>
               {"  "}template:
             </Text>
             {cmd.template.split("\n").slice(0, 5).map((line, i) => (
-              <Text key={i} color={theme.info.color} dimColor>
+              <Text key={i} color={theme.info.color}>
                 {"    "}{line || " "}
               </Text>
             ))}
             {cmd.template.split("\n").length > 5 && (
-              <Text color={theme.info.color} dimColor>
+              <Text color={theme.info.color}>
                 {"    "}...
               </Text>
             )}

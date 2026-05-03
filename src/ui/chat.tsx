@@ -3,7 +3,8 @@ import { Box, Text, Static } from "ink";
 import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[] }
@@ -35,6 +36,7 @@ interface StaticItem {
 }
 
 export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
+  const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
 
@@ -59,7 +61,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
           <Box key={item.id} flexDirection="column">
             {item.showSeparator && (
               <Box marginY={1}>
-                <Text color={theme.info.color} dimColor={theme.info.dim}>
+                <Text color={theme.info.color} >
                   {"─".repeat(40)}
                 </Text>
               </Box>
@@ -76,7 +78,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
           <Box key={e.key} flexDirection="column">
             {showSeparator && (
               <Box marginY={1}>
-                <Text color={theme.info.color} dimColor={theme.info.dim}>
+                <Text color={theme.info.color} >
                   {"─".repeat(40)}
                 </Text>
               </Box>
@@ -98,6 +100,7 @@ const EventView = React.memo(function EventView({
   showReasoning: boolean;
   verbose?: boolean;
 }) {
+  const theme = useTheme();
   if (evt.kind === "user") {
     return (
       <Box flexDirection="column">
@@ -109,7 +112,7 @@ const EventView = React.memo(function EventView({
         </Box>
         {evt.images && evt.images.length > 0 && (
           <Box paddingLeft={2}>
-            <Text color={theme.info.color} dimColor={theme.info.dim}>
+            <Text color={theme.info.color} >
               🖼️ {evt.images.join(", ")}
             </Text>
           </Box>
@@ -122,14 +125,14 @@ const EventView = React.memo(function EventView({
       <Box flexDirection="column" paddingLeft={2}>
         {evt.agentRole && (
           <Box marginBottom={1}>
-            <Text color={theme.info.color} dimColor={theme.info.dim}>
+            <Text color={theme.info.color} >
               ◆ {evt.agentRole} agent
             </Text>
           </Box>
         )}
         {showReasoning && evt.reasoning ? (
           <Box flexDirection="column" marginBottom={1}>
-            <Text color={theme.reasoning.color} dimColor={theme.reasoning.dim}>
+            <Text color={theme.reasoning.color}>
               thinking…{" "}
               {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
             </Text>
@@ -149,14 +152,14 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "info") {
     return (
-      <Text color={theme.info.color} dimColor={theme.info.dim}>
+      <Text color={theme.info.color} >
         · {evt.text}
       </Text>
     );
   }
   if (evt.kind === "memory") {
     return (
-      <Text color={theme.info.color} dimColor={theme.info.dim}>
+      <Text color={theme.info.color} >
         ◈ {evt.text}
       </Text>
     );

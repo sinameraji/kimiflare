@@ -3,7 +3,8 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+  const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
     mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
@@ -54,14 +56,14 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
             thinking{elapsed ? ` · ${elapsed}` : ""}
           </Text>
         ) : (
-          <Text color={theme.info.color} dimColor={theme.info.dim}>
+          <Text color={theme.info.color} >
             {leftParts.join("  ·  ")}  ·  ready
           </Text>
         )}
       </Box>
       {usage && (
         <Box>
-          <Text color={theme.info.color} dimColor={theme.info.dim}>
+          <Text color={theme.info.color} >
             {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta).join("  ·  ")}
           </Text>
           {warn ? (

@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Box, Text, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import type { SessionSummary } from "../sessions.js";
-import { DEFAULT_THEME as theme } from "./theme.js";
+import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface Props {
   sessions: SessionSummary[];
@@ -14,6 +15,7 @@ const FOOTER_ROWS = 2; // cancel + bottom padding
 const MIN_PAGE_SIZE = 5;
 
 export function ResumePicker({ sessions, onPick }: Props) {
+  const theme = useTheme();
   const { rows } = useWindowSize();
   const [page, setPage] = useState(0);
 
@@ -27,7 +29,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
         <Text color={theme.accent} bold>
           Resume a session
         </Text>
-        <Text color={theme.info.color} dimColor={theme.info.dim}>
+        <Text color={theme.info.color} >
           No saved sessions yet. Press Enter to dismiss.
         </Text>
         <Box marginTop={1}>
@@ -62,7 +64,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
       <Text color={theme.accent} bold>
         Resume a session
       </Text>
-      <Text color={theme.info.color} dimColor={theme.info.dim}>
+      <Text color={theme.info.color} >
         Arrow keys to select, Enter to confirm. Page {safePage + 1} of {totalPages} ({sessions.length} total)
       </Text>
       <Box marginTop={1}>

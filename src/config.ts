@@ -63,6 +63,8 @@ export interface KimiConfig {
   costAttribution?: boolean;
   /** Enable @ file mention picker in chat input. Default: false. */
   filePicker?: boolean;
+  /** UI theme name. Default: everforest-dark. */
+  theme?: string;
 }
 
 export interface CustomAgentConfig {
