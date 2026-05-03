@@ -6,6 +6,8 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { Persona } from "./persona.js";
+import { toolsForPersona } from "./persona.js";
 export type AgentRole = "generalist" | "research" | "coding";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
@@ -55,6 +57,8 @@ export interface AgentTurnOpts {
   recentToolCalls?: string[];
   /** Agent role for cost tracking. */
   agentRole?: AgentRole;
+  /** Persona for tool filtering. When set, only tools allowed for that persona are presented. */
+  persona?: Persona;
 }
 
 const codeModeApiCache = new Map<string, string>();
@@ -67,16 +71,18 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
 
+  const tools = opts.persona ? toolsForPersona(opts.persona, opts.tools) : opts.tools;
+
   let toolDefs: ReturnType<typeof toOpenAIToolDefs>;
   let codeModeApiString = "";
 
   if (codeMode) {
-    const toolsKey = stableStringify(opts.tools);
+    const toolsKey = stableStringify(tools);
     const cached = codeModeApiCache.get(toolsKey);
     if (cached) {
       codeModeApiString = cached;
     } else {
-      codeModeApiString = generateTypeScriptApi(opts.tools);
+      codeModeApiString = generateTypeScriptApi(tools);
       codeModeApiCache.set(toolsKey, codeModeApiString);
     }
     toolDefs = [
@@ -107,7 +113,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
       },
     ];
   } else {
-    toolDefs = toOpenAIToolDefs(opts.tools);
+    toolDefs = toOpenAIToolDefs(tools);
   }
 
   let turn = 0;
@@ -411,7 +417,23 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
+          {
+            cwd: opts.cwd,
+            signal: opts.signal,
+            onTasks: opts.callbacks.onTasks,
+            coauthor: opts.coauthor,
+            memoryManager: opts.memoryManager,
+            sessionId: opts.sessionId,
+            agentRole: opts.agentRole,
+            allTools: opts.tools,
+            accountId: opts.accountId,
+            apiToken: opts.apiToken,
+            model: opts.model,
+            gateway: opts.gateway,
+            executor: opts.executor,
+            codeMode: opts.codeMode,
+            onFileChange: opts.onFileChange,
+          },
           opts.onFileChange,
         );
         toolResults.push(result);
