@@ -1,5 +1,6 @@
 import { readSSE } from "../util/sse.js";
 import { KimiApiError } from "../util/errors.js";
+import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
 
@@ -79,6 +80,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       const headers: Record<string, string> = {
         Authorization: `Bearer ${opts.apiToken}`,
         "Content-Type": "application/json",
+        "User-Agent": getUserAgent(),
         ...gatewayHeaders,
       };
       if (opts.sessionId) {

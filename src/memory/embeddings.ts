@@ -1,4 +1,5 @@
 import type { AiGatewayOptions } from "../agent/client.js";
+import { getUserAgent } from "../util/version.js";
 
 export interface EmbedOpts {
   accountId: string;
@@ -57,6 +58,7 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${opts.apiToken}`,
     "Content-Type": "application/json",
+    "User-Agent": getUserAgent(),
   };
 
   if (opts.gateway?.metadata) {

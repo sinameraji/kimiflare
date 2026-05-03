@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getUserAgent } from "./version.js";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const NPM_REGISTRY = "https://registry.npmjs.org/kimiflare/latest";
@@ -64,7 +65,7 @@ async function writeCache(entry: CacheEntry): Promise<void> {
 async function fetchLatestVersion(): Promise<string | null> {
   try {
     const res = await fetch(NPM_REGISTRY, {
-      headers: { "User-Agent": "kimiflare-update-checker", Accept: "application/json" },
+      headers: { "User-Agent": getUserAgent(), Accept: "application/json" },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { version?: string };

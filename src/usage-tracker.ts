@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Usage } from "./agent/messages.js";
 import type { GatewayMeta } from "./agent/client.js";
+import { getUserAgent } from "./util/version.js";
 import { calculateCost } from "./pricing.js";
 import { RETENTION } from "./storage-limits.js";
 
@@ -160,7 +161,7 @@ export async function fetchGatewayUsageSnapshot(
   )}/logs`;
   const res = await fetch(url, {
     method: "GET",
-    headers: { Authorization: `Bearer ${lookup.apiToken}` },
+    headers: { Authorization: `Bearer ${lookup.apiToken}`, "User-Agent": getUserAgent() },
   });
   if (!res.ok) return gatewaySnapshotFromMeta(lookup.meta);
   const parsed = (await res.json()) as { result?: unknown[] };

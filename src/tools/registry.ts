@@ -10,6 +10,20 @@ export interface ToolContext {
   sessionId?: string;
   /** Agent role for multi-agent context (plan, build, general). */
   agentRole?: string;
+  /** Full tool list for specialist delegation. */
+  allTools?: ToolSpec[];
+  /** Account credentials for specialist LLM calls. */
+  accountId?: string;
+  apiToken?: string;
+  /** Model and gateway for specialist LLM calls. */
+  model?: string;
+  gateway?: import("../agent/client.js").AiGatewayOptions;
+  /** Executor for specialist tool calls. */
+  executor?: import("./executor.js").ToolExecutor;
+  /** Code mode flag for coding specialist. */
+  codeMode?: boolean;
+  /** File change callback for LSP sync. */
+  onFileChange?: (path: string, content: string) => void;
 }
 
 export interface ToolRender {

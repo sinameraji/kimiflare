@@ -4,7 +4,7 @@
 >
 > **Scope:** Every pull request that touches `src/`, `bin/`, `feedback-worker/`, or `docs/` must be evaluated against these guardrails.
 >
-> **Last updated:** 2026-04-27
+> **Last updated:** 2026-05-03
 
 ---
 
@@ -131,13 +131,13 @@
 - **Rule:** API 400 errors with "invalid escaped character" must pop the offending message and suggest `/clear`.
 - **Acceptance Criteria:** Error messages must be actionable for the model.
 
-### 3.5 Deliverable-Driven Agents (Multi-Agent)
-- **Rule:** The Research Agent must produce a structured Research Brief (DECISION, FINDINGS, RECOMMENDATION, CONFIDENCE, OPEN QUESTIONS, RISKS) before considering its work complete.
-- **Rule:** The Research Agent stops when the named decision can be made from its findings, not when it has exhausted all sources.
-- **Rule:** The `hand_off` tool allows an agent to signal completion and request a hand-off to another agent. The orchestrator must detect `hand_off` calls and trigger automatic hand-off.
-- **Rule:** Hand-off summaries must preserve the agent's deliverable (Brief, Implementation Notes, etc.) rather than replacing it with a lossy synthesis.
-- **Rule:** Agents must not address the human user with imperatives ("you need to", "you should", "start by"). Their audience is the next agent in the pipeline.
-- **Acceptance Criteria:** Research Agent must produce a Brief within 15 tool calls for routine questions; must call `hand_off` when complete.
+### 3.5 Specialist Delegation
+- **Rule:** The generalist is the only agent with persistent conversation state. Specialists (research, coding) are ephemeral tools invoked via `delegate_to_researcher` and `delegate_to_coder`.
+- **Rule:** The Research Specialist must produce structured findings (DECISION, FINDINGS, RECOMMENDATION, CONFIDENCE, OPEN QUESTIONS, RISKS) and return them to the generalist. It cannot write files or run shell commands.
+- **Rule:** The Coding Specialist implements tasks scoped by the generalist. It cannot do web research. If it needs external information, it returns `status: "blocked"` with a blocker explanation.
+- **Rule:** Specialists do not talk to the user directly. The generalist decides what (if anything) to surface.
+- **Rule:** `ask_user` is the only mechanism for pausing for user input. Any other agent output is either a final answer or in-progress work.
+- **Acceptance Criteria:** Research Specialist must return findings within 20 tool calls. Coding Specialist must return implementation within 30 tool calls.
 
 ---
 

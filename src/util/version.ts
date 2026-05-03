@@ -22,3 +22,7 @@ export function getAppVersion(): string {
   cachedVersion = "0.0.0";
   return cachedVersion;
 }
+
+export function getUserAgent(): string {
+  return `kimiflare/${getAppVersion()} (+https://github.com/sinameraji/kimiflare)`;
+}

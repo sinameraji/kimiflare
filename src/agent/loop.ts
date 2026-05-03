@@ -6,7 +6,9 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
-import type { AgentRole } from "./agent-session.js";
+import type { Persona } from "./persona.js";
+import { toolsForPersona } from "./persona.js";
+export type AgentRole = "generalist" | "research" | "coding";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
@@ -25,6 +27,8 @@ export interface AgentCallbacks {
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
+  /** Called when the agent uses ask_user. Return the user's response. */
+  onAskUser?: (question: string, options?: string[]) => Promise<string>;
 }
 
 export interface AgentTurnOpts {
@@ -55,24 +59,32 @@ export interface AgentTurnOpts {
   recentToolCalls?: string[];
   /** Agent role for cost tracking. */
   agentRole?: AgentRole;
+  /** Persona for tool filtering. When set, only tools allowed for that persona are presented. */
+  persona?: Persona;
 }
 
 const codeModeApiCache = new Map<string, string>();
 
-export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
+export interface TurnResult {
+  paused?: boolean;
+}
+
+export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
+
+  const tools = opts.persona ? toolsForPersona(opts.persona, opts.tools) : opts.tools;
 
   let toolDefs: ReturnType<typeof toOpenAIToolDefs>;
   let codeModeApiString = "";
 
   if (codeMode) {
-    const toolsKey = stableStringify(opts.tools);
+    const toolsKey = stableStringify(tools);
     const cached = codeModeApiCache.get(toolsKey);
     if (cached) {
       codeModeApiString = cached;
     } else {
-      codeModeApiString = generateTypeScriptApi(opts.tools);
+      codeModeApiString = generateTypeScriptApi(tools);
       codeModeApiCache.set(toolsKey, codeModeApiString);
     }
     toolDefs = [
@@ -103,7 +115,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       },
     ];
   } else {
-    toolDefs = toOpenAIToolDefs(opts.tools);
+    toolDefs = toOpenAIToolDefs(tools);
   }
 
   let turn = 0;
@@ -119,11 +131,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
-  // Budget tracking for research-agent self-assessment prompts
+  // Budget tracking for self-assessment prompts
   let totalToolCallsThisTurn = 0;
-  const BUDGET_CHECK_INTERVAL = 3;
-  const SOFT_BUDGET = 5;
-  const HARD_BUDGET = 15;
+  const softBudget = Math.floor(max * 0.7);
+  const hardBudget = max;
 
   for (let iter = 0; iter < max; iter++) {
     turn++;
@@ -270,7 +281,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           agentRole: opts.agentRole,
         });
       }
-      return;
+      return {};
     }
 
     for (const tc of toolCalls) {
@@ -403,11 +414,51 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      } else if (tc.function.name === "ask_user" && opts.callbacks.onAskUser) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = tc.function.arguments.trim() ? JSON.parse(tc.function.arguments) : {};
+        } catch {
+          /* ignore */
+        }
+        const question = typeof args.question === "string" ? args.question : "Please provide input.";
+        const options = Array.isArray(args.options) ? args.options.filter((o): o is string => typeof o === "string") : undefined;
+        const response = await opts.callbacks.onAskUser(question, options);
+        const result: ToolResult = {
+          tool_call_id: tc.id,
+          name: "ask_user",
+          content: response,
+          ok: true,
+        };
+        toolResults.push(result);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: sanitizeString(response),
+          name: "ask_user",
+        });
+        opts.callbacks.onToolResult?.(result);
       } else {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
+          {
+            cwd: opts.cwd,
+            signal: opts.signal,
+            onTasks: opts.callbacks.onTasks,
+            coauthor: opts.coauthor,
+            memoryManager: opts.memoryManager,
+            sessionId: opts.sessionId,
+            agentRole: opts.agentRole,
+            allTools: opts.tools,
+            accountId: opts.accountId,
+            apiToken: opts.apiToken,
+            model: opts.model,
+            gateway: opts.gateway,
+            executor: opts.executor,
+            codeMode: opts.codeMode,
+            onFileChange: opts.onFileChange,
+          },
           opts.onFileChange,
         );
         toolResults.push(result);
@@ -424,17 +475,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       }
     }
 
-    // Budget self-assessment: inject reminder after every N tool calls
-    if (totalToolCallsThisTurn > 0 && totalToolCallsThisTurn % BUDGET_CHECK_INTERVAL === 0) {
-      let budgetMsg = "";
-      if (totalToolCallsThisTurn >= HARD_BUDGET) {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. This is the substantial-question budget. Produce your deliverable now unless you can name a specific gap that would change the recommendation.`;
-      } else if (totalToolCallsThisTurn >= SOFT_BUDGET) {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. If this is a routine question, produce your deliverable now. If substantial, justify the next call in one sentence.`;
-      } else {
-        budgetMsg = `BUDGET CHECK: You have made ${totalToolCallsThisTurn} tool calls. Assess: is the next call worth more than what you already have? If yes, justify in one sentence. If no, produce your deliverable.`;
-      }
-      opts.messages.push({ role: "system", content: budgetMsg });
+    // Budget self-assessment: inject reminder at soft budget threshold
+    if (totalToolCallsThisTurn === softBudget) {
+      opts.messages.push({
+        role: "system",
+        content: `You have used ${totalToolCallsThisTurn} of ${max} tool calls. Consider whether to ask the user for direction or wrap up with what you have.`,
+      });
     }
 
     if (opts.sessionId && lastUsage) {
@@ -455,7 +501,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   // retains context when the user says "go on".
   const pauseMsg = `Paused after ${opts.maxToolIterations ?? 50} tool calls. The user may say "go on" to continue. If you have a partial deliverable (Research Brief, Implementation Notes, etc.), include it in your next response.`;
   opts.messages.push({ role: "system", content: pauseMsg });
-  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50}). Say "go on" to continue, or ask me to focus on a specific area.`);
+  return { paused: true };
 }
 
 function validateToolArguments(raw: string): string {
