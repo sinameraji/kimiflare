@@ -3,11 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "tsup": "^8.3.5",
     "typescript": "^5.7.2"
   }
 }
