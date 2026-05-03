@@ -2500,6 +2500,19 @@ function App({
             permResolveRef.current = resolve;
             setPerm({ tool: req.tool, args: req.args, resolve });
           }),
+        onAskUser: async (question: string, options?: string[]) => {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: options && options.length > 0 ? `${question} [${options.join(" | ")}]` : question,
+            },
+          ]);
+          // For now, return a placeholder. In a future iteration, this should
+          // pause the turn and wait for actual user input via the input box.
+          return "User acknowledged. Please proceed with the best option.";
+        },
       };
 
       try {

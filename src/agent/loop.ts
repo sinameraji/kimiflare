@@ -27,6 +27,8 @@ export interface AgentCallbacks {
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
+  /** Called when the agent uses ask_user. Return the user's response. */
+  onAskUser?: (question: string, options?: string[]) => Promise<string>;
 }
 
 export interface AgentTurnOpts {
@@ -413,6 +415,30 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      } else if (tc.function.name === "ask_user" && opts.callbacks.onAskUser) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = tc.function.arguments.trim() ? JSON.parse(tc.function.arguments) : {};
+        } catch {
+          /* ignore */
+        }
+        const question = typeof args.question === "string" ? args.question : "Please provide input.";
+        const options = Array.isArray(args.options) ? args.options.filter((o): o is string => typeof o === "string") : undefined;
+        const response = await opts.callbacks.onAskUser(question, options);
+        const result: ToolResult = {
+          tool_call_id: tc.id,
+          name: "ask_user",
+          content: response,
+          ok: true,
+        };
+        toolResults.push(result);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: sanitizeString(response),
+          name: "ask_user",
+        });
+        opts.callbacks.onToolResult?.(result);
       } else {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
