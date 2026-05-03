@@ -89,6 +89,10 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     const child = spawn("bash", ["-lc", command], {
       cwd: ctx.cwd,
       signal: ctx.signal,
+      env: {
+        ...process.env,
+        GIT_EDITOR: "true",
+      },
     });
     let stdout = "";
     let stderr = "";
