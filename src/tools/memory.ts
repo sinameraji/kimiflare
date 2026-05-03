@@ -59,8 +59,7 @@ export const memoryRememberTool: ToolSpec = {
         importance,
         ctx.cwd,
         ctx.sessionId,
-        ctx.signal,
-        ctx.agentRole
+        ctx.signal
       );
       let msg = `Memory stored with id ${result.id}.`;
       if (result.superseded && result.superseded.length > 0) {
@@ -113,7 +112,6 @@ export const memoryRecallTool: ToolSpec = {
         text: args.query,
         repoPath: ctx.cwd,
         limit: args.limit ?? 5,
-        agentRole: ctx.agentRole,
       });
       if (results.length === 0) {
         return { content: "No relevant memories found.", rawBytes: 0, reducedBytes: 0 };

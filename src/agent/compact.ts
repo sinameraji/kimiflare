@@ -50,8 +50,6 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
   const prefix = messages.slice(0, prefixEnd);
   if (prefix.length === 0) {
     // No system message found — skip compaction rather than crash.
-    // This can happen in multi-agent sessions where per-agent buffers
-    // lack the prefix system messages.
     return { summary: "", newMessages: messages, replacedCount: 0 };
   }
 

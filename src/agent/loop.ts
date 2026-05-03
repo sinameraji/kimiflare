@@ -6,9 +6,6 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
-import type { Persona } from "./persona.js";
-import { toolsForPersona } from "./persona.js";
-export type AgentRole = "generalist" | "research" | "coding";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
@@ -27,8 +24,6 @@ export interface AgentCallbacks {
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
-  /** Called when the agent uses ask_user. Return the user's response. */
-  onAskUser?: (question: string, options?: string[]) => Promise<string>;
 }
 
 export interface AgentTurnOpts {
@@ -55,36 +50,24 @@ export interface AgentTurnOpts {
   codeMode?: boolean;
   /** Called after write/edit tools succeed so LSP document sync can fire. */
   onFileChange?: (path: string, content: string) => void;
-  /** Per-agent anti-loop guard state. If provided, runAgentTurn reads from and writes to this array. */
-  recentToolCalls?: string[];
-  /** Agent role for cost tracking. */
-  agentRole?: AgentRole;
-  /** Persona for tool filtering. When set, only tools allowed for that persona are presented. */
-  persona?: Persona;
 }
 
 const codeModeApiCache = new Map<string, string>();
 
-export interface TurnResult {
-  paused?: boolean;
-}
-
-export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
+export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
-
-  const tools = opts.persona ? toolsForPersona(opts.persona, opts.tools) : opts.tools;
 
   let toolDefs: ReturnType<typeof toOpenAIToolDefs>;
   let codeModeApiString = "";
 
   if (codeMode) {
-    const toolsKey = stableStringify(tools);
+    const toolsKey = stableStringify(opts.tools);
     const cached = codeModeApiCache.get(toolsKey);
     if (cached) {
       codeModeApiString = cached;
     } else {
-      codeModeApiString = generateTypeScriptApi(tools);
+      codeModeApiString = generateTypeScriptApi(opts.tools);
       codeModeApiCache.set(toolsKey, codeModeApiString);
     }
     toolDefs = [
@@ -115,14 +98,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
       },
     ];
   } else {
-    toolDefs = toOpenAIToolDefs(tools);
+    toolDefs = toOpenAIToolDefs(opts.tools);
   }
 
   let turn = 0;
   let lastUsage: Usage | null = null;
 
   // Anti-loop guardrail: track recent tool call signatures to detect thrashing
-  const recentToolCalls = opts.recentToolCalls ?? [];
+  const recentToolCalls: string[] = [];
   const LOOP_WINDOW = 8;
   const LOOP_THRESHOLD = 2; // 3rd identical call triggers the guardrail
 
@@ -130,11 +113,6 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   const webFetchHistory: { url: string; domain: string }[] = [];
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
-
-  // Budget tracking for self-assessment prompts
-  let totalToolCallsThisTurn = 0;
-  const softBudget = Math.floor(max * 0.7);
-  const hardBudget = max;
 
   for (let iter = 0; iter < max; iter++) {
     turn++;
@@ -278,10 +256,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
           toolResults,
           usage: lastUsage,
           shadowStrip: shadowStripMetrics,
-          agentRole: opts.agentRole,
         });
       }
-      return {};
+      return;
     }
 
     for (const tc of toolCalls) {
@@ -377,7 +354,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, agentRole: opts.agentRole },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -414,51 +391,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
-      } else if (tc.function.name === "ask_user" && opts.callbacks.onAskUser) {
-        let args: Record<string, unknown> = {};
-        try {
-          args = tc.function.arguments.trim() ? JSON.parse(tc.function.arguments) : {};
-        } catch {
-          /* ignore */
-        }
-        const question = typeof args.question === "string" ? args.question : "Please provide input.";
-        const options = Array.isArray(args.options) ? args.options.filter((o): o is string => typeof o === "string") : undefined;
-        const response = await opts.callbacks.onAskUser(question, options);
-        const result: ToolResult = {
-          tool_call_id: tc.id,
-          name: "ask_user",
-          content: response,
-          ok: true,
-        };
-        toolResults.push(result);
-        opts.messages.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: sanitizeString(response),
-          name: "ask_user",
-        });
-        opts.callbacks.onToolResult?.(result);
       } else {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          {
-            cwd: opts.cwd,
-            signal: opts.signal,
-            onTasks: opts.callbacks.onTasks,
-            coauthor: opts.coauthor,
-            memoryManager: opts.memoryManager,
-            sessionId: opts.sessionId,
-            agentRole: opts.agentRole,
-            allTools: opts.tools,
-            accountId: opts.accountId,
-            apiToken: opts.apiToken,
-            model: opts.model,
-            gateway: opts.gateway,
-            executor: opts.executor,
-            codeMode: opts.codeMode,
-            onFileChange: opts.onFileChange,
-          },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
           opts.onFileChange,
         );
         toolResults.push(result);
@@ -471,16 +408,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
-        totalToolCallsThisTurn++;
       }
-    }
-
-    // Budget self-assessment: inject reminder at soft budget threshold
-    if (totalToolCallsThisTurn === softBudget) {
-      opts.messages.push({
-        role: "system",
-        content: `You have used ${totalToolCallsThisTurn} of ${max} tool calls. Consider whether to ask the user for direction or wrap up with what you have.`,
-      });
     }
 
     if (opts.sessionId && lastUsage) {
@@ -492,16 +420,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
         toolResults,
         usage: lastUsage,
         shadowStrip: shadowStripMetrics,
-        agentRole: opts.agentRole,
       });
     }
   }
 
-  // Tool iteration limit reached: commit a graceful pause message so the agent
-  // retains context when the user says "go on".
-  const pauseMsg = `Paused after ${opts.maxToolIterations ?? 50} tool calls. The user may say "go on" to continue. If you have a partial deliverable (Research Brief, Implementation Notes, etc.), include it in your next response.`;
-  opts.messages.push({ role: "system", content: pauseMsg });
-  return { paused: true };
+  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50})`);
 }
 
 function validateToolArguments(raw: string): string {

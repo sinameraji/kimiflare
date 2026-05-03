@@ -67,19 +67,6 @@ export interface KimiConfig {
   theme?: string;
 }
 
-export interface CustomAgentConfig {
-  /** Unique name for the custom agent (e.g. "tester", "docs"). */
-  name: string;
-  /** Tool names this agent can use. */
-  tools: string[];
-  /** Model override for this agent. Falls back to global model. */
-  model?: string;
-  /** Custom system prompt for this agent. */
-  systemPrompt?: string;
-  /** Reasoning effort override for this agent. */
-  reasoningEffort?: ReasoningEffort;
-}
-
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 
@@ -173,7 +160,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
-  const envMultiAgent = readBooleanEnv("KIMIFLARE_MULTI_AGENT");
 
   if (envAccount && envToken) {
     return {

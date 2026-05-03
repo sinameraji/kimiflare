@@ -31,8 +31,7 @@ function parseToolCalls(calls: ToolCall[]): ParsedToolCall[] {
 }
 
 export async function classifyFromSessionFile(
-  sessionId: string,
-  agentRole?: string
+  sessionId: string
 ): Promise<{
   category: string;
   confidence: number;
@@ -45,10 +44,10 @@ export async function classifyFromSessionFile(
     const messages = session.messages ?? [];
 
     // Group tool calls by assistant turn
-    const turns: { toolCalls: ParsedToolCall[]; tokens: number; agentRole?: string }[] = [];
+    const turns: { toolCalls: ParsedToolCall[]; tokens: number }[] = [];
     for (const m of messages) {
       if (m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0) {
-        turns.push({ toolCalls: parseToolCalls(m.tool_calls), tokens: 100, agentRole });
+        turns.push({ toolCalls: parseToolCalls(m.tool_calls), tokens: 100 });
       }
     }
 

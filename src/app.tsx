@@ -5,7 +5,6 @@ import SelectInput from "ink-select-input";
 import { runAgentTurn } from "./agent/loop.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
-import type { AgentRole } from "./agent/loop.js";
 import { compactMessages } from "./agent/compact.js";
 import {
   compactMessages as compactCompiled,
@@ -385,15 +384,14 @@ function makePrefixMessages(
   model: string,
   mode: Mode,
   tools: ToolSpec[],
-  role?: AgentRole,
 ): ChatMessage[] {
   if (cacheStable) {
-    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode, role });
+    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
   }
   return [
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode, role }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
     },
   ];
 }
@@ -1414,7 +1412,7 @@ function App({
     activeControllerRef.current = controller;
 
     try {
-      const turnResult = await runAgentTurn({
+      await runAgentTurn({
         accountId: cfg.accountId,
         apiToken: cfg.apiToken,
         model: cfg.model,
@@ -1536,17 +1534,6 @@ function App({
             }),
         },
       });
-
-      if (turnResult.paused) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
-          },
-        ]);
-      }
 
       if (existsSync(join(cwd, "KIMI.md"))) {
         if (cacheStableRef.current) {
@@ -1959,10 +1946,6 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
         ]);
-        return true;
-      }
-      if (c === "/agent") {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Multi-agent has been replaced with specialist delegation. The generalist automatically delegates to research or coding specialists when needed." }]);
         return true;
       }
       if (c === "/plan") {
@@ -2491,23 +2474,10 @@ function App({
             permResolveRef.current = resolve;
             setPerm({ tool: req.tool, args: req.args, resolve });
           }),
-        onAskUser: async (question: string, options?: string[]) => {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: options && options.length > 0 ? `${question} [${options.join(" | ")}]` : question,
-            },
-          ]);
-          // For now, return a placeholder. In a future iteration, this should
-          // pause the turn and wait for actual user input via the input box.
-          return "User acknowledged. Please proceed with the best option.";
-        },
       };
 
       try {
-        const turnResult = await runAgentTurn({
+        await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: overrideModel ?? cfg.model,
@@ -2539,16 +2509,6 @@ function App({
             },
             callbacks: sharedCallbacks,
           });
-          if (turnResult.paused) {
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "info",
-                key: mkKey(),
-                text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
-              },
-            ]);
-          }
           await saveSessionSafe();
 
         // Auto-compact after turn when thresholds are met. With compiled

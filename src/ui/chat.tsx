@@ -15,8 +15,6 @@ export type ChatEvent =
       text: string;
       reasoning: string;
       streaming: boolean;
-      /** Agent role that produced this message (e.g., "research", "coding"). */
-      agentRole?: string;
     }
   | ({ kind: "tool"; key: string } & ToolEventState)
   | { kind: "info"; key: string; text: string }
@@ -123,13 +121,6 @@ const EventView = React.memo(function EventView({
   if (evt.kind === "assistant") {
     return (
       <Box flexDirection="column" paddingLeft={2}>
-        {evt.agentRole && (
-          <Box marginBottom={1}>
-            <Text color={theme.info.color} >
-              ◆ {evt.agentRole} agent
-            </Text>
-          </Box>
-        )}
         {showReasoning && evt.reasoning ? (
           <Box flexDirection="column" marginBottom={1}>
             <Text color={theme.reasoning.color}>

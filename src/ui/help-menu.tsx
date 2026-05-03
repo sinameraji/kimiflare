@@ -29,8 +29,7 @@ type Page =
   | "info"
   | "config"
   | "commands"
-  | "custom"
-  | "multi-agent";
+  | "custom";
 
 interface CommandItem {
   command: string;
@@ -153,16 +152,6 @@ const CATEGORIES: Category[] = [
       { command: "/init", description: "scan this repo and write a KIMI.md" },
       { command: "/logout", description: "clear credentials" },
       { command: "filePicker", description: "enable with KIMIFLARE_FILE_PICKER=1 or filePicker: true in config", selectable: false },
-    ],
-  },
-  {
-    key: "multi-agent",
-    label: "Multi-Agent",
-    commands: [
-      { command: "/agent on", description: "enable multi-agent mode (auto-switching)" },
-      { command: "/agent off", description: "disable multi-agent mode" },
-      { command: "/agent status", description: "show active agent" },
-      { command: "customAgents", description: "define in config: [{name, tools, model, systemPrompt}]", selectable: false },
     ],
   },
 ];
