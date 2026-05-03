@@ -1375,19 +1375,8 @@ function App({
       return;
     }
     const cwd = process.cwd();
-    for (const name of ["KIMI.md", "KIMIFLARE.md", "AGENT.md"]) {
-      if (existsSync(join(cwd, name))) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `${name} already exists at ${join(cwd, name)} — delete it first if you want to regenerate`,
-          },
-        ]);
-        return;
-      }
-    }
+    const existingName = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"].find((n) => existsSync(join(cwd, n)));
+    const isRefresh = existingName !== undefined;
     const prompt = [
       "Generate a KIMI.md at the repository root so future agents have project context.",
       "",
