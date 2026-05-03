@@ -473,7 +473,7 @@ function App({
   const [draftInput, setDraftInput] = useState("");
 
   const [mode, setMode] = useState<Mode>("edit");
-  const [codeMode, setCodeMode] = useState<boolean>(initialCfg?.codeMode ?? false);
+  const [codeMode, setCodeMode] = useState<boolean>(false);
   const filePickerEnabled = initialCfg?.filePicker ?? true;
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
@@ -1201,10 +1201,6 @@ function App({
       setVerbose((v) => !v);
       return;
     }
-    if (key.ctrl && inputChar === "m") {
-      setCodeMode((c) => !c);
-      return;
-    }
   });
 
   const flushAssistantUpdates = useCallback(() => {
@@ -1412,6 +1408,8 @@ function App({
       heavy: "high",
     };
     const initReasoningEffort = initEffortForTier[initClassification.tier] ?? effortRef.current;
+    const effectiveCodeMode = initClassification.tier === "heavy";
+    setCodeMode(effectiveCodeMode);
 
     try {
       await runAgentTurn({
@@ -1432,7 +1430,7 @@ function App({
             : undefined,
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
-        codeMode,
+        codeMode: effectiveCodeMode,
         onFileChange: (path, content) => {
           if (content) {
             lspManagerRef.current.notifyChange(path, content);
@@ -1585,6 +1583,7 @@ function App({
         ]);
       }
     } finally {
+      setCodeMode(false);
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
@@ -2378,6 +2377,8 @@ function App({
         heavy: "high",
       };
       const turnReasoningEffort = overrideEffort ?? effortForTier[classification.tier] ?? effortRef.current;
+      const effectiveCodeMode = classification.tier === "heavy";
+      setCodeMode(effectiveCodeMode);
 
       const controller = new AbortController();
       activeControllerRef.current = controller;
@@ -2506,7 +2507,7 @@ function App({
             sessionId: ensureSessionId(),
             memoryManager: memoryManagerRef.current,
             keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-            codeMode,
+            codeMode: effectiveCodeMode,
             intentClassification: classification,
             onFileChange: (path, content) => {
               if (content) {
@@ -2648,6 +2649,7 @@ function App({
           }
         }
       } finally {
+        setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
