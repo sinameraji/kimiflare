@@ -50,6 +50,17 @@ export interface AgentTurnOpts {
   codeMode?: boolean;
   /** Called after write/edit tools succeed so LSP document sync can fire. */
   onFileChange?: (path: string, content: string) => void;
+  /** When true, hitting the tool-call limit resets the counter and appends a continue message instead of throwing. */
+  continueOnLimit?: boolean;
+  /** Cumulative prompt token budget. When exceeded, a final synthesis turn is run and then BudgetExhaustedError is thrown. */
+  maxInputTokens?: number;
+}
+
+export class BudgetExhaustedError extends Error {
+  constructor(message = "Cumulative input token budget exhausted") {
+    super(message);
+    this.name = "BudgetExhaustedError";
+  }
 }
 
 const codeModeApiCache = new Map<string, string>();
@@ -114,7 +125,37 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
-  for (let iter = 0; iter < max; iter++) {
+  let cumulativePromptTokens = 0;
+  let iter = 0;
+  let budgetExhausted = false;
+
+  while (true) {
+    // Budget enforcement: before starting a new turn, if we've already hit the
+    // limit, run one final synthesis turn and then signal budget exhaustion.
+    if (budgetExhausted) {
+      opts.messages.push({
+        role: "system",
+        content:
+          "You have reached the cumulative input token budget for this session. " +
+          "Please synthesize your findings and provide a final summary of what was accomplished.",
+      });
+    }
+
+    if (iter >= max) {
+      if (opts.continueOnLimit) {
+        opts.messages.push({
+          role: "system",
+          content:
+            "You have reached the tool-call limit for this session. " +
+            "The counter has been reset so you can continue working. Please proceed with your task.",
+        });
+        iter = 0;
+      } else {
+        throw new Error(`kimiflare: tool iteration limit reached (${max})`);
+      }
+    }
+
+    iter++;
     turn++;
     const previousMessages = opts.messages.slice();
     const toolCalls: ToolCall[] = [];
@@ -225,7 +266,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
     if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
 
-    if (lastUsage) opts.callbacks.onUsageFinal?.(lastUsage, gatewayMeta);
+    if (lastUsage) {
+      opts.callbacks.onUsageFinal?.(lastUsage, gatewayMeta);
+      cumulativePromptTokens += lastUsage.prompt_tokens;
+      if (
+        !budgetExhausted &&
+        opts.maxInputTokens !== undefined &&
+        opts.maxInputTokens > 0 &&
+        cumulativePromptTokens >= opts.maxInputTokens &&
+        toolCalls.length > 0
+      ) {
+        budgetExhausted = true;
+      }
+    }
 
     const assistantMsg: ChatMessage = {
       role: "assistant",
@@ -257,6 +310,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           usage: lastUsage,
           shadowStrip: shadowStripMetrics,
         });
+      }
+      if (budgetExhausted) {
+        throw new BudgetExhaustedError();
       }
       return;
     }
@@ -422,9 +478,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         shadowStrip: shadowStripMetrics,
       });
     }
-  }
 
-  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50})`);
+    if (budgetExhausted) {
+      throw new BudgetExhaustedError();
+    }
+  }
 }
 
 function validateToolArguments(raw: string): string {
