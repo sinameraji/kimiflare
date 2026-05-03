@@ -1377,10 +1377,13 @@ function App({
     const cwd = process.cwd();
     const existingName = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"].find((n) => existsSync(join(cwd, n)));
     const isRefresh = existingName !== undefined;
-    const prompt = [
-      "Generate a KIMI.md at the repository root so future agents have project context.",
+    const promptParts = [
+      isRefresh
+        ? `Regenerate ${existingName} at the repository root to refresh project context. If the file already exists, read it first and preserve anything still accurate, updating only what has changed.`
+        : "Generate a KIMI.md at the repository root so future agents have project context.",
       "",
       "First, use the `glob`, `read`, and `grep` tools to understand the project: read `package.json`, the top-level `README.md` if present, the tsconfig / build config, and skim the top-level source directory structure.",
+      isRefresh ? `Also read the existing ${existingName} so you know what to keep vs. update.` : null,
       "",
       "Then call the `write` tool to create `KIMI.md` at the repo root with these sections, terse (aim ≤ 100 lines total):",
       "",
@@ -1391,7 +1394,8 @@ function App({
       "- **Do / Don't** — quirks or rules future agents should know.",
       "",
       "Do not call `tasks_set` for this. Just read what you need, then write the file.",
-    ].join("\n");
+    ];
+    const prompt = promptParts.filter((p): p is string => p !== null).join("\n");
 
     setEvents((e) => [...e, { kind: "user", key: mkKey(), text: "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
