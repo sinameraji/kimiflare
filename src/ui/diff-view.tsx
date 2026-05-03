@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { createTwoFilesPatch } from "diff";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   path: string;
@@ -11,7 +11,6 @@ interface Props {
 }
 
 export function DiffView({ path, before, after, maxLines = 40 }: Props) {
-  const theme = useTheme();
   const patch = createTwoFilesPatch(path, path, before, after, "", "", { context: 2 });
   const raw = patch.split("\n").slice(4);
   const lines = raw.filter((l) => {
@@ -52,7 +51,6 @@ function countChanges(lines: string[]): { changed: number; context: number; hunk
 }
 
 function DiffLine({ line }: { line: string }) {
-  const theme = useTheme();
   if (line.startsWith("+")) return <Text color={theme.palette.success}>{line}</Text>;
   if (line.startsWith("-")) return <Text color={theme.palette.error}>{line}</Text>;
   if (line.startsWith("@@")) return <Text color={theme.palette.secondary}>{line}</Text>;

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import type { SessionSummary } from "../sessions.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   sessions: SessionSummary[];
@@ -14,7 +14,6 @@ const FOOTER_ROWS = 2; // cancel + bottom padding
 const MIN_PAGE_SIZE = 5;
 
 export function ResumePicker({ sessions, onPick }: Props) {
-  const theme = useTheme();
   const { rows } = useWindowSize();
   const [page, setPage] = useState(0);
 

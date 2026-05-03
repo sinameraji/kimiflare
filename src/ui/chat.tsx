@@ -3,7 +3,7 @@ import { Box, Text, Static } from "ink";
 import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[] }
@@ -35,7 +35,6 @@ interface StaticItem {
 }
 
 export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
-  const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
 
@@ -99,7 +98,6 @@ const EventView = React.memo(function EventView({
   showReasoning: boolean;
   verbose?: boolean;
 }) {
-  const theme = useTheme();
   if (evt.kind === "user") {
     return (
       <Box flexDirection="column">

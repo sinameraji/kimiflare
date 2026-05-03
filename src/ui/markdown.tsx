@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
@@ -13,7 +13,6 @@ interface InlineSegment {
 }
 
 export function MD({ text }: Props) {
-  const theme = useTheme();
   const blocks = useMemo(() => parseBlocks(text), [text]);
   return (
     <Box flexDirection="column">
@@ -96,7 +95,6 @@ function parseBlocks(src: string): Block[] {
 }
 
 const Block = React.memo(function Block({ block }: { block: Block }) {
-  const theme = useTheme();
   if (block.kind === "blank") return <Text> </Text>;
   if (block.kind === "heading") {
     return (

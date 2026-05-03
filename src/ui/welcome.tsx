@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   accountId?: string;
@@ -13,7 +13,6 @@ const SUGGESTIONS = [
 ];
 
 export function Welcome({ accountId }: Props) {
-  const theme = useTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>

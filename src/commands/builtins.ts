@@ -15,7 +15,6 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "thinking", argHint: "low|medium|high", description: "Set reasoning effort", source: "builtin" },
   { name: "effort", argHint: "low|medium|high", description: "Alias for /thinking", source: "builtin" },
   { name: "reasoning", description: "Toggle reasoning visibility", source: "builtin" },
-  { name: "theme", description: "Open theme picker", source: "builtin" },
   { name: "agent", argHint: "[on|off|status]", description: "Multi-agent mode controls", source: "builtin" },
   { name: "memory", argHint: "[on|off|clear|search ...]", description: "Manage memory", source: "builtin" },
   { name: "cost", argHint: "[on|off]", description: "Show cost report or toggle attribution", source: "builtin" },

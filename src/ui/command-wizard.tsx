@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import { CustomTextInput } from "./text-input.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 import type { Mode } from "../mode.js";
 import type { ReasoningEffort } from "../config.js";
 import type { CommandSource, CustomCommand } from "../commands/types.js";
@@ -31,7 +31,6 @@ type Step =
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_\-/]*$/;
 
 export function CommandWizard({ mode, initial, existingNames, builtinNames, onDone, onSave }: Props) {
-  const theme = useTheme();
   const [step, setStep] = useState<Step>("name");
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");

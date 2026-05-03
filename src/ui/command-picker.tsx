@@ -2,7 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import type { CustomCommand } from "../commands/types.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   commands: CustomCommand[];
@@ -11,7 +11,6 @@ interface Props {
 }
 
 export function CommandPicker({ commands, title, onPick }: Props) {
-  const theme = useTheme();
   const items = commands.map((cmd) => ({
     label: `/${cmd.name.padEnd(20)} ${cmd.description ?? ""}`,
     value: cmd,

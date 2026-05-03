@@ -32,7 +32,6 @@ import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
 import { ResumePicker } from "./ui/resume-picker.js";
-import { ThemePicker } from "./ui/theme-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
 import { existsSync, statSync } from "node:fs";
@@ -51,8 +50,6 @@ import {
   saveConfig,
   type ReasoningEffort,
 } from "./config.js";
-import { resolveTheme, themeNames, themeList, type Theme } from "./ui/theme.js";
-import { ThemeProvider } from "./ui/theme-context.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import {
   listSessions,
@@ -282,7 +279,6 @@ interface Cfg {
   aiGatewaySkipCache?: boolean;
   aiGatewayCollectLogPayload?: boolean;
   aiGatewayMetadata?: Record<string, string | number | boolean>;
-  theme?: string;
   reasoningEffort?: ReasoningEffort;
   coauthor?: boolean;
   coauthorName?: string;
@@ -478,11 +474,8 @@ function App({
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
-  const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [showHelpMenu, setShowHelpMenu] = useState(false);
-  const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
   const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
   const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
@@ -705,7 +698,6 @@ function App({
   // picker state would survive the modal and re-render on close.
   useEffect(() => {
     const modalActive =
-      showThemePicker ||
       showHelpMenu ||
       commandWizard !== null ||
       commandPicker !== null ||
@@ -718,7 +710,6 @@ function App({
       setActivePicker(null);
     }
   }, [
-    showThemePicker,
     showHelpMenu,
     commandWizard,
     commandPicker,
@@ -1174,7 +1165,6 @@ function App({
       const modalOpen =
         perm !== null ||
         showHelpMenu ||
-        showThemePicker ||
         showLspWizard ||
         showCommandList ||
         commandWizard !== null ||
@@ -1202,11 +1192,6 @@ function App({
     }
     if (key.ctrl && inputChar === "o") {
       setVerbose((v) => !v);
-      return;
-    }
-    if (key.ctrl && inputChar === "t") {
-      setOriginalTheme(theme);
-      setShowThemePicker(true);
       return;
     }
     if (key.ctrl && inputChar === "m") {
@@ -1678,27 +1663,6 @@ function App({
     [],
   );
 
-  const handleThemePick = useCallback(
-    (picked: Theme | null) => {
-      if (!picked) {
-        // cancel — revert to original
-        if (originalTheme) setTheme(originalTheme);
-        setShowThemePicker(false);
-        setOriginalTheme(null);
-        return;
-      }
-      setTheme(picked);
-      setCfg((c) => (c ? { ...c, theme: picked.name } : c));
-      if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
-      setShowThemePicker(false);
-      setOriginalTheme(null);
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: `theme: ${picked.label}` },
-      ]);
-    },
-    [cfg, originalTheme],
-  );
 
   const handleSlash = useCallback(
     (cmd: string): boolean => {
@@ -1922,29 +1886,6 @@ function App({
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: "usage: /thinking low | medium | high" },
-        ]);
-        return true;
-      }
-      if (c === "/theme") {
-        if (!arg) {
-          setOriginalTheme(theme);
-          setShowThemePicker(true);
-          return true;
-        }
-        const next = resolveTheme(arg);
-        if (next.name !== arg) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: `unknown theme "${arg}" — available: ${themeNames().join(", ")}` },
-          ]);
-          return true;
-        }
-        setTheme(next);
-        setCfg((c) => (c ? { ...c, theme: next.name } : c));
-        if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
         ]);
         return true;
       }
@@ -2231,7 +2172,7 @@ function App({
       }
       return false;
     },
-    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg],
+    [cfg, exit, usage, effort, mode, openResumePicker, runCompact, runInit, initMcp, setCfg],
   );
 
   const handleHelpCommand = useCallback(
@@ -2761,32 +2702,19 @@ function App({
 
   if (resumeSessions !== null) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <ResumePicker sessions={resumeSessions} onPick={handleResumePick} />
         </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showThemePicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <ThemePicker themes={themeList()} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
-        </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (showHelpMenu) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <HelpMenu
-            theme={theme}
-            themes={themeList().map((t) => ({ name: t.name, label: t.label }))}
-            currentThemeName={theme.name}
             customCommands={customCommandsRef.current
               .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
               .map((c) => ({ name: c.name, description: c.description }))}
@@ -2795,13 +2723,13 @@ function App({
             onCommand={handleHelpCommand}
           />
         </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (showLspWizard) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <LspWizard
             servers={cfg?.lspServers ?? {}}
@@ -2837,13 +2765,13 @@ function App({
             }}
           />
         </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (commandWizard) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <CommandWizard
             mode={commandWizard.mode}
@@ -2854,13 +2782,13 @@ function App({
             onSave={handleCommandSave}
           />
         </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (commandPicker) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <CommandPicker
             commands={customCommandsRef.current}
@@ -2876,17 +2804,17 @@ function App({
             }}
           />
         </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   if (commandToDelete) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
-        <Text color={theme.accent} bold>
+      <Box flexDirection="column" borderStyle="round" borderColor="#d699b6" paddingX={1}>
+        <Text color="#d699b6" bold>
           Delete /{commandToDelete.name}?
         </Text>
-        <Text color={theme.info.color} dimColor>
+        <Text color="#7a8478" dimColor>
           {commandToDelete.filepath}
         </Text>
         <Box marginTop={1}>
@@ -2910,21 +2838,21 @@ function App({
 
   if (showCommandList) {
     return (
-      <ThemeProvider theme={theme}>
+      <>
         <Box flexDirection="column">
           <CommandList
             commands={customCommandsRef.current}
             onDone={() => setShowCommandList(false)}
           />
         </Box>
-      </ThemeProvider>
+      </>
     );
   }
 
   const hasConversation = events.some((e) => e.kind === "user" || e.kind === "assistant");
 
   return (
-    <ThemeProvider theme={theme}>
+    <>
       <Box flexDirection="column">
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} />
@@ -2953,7 +2881,7 @@ function App({
             {queue.length > 0 && (
               <Box flexDirection="column" marginBottom={1}>
                 {queue.map((q, i) => (
-                  <Text key={`queue_${i}`} color={theme.queue.color} dimColor={theme.queue.dim}>
+                  <Text key={`queue_${i}`} color="#7a8478" dimColor={true}>
                     ⏳ {q.display}
                   </Text>
                 ))}
@@ -2988,7 +2916,7 @@ function App({
               />
             )}
           <Box marginTop={1}>
-            <Text color={theme.accent}>› </Text>
+            <Text color="#d699b6">› </Text>
             <CustomTextInput
               value={input}
               onChange={setInput}
@@ -3041,7 +2969,7 @@ function App({
         </Box>
       )}
     </Box>
-    </ThemeProvider>
+    </>
   );
 }
 

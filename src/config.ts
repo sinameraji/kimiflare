@@ -31,7 +31,6 @@ export interface KimiConfig {
   aiGatewaySkipCache?: boolean;
   aiGatewayCollectLogPayload?: boolean;
   aiGatewayMetadata?: Record<string, string | number | boolean>;
-  theme?: string;
   reasoningEffort?: ReasoningEffort;
   coauthor?: boolean;
   coauthorName?: string;
@@ -145,7 +144,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
   const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
   const envEffort = readReasoningEffortEnv();
-  const envTheme = process.env.KIMI_THEME;
   const envCoauthor = readCoauthorEnv();
   const envAiGatewayId = process.env.KIMIFLARE_AI_GATEWAY_ID;
   const envAiGatewayCacheTtl = readNumberEnv("KIMIFLARE_AI_GATEWAY_CACHE_TTL");
@@ -185,7 +183,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       aiGatewaySkipCache: envAiGatewaySkipCache,
       aiGatewayCollectLogPayload: envAiGatewayCollectLogPayload,
       aiGatewayMetadata: envAiGatewayMetadata,
-      theme: envTheme,
       reasoningEffort: envEffort,
       coauthor: envCoauthor?.enabled ?? true,
       coauthorName: envCoauthor?.name,
@@ -219,7 +216,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         aiGatewayCollectLogPayload:
           envAiGatewayCollectLogPayload ?? parsed.aiGatewayCollectLogPayload,
         aiGatewayMetadata: envAiGatewayMetadata ?? parsed.aiGatewayMetadata,
-        theme: envTheme ?? parsed.theme,
         reasoningEffort: envEffort ?? parsed.reasoningEffort,
         coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
         coauthorName: envCoauthor?.name ?? parsed.coauthorName,

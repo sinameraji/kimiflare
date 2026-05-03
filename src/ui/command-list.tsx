@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text, useInput } from "ink";
 import type { CustomCommand } from "../commands/types.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   commands: CustomCommand[];
@@ -9,7 +9,6 @@ interface Props {
 }
 
 export function CommandList({ commands, onDone }: Props) {
-  const theme = useTheme();
   useInput((_input, key) => {
     if (key.escape) {
       onDone();

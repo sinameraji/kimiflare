@@ -3,16 +3,10 @@ import assert from "node:assert";
 import React from "react";
 import { renderToString } from "ink";
 import { FilePicker, type FilePickerItem } from "./file-picker.js";
-import { resolveTheme } from "./theme.js";
-import { ThemeProvider } from "./theme-context.js";
-
-const theme = resolveTheme(undefined);
 
 function renderPicker(items: FilePickerItem[], selectedIndex: number, query = ""): string {
   return renderToString(
-    <ThemeProvider theme={theme}>
-      <FilePicker items={items} selectedIndex={selectedIndex} query={query} />
-    </ThemeProvider>,
+    <FilePicker items={items} selectedIndex={selectedIndex} query={query} />,
   );
 }
 

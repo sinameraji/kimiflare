@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Task } from "../tasks-state.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   tasks: Task[];
@@ -13,7 +13,6 @@ interface Props {
 const MAX_VISIBLE = 6;
 
 export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
-  const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
@@ -72,7 +71,6 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
 }
 
 function TaskRow({ task }: { task: Task }) {
-  const theme = useTheme();
   if (task.status === "completed") {
     return (
       <Text color={theme.info.color} dimColor={theme.info.dim}>

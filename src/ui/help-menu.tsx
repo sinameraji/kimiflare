@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
-import type { Theme } from "./theme.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface CustomCommandSummary {
   name: string;
@@ -9,9 +9,6 @@ interface CustomCommandSummary {
 }
 
 interface Props {
-  theme: Theme;
-  themes: { name: string; label: string }[];
-  currentThemeName: string;
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
   onDone: () => void;
@@ -22,7 +19,6 @@ type Page =
   | "main"
   | "mode"
   | "thinking"
-  | "theme"
   | "session"
   | "memory"
   | "cost"
@@ -65,11 +61,6 @@ const CATEGORIES: Category[] = [
       { command: "/thinking medium", description: "balanced" },
       { command: "/thinking high", description: "slow, higher quality" },
     ],
-  },
-  {
-    key: "theme",
-    label: "Theme",
-    commands: [],
   },
   {
     key: "session",
@@ -181,7 +172,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 
@@ -240,40 +231,8 @@ export function HelpMenu({ theme, themes, currentThemeName, customCommands, cost
         </Box>
         <Box marginTop={1}>
           <Text color={theme.info.color} dimColor={false}>
-            keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · ctrl-o verbose · ctrl+t theme · shift+tab cycle mode · ↑/↓ history
+            keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · ctrl-o verbose · shift+tab cycle mode · ↑/↓ history
           </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (page === "theme") {
-    const items = themes.map((t) => ({
-      label: t.name === currentThemeName ? `${t.label} · current` : t.label,
-      value: t.name,
-      key: t.name,
-    }));
-    items.push({ label: "← Back", value: "__back__", key: "__back__" });
-
-    return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
-        <Text color={theme.accent} bold>
-          Theme
-        </Text>
-        <Text color={theme.info.color} dimColor={false}>
-          Arrow keys to navigate, Enter to apply, Esc to go back.
-        </Text>
-        <Box marginTop={1}>
-          <SelectInput
-            items={items}
-            onSelect={(item) => {
-              if (item.value === "__back__") {
-                setPage("main");
-              } else {
-                handleSelect(`/theme ${item.value}`);
-              }
-            }}
-          />
         </Box>
       </Box>
     );

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Box, Text } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   onDone: (cfg: { accountId: string; apiToken: string; model: string }) => void;
@@ -13,7 +13,6 @@ type Step = "accountId" | "apiToken" | "model" | "confirm";
 const STEPS: Step[] = ["accountId", "apiToken", "model", "confirm"];
 
 export function Onboarding({ onDone }: Props) {
-  const theme = useTheme();
   const [step, setStep] = useState<Step>("accountId");
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");

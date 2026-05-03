@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { SlashItem } from "../commands/types.js";
-import { useTheme } from "./theme-context.js";
+import { DEFAULT_THEME as theme } from "./theme.js";
 
 interface Props {
   items: SlashItem[];
@@ -24,7 +24,6 @@ function commandLabel(item: SlashItem): string {
 }
 
 export function SlashPicker({ items, selectedIndex, query }: Props) {
-  const theme = useTheme();
   let startIndex = 0;
   if (selectedIndex >= VISIBLE_LIMIT) {
     startIndex = selectedIndex - VISIBLE_LIMIT + 1;
