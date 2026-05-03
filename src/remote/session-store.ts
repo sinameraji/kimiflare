@@ -7,12 +7,22 @@ export interface RemoteSession {
   prompt: string;
   repo: string;
   workerUrl: string;
-  status: "pending" | "running" | "done" | "error" | "cancelled";
+  status: "pending" | "running" | "paused" | "done" | "error" | "cancelled";
   branch?: string;
   prUrl?: string;
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;
+  /** Categorized error type for failed sessions. */
+  errorCategory?: "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown";
+  /** Human-readable error summary. */
+  errorSummary?: string;
+  /** Tokens consumed by the remote job (prompt + completion). */
+  tokensUsed?: number;
+  /** Token budget set for this job. */
+  tokensBudget?: number;
+  /** Estimated cost in USD. */
+  estimatedCost?: number;
 }
 
 function remoteDir(): string {
