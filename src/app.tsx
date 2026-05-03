@@ -1434,7 +1434,7 @@ function App({
     activeControllerRef.current = controller;
 
     try {
-      await runAgentTurn({
+      const turnResult = await runAgentTurn({
         accountId: cfg.accountId,
         apiToken: cfg.apiToken,
         model: cfg.model,
@@ -1557,6 +1557,17 @@ function App({
             }),
         },
       });
+
+      if (turnResult.paused) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
+          },
+        ]);
+      }
 
       if (existsSync(join(cwd, "KIMI.md"))) {
         if (cacheStableRef.current) {
@@ -2692,7 +2703,7 @@ function App({
           const activeSession = orchestratorRef.current.getActiveSession();
           messagesRef.current = activeSession.messages.slice();
         } else {
-          await runAgentTurn({
+          const turnResult = await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: overrideModel ?? cfg.model,
@@ -2724,6 +2735,16 @@ function App({
             },
             callbacks: sharedCallbacks,
           });
+          if (turnResult.paused) {
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: `Reached tool call limit. I've made progress — say **go on** to continue, or tell me what to focus on.`,
+              },
+            ]);
+          }
         }
         await saveSessionSafe();
 

@@ -59,7 +59,11 @@ export interface AgentTurnOpts {
 
 const codeModeApiCache = new Map<string, string>();
 
-export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
+export interface TurnResult {
+  paused?: boolean;
+}
+
+export async function runAgentTurn(opts: AgentTurnOpts): Promise<TurnResult> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
 
@@ -270,7 +274,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           agentRole: opts.agentRole,
         });
       }
-      return;
+      return {};
     }
 
     for (const tc of toolCalls) {
@@ -455,7 +459,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   // retains context when the user says "go on".
   const pauseMsg = `Paused after ${opts.maxToolIterations ?? 50} tool calls. The user may say "go on" to continue. If you have a partial deliverable (Research Brief, Implementation Notes, etc.), include it in your next response.`;
   opts.messages.push({ role: "system", content: pauseMsg });
-  throw new Error(`kimiflare: tool iteration limit reached (${opts.maxToolIterations ?? 50}). Say "go on" to continue, or ask me to focus on a specific area.`);
+  return { paused: true };
 }
 
 function validateToolArguments(raw: string): string {
