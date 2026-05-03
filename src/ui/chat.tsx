@@ -137,7 +137,7 @@ const EventView = React.memo(function EventView({
             </Text>
           </Box>
         ) : null}
-        {evt.text ? <MD text={evt.text} streaming={evt.streaming} /> : null}
+        {evt.text ? <MD text={evt.text} /> : null}
         {evt.streaming && (
           <Text color={theme.spinner}>
             <Spinner type="dots" />

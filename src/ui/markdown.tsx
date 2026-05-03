@@ -5,7 +5,6 @@ import type { Theme } from "./theme.js";
 
 interface Props {
   text: string;
-  streaming?: boolean;
 }
 
 interface InlineSegment {
@@ -13,11 +12,8 @@ interface InlineSegment {
   text: string;
 }
 
-export function MD({ text, streaming }: Props) {
+export function MD({ text }: Props) {
   const theme = useTheme();
-  if (streaming) {
-    return <Text>{text}</Text>;
-  }
   const blocks = useMemo(() => parseBlocks(text), [text]);
   return (
     <Box flexDirection="column">
