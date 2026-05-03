@@ -1,0 +1,14 @@
+name = "kimiflare-remote"
+main = "src/index.ts"
+compatibility_date = "2025-02-14"
+
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SessionDO"]
+
+[vars]
+# REMOTE_AUTH_SECRET and CF_API_TOKEN should be set via wrangler secret put

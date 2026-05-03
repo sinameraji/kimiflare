@@ -65,6 +65,22 @@ export interface KimiConfig {
   filePicker?: boolean;
   /** UI theme name. Default: everforest-dark. */
   theme?: string;
+  /** URL of the remote orchestrator Worker. */
+  remoteWorkerUrl?: string;
+  /** Shared secret for authenticating with the remote Worker. */
+  remoteAuthSecret?: string;
+  /** Configurable TTL for remote sessions in minutes (default: 30). */
+  remoteTtlMinutes?: number;
+  /** Max input token budget per remote job (default: 5_000_000). */
+  remoteMaxInputTokens?: number;
+  /** GitHub OAuth token for remote PR creation. */
+  githubOAuthToken?: string;
+  /** GitHub refresh token (if available). */
+  githubRefreshToken?: string;
+  /** GitHub token expiry timestamp. */
+  githubTokenExpiry?: number;
+  /** Default GitHub repo for remote sessions (owner/repo). */
+  githubRepo?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";

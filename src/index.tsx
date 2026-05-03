@@ -9,6 +9,7 @@ import type { ChatMessage } from "./agent/messages.js";
 import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { getAppVersion } from "./util/version.js";
+import { createRemoteCommand } from "./remote/cli.js";
 
 const program = new Command();
 program
@@ -48,6 +49,28 @@ program
     const { runCostCommand } = await import("./cost-attribution/cli.js");
     await runCostCommand({ ...cmdOpts, config: cfg });
   });
+
+program.addCommand(createRemoteCommand());
+
+program
+  .command("auth")
+  .description("Authenticate with external services")
+  .addCommand(
+    new Command("github")
+      .description("Authenticate with GitHub via OAuth device flow")
+      .action(async () => {
+        const { authGitHubForTui } = await import("./remote/tui-auth.js");
+        for await (const step of authGitHubForTui()) {
+          console.log(step.message);
+          if (step.url && step.code) {
+            console.log(`\nOpen: ${step.url}`);
+            console.log(`Code: ${step.code}\n`);
+          }
+          if (step.done) break;
+          if (step.error) process.exit(1);
+        }
+      }),
+  );
 
 program.action(async () => {
   await main();
