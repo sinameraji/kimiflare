@@ -15,6 +15,10 @@ export interface SessionState {
   progressEvents: RemoteProgressEvent[];
   prUrl?: string;
   errorMessage?: string;
+  /** Categorized error type for better failure reporting. */
+  errorCategory?: "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown";
+  /** Recent sandbox logs for debugging. */
+  sandboxLogs: string[];
   createdAt: number;
   updatedAt: number;
   startedAt?: number;

@@ -13,9 +13,15 @@ export interface RemoteSession {
   createdAt: string;
   updatedAt: string;
   finishedAt?: string;
+  /** Categorized error type for failed sessions. */
+  errorCategory?: "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown";
+  /** Human-readable error summary. */
+  errorSummary?: string;
   errorMessage?: string;
   tokensUsed?: number;
   tokensBudget?: number;
+  /** Estimated cost in USD. */
+  estimatedCost?: number;
 }
 
 function remoteDir(): string {

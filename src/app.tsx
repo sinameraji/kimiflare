@@ -2391,6 +2391,7 @@ function App({
                 });
               } else if (event.type === "error") {
                 const message = String(event.message ?? "");
+                const category = event.category as RemoteSession["errorCategory"] | undefined;
                 setEvents((e) => [
                   ...e,
                   { kind: "error", key: mkKey(), text: `Remote error: ${message}` },
@@ -2401,6 +2402,8 @@ function App({
                   repo: `${repo.owner}/${repo.name}`,
                   workerUrl: finalCfg.remoteWorkerUrl!,
                   status: "error",
+                  errorCategory: category ?? "unknown",
+                  errorSummary: message,
                   errorMessage: message,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),

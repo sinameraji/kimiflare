@@ -122,6 +122,7 @@ export class SessionDO implements DurableObject {
       reasoningEffort: body.reasoningEffort,
       ttlMinutes,
       tokensBudget: body.tokensBudget,
+      sandboxLogs: [],
     };
 
     await this.saveState();
@@ -186,19 +187,67 @@ export class SessionDO implements DurableObject {
           } catch {
             // Not JSON — treat as raw log
             this.broadcast({ type: "log", text: trimmed });
+            if (this.sessionState) {
+              this.sessionState.sandboxLogs.push(trimmed);
+              if (this.sessionState.sandboxLogs.length > 500) {
+                this.sessionState.sandboxLogs.shift();
+              }
+            }
           }
         }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const category = this.categorizeError(message);
       if (this.sessionState) {
         this.sessionState.status = "error";
         this.sessionState.errorMessage = message;
+        this.sessionState.errorCategory = category;
         this.sessionState.finishedAt = Date.now();
         await this.saveState();
       }
-      this.broadcast({ type: "error", message });
+      this.broadcast({ type: "error", message, category });
     }
+  }
+
+  private categorizeError(message: string): "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown" {
+    const lower = message.toLowerCase();
+    if (lower.includes("out of memory") || lower.includes("oom") || lower.includes("killed") || lower.includes("memory limit")) {
+      return "sandbox-oom";
+    }
+    if (lower.includes("github") && (lower.includes("api") || lower.includes("rate limit") || lower.includes("401") || lower.includes("403"))) {
+      return "github-api";
+    }
+    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("etimedout")) {
+      return "timeout";
+    }
+    if (lower.includes("exit code 1") || lower.includes("error") || lower.includes("crash") || lower.includes("exception")) {
+      return "agent-crash";
+    }
+    return "unknown";
+  }
+
+  private suggestPromptImprovement(category: string, _message: string): string {
+    switch (category) {
+      case "sandbox-oom":
+        return "The sandbox ran out of memory. Try narrowing the scope (e.g., target a single file or smaller feature), or reduce the number of tool calls expected.";
+      case "timeout":
+        return "The session timed out. Try breaking the task into smaller chunks, or increase the TTL with `/remote <prompt> --ttl 60`.";
+      case "github-api":
+        return "A GitHub API error occurred. Check your token permissions, or try again later if it's a rate-limit issue.";
+      case "agent-crash":
+        return "The agent crashed. Try simplifying the prompt, providing more specific file paths, or reducing the complexity of the requested changes.";
+      default:
+        return "Try simplifying the prompt or providing more specific instructions.";
+    }
+  }
+
+  private formatIssueBody(prompt: string, errorLog: string, category: string, logs: string[]): string {
+    const suggestion = this.suggestPromptImprovement(category, errorLog);
+    const logsSection = logs.length > 0
+      ? `\n\n## Sandbox logs (last ${logs.length} lines)\n\`\`\`\n${logs.slice(-50).join("\n")}\n\`\`\``
+      : "";
+    return `The remote session encountered an error.\n\n**Prompt:** ${prompt}\n\n**Suggestion:** ${suggestion}\n\n## Error log\n\`\`\`\n${errorLog}\n\`\`\`${logsSection}`;
   }
 
   private handleStream(): Response {
@@ -274,6 +323,14 @@ export class SessionDO implements DurableObject {
         this.sessionState.progressEvents.shift();
       }
       this.broadcast(body);
+
+      // Track token usage from usage events
+      if (body.type === "usage" && typeof (body as Record<string, unknown>).promptTokens === "number") {
+        const promptTokens = (body as Record<string, unknown>).promptTokens as number;
+        const completionTokens = (body as Record<string, unknown>).completionTokens as number;
+        this.sessionState.tokensUsed = (this.sessionState.tokensUsed ?? 0) + promptTokens + completionTokens;
+      }
+
       await this.saveState();
     }
     return Response.json({ ok: true });
@@ -346,12 +403,13 @@ export class SessionDO implements DurableObject {
         }
         this.sessionState.status = "done";
       } else {
-        // Crash — open issue with error log
+        // Crash — open issue with error log and sandbox logs
+        const category = this.sessionState.errorCategory ?? "unknown";
         const issue = await createIssue({
           owner: repo.owner,
           repo: repo.name,
           title: `kimiflare remote error: ${prompt.slice(0, 80)}`,
-          body: `The remote session encountered an error.\n\nPrompt: ${prompt}\n\n\`\`\`\n${body.errorLog ?? "Unknown error"}\n\`\`\``,
+          body: this.formatIssueBody(prompt, body.errorLog ?? "Unknown error", category, this.sessionState.sandboxLogs),
           token: githubToken!,
         });
         this.sessionState.prUrl = issue.html_url;
@@ -366,7 +424,12 @@ export class SessionDO implements DurableObject {
 
     this.sessionState.finishedAt = Date.now();
     await this.saveState();
-    this.broadcast({ type: "done", prUrl: this.sessionState.prUrl });
+    this.broadcast({
+      type: "done",
+      prUrl: this.sessionState.prUrl,
+      tokensUsed: this.sessionState.tokensUsed,
+      tokensBudget: this.sessionState.tokensBudget,
+    });
 
     // Cleanup
     if (this.sessionState.sandboxId) {
@@ -445,11 +508,13 @@ export class SessionDO implements DurableObject {
   async alarm(): Promise<void> {
     // Emergency cleanup — session timed out
     if (this.sessionState && this.sessionState.status === "running") {
+      const ttl = this.sessionState.ttlMinutes ?? 30;
       this.sessionState.status = "error";
-      this.sessionState.errorMessage = "Session timed out";
+      this.sessionState.errorMessage = `Session timed out after ${ttl} minutes`;
+      this.sessionState.errorCategory = "timeout";
       this.sessionState.finishedAt = Date.now();
       await this.saveState();
-      this.broadcast({ type: "error", message: "Session timed out" });
+      this.broadcast({ type: "error", message: this.sessionState.errorMessage, category: "timeout" });
 
       // Try to open issue
       try {
@@ -458,7 +523,7 @@ export class SessionDO implements DurableObject {
           owner: repo.owner,
           repo: repo.name,
           title: `kimiflare remote timeout: ${prompt.slice(0, 80)}`,
-          body: `The remote session timed out after ${this.sessionState.ttlMinutes} minutes.\n\nPrompt: ${prompt}`,
+          body: this.formatIssueBody(prompt, this.sessionState.errorMessage, "timeout", this.sessionState.sandboxLogs),
           token: githubToken!,
         });
         this.sessionState.prUrl = issue.html_url;
