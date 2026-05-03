@@ -5,7 +5,7 @@ import {
   loadRemoteSession,
   getMostRecentRemoteSession,
 } from "./session-store.js";
-import { runDeployWizard, checkDeployStatus } from "./deploy.js";
+import { runDeploy, checkDeployStatus } from "./deploy.js";
 
 export function createRemoteCommand(): Command {
   const remote = new Command("remote").description("Manage remote sessions");
@@ -14,7 +14,7 @@ export function createRemoteCommand(): Command {
     .command("deploy")
     .description("Deploy the remote Worker and container image to Cloudflare")
     .action(async () => {
-      await runDeployWizard();
+      await runDeploy();
     });
 
   remote
@@ -23,13 +23,10 @@ export function createRemoteCommand(): Command {
     .action(async () => {
       const status = await checkDeployStatus();
       console.log("Remote deployment status:\n");
-      console.log(`  wrangler CLI:      ${status.wranglerInstalled ? "✅" : "❌"} installed`);
-      console.log(`  wrangler auth:     ${status.wranglerAuthenticated ? "✅" : "❌"} logged in`);
-      console.log(`  Docker:            ${status.dockerInstalled ? "✅" : "❌"} installed`);
-      console.log(`  Docker registry:   ${status.dockerAuthenticated ? "✅" : "❌"} authenticated`);
-      console.log(`  Worker deployed:   ${status.workerDeployed ? "✅" : "❌"} ${status.workerUrl ?? ""}`);
-      console.log(`  Image pushed:      ${status.imagePushed ? "✅" : "❌"}`);
-      console.log(`  Secrets set:       ${status.secretsSet ? "✅" : "❌"}`);
+      console.log(`  wrangler CLI:    ${status.wrangler ? "yes" : "no"}`);
+      console.log(`  wrangler auth:   ${status.wranglerAuth ? "yes" : "no"}`);
+      console.log(`  Docker:          ${status.docker ? "yes" : "no"}`);
+      console.log(`  Worker URL:      ${status.workerUrl ?? "not deployed"}`);
       console.log("\nRun `kimiflare remote deploy` to deploy.");
     });
 

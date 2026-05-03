@@ -2377,7 +2377,9 @@ function App({
         if (!cfg?.remoteWorkerUrl) {
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: "Remote worker not configured. Set remoteWorkerUrl in ~/.config/kimiflare/config.json" },
+            { kind: "info", key: mkKey(), text: "Remote worker not deployed yet." },
+            { kind: "info", key: mkKey(), text: "Run: kimiflare remote deploy" },
+            { kind: "info", key: mkKey(), text: "(One-time setup — takes ~2 minutes)" },
           ]);
           return true;
         }
