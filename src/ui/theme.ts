@@ -4,14 +4,14 @@
  * Creating a new theme:
  * 1. Pick 6-7 colors for the palette (primary, secondary, success, error,
  *    warning, info, muted).
- * 2. Call buildTheme(name, label, palette).
- * 3. The mapping function distributes your palette across UI roles
- *    automatically.
+ * 2. Call buildTheme(name, label, palette, overrides?) with any custom
+ *    semantic mappings.
  *
  * Guidelines for diverse themes:
  * - primary and secondary should contrast (e.g. blue + orange, purple + green).
  * - success/error/warning should be clearly distinct (green/red/yellow).
  * - muted should be a neutral gray so it doesn't compete with accent colors.
+ * - assistant should be a readable neutral so AI text has its own identity.
  */
 
 export type ColorName = string;
@@ -51,13 +51,19 @@ export interface Theme {
   modeBadge: { plan: ColorName; auto: ColorName; edit: ColorName };
 }
 
+/** Optional overrides for any semantic slot beyond the palette defaults. */
+export type ThemeOverrides = Partial<
+  Omit<Theme, "name" | "label" | "palette">
+>;
+
 /** Build a full Theme from a concise ColorPalette. */
 export function buildTheme(
   name: string,
   label: string,
   palette: ColorPalette,
+  overrides?: ThemeOverrides,
 ): Theme {
-  return {
+  const base: Theme = {
     name,
     label,
     palette,
@@ -78,257 +84,266 @@ export function buildTheme(
       edit: palette.secondary,
     },
   };
+  if (!overrides) return base;
+  return {
+    ...base,
+    ...overrides,
+    modeBadge: overrides.modeBadge ?? base.modeBadge,
+    info: overrides.info ?? base.info,
+    reasoning: overrides.reasoning ?? base.reasoning,
+    queue: overrides.queue ?? base.queue,
+  };
 }
 
-const dark = buildTheme("dark", "dark (default — for dark terminals)", {
-  primary: "#61afef",
-  secondary: "#56b6c2",
-  success: "#98c379",
-  error: "#e06c75",
-  warning: "#e5c07b",
-  info: "#5c6370",
-  muted: "#5c6370",
-});
+// ─── Palette 1: Everforest (Nature / Muted / Warm) ───
 
-const light = buildTheme("light", "light (for bright terminal backgrounds)", {
-  primary: "#4078f2",
-  secondary: "#a626a4",
-  success: "#50a14f",
-  error: "#e45649",
-  warning: "#986801",
-  info: "#a0a1a7",
-  muted: "#a0a1a7",
-});
-
-const highContrast = buildTheme(
-  "high-contrast",
-  "high-contrast (bold, bright colors for low-vision)",
+const everforestDark = buildTheme(
+  "everforest-dark",
+  "everforest-dark (nature — moss & bark)",
   {
-    primary: "#00ffff",
-    secondary: "#ff00ff",
-    success: "#00ff00",
-    error: "#ff0000",
-    warning: "#ffff00",
-    info: "#ffffff",
-    muted: "#ffffff",
+    primary: "#a7c080",
+    secondary: "#d699b6",
+    success: "#a7c080",
+    error: "#e67e80",
+    warning: "#dbbc7f",
+    info: "#7a8478",
+    muted: "#7a8478",
+  },
+  {
+    assistant: "#d3c6aa",
+    tool: "#7fbbb3",
+    spinner: "#a7c080",
+    accent: "#d699b6",
+    modeBadge: { plan: "#7fbbb3", auto: "#a7c080", edit: "#e67e80" },
   },
 );
 
-const dracula = buildTheme("dracula", "dracula (pink & cyan, popular dark)", {
-  primary: "#8be9fd",
-  secondary: "#ff79c6",
-  success: "#50fa7b",
-  error: "#ff5555",
-  warning: "#f1fa8c",
-  info: "#6272a4",
-  muted: "#6272a4",
-});
-
-const nord = buildTheme("nord", "nord (arctic blue & frost, calm dark)", {
-  primary: "#88c0d0",
-  secondary: "#5e81ac",
-  success: "#a3be8c",
-  error: "#bf616a",
-  warning: "#ebcb8b",
-  info: "#4c566a",
-  muted: "#4c566a",
-});
-
-const monokai = buildTheme("monokai", "monokai (vibrant pink & yellow)", {
-  primary: "#f92672",
-  secondary: "#66d9ef",
-  success: "#a6e22e",
-  error: "#f92672",
-  warning: "#e6db74",
-  info: "#75715e",
-  muted: "#75715e",
-});
-
-const solarizedDark = buildTheme(
-  "solarized-dark",
-  "solarized-dark (muted blue & yellow)",
+const everforestLight = buildTheme(
+  "everforest-light",
+  "everforest-light (nature — moss & bark)",
   {
-    primary: "#2aa198",
-    secondary: "#268bd2",
-    success: "#859900",
-    error: "#dc322f",
-    warning: "#b58900",
-    info: "#586e75",
-    muted: "#586e75",
+    primary: "#3a5a1f",
+    secondary: "#8a4a6a",
+    success: "#3a5a1f",
+    error: "#a03030",
+    warning: "#8a6a20",
+    info: "#6a7068",
+    muted: "#6a7068",
+  },
+  {
+    assistant: "#4a4a3a",
+    tool: "#2a5a55",
+    spinner: "#3a5a1f",
+    accent: "#8a4a6a",
+    info: { color: "#6a7068", dim: false },
+    reasoning: { color: "#6a7068", dim: false },
+    queue: { color: "#6a7068", dim: false },
+    modeBadge: { plan: "#2a5a55", auto: "#3a5a1f", edit: "#a03030" },
   },
 );
 
-const solarizedLight = buildTheme(
-  "solarized-light",
-  "solarized-light (light beige & cyan)",
+// ─── Palette 2: Kanagawa (Japanese Art / Rich / Deep) ───
+
+const kanagawaDark = buildTheme(
+  "kanagawa-dark",
+  "kanagawa-dark (Japanese ink — wave blue & fuji gold)",
   {
-    primary: "#268bd2",
-    secondary: "#2aa198",
-    success: "#859900",
-    error: "#dc322f",
-    warning: "#b58900",
-    info: "#93a1a1",
-    muted: "#93a1a1",
+    primary: "#7e9cd8",
+    secondary: "#957fb8",
+    success: "#98bb6c",
+    error: "#ff5d62",
+    warning: "#e6c384",
+    info: "#54546d",
+    muted: "#54546d",
+  },
+  {
+    assistant: "#c8c093",
+    tool: "#7fb4ca",
+    spinner: "#7e9cd8",
+    accent: "#957fb8",
+    modeBadge: { plan: "#7fb4ca", auto: "#98bb6c", edit: "#ff5d62" },
   },
 );
 
-const tokyoNight = buildTheme(
-  "tokyo-night",
-  "tokyo-night (deep blue & purple)",
+const kanagawaLight = buildTheme(
+  "kanagawa-light",
+  "kanagawa-light (Japanese ink — wave blue & fuji gold)",
   {
-    primary: "#7dcfff",
-    secondary: "#bb9af7",
-    success: "#9ece6a",
-    error: "#f7768e",
-    warning: "#e0af68",
-    info: "#565f89",
-    muted: "#565f89",
+    primary: "#3a5a8c",
+    secondary: "#5a3a7a",
+    success: "#3a5a2a",
+    error: "#b83030",
+    warning: "#8a6a20",
+    info: "#6a6a7a",
+    muted: "#6a6a7a",
+  },
+  {
+    assistant: "#5a5a3a",
+    tool: "#2a5a6a",
+    spinner: "#3a5a8c",
+    accent: "#5a3a7a",
+    info: { color: "#6a6a7a", dim: false },
+    reasoning: { color: "#6a6a7a", dim: false },
+    queue: { color: "#6a6a7a", dim: false },
+    modeBadge: { plan: "#2a5a6a", auto: "#3a5a2a", edit: "#b83030" },
   },
 );
 
-const gruvboxDark = buildTheme(
-  "gruvbox-dark",
-  "gruvbox-dark (warm retro dark)",
+// ─── Palette 3: Flexoki (Accessible / Warm / Editorial) ───
+
+const flexokiDark = buildTheme(
+  "flexoki-dark",
+  "flexoki-dark (editorial — warm paper & ink)",
   {
-    primary: "#fabd2f",
-    secondary: "#83a598",
-    success: "#b8bb26",
-    error: "#fb4934",
-    warning: "#fe8019",
-    info: "#928374",
-    muted: "#928374",
+    primary: "#4385be",
+    secondary: "#ce5d97",
+    success: "#879a39",
+    error: "#d14d41",
+    warning: "#d0a215",
+    info: "#6f6e69",
+    muted: "#6f6e69",
+  },
+  {
+    assistant: "#b7b5ac",
+    tool: "#3aa99f",
+    spinner: "#4385be",
+    accent: "#ce5d97",
+    modeBadge: { plan: "#3aa99f", auto: "#879a39", edit: "#d14d41" },
   },
 );
 
-const catppuccinMocha = buildTheme(
-  "catppuccin-mocha",
-  "catppuccin-mocha (pastel pink & lavender)",
+const flexokiLight = buildTheme(
+  "flexoki-light",
+  "flexoki-light (editorial — warm paper & ink)",
   {
-    primary: "#f5c2e7",
-    secondary: "#cba6f7",
-    success: "#a6e3a1",
-    error: "#f38ba8",
-    warning: "#f9e2af",
-    info: "#6c7086",
-    muted: "#6c7086",
+    primary: "#205ea6",
+    secondary: "#a02f6f",
+    success: "#4a5a08",
+    error: "#af3029",
+    warning: "#8a6a00",
+    info: "#b7b5ac",
+    muted: "#b7b5ac",
+  },
+  {
+    assistant: "#3a3a3a",
+    tool: "#1a605a",
+    spinner: "#205ea6",
+    accent: "#a02f6f",
+    info: { color: "#b7b5ac", dim: false },
+    reasoning: { color: "#b7b5ac", dim: false },
+    queue: { color: "#b7b5ac", dim: false },
+    modeBadge: { plan: "#1a605a", auto: "#4a5a08", edit: "#af3029" },
   },
 );
 
-const rosePine = buildTheme("rose-pine", "rose-pine (soft rose & foam)", {
-  primary: "#ebbcba",
-  secondary: "#9ccfd8",
-  success: "#9ccfd8",
-  error: "#eb6f92",
-  warning: "#f6c177",
-  info: "#6e6a86",
-  muted: "#6e6a86",
-});
+// ─── Palette 4: Oxocarbon (Professional / Sleek / IBM) ───
 
-const oneDark = buildTheme(
-  "one-dark",
-  "one-dark (Atom's iconic dark — blue & purple)",
+const oxocarbonDark = buildTheme(
+  "oxocarbon-dark",
+  "oxocarbon-dark (professional — IBM carbon)",
   {
-    primary: "#61afef",
-    secondary: "#c678dd",
-    success: "#98c379",
-    error: "#e06c75",
-    warning: "#e5c07b",
-    info: "#5c6370",
-    muted: "#5c6370",
+    primary: "#33b1ff",
+    secondary: "#be95ff",
+    success: "#42be65",
+    error: "#fa4d56",
+    warning: "#f1c21b",
+    info: "#6f6f6f",
+    muted: "#6f6f6f",
+  },
+  {
+    assistant: "#c6c6c6",
+    tool: "#08bdba",
+    spinner: "#33b1ff",
+    accent: "#be95ff",
+    modeBadge: { plan: "#4589ff", auto: "#42be65", edit: "#fa4d56" },
   },
 );
 
-const ayu = buildTheme("ayu", "ayu (clean modern — orange & cyan)", {
-  primary: "#39bae6",
-  secondary: "#ffb454",
-  success: "#7ee787",
-  error: "#f07178",
-  warning: "#ffb454",
-  info: "#4d5566",
-  muted: "#4d5566",
-});
-
-const nightOwl = buildTheme(
-  "night-owl",
-  "night-owl (deep navy — cyan & red)",
+const oxocarbonLight = buildTheme(
+  "oxocarbon-light",
+  "oxocarbon-light (professional — IBM carbon)",
   {
-    primary: "#82aaff",
-    secondary: "#c792ea",
-    success: "#7ee787",
-    error: "#ef5350",
-    warning: "#ffca28",
-    info: "#4d6885",
-    muted: "#4d6885",
+    primary: "#0072c3",
+    secondary: "#6a1fd0",
+    success: "#198038",
+    error: "#b01018",
+    warning: "#8a6a00",
+    info: "#8d8d8d",
+    muted: "#8d8d8d",
+  },
+  {
+    assistant: "#3a3a3a",
+    tool: "#007d79",
+    spinner: "#0072c3",
+    accent: "#6a1fd0",
+    info: { color: "#8d8d8d", dim: false },
+    reasoning: { color: "#8d8d8d", dim: false },
+    queue: { color: "#8d8d8d", dim: false },
+    modeBadge: { plan: "#0043ce", auto: "#198038", edit: "#b01018" },
   },
 );
 
-const palenight = buildTheme(
-  "palenight",
-  "palenight (Material pale — purple & cyan)",
+// ─── Palette 5: Aurora (Nature Phenomenon / Vibrant) ───
+
+const auroraDark = buildTheme(
+  "aurora-dark",
+  "aurora-dark (northern lights — mint & lavender)",
   {
-    primary: "#82b1ff",
-    secondary: "#c792ea",
-    success: "#c3e88d",
-    error: "#f07178",
-    warning: "#ffcb6b",
-    info: "#4c566a",
-    muted: "#4c566a",
+    primary: "#88d498",
+    secondary: "#c77dff",
+    success: "#96e6a1",
+    error: "#e84855",
+    warning: "#f9dc5c",
+    info: "#7a8599",
+    muted: "#7a8599",
+  },
+  {
+    assistant: "#c8d6e5",
+    tool: "#5bc0be",
+    spinner: "#88d498",
+    accent: "#c77dff",
+    modeBadge: { plan: "#5bc0be", auto: "#96e6a1", edit: "#e84855" },
   },
 );
 
-const rainbow = buildTheme("rainbow", "rainbow (high diversity)", {
-  primary: "#ff6b6b",
-  secondary: "#4ecdc4",
-  success: "#2ecc71",
-  error: "#e74c3c",
-  warning: "#f1c40f",
-  info: "#9b59b6",
-  muted: "#7f8c8d",
-});
-
-const neon = buildTheme("neon", "neon (cyberpunk)", {
-  primary: "#ff00ff",
-  secondary: "#00ffff",
-  success: "#00ff00",
-  error: "#ff0000",
-  warning: "#ffff00",
-  info: "#bd00ff",
-  muted: "#555555",
-});
-
-const forest = buildTheme("forest", "forest (green & amber)", {
-  primary: "#a3be8c",
-  secondary: "#d08770",
-  success: "#88c0d0",
-  error: "#bf616a",
-  warning: "#ebcb8b",
-  info: "#4c566a",
-  muted: "#4c566a",
-});
+const auroraLight = buildTheme(
+  "aurora-light",
+  "aurora-light (northern lights — mint & lavender)",
+  {
+    primary: "#2d6a4f",
+    secondary: "#7b2cbf",
+    success: "#40916c",
+    error: "#9e2a2b",
+    warning: "#8a6a00",
+    info: "#7d8597",
+    muted: "#7d8597",
+  },
+  {
+    assistant: "#3a4a5a",
+    tool: "#1b7a79",
+    spinner: "#2d6a4f",
+    accent: "#7b2cbf",
+    info: { color: "#7d8597", dim: false },
+    reasoning: { color: "#7d8597", dim: false },
+    queue: { color: "#7d8597", dim: false },
+    modeBadge: { plan: "#1b7a79", auto: "#40916c", edit: "#9e2a2b" },
+  },
+);
 
 export const THEMES: Record<string, Theme> = {
-  dark,
-  light,
-  "high-contrast": highContrast,
-  dracula,
-  nord,
-  monokai,
-  "solarized-dark": solarizedDark,
-  "solarized-light": solarizedLight,
-  "tokyo-night": tokyoNight,
-  "gruvbox-dark": gruvboxDark,
-  "catppuccin-mocha": catppuccinMocha,
-  "rose-pine": rosePine,
-  "one-dark": oneDark,
-  ayu,
-  "night-owl": nightOwl,
-  palenight,
-  rainbow,
-  neon,
-  forest,
+  "everforest-dark": everforestDark,
+  "everforest-light": everforestLight,
+  "kanagawa-dark": kanagawaDark,
+  "kanagawa-light": kanagawaLight,
+  "flexoki-dark": flexokiDark,
+  "flexoki-light": flexokiLight,
+  "oxocarbon-dark": oxocarbonDark,
+  "oxocarbon-light": oxocarbonLight,
+  "aurora-dark": auroraDark,
+  "aurora-light": auroraLight,
 };
 
-export const DEFAULT_THEME_NAME = "dark";
+export const DEFAULT_THEME_NAME = "everforest-dark";
 
 export function resolveTheme(name: string | undefined): Theme {
   if (!name) return THEMES[DEFAULT_THEME_NAME]!;
