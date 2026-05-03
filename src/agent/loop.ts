@@ -6,7 +6,7 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
-import type { AgentRole } from "./agent-session.js";
+export type AgentRole = "generalist" | "research" | "coding";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";

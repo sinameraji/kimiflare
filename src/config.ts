@@ -64,22 +64,6 @@ export interface KimiConfig {
   costAttribution?: boolean;
   /** Enable @ file mention picker in chat input. Default: false. */
   filePicker?: boolean;
-  /** Enable multi-agent system with specialized research/coding/generalist agents. Default: false. */
-  multiAgent?: boolean;
-  /** Per-agent model overrides. Falls back to the global model if not specified. */
-  agentModels?: Record<string, string>;
-  /** Per-agent reasoning effort overrides. */
-  agentReasoningEffort?: Record<string, ReasoningEffort>;
-  /** Model used for orchestrator synthesis (hand-off summaries). Defaults to plumbingModel. */
-  orchestratorModel?: string;
-  /** Enable automatic agent switching based on intent classification. Default: false. */
-  autoSwitch?: boolean;
-  /** Ask for user confirmation before auto-switching agents. Default: false. */
-  autoSwitchConfirm?: boolean;
-  /** Maximum turns per agent before forced hand-off. Default: 20. */
-  maxTurnsPerAgent?: number;
-  /** User-defined custom agents with their own tool sets and models. */
-  customAgents?: CustomAgentConfig[];
 }
 
 export interface CustomAgentConfig {
@@ -156,62 +140,6 @@ function readGatewayMetadataEnv(): Record<string, string | number | boolean> | u
   }
 }
 
-function validateAgentModels(models: KimiConfig["agentModels"]): NonNullable<KimiConfig["agentModels"]> {
-  if (!models) return {};
-  const out: NonNullable<KimiConfig["agentModels"]> = {};
-  for (const [role, model] of Object.entries(models)) {
-    if (!model) continue;
-    try {
-      validateModelId(model);
-      (out as Record<string, string>)[role] = model;
-    } catch {
-      console.warn(`[kimiflare] Invalid agentModels.${role}: "${model}" — falling back to default model`);
-    }
-  }
-  return out;
-}
-
-function validateCustomAgents(agents: KimiConfig["customAgents"]): KimiConfig["customAgents"] {
-  if (!agents || !Array.isArray(agents)) return undefined;
-  const out: CustomAgentConfig[] = [];
-  const seen = new Set<string>();
-  for (const agent of agents) {
-    if (!agent || typeof agent.name !== "string" || !agent.name.trim()) {
-      console.warn("[kimiflare] Skipping invalid custom agent: missing name");
-      continue;
-    }
-    const name = agent.name.trim().toLowerCase();
-    if (seen.has(name)) {
-      console.warn(`[kimiflare] Skipping duplicate custom agent: "${name}"`);
-      continue;
-    }
-    if (["research", "coding", "generalist"].includes(name)) {
-      console.warn(`[kimiflare] Skipping custom agent "${name}": reserved built-in role name`);
-      continue;
-    }
-    seen.add(name);
-    const tools = Array.isArray(agent.tools) ? agent.tools.filter((t): t is string => typeof t === "string") : [];
-    if (tools.length === 0) {
-      console.warn(`[kimiflare] Custom agent "${name}" has no valid tools`);
-    }
-    const cfg: CustomAgentConfig = { name, tools };
-    if (agent.model) {
-      try {
-        validateModelId(agent.model);
-        cfg.model = agent.model;
-      } catch {
-        console.warn(`[kimiflare] Invalid custom agent model for "${name}": "${agent.model}" — falling back to default`);
-      }
-    }
-    if (agent.systemPrompt) cfg.systemPrompt = agent.systemPrompt;
-    if (agent.reasoningEffort && EFFORTS.includes(agent.reasoningEffort)) {
-      cfg.reasoningEffort = agent.reasoningEffort;
-    }
-    out.push(cfg);
-  }
-  return out.length > 0 ? out : undefined;
-}
-
 export async function loadConfig(): Promise<KimiConfig | null> {
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
@@ -274,7 +202,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
-      multiAgent: envMultiAgent ?? false,
     };
   }
 
@@ -310,11 +237,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        multiAgent: envMultiAgent ?? parsed.multiAgent ?? false,
-        agentModels: validateAgentModels(parsed.agentModels),
-        agentReasoningEffort: parsed.agentReasoningEffort,
-        orchestratorModel: parsed.orchestratorModel,
-        customAgents: validateCustomAgents(parsed.customAgents),
       };
     }
   } catch {

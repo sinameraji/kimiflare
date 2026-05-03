@@ -8,7 +8,6 @@ import { grepTool } from "./grep.js";
 import { webFetchTool } from "./web-fetch.js";
 import { tasksSetTool } from "./tasks.js";
 import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory.js";
-import { handOffTool } from "./hand-off.js";
 import { ToolArtifactStore } from "./artifact-store.js";
 import { reduceToolOutput, DEFAULT_REDUCER_CONFIG } from "./reducer.js";
 import { makeExpandArtifactTool } from "./expand-artifact.js";
@@ -25,7 +24,6 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryRememberTool,
   memoryRecallTool,
   memoryForgetTool,
-  handOffTool,
 ];
 
 export type PermissionDecision = "allow" | "allow_session" | "deny";

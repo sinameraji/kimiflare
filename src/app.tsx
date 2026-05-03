@@ -5,8 +5,7 @@ import SelectInput from "ink-select-input";
 import { runAgentTurn } from "./agent/loop.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
-import { AgentOrchestrator } from "./agent/orchestrator.js";
-import type { AgentRole } from "./agent/agent-session.js";
+import type { AgentRole } from "./agent/loop.js";
 import { compactMessages } from "./agent/compact.js";
 import {
   compactMessages as compactCompiled,
@@ -541,8 +540,7 @@ function App({
   const lspInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
-  const orchestratorRef = useRef<AgentOrchestrator | null>(null);
-  const pendingOrchestratorStateRef = useRef<Parameters<AgentOrchestrator["deserialize"]>[0] | null>(null);
+
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -1156,8 +1154,7 @@ function App({
         updatedAt: new Date().toISOString(),
         messages: messagesRef.current,
         sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
-        artifactStore: cfg.multiAgent ? undefined : serializeArtifactStore(artifactStoreRef.current),
-        multiAgentState: cfg.multiAgent ? orchestratorRef.current?.serialize() : undefined,
+        artifactStore: serializeArtifactStore(artifactStoreRef.current),
       });
     } catch {
       /* non-fatal */
@@ -1306,9 +1303,7 @@ function App({
     activeControllerRef.current = controller;
     try {
       if (compiledContextRef.current) {
-        const store = cfg?.multiAgent
-          ? orchestratorRef.current?.getActiveArtifactStore() ?? artifactStoreRef.current
-          : artifactStoreRef.current;
+        const store = artifactStoreRef.current;
         const result = compactCompiled({
           messages: messagesRef.current,
           state: sessionStateRef.current,
@@ -1468,10 +1463,9 @@ function App({
           onAssistantStart: () => {
             const id = nextAssistantId++;
             activeAsstIdRef.current = id;
-            const role = orchestratorRef.current?.getActiveRole();
             setEvents((e) => [
               ...e,
-              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, agentRole: role },
+              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
             ]);
           },
           onReasoningDelta: (d) => {
@@ -1643,21 +1637,6 @@ function App({
         } else {
           artifactStoreRef.current = new ArtifactStore();
         }
-        if (cfg?.multiAgent) {
-          // Stash state so processMessage can hydrate the orchestrator with
-          // proper callbacks (sharedCallbacks) instead of the no-op callbacks
-          // we would have to use here during resume.
-          if (file.multiAgentState) {
-            pendingOrchestratorStateRef.current = file.multiAgentState;
-          } else {
-            // Migrate legacy session: seed the default agent with global history
-            pendingOrchestratorStateRef.current = {
-              activeRole: "generalist",
-              agents: [{ role: "generalist", messages: file.messages, recentToolCalls: [] }],
-            };
-          }
-        }
-
         // Recall memories for resumed session so the model has context
         const manager = memoryManagerRef.current;
         if (manager) {
@@ -1750,8 +1729,6 @@ function App({
         sessionStateRef.current = emptySessionState();
         artifactStoreRef.current = new ArtifactStore();
         executorRef.current.clearArtifacts();
-        orchestratorRef.current = null;
-        pendingOrchestratorStateRef.current = null;
         setEvents([]);
         setUsage(null);
         setSessionUsage(null);
@@ -2002,106 +1979,7 @@ function App({
         return true;
       }
       if (c === "/agent") {
-        const sub = rest[0]?.toLowerCase() ?? "";
-        if (sub === "on") {
-          if (!cfg) return true;
-          const next = { ...cfg, multiAgent: true, autoSwitch: true };
-          setCfg(next);
-          void saveConfig(next).catch(() => {});
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent enabled. Restart session to activate orchestrator." }]);
-          return true;
-        }
-        if (sub === "off") {
-          if (!cfg) return true;
-          const next = { ...cfg, multiAgent: false };
-          setCfg(next);
-          void saveConfig(next).catch(() => {});
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent disabled." }]);
-          return true;
-        }
-        if (!cfg?.multiAgent) {
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "multi-agent is disabled. Run /agent on to enable it." }]);
-          return true;
-        }
-        if (!sub || sub === "status") {
-          const role = orchestratorRef.current?.getActiveRole() ?? "generalist";
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `active agent: ${role}` }]);
-          return true;
-        }
-        const customNames = cfg?.customAgents?.map((a) => a.name) ?? [];
-        // Manual switching is reserved for custom agents only; built-in agents auto-switch
-        if (customNames.includes(sub)) {
-          const role = sub as AgentRole;
-          const fromRole = orchestratorRef.current?.getActiveRole();
-          if (fromRole === role) {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `already on ${role} agent` }]);
-            return true;
-          }
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `switching to ${role} agent...` }]);
-          void (async () => {
-            try {
-              const summary = await orchestratorRef.current?.handOff(role);
-              if (summary) {
-                setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `hand-off summary: ${summary.slice(0, 200)}${summary.length > 200 ? "..." : ""}` }]);
-              } else {
-                setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `switched to ${role} agent` }]);
-              }
-            } catch (err) {
-              setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `hand-off failed: ${(err as Error).message}` }]);
-            }
-          })();
-          return true;
-        }
-        if (sub === "replay" && rest[1]) {
-          const replayRole = rest[1].toLowerCase();
-          const allRoles = ["research", "coding", "generalist", ...customNames];
-          if (!allRoles.includes(replayRole)) {
-            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent: ${replayRole}` }]);
-            return true;
-          }
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `replaying ${replayRole} agent turns...` }]);
-          void (async () => {
-            try {
-              const count = await orchestratorRef.current?.replayAgent(replayRole);
-              setEvents((es) => [...es, { kind: "info", key: mkKey(), text: `replayed ${count} turn(s) for ${replayRole} agent` }]);
-            } catch (err) {
-              setEvents((es) => [...es, { kind: "error", key: mkKey(), text: `replay failed: ${(err as Error).message}` }]);
-            }
-          })();
-          return true;
-        }
-        if (sub === "diff" && rest[1] && rest[2]) {
-          const roleA = rest[1].toLowerCase();
-          const roleB = rest[2].toLowerCase();
-          const allRoles = ["research", "coding", "generalist", ...customNames];
-          if (!allRoles.includes(roleA) || !allRoles.includes(roleB)) {
-            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown agent in diff command` }]);
-            return true;
-          }
-          const msgA = orchestratorRef.current?.getLastAssistantMessage(roleA);
-          const msgB = orchestratorRef.current?.getLastAssistantMessage(roleB);
-          if (!msgA || !msgB) {
-            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `one or both agents have no assistant messages to compare` }]);
-            return true;
-          }
-          void (async () => {
-            try {
-              const { createTwoFilesPatch } = await import("diff");
-              const patch = createTwoFilesPatch(roleA, roleB, msgA, msgB, "", "", { context: 2 });
-              const lines = patch.split("\n").slice(4).filter((l) => !l.startsWith("\\ No newline"));
-              setEvents((e) => [
-                ...e,
-                { kind: "info", key: mkKey(), text: `diff: ${roleA} vs ${roleB}` },
-                ...lines.map((line) => ({ kind: "info" as const, key: mkKey(), text: line })),
-              ]);
-            } catch (err) {
-              setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `diff failed: ${(err as Error).message}` }]);
-            }
-          })();
-          return true;
-        }
-        const custom = customNames.length > 0 ? ` | ${customNames.join(" | ")}` : "";
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `usage: /agent on | off | status${custom} | replay <role> | diff <role1> <role2>` }]);
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Multi-agent has been replaced with specialist delegation. The generalist automatically delegates to research or coding specialists when needed." }]);
         return true;
       }
       if (c === "/plan") {
@@ -2531,10 +2409,9 @@ function App({
         onAssistantStart: () => {
           const id = nextAssistantId++;
           activeAsstIdRef.current = id;
-          const role = orchestratorRef.current?.getActiveRole();
           setEvents((e) => [
             ...e,
-            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, agentRole: role },
+            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
           ]);
         },
         onReasoningDelta: (d: string) => {
@@ -2586,8 +2463,7 @@ function App({
         },
         onUsageFinal: (u: Usage, meta?: GatewayMeta) => {
           const sid = ensureSessionId();
-          const role = cfg.multiAgent ? orchestratorRef.current?.getActiveRole() : undefined;
-          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), role);
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
         },
         onGatewayMeta: updateGatewayMeta,
@@ -2635,75 +2511,7 @@ function App({
       };
 
       try {
-        if (cfg.multiAgent) {
-          if (!orchestratorRef.current) {
-            orchestratorRef.current = new AgentOrchestrator({
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              model: overrideModel ?? cfg.model,
-              orchestratorModel: cfg.orchestratorModel ?? cfg.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
-              gateway: gatewayFromConfig(cfg),
-              cwd: process.cwd(),
-              signal: controller.signal,
-              reasoningEffort: overrideEffort ?? effortRef.current,
-              coauthor:
-                cfg.coauthor !== false
-                  ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
-                  : undefined,
-              sessionId: ensureSessionId(),
-              memoryManager: memoryManagerRef.current,
-              keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-              codeMode,
-              onFileChange: (path, content) => {
-                if (content) {
-                  lspManagerRef.current.notifyChange(path, content);
-                } else {
-                  void import("node:fs/promises").then(({ readFile }) =>
-                    readFile(path, "utf8")
-                      .then((c) => lspManagerRef.current.notifyChange(path, c))
-                      .catch(() => {}),
-                  );
-                }
-              },
-              callbacks: sharedCallbacks,
-              executor: executorRef.current,
-              mcpTools: mcpToolsRef.current,
-              lspTools: lspToolsRef.current,
-              autoSwitch: cfg.autoSwitch ?? false,
-              autoSwitchConfirm: cfg.autoSwitchConfirm ?? false,
-              onAutoSwitchSuggestion: (from, to, reason) => {
-                setEvents((e) => [
-                  ...e,
-                  { kind: "info", key: mkKey(), text: `suggested switch: ${from} → ${to} (${reason}). Run /agent ${to} to switch.` },
-                ]);
-              },
-              customAgents: cfg.customAgents,
-            });
-            if (pendingOrchestratorStateRef.current) {
-              orchestratorRef.current.deserialize(pendingOrchestratorStateRef.current);
-              pendingOrchestratorStateRef.current = null;
-            }
-            // Ensure active agent has system messages. New multi-agent sessions
-            // start with empty per-agent buffers, but compactMessages (and the
-            // model itself) expect a leading system message.
-            const activeSession = orchestratorRef.current.getActiveSession();
-            if (!activeSession.messages.some((m) => m.role === "system")) {
-              const prefix = makePrefixMessages(
-                cacheStableRef.current,
-                overrideModel ?? cfg.model,
-                modeRef.current,
-                [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-                orchestratorRef.current.getActiveRole(),
-              );
-              activeSession.messages.unshift(...prefix);
-            }
-          }
-          await orchestratorRef.current.runTurn({ role: "user", content });
-          // Sync active agent messages to messagesRef for session saving
-          const activeSession = orchestratorRef.current.getActiveSession();
-          messagesRef.current = activeSession.messages.slice();
-        } else {
-          const turnResult = await runAgentTurn({
+        const turnResult = await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: overrideModel ?? cfg.model,
@@ -2745,17 +2553,14 @@ function App({
               },
             ]);
           }
-        }
-        await saveSessionSafe();
+          await saveSessionSafe();
 
         // Auto-compact after turn when thresholds are met. With compiled
         // context on, use the heuristic compactor; otherwise fall back to the
         // LLM summarizer so users have a safety net regardless of the flag.
         if (shouldCompact({ messages: messagesRef.current })) {
           if (compiledContextRef.current) {
-            const store = cfg?.multiAgent
-              ? orchestratorRef.current?.getActiveArtifactStore() ?? artifactStoreRef.current
-              : artifactStoreRef.current;
+            const store = artifactStoreRef.current;
             const result = compactCompiled({
               messages: messagesRef.current,
               state: sessionStateRef.current,
