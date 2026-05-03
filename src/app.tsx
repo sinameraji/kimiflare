@@ -314,6 +314,13 @@ interface Cfg {
   autoSwitchConfirm?: boolean;
   maxTurnsPerAgent?: number;
   customAgents?: { name: string; tools: string[]; model?: string; systemPrompt?: string; reasoningEffort?: ReasoningEffort }[];
+  remoteWorkerUrl?: string;
+  remoteEnabled?: boolean;
+  remoteAuthSecret?: string;
+  githubOAuthToken?: string;
+  githubRefreshToken?: string;
+  githubTokenExpiry?: number;
+  githubRepo?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
