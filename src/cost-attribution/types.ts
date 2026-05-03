@@ -78,6 +78,7 @@ export interface TopSessionEntry {
   cost: number;
   category: TaskCategory;
   summary?: string;
+  isCurrentSession?: boolean;
 }
 
 export interface ReconciliationResult {

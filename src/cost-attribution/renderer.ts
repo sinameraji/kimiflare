@@ -73,7 +73,8 @@ export function renderTerminal(report: CostAttributionReport): string {
       const day = new Date(s.date).toLocaleDateString("en-US", { weekday: "short" });
       const cat = s.category;
       const sum = s.summary ? ` — ${s.summary}` : "";
-      lines.push(`  ${fmtCost(s.cost).padStart(6)}  ${day}  ${cat}${sum}`);
+      const cur = s.isCurrentSession ? " (current)" : "";
+      lines.push(`  ${fmtCost(s.cost).padStart(6)}  ${day}  ${cat}${sum}${cur}`);
     }
   }
 

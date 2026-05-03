@@ -19,6 +19,7 @@ export interface BuildReportOptions {
   previousSessions?: SessionUsage[]; // for week-over-week comparison
   reconciliation?: ReconciliationResult;
   categoryFilter?: TaskCategory;
+  currentSessionId?: string; // highlight this session in top sessions
 }
 
 function dateInRange(date: string, start: string, end: string): boolean {
@@ -77,6 +78,7 @@ export function buildReport(opts: BuildReportOptions): CostAttributionReport {
       cost: s.cost,
       category: (s.category ?? "other") as TaskCategory,
       summary: s.summary,
+      isCurrentSession: opts.currentSessionId ? s.id === opts.currentSessionId : undefined,
     }));
 
   // Per-agent metrics

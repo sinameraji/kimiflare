@@ -45,26 +45,7 @@ function filterSessions(sessions: SessionUsage[], start: string, end: string): S
 export async function getCategoryReportText(sessionId?: string): Promise<string | null> {
   const log = await loadLog();
 
-  if (sessionId) {
-    const session = log.sessions.find((s) => s.id === sessionId);
-    if (!session) return null;
-    if (!session.category) {
-      const result = await classifyFromSessionFile(sessionId);
-      session.category = result.category;
-      session.confidence = result.confidence;
-      session.classifiedBy = result.classifiedBy;
-      session.summary = result.summary;
-      session.classifiedAt = new Date().toISOString();
-    }
-    const report = buildReport({
-      startDate: session.date,
-      endDate: session.date,
-      sessions: [session],
-    });
-    return renderTerminal(report);
-  }
-
-  // Default: last 7 days
+  // Default: last 7 days (big picture, same as `kimiflare cost --week`)
   const startDate = daysAgo(7);
   const endDate = today();
   const prevStart = daysAgo(14);
@@ -72,6 +53,19 @@ export async function getCategoryReportText(sessionId?: string): Promise<string 
 
   const sessions = filterSessions(log.sessions, startDate, endDate);
   const prevSessions = filterSessions(log.sessions, prevStart, prevEnd);
+
+  // Eagerly classify the current session so it appears correctly in the breakdown
+  if (sessionId) {
+    const session = log.sessions.find((s) => s.id === sessionId);
+    if (session && !session.category) {
+      const result = await classifyFromSessionFile(sessionId);
+      session.category = result.category;
+      session.confidence = result.confidence;
+      session.classifiedBy = result.classifiedBy;
+      session.summary = result.summary;
+      session.classifiedAt = new Date().toISOString();
+    }
+  }
 
   for (const s of sessions) {
     if (!s.category) {
@@ -89,6 +83,7 @@ export async function getCategoryReportText(sessionId?: string): Promise<string 
     endDate,
     sessions,
     previousSessions: prevSessions,
+    currentSessionId: sessionId,
   });
 
   return renderTerminal(report);
