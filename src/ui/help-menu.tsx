@@ -151,7 +151,7 @@ const CATEGORIES: Category[] = [
     commands: [
       { command: "/init", description: "scan this repo and write a KIMI.md" },
       { command: "/logout", description: "clear credentials" },
-      { command: "filePicker", description: "enable with KIMIFLARE_FILE_PICKER=1 or filePicker: true in config", selectable: false },
+      { command: "filePicker", description: "enabled by default; disable with KIMIFLARE_FILE_PICKER=0 or filePicker: false in config", selectable: false },
     ],
   },
 ];

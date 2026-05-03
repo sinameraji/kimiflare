@@ -473,7 +473,7 @@ function App({
 
   const [mode, setMode] = useState<Mode>("edit");
   const [codeMode, setCodeMode] = useState<boolean>(initialCfg?.codeMode ?? false);
-  const filePickerEnabled = initialCfg?.filePicker ?? false;
+  const filePickerEnabled = initialCfg?.filePicker ?? true;
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
