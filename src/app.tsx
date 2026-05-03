@@ -30,6 +30,8 @@ import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client.js";
 import { saveRemoteSession } from "./remote/session-store.js";
+import { deployForTui } from "./remote/tui-deploy.js";
+import { authGitHubForTui } from "./remote/tui-auth.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -51,6 +53,7 @@ import {
   configPath,
   DEFAULT_MODEL,
   DEFAULT_REASONING_EFFORT,
+  loadConfig,
   saveConfig,
   type ReasoningEffort,
 } from "./config.js";
@@ -2374,31 +2377,14 @@ function App({
         return true;
       }
       if (c === "/remote") {
-        if (!cfg?.remoteWorkerUrl) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "Remote worker not deployed yet." },
-            { kind: "info", key: mkKey(), text: "Run: kimiflare remote deploy" },
-            { kind: "info", key: mkKey(), text: "(One-time setup — takes ~2 minutes)" },
-          ]);
-          return true;
-        }
-        if (!cfg?.githubOAuthToken) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "GitHub not authenticated. Run `kimiflare auth github` first." },
-          ]);
-          return true;
-        }
         if (arg === "status" || arg === "cancel") {
-          // Handled by CLI subcommands; in TUI just show info
           setEvents((e) => [
             ...e,
             { kind: "info", key: mkKey(), text: `Use \`kimiflare remote ${arg}\` from your shell.` },
           ]);
           return true;
         }
-        // Start remote session with the rest of the input as prompt
+
         const prompt = rest.join(" ").trim();
         if (!prompt) {
           setEvents((e) => [
@@ -2408,91 +2394,155 @@ function App({
           return true;
         }
 
-        const repo = detectGitHubRepo(cfg.githubRepo);
+        const repo = detectGitHubRepo(cfg?.githubRepo);
         if (!repo) {
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: "Could not detect GitHub repo. Set githubRepo in config (owner/repo)." },
+            { kind: "info", key: mkKey(), text: "Could not detect GitHub repo. Run from a repo with a GitHub remote, or set githubRepo in config." },
           ]);
           return true;
         }
 
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `Starting remote session for ${repo.owner}/${repo.name}...` },
-        ]);
-
-        startRemoteSession({ prompt, repo, cfg })
-          .then(async (data) => {
+        // Run the full remote flow: deploy → auth → session
+        (async () => {
+          // -- Auto-deploy if needed --
+          if (!cfg?.remoteWorkerUrl) {
             setEvents((e) => [
               ...e,
-              { kind: "info", key: mkKey(), text: `Remote session started: ${data.sessionId}` },
-              { kind: "info", key: mkKey(), text: `Streaming from ${data.streamUrl}` },
+              { kind: "info", key: mkKey(), text: "Remote infrastructure not deployed yet. Setting up now (~2 min)..." },
+            ]);
+
+            try {
+              for await (const step of deployForTui()) {
+                setEvents((e) => [
+                  ...e,
+                  { kind: step.error ? "error" : "info", key: mkKey(), text: step.message },
+                ]);
+                if (step.done) break;
+              }
+            } catch {
+              setEvents((e) => [
+                ...e,
+                { kind: "error", key: mkKey(), text: "Deploy failed. Fix the issue above and try /remote again." },
+              ]);
+              return;
+            }
+
+            // Reload config after deploy
+            const { loadConfig: reloadConfig } = await import("./config.js");
+            const newCfg = await reloadConfig();
+            if (newCfg) setCfg(newCfg);
+          }
+
+          const currentCfg = cfg ?? (await loadConfig());
+          if (!currentCfg?.remoteWorkerUrl) {
+            setEvents((e) => [
+              ...e,
+              { kind: "error", key: mkKey(), text: "Deploy seemed to succeed but config wasn't saved. Try again." },
+            ]);
+            return;
+          }
+
+          // -- Auto-auth with GitHub if needed --
+          if (!currentCfg.githubOAuthToken) {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "GitHub not authenticated. Starting OAuth device flow..." },
+            ]);
+
+            try {
+              for await (const step of authGitHubForTui()) {
+                setEvents((e) => [
+                  ...e,
+                  { kind: step.error ? "error" : "info", key: mkKey(), text: step.message },
+                ]);
+                if (step.done) break;
+              }
+            } catch {
+              setEvents((e) => [
+                ...e,
+                { kind: "error", key: mkKey(), text: "GitHub auth failed. Try `kimiflare auth github` from shell." },
+              ]);
+              return;
+            }
+
+            // Reload config after auth
+            const { loadConfig: reloadConfig } = await import("./config.js");
+            const newCfg = await reloadConfig();
+            if (newCfg) setCfg(newCfg);
+          }
+
+          const finalCfg = (await loadConfig()) ?? currentCfg;
+
+          // -- Start remote session --
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `Starting remote session for ${repo.owner}/${repo.name}...` },
+          ]);
+
+          try {
+            const data = await startRemoteSession({ prompt, repo, cfg: finalCfg });
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `Session started: ${data.sessionId}` },
             ]);
 
             // Stream progress
-            try {
-              for await (const ev of streamRemoteProgress(
-                cfg.remoteWorkerUrl!,
-                data.sessionId,
-                activeControllerRef.current?.signal,
-              )) {
-                const event = ev as Record<string, unknown>;
-                if (event.type === "text_delta") {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: String(event.text ?? "") },
-                  ]);
-                } else if (event.type === "tool_call") {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: `→ ${String(event.name ?? "")}` },
-                  ]);
-                } else if (event.type === "done") {
-                  const prUrl = event.prUrl as string | undefined;
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: prUrl ? `✅ Done — PR: ${prUrl}` : "✅ Done" },
-                  ]);
-                  await saveRemoteSession({
-                    sessionId: data.sessionId,
-                    prompt,
-                    repo: `${repo.owner}/${repo.name}`,
-                    workerUrl: cfg.remoteWorkerUrl!,
-                    status: "done",
-                    prUrl,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  });
-                } else if (event.type === "error") {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "error", key: mkKey(), text: `Remote error: ${String(event.message ?? "")}` },
-                  ]);
-                  await saveRemoteSession({
-                    sessionId: data.sessionId,
-                    prompt,
-                    repo: `${repo.owner}/${repo.name}`,
-                    workerUrl: cfg.remoteWorkerUrl!,
-                    status: "error",
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  });
-                }
+            for await (const ev of streamRemoteProgress(
+              finalCfg.remoteWorkerUrl!,
+              data.sessionId,
+              activeControllerRef.current?.signal,
+            )) {
+              const event = ev as Record<string, unknown>;
+              if (event.type === "text_delta") {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: String(event.text ?? "") },
+                ]);
+              } else if (event.type === "tool_call") {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: `→ ${String(event.name ?? "")}` },
+                ]);
+              } else if (event.type === "done") {
+                const prUrl = event.prUrl as string | undefined;
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: prUrl ? `Done — PR: ${prUrl}` : "Done" },
+                ]);
+                await saveRemoteSession({
+                  sessionId: data.sessionId,
+                  prompt,
+                  repo: `${repo.owner}/${repo.name}`,
+                  workerUrl: finalCfg.remoteWorkerUrl!,
+                  status: "done",
+                  prUrl,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                });
+              } else if (event.type === "error") {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "error", key: mkKey(), text: `Remote error: ${String(event.message ?? "")}` },
+                ]);
+                await saveRemoteSession({
+                  sessionId: data.sessionId,
+                  prompt,
+                  repo: `${repo.owner}/${repo.name}`,
+                  workerUrl: finalCfg.remoteWorkerUrl!,
+                  status: "error",
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                });
               }
-            } catch (err) {
-              setEvents((e) => [
-                ...e,
-                { kind: "error", key: mkKey(), text: `Stream error: ${err instanceof Error ? err.message : String(err)}` },
-              ]);
             }
-          })
-          .catch((err) => {
+          } catch (err) {
             setEvents((e) => [
               ...e,
-              { kind: "error", key: mkKey(), text: `Failed to start remote session: ${err instanceof Error ? err.message : String(err)}` },
+              { kind: "error", key: mkKey(), text: `Failed: ${err instanceof Error ? err.message : String(err)}` },
             ]);
-          });
+          }
+        })();
 
         return true;
       }
