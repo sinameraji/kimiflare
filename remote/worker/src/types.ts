@@ -15,6 +15,8 @@ export interface SessionState {
   progressEvents: RemoteProgressEvent[];
   prUrl?: string;
   errorMessage?: string;
+  /** Categorized error type for better failure reporting. */
+  errorCategory?: "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown";
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
@@ -25,6 +27,12 @@ export interface SessionState {
   apiToken?: string;
   model?: string;
   reasoningEffort?: string;
+  /** Configurable TTL in minutes (default: 30). */
+  ttlMinutes: number;
+  /** Cumulative prompt tokens consumed across all turns. */
+  tokensUsed?: number;
+  /** Token budget for this session. */
+  tokensBudget?: number;
 }
 
 export interface Env {

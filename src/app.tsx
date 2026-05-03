@@ -29,9 +29,10 @@ import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client.js";
-import { saveRemoteSession } from "./remote/session-store.js";
+import { saveRemoteSession, type RemoteSession } from "./remote/session-store.js";
 import { deployForTui } from "./remote/tui-deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
+import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -320,6 +321,8 @@ interface Cfg {
   remoteWorkerUrl?: string;
   remoteEnabled?: boolean;
   remoteAuthSecret?: string;
+  remoteTtlMinutes?: number;
+  remoteMaxInputTokens?: number;
   githubOAuthToken?: string;
   githubRefreshToken?: string;
   githubTokenExpiry?: number;
@@ -476,6 +479,12 @@ const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
   high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
 };
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 function App({
   initialCfg,
   initialUpdateResult,
@@ -529,6 +538,8 @@ function App({
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
   const [showCommandList, setShowCommandList] = useState(false);
   const [showLspWizard, setShowLspWizard] = useState(false);
+  const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
+  const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
@@ -2387,10 +2398,8 @@ function App({
 
         const prompt = rest.join(" ").trim();
         if (!prompt) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "usage: /remote <prompt>" },
-          ]);
+          // Show dashboard when /remote is used without a prompt
+          setShowRemoteDashboard(true);
           return true;
         }
 
@@ -2475,13 +2484,22 @@ function App({
           const finalCfg = (await loadConfig()) ?? currentCfg;
 
           // -- Start remote session --
+          const ttl = finalCfg.remoteTtlMinutes ?? 30;
+          const budget = finalCfg.remoteMaxInputTokens ?? 5_000_000;
           setEvents((e) => [
             ...e,
             { kind: "info", key: mkKey(), text: `Starting remote session for ${repo.owner}/${repo.name}...` },
+            { kind: "info", key: mkKey(), text: `Budget: ${formatTokens(budget)} tokens. TTL: ${ttl} min.` },
           ]);
 
           try {
-            const data = await startRemoteSession({ prompt, repo, cfg: finalCfg });
+            const data = await startRemoteSession({
+              prompt,
+              repo,
+              cfg: finalCfg,
+              ttlMinutes: finalCfg.remoteTtlMinutes,
+              tokensBudget: finalCfg.remoteMaxInputTokens,
+            });
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: `Session started: ${data.sessionId}` },
@@ -2506,6 +2524,8 @@ function App({
                 ]);
               } else if (event.type === "done") {
                 const prUrl = event.prUrl as string | undefined;
+                const tokensUsed = event.tokensUsed as number | undefined;
+                const tokensBudget = event.tokensBudget as number | undefined;
                 setEvents((e) => [
                   ...e,
                   { kind: "info", key: mkKey(), text: prUrl ? `Done — PR: ${prUrl}` : "Done" },
@@ -2517,13 +2537,17 @@ function App({
                   workerUrl: finalCfg.remoteWorkerUrl!,
                   status: "done",
                   prUrl,
+                  tokensUsed,
+                  tokensBudget,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 });
               } else if (event.type === "error") {
+                const message = String(event.message ?? "");
+                const category = event.category as RemoteSession["errorCategory"] | undefined;
                 setEvents((e) => [
                   ...e,
-                  { kind: "error", key: mkKey(), text: `Remote error: ${String(event.message ?? "")}` },
+                  { kind: "error", key: mkKey(), text: `Remote error: ${message}` },
                 ]);
                 await saveRemoteSession({
                   sessionId: data.sessionId,
@@ -2531,6 +2555,8 @@ function App({
                   repo: `${repo.owner}/${repo.name}`,
                   workerUrl: finalCfg.remoteWorkerUrl!,
                   status: "error",
+                  errorCategory: category ?? "unknown",
+                  errorSummary: message,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 });
@@ -3207,6 +3233,43 @@ function App({
               setShowLspWizard(false);
             }}
           />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (showRemoteDashboard) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          {selectedRemoteSession ? (
+            <RemoteSessionDetail
+              session={selectedRemoteSession}
+              onBack={() => setSelectedRemoteSession(null)}
+              onCancel={async (session) => {
+                try {
+                  const { cancelRemoteSession } = await import("./remote/worker-client.js");
+                  await cancelRemoteSession(session.workerUrl, session.sessionId);
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: `Cancelled session ${session.sessionId}` },
+                  ]);
+                } catch (err) {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "error", key: mkKey(), text: `Failed to cancel: ${err instanceof Error ? err.message : String(err)}` },
+                  ]);
+                }
+                setSelectedRemoteSession(null);
+                setShowRemoteDashboard(false);
+              }}
+            />
+          ) : (
+            <RemoteDashboard
+              onSelect={(session) => setSelectedRemoteSession(session)}
+              onCancel={() => setShowRemoteDashboard(false)}
+            />
+          )}
         </Box>
       </ThemeProvider>
     );

@@ -88,6 +88,10 @@ export interface KimiConfig {
   remoteEnabled?: boolean;
   /** Shared secret for authenticating with the remote Worker. */
   remoteAuthSecret?: string;
+  /** Max session TTL in minutes (default: 30). */
+  remoteTtlMinutes?: number;
+  /** Max input token budget per remote job (default: 5_000_000). */
+  remoteMaxInputTokens?: number;
 
   // ── GitHub auth (OAuth device flow) ─────────────────────────────────
   /** GitHub OAuth access token. */

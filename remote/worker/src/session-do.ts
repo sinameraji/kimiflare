@@ -61,7 +61,10 @@ export class SessionDO implements DurableObject {
       model?: string;
       maxTurns?: number;
       reasoningEffort?: string;
+      ttlMinutes?: number;
+      tokensBudget?: number;
     };
+    const ttlMinutes = body.ttlMinutes ?? 30;
 
     const sessionId = this.state.id.toString();
     const branch = `kimiflare/remote/${sessionId}`;
@@ -117,12 +120,15 @@ export class SessionDO implements DurableObject {
       apiToken: body.apiToken,
       model: body.model,
       reasoningEffort: body.reasoningEffort,
+      ttlMinutes,
+      tokensBudget: body.tokensBudget,
     };
 
     await this.saveState();
 
-    // Set alarm for max session duration (4 hours)
-    await this.state.storage.setAlarm(Date.now() + 4 * 60 * 60 * 1000);
+    // Set alarm for max session duration (configurable TTL, capped at 4 hours)
+    const alarmMs = Math.min(ttlMinutes * 60 * 1000, 4 * 60 * 60 * 1000);
+    await this.state.storage.setAlarm(Date.now() + alarmMs);
 
     // Start heartbeat
     this.startHeartbeat();
@@ -169,6 +175,13 @@ export class SessionDO implements DurableObject {
               if (event.type === "turn_start" && typeof (event as Record<string, unknown>).turn === "number") {
                 this.sessionState.currentTurn = (event as Record<string, unknown>).turn as number;
               }
+
+              // Track token usage from usage events
+              if (event.type === "usage" && typeof (event as Record<string, unknown>).promptTokens === "number") {
+                const promptTokens = (event as Record<string, unknown>).promptTokens as number;
+                const completionTokens = (event as Record<string, unknown>).completionTokens as number;
+                this.sessionState.tokensUsed = (this.sessionState.tokensUsed ?? 0) + promptTokens + completionTokens;
+              }
             }
           } catch {
             // Not JSON — treat as raw log
@@ -178,14 +191,33 @@ export class SessionDO implements DurableObject {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const category = this.categorizeError(message);
       if (this.sessionState) {
         this.sessionState.status = "error";
         this.sessionState.errorMessage = message;
+        this.sessionState.errorCategory = category;
         this.sessionState.finishedAt = Date.now();
         await this.saveState();
       }
-      this.broadcast({ type: "error", message });
+      this.broadcast({ type: "error", message, category });
     }
+  }
+
+  private categorizeError(message: string): "agent-crash" | "sandbox-oom" | "github-api" | "timeout" | "unknown" {
+    const lower = message.toLowerCase();
+    if (lower.includes("out of memory") || lower.includes("oom") || lower.includes("killed") || lower.includes("memory limit")) {
+      return "sandbox-oom";
+    }
+    if (lower.includes("github") && (lower.includes("api") || lower.includes("rate limit") || lower.includes("401") || lower.includes("403"))) {
+      return "github-api";
+    }
+    if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("etimedout")) {
+      return "timeout";
+    }
+    if (lower.includes("exit code 1") || lower.includes("error") || lower.includes("crash") || lower.includes("exception")) {
+      return "agent-crash";
+    }
+    return "unknown";
   }
 
   private handleStream(): Response {
@@ -273,6 +305,13 @@ export class SessionDO implements DurableObject {
       if (ev.type === "turn_start" && typeof ev.turn === "number") {
         this.sessionState.currentTurn = ev.turn;
       }
+
+      // Track token usage from usage events
+      if (ev.type === "usage" && typeof ev.promptTokens === "number") {
+        const promptTokens = ev.promptTokens;
+        const completionTokens = typeof ev.completionTokens === "number" ? ev.completionTokens : 0;
+        this.sessionState.tokensUsed = (this.sessionState.tokensUsed ?? 0) + promptTokens + completionTokens;
+      }
     }
 
     this.sessionState.updatedAt = Date.now();
@@ -314,7 +353,12 @@ export class SessionDO implements DurableObject {
     }
 
     await this.saveState();
-    this.broadcast({ type: "done", prUrl: this.sessionState.prUrl });
+    this.broadcast({
+      type: "done",
+      prUrl: this.sessionState.prUrl,
+      tokensUsed: this.sessionState.tokensUsed,
+      tokensBudget: this.sessionState.tokensBudget,
+    });
 
     // Schedule cleanup alarm
     await this.state.storage.setAlarm(Date.now() + SESSION_TTL_MS);
@@ -398,11 +442,13 @@ export class SessionDO implements DurableObject {
 
     // If session is still running, it's a timeout
     if (this.sessionState.status === "running") {
+      const ttl = this.sessionState.ttlMinutes ?? 30;
       this.sessionState.status = "error";
-      this.sessionState.errorMessage = "Session timed out after 4 hours";
+      this.sessionState.errorMessage = `Session timed out after ${ttl} minutes`;
+      this.sessionState.errorCategory = "timeout";
       this.sessionState.finishedAt = Date.now();
       await this.saveState();
-      this.broadcast({ type: "error", message: this.sessionState.errorMessage });
+      this.broadcast({ type: "error", message: this.sessionState.errorMessage, category: "timeout" });
 
       // Kill sandbox
       try {

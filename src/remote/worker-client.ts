@@ -6,6 +6,8 @@ export interface StartRemoteSessionOpts {
   prompt: string;
   repo: { owner: string; name: string };
   cfg: KimiConfig;
+  ttlMinutes?: number;
+  tokensBudget?: number;
 }
 
 export async function startRemoteSession(opts: StartRemoteSessionOpts): Promise<{
@@ -36,6 +38,8 @@ export async function startRemoteSession(opts: StartRemoteSessionOpts): Promise<
       apiToken: opts.cfg.apiToken,
       model: opts.cfg.model,
       reasoningEffort: opts.cfg.reasoningEffort,
+      ttlMinutes: opts.ttlMinutes ?? opts.cfg.remoteTtlMinutes,
+      tokensBudget: opts.tokensBudget ?? opts.cfg.remoteMaxInputTokens,
     }),
   });
 
@@ -80,5 +84,45 @@ export async function* streamRemoteProgress(
     } catch {
       // ignore malformed lines
     }
+  }
+}
+
+export interface RemoteStatus {
+  sessionId: string;
+  status: "pending" | "running" | "paused" | "done" | "error" | "cancelled";
+  prompt: string;
+  repo: { owner: string; name: string };
+  branch: string;
+  prUrl?: string;
+  errorMessage?: string;
+  createdAt: number;
+  updatedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  maxTurns: number;
+  currentTurn: number;
+  tokensUsed?: number;
+  tokensBudget?: number;
+}
+
+export async function getRemoteStatus(workerUrl: string, sessionId: string, authSecret?: string): Promise<RemoteStatus> {
+  const res = await fetch(`${workerUrl}/remote/status/${sessionId}`, {
+    headers: authSecret ? { Authorization: `Bearer ${authSecret}` } : {},
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to get status: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<RemoteStatus>;
+}
+
+export async function cancelRemoteSession(workerUrl: string, sessionId: string, authSecret?: string): Promise<void> {
+  const res = await fetch(`${workerUrl}/remote/cancel/${sessionId}`, {
+    method: "POST",
+    headers: authSecret ? { Authorization: `Bearer ${authSecret}` } : {},
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to cancel session: ${res.status} ${text}`);
   }
 }
