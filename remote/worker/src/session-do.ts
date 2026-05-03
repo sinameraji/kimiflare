@@ -127,11 +127,65 @@ export class SessionDO implements DurableObject {
     // Start heartbeat
     this.startHeartbeat();
 
+    // Start agent in background (don't await — it runs for minutes/hours)
+    this.runAgentInSandbox(sandbox);
+
     return Response.json({
       sessionId,
       streamUrl: `/remote/stream/${sessionId}`,
       status: "running",
     });
+  }
+
+  private async runAgentInSandbox(sandbox: import("./types.js").SandboxInstance): Promise<void> {
+    try {
+      const result = await sandbox.exec("node", ["/opt/kimiflare/dist/remote-agent.js"]);
+
+      // Stream stdout
+      const reader = result.stdout.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed) as RemoteProgressEvent;
+            if (this.sessionState) {
+              this.sessionState.progressEvents.push(event);
+              if (this.sessionState.progressEvents.length > MAX_EVENTS) {
+                this.sessionState.progressEvents.shift();
+              }
+              this.broadcast(event);
+
+              if (event.type === "turn_start" && typeof (event as Record<string, unknown>).turn === "number") {
+                this.sessionState.currentTurn = (event as Record<string, unknown>).turn as number;
+              }
+            }
+          } catch {
+            // Not JSON — treat as raw log
+            this.broadcast({ type: "log", text: trimmed });
+          }
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (this.sessionState) {
+        this.sessionState.status = "error";
+        this.sessionState.errorMessage = message;
+        this.sessionState.finishedAt = Date.now();
+        await this.saveState();
+      }
+      this.broadcast({ type: "error", message });
+    }
   }
 
   private handleStream(): Response {
