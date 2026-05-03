@@ -1,4 +1,5 @@
 import TurndownService from "turndown";
+import { getAppVersion } from "../util/version.js";
 import type { ToolSpec, ToolOutput } from "./registry.js";
 
 interface Args {
@@ -29,7 +30,7 @@ export const webFetchTool: ToolSpec<Args> = {
       const res = await fetch(args.url, {
         redirect: "follow",
         signal: controller.signal,
-        headers: { "user-agent": "kimiflare/0.1 (+https://github.com/sinameraji/kimiflare)" },
+        headers: { "user-agent": `kimiflare/${getAppVersion()}` },
       });
       const ct = res.headers.get("content-type") ?? "";
       const body = await res.text();

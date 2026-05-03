@@ -1,4 +1,7 @@
 import type { AiGatewayOptions } from "../agent/client.js";
+import { getAppVersion } from "../util/version.js";
+
+const USER_AGENT = `kimiflare/${getAppVersion()}`;
 
 export interface EmbedOpts {
   accountId: string;
@@ -57,6 +60,7 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${opts.apiToken}`,
     "Content-Type": "application/json",
+    "User-Agent": USER_AGENT,
   };
 
   if (opts.gateway?.metadata) {

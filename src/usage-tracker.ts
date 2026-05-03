@@ -5,8 +5,10 @@ import type { Usage } from "./agent/messages.js";
 import type { GatewayMeta } from "./agent/client.js";
 import { calculateCost } from "./pricing.js";
 import { RETENTION } from "./storage-limits.js";
+import { getAppVersion } from "./util/version.js";
 
 const LOG_VERSION = 1;
+const USER_AGENT = `kimiflare/${getAppVersion()}`;
 
 export interface DailyUsage {
   date: string; // YYYY-MM-DD
@@ -160,7 +162,7 @@ export async function fetchGatewayUsageSnapshot(
   )}/logs`;
   const res = await fetch(url, {
     method: "GET",
-    headers: { Authorization: `Bearer ${lookup.apiToken}` },
+    headers: { Authorization: `Bearer ${lookup.apiToken}`, "User-Agent": USER_AGENT },
   });
   if (!res.ok) return gatewaySnapshotFromMeta(lookup.meta);
   const parsed = (await res.json()) as { result?: unknown[] };

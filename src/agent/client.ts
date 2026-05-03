@@ -1,7 +1,10 @@
 import { readSSE } from "../util/sse.js";
 import { KimiApiError } from "../util/errors.js";
+import { getAppVersion } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
+
+const USER_AGENT = `kimiflare/${getAppVersion()}`;
 
 export type KimiEvent =
   | { type: "gateway_meta"; meta: GatewayMeta }
@@ -79,6 +82,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       const headers: Record<string, string> = {
         Authorization: `Bearer ${opts.apiToken}`,
         "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
         ...gatewayHeaders,
       };
       if (opts.sessionId) {
