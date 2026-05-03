@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.33.0](https://github.com/sinameraji/kimiflare/compare/v0.32.0...v0.33.0) (2026-05-03)
+
+
+### Features
+
+* Phase 1 — /init refresh mode ([#247](https://github.com/sinameraji/kimiflare/issues/247)) ([0cbda83](https://github.com/sinameraji/kimiflare/commit/0cbda83c7784067e3b5c995932e1f2893294c797))
+* Phase 2 — memory auto-extraction from tool results ([#248](https://github.com/sinameraji/kimiflare/issues/248)) ([fbd8add](https://github.com/sinameraji/kimiflare/commit/fbd8addb81217740df96987bebd4c6d96cf250bd))
+* **remote:** Phase 0 — core loop changes for headless remote execution ([#246](https://github.com/sinameraji/kimiflare/issues/246)) ([ff6407b](https://github.com/sinameraji/kimiflare/commit/ff6407b3ec779d97d699aa947ef48890929b32b6))
+
+
+### Bug Fixes
+
+* enable filePicker by default in app.tsx ([#244](https://github.com/sinameraji/kimiflare/issues/244)) ([5e327cf](https://github.com/sinameraji/kimiflare/commit/5e327cfc9286a0726363db5d79df7c7d13275f47))
+
 ## [0.32.0](https://github.com/sinameraji/kimiflare/compare/v0.31.0...v0.32.0) (2026-05-03)
 
 
