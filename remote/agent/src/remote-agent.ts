@@ -88,10 +88,18 @@ async function runRemoteAgent(): Promise<void> {
   if (workspaceFiles.trim().length === 0) {
     logInfo("Cloning repository...");
     cloneRepo();
+  } else {
+    logInfo("Workspace already populated, skipping clone");
   }
 
-  createBranch();
-  logInfo(`Created branch ${GITHUB_BRANCH}`);
+  // Create or checkout branch
+  try {
+    execSync(`git checkout -b ${GITHUB_BRANCH}`, { cwd: WORKSPACE });
+    logInfo(`Created branch ${GITHUB_BRANCH}`);
+  } catch {
+    execSync(`git checkout ${GITHUB_BRANCH}`, { cwd: WORKSPACE });
+    logInfo(`Checked out existing branch ${GITHUB_BRANCH}`);
+  }
 
   // Detect project type and run setup
   await runProjectSetup();
@@ -117,6 +125,12 @@ async function runRemoteAgent(): Promise<void> {
   ];
 
   const controller = new AbortController();
+
+  // Handle SIGTERM gracefully
+  process.on("SIGTERM", () => {
+    logInfo("Received SIGTERM, shutting down gracefully...");
+    controller.abort();
+  });
 
   // Heartbeat to keep Sandbox warm
   const heartbeat = setInterval(() => {

@@ -69,15 +69,24 @@ export async function postProgress(
   sessionId: string,
   events: RemoteProgressEvent[],
 ): Promise<void> {
-  try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, events }),
-    });
-  } catch {
-    // Non-fatal: progress posting is best-effort
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, events }),
+      });
+      if (res.ok) return;
+    } catch {
+      // Retry
+    }
+    await sleep(1000 * (attempt + 1));
   }
+  // Non-fatal: progress posting is best-effort
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function postFinalize(
