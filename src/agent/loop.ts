@@ -7,6 +7,7 @@ import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tasks-state.js";
 import type { MemoryManager } from "../memory/manager.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
+import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
 
@@ -406,6 +407,37 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           name: result.name,
         });
         opts.callbacks.onToolResult?.(result);
+
+        // Auto-extract memories from tool results
+        if (opts.memoryManager) {
+          let filePath: string | undefined;
+          try {
+            const args = JSON.parse(tc.function.arguments || "{}") as { path?: string };
+            filePath = args.path;
+          } catch {
+            // ignore parse errors
+          }
+          for (const extractor of EXTRACTORS) {
+            if (extractor.match(tc.function.name, filePath)) {
+              const memory = extractor.extract(result.content, filePath);
+              if (memory) {
+                void opts.memoryManager
+                  .remember(
+                    memory.content,
+                    memory.category,
+                    memory.importance,
+                    opts.cwd,
+                    opts.sessionId ?? "unknown",
+                    opts.signal,
+                  )
+                  .catch(() => {
+                    // Swallow auto-extraction errors so they never break the loop
+                  });
+              }
+            }
+          }
+        }
+
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       }

@@ -1,26 +1,33 @@
 # kimiflare
 
-**Project** — Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. TypeScript / Node.js ≥20, React + Ink TUI. LSP integration for semantic code intelligence.
+**Project** — Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. TypeScript / Node.js ≥20, React + Ink TUI. LSP, MCP, and persistent memory integration.
 
 **Build / test / run**
 - `npm run build` — bundle with tsup (`dist/` + `bin/kimiflare.mjs`)
 - `npm run dev` — run via tsx (`tsx src/index.tsx`)
 - `npm run typecheck` — `tsc --noEmit`
+- `npm test` — Node.js built-in test runner (`tsx --test src/**/*.test.ts*`)
 - `npm start` — run compiled bin
 - `npm link` — symlink CLI for local development
 
 **Layout**
 - `src/index.tsx` — CLI entry (Commander args, print mode, TUI bootstrap)
 - `src/app.tsx` — Ink TUI root (chat, status bar, permission modals, input)
-- `src/agent/` — LLM client (`client.ts`), agent loop (`loop.ts`), system prompt builder, message compaction
-- `src/tools/` — Tool specs & executors: `read`, `write`, `edit`, `bash`, `glob`, `grep`, `web_fetch`, `tasks`, `lsp_*`
+- `src/agent/` — LLM client, agent loop, system prompt builder, message compaction, session state
+- `src/tools/` — Tool specs & executors: `read`, `write`, `edit`, `bash`, `glob`, `grep`, `web_fetch`, `tasks`, `lsp_*`, `memory`, `expand-artifact`
 - `src/lsp/` — Language Server Protocol integration: connection manager, client, protocol types, output formatters
-- `src/ui/` — Ink components: chat, diff view, permission modal, task list, status bar, theme, text input
-- `src/util/` — Helpers: SSE parser, paths, errors, update check
+- `src/ui/` — Ink components: chat, diff view, permission modal, task list, status bar, theme, text input, pickers, wizards
+- `src/util/` — Helpers: SSE parser, paths, errors, update check, fuzzy search, config
+- `src/commands/` — Slash command loader, renderer, builtins, and custom command support
+- `src/memory/` — Persistent cross-session memory: SQLite DB, embedding search, extraction, cleanup
+- `src/mcp/` — Model Context Protocol server integration
+- `src/code-mode/` — Sandboxed code execution mode
+- `src/cost-attribution/` — Cost attribution by task type (`kimiflare cost`)
+- `feedback-worker/` — Cloudflare Worker for feedback collection
 - `bin/` — Compiled CLI shim (`kimiflare.mjs`)
 - `dist/` — tsup ESM output
-- `docs/` — Documentation
-- `src/cost-attribution/` — Cost attribution by task type (`kimiflare cost`)
+- `docs/` — Documentation, plans, guardrails, and learnings
+- `scripts/` — Build and utility scripts
 
 **Conventions**
 - ESM only (`"type": "module"`).
@@ -30,7 +37,7 @@
 - Strict TS: `noUncheckedIndexedAccess`, `noImplicitOverride`, `isolatedModules`.
 - React 19 + Ink 7 for terminal UI.
 - tsup externalizes runtime deps (`ink`, `react`, `commander`, etc.); bundles source only.
-- No test suite yet.
+- Tests use Node.js built-in test runner (`node:test`).
 - Git branches: `feat/...`, `fix/...`, `chore/...`, `redesign/...`, `ui/...`. Releases managed by release-please; tags are `vX.Y.Z`.
 
 **Cost Attribution (opt-in)**
@@ -43,7 +50,6 @@
 - Enable with `filePicker: true` in config or `KIMIFLARE_FILE_PICKER=1`.
 - Type `@` in the chat input to open a file picker with inline filtering and keyboard navigation.
 - Searches the current working directory, respecting `.gitignore` and common ignore patterns.
-- No runtime cost when disabled.
 
 **/ Slash Command Picker**
 - Type `/` at the start of the chat input to open a picker with all built-in and custom slash commands.
