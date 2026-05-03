@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
-import { useTheme } from "./theme-context.js";
+import type { Theme } from "./theme.js";
 
 interface CustomCommandSummary {
   name: string;
@@ -9,11 +9,11 @@ interface CustomCommandSummary {
 }
 
 interface Props {
+  theme: Theme;
   themes: { name: string; label: string }[];
   currentThemeName: string;
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
-  multiAgentEnabled?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -181,8 +181,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ themes, currentThemeName, customCommands, costAttributionEnabled, multiAgentEnabled, onDone, onCommand }: Props) {
-  const theme = useTheme();
+export function HelpMenu({ theme, themes, currentThemeName, customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
 
@@ -203,7 +202,7 @@ export function HelpMenu({ themes, currentThemeName, customCommands, costAttribu
 
   if (page === "main") {
     const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
-      label: cat.key === "multi-agent" ? `${cat.label} ${multiAgentEnabled ? "· on" : "· off"}` : cat.label,
+      label: cat.label,
       value: cat.key,
       key: cat.key,
     }));

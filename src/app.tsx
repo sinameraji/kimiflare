@@ -302,14 +302,6 @@ interface Cfg {
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
   costAttribution?: boolean;
   filePicker?: boolean;
-  multiAgent?: boolean;
-  agentModels?: Record<string, string>;
-  agentReasoningEffort?: Record<string, ReasoningEffort>;
-  orchestratorModel?: string;
-  autoSwitch?: boolean;
-  autoSwitchConfirm?: boolean;
-  maxTurnsPerAgent?: number;
-  customAgents?: { name: string; tools: string[]; model?: string; systemPrompt?: string; reasoningEffort?: ReasoningEffort }[];
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -2779,13 +2771,13 @@ function App({
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <HelpMenu
+            theme={theme}
             themes={themeList().map((t) => ({ name: t.name, label: t.label }))}
             currentThemeName={theme.name}
             customCommands={customCommandsRef.current
               .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
               .map((c) => ({ name: c.name, description: c.description }))}
             costAttributionEnabled={cfg?.costAttribution}
-            multiAgentEnabled={cfg?.multiAgent}
             onDone={() => setShowHelpMenu(false)}
             onCommand={handleHelpCommand}
           />
