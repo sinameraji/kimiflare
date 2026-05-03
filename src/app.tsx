@@ -2430,7 +2430,11 @@ function App({
 
             // Stream progress
             try {
-              for await (const ev of streamRemoteProgress(cfg.remoteWorkerUrl!, data.sessionId)) {
+              for await (const ev of streamRemoteProgress(
+                cfg.remoteWorkerUrl!,
+                data.sessionId,
+                activeControllerRef.current?.signal,
+              )) {
                 const event = ev as Record<string, unknown>;
                 if (event.type === "text_delta") {
                   setEvents((e) => [

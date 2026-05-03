@@ -1,5 +1,6 @@
 import type { KimiConfig } from "../config.js";
 import { saveRemoteSession, type RemoteSession } from "./session-store.js";
+import { readSSE } from "../util/sse.js";
 
 export interface StartRemoteSessionOpts {
   prompt: string;
@@ -62,38 +63,22 @@ export async function startRemoteSession(opts: StartRemoteSessionOpts): Promise<
 export async function* streamRemoteProgress(
   workerUrl: string,
   sessionId: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<unknown, void, void> {
-  const res = await fetch(`${workerUrl}/remote/stream/${sessionId}`);
+  const res = await fetch(`${workerUrl}/remote/stream/${sessionId}`, { signal });
   if (!res.ok) {
     throw new Error(`Failed to connect to stream: ${res.status}`);
   }
 
-  const reader = res.body?.getReader();
-  if (!reader) {
+  if (!res.body) {
     throw new Error("No response body");
   }
 
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(trimmed.slice(6));
-          yield data;
-        } catch {
-          // ignore malformed lines
-        }
-      }
+  for await (const line of readSSE(res.body, signal)) {
+    try {
+      yield JSON.parse(line);
+    } catch {
+      // ignore malformed lines
     }
   }
 }

@@ -4,8 +4,16 @@ import { SessionDO } from "./session-do.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Auth middleware
-app.use("/remote/*", async (c, next) => {
+// Auth middleware — only for CLI-facing endpoints
+app.use("/remote/start", async (c, next) => {
+  const auth = c.req.header("Authorization");
+  const expected = `Bearer ${c.env.REMOTE_AUTH_SECRET}`;
+  if (auth !== expected) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  await next();
+});
+app.use("/remote/cancel/*", async (c, next) => {
   const auth = c.req.header("Authorization");
   const expected = `Bearer ${c.env.REMOTE_AUTH_SECRET}`;
   if (auth !== expected) {
@@ -122,6 +130,20 @@ app.post("/relay", async (c) => {
   }));
 
   return res;
+});
+
+// CORS for web status page and SSE streams
+app.use("/remote/stream/*", async (c, next) => {
+  c.header("Access-Control-Allow-Origin", "*");
+  c.header("Access-Control-Allow-Methods", "GET");
+  c.header("Access-Control-Allow-Headers", "Content-Type");
+  await next();
+});
+app.use("/remote/web/*", async (c, next) => {
+  c.header("Access-Control-Allow-Origin", "*");
+  c.header("Access-Control-Allow-Methods", "GET");
+  c.header("Access-Control-Allow-Headers", "Content-Type");
+  await next();
 });
 
 // Web status page
