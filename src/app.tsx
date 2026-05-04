@@ -2753,8 +2753,9 @@ function App({
           usageRef.current = researchResult.usage;
           setUsage(researchResult.usage);
           const sid = ensureSessionId();
-          void recordUsage(sid, researchResult.usage, gatewayUsageLookupFromConfig(cfg, researchResult.gatewayMeta ?? gatewayMetaRef.current));
-          void getCostReport(sid).then((report) => setSessionUsage(report.session));
+          await recordUsage(sid, researchResult.usage, gatewayUsageLookupFromConfig(cfg, researchResult.gatewayMeta ?? gatewayMetaRef.current));
+          const report = await getCostReport(sid);
+          setSessionUsage(report.session);
           if (researchResult.gatewayMeta) {
             gatewayMetaRef.current = researchResult.gatewayMeta;
             setGatewayMeta(researchResult.gatewayMeta);
