@@ -225,9 +225,16 @@ async function runResearchAgent(opts: {
     }
   }
 
-  // If we hit the iteration limit, return the last assistant message content
+  // If we hit the iteration limit, return the last assistant message content.
+  // If the last message only contained tool_calls (no text content), provide a
+  // fallback so the synthesis step doesn't receive an empty summary.
   const lastAssistant = messages.findLast((m) => m.role === "assistant");
-  const summary = typeof lastAssistant?.content === "string" ? lastAssistant.content : "";
+  let summary = "";
+  if (typeof lastAssistant?.content === "string" && lastAssistant.content.trim()) {
+    summary = lastAssistant.content;
+  } else if (lastAssistant?.tool_calls?.length) {
+    summary = `[Hit iteration limit with ${lastAssistant.tool_calls.length} pending tool call(s). No summary produced.]`;
+  }
   return { summary, usage: totalUsage, gatewayMeta };
 }
 
