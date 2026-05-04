@@ -66,7 +66,7 @@ function computeScore(metrics: ConvergenceMetrics): number {
   let score = 0;
   if (metrics.budgetRemainingPct > 20) score += 1;
   if (metrics.unresolvedCriticalQuestions === 0) score += 2;
-  if (metrics.findingsDeltaLastWave === 0) score += 1;
+  if (metrics.findingsDeltaLastWave > 0) score += 1;
   if (metrics.duplicateReadRate < 0.10) score += 1;
   if (metrics.coverageChecklistPct >= 80) score += 2;
   return score;

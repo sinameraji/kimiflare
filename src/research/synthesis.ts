@@ -15,6 +15,7 @@ import type { AiGatewayOptions, GatewayMeta } from "../agent/client.js";
 import { sanitizeString } from "../agent/messages.js";
 import type { ChatMessage, Usage } from "../agent/messages.js";
 import type { ResearchPlan, TerminalState, Confidence } from "./types.js";
+import { ledgerPath } from "./ledger.js";
 
 const SYNTHESIS_SYSTEM_PROMPT =
   `You are a synthesis assistant. Combine research findings into a single coherent answer to the user's original query.
@@ -56,6 +57,25 @@ export interface SynthesisOutput {
 }
 
 export async function runSynthesis(opts: SynthesisOpts): Promise<SynthesisOutput> {
+  if (opts.plan.findings.length === 0) {
+    return {
+      content:
+        `## Research Completed — No Findings\n\n` +
+        `The research transaction ran but produced no validated findings. ` +
+        `This usually means the worker explored the codebase but either:\n` +
+        `- Did not discover anything relevant to the query\n` +
+        `- Its findings failed ledger validation (check the research ledger for details)\n` +
+        `- The task scope was too narrow or the codebase lacks the expected information\n\n` +
+        `**Tasks attempted:** ${opts.plan.tasks.length}\n` +
+        `**Tasks completed:** ${opts.plan.tasks.filter((t) => t.status === "done").length}\n` +
+        `**Open questions remaining:** ${opts.plan.openQuestions.filter((q) => q.status === "open").length}\n\n` +
+        `**Suggested next action:** Try a more specific query, or check the research ledger at \`${ledgerPath(opts.plan.turnId)}\` for worker notes and rejection reasons.`,
+      terminalState: "NOT_FOUND",
+      confidence: "low",
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    };
+  }
+
   const findingsText = opts.plan.findings
     .map(
       (f) =>
