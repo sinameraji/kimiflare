@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
+import { runParallelResearch } from "./agent/research.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -511,7 +512,7 @@ function App({
   const [draftInput, setDraftInput] = useState("");
 
   const [mode, setMode] = useState<Mode>("edit");
-  const [codeMode, setCodeMode] = useState<boolean>(initialCfg?.codeMode ?? false);
+  const [codeMode, setCodeMode] = useState<boolean>(false);
   const filePickerEnabled = initialCfg?.filePicker ?? true;
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
@@ -1241,10 +1242,6 @@ function App({
       setVerbose((v) => !v);
       return;
     }
-    if (key.ctrl && inputChar === "m") {
-      setCodeMode((c) => !c);
-      return;
-    }
   });
 
   const flushAssistantUpdates = useCallback(() => {
@@ -1452,6 +1449,8 @@ function App({
       heavy: "high",
     };
     const initReasoningEffort = initEffortForTier[initClassification.tier] ?? effortRef.current;
+    const effectiveCodeMode = initClassification.tier === "heavy";
+    setCodeMode(effectiveCodeMode);
 
     try {
       await runAgentTurn({
@@ -1472,7 +1471,7 @@ function App({
             : undefined,
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
-        codeMode,
+        codeMode: effectiveCodeMode,
         onFileChange: (path, content) => {
           if (content) {
             lspManagerRef.current.notifyChange(path, content);
@@ -1625,6 +1624,7 @@ function App({
         ]);
       }
     } finally {
+      setCodeMode(false);
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
@@ -2596,6 +2596,8 @@ function App({
         heavy: "high",
       };
       const turnReasoningEffort = overrideEffort ?? effortForTier[classification.tier] ?? effortRef.current;
+      const effectiveCodeMode = classification.tier === "heavy";
+      setCodeMode(effectiveCodeMode);
 
       const controller = new AbortController();
       activeControllerRef.current = controller;
@@ -2705,8 +2707,62 @@ function App({
           }),
       };
 
+      const useParallelResearch =
+        (classification.intent === "explore" && classification.tier === "heavy") ||
+        /\bparallel research\b/i.test(trimmed);
+
       try {
-        await runAgentTurn({
+        if (useParallelResearch) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `parallel research: ${classification.intent} (${classification.tier}) — spawning agents` },
+          ]);
+
+          const asstId = nextAssistantId++;
+          activeAsstIdRef.current = asstId;
+          setEvents((e) => [
+            ...e,
+            { kind: "assistant", key: `asst_${asstId}`, id: asstId, text: "", reasoning: "", streaming: true },
+          ]);
+
+          const researchResult = await runParallelResearch({
+            accountId: cfg.accountId,
+            apiToken: cfg.apiToken,
+            model: overrideModel ?? cfg.model,
+            query: trimmed,
+            cwd: process.cwd(),
+            signal: controller.signal,
+            gateway: gatewayFromConfig(cfg),
+            reasoningEffort: turnReasoningEffort,
+            sessionId: ensureSessionId(),
+          });
+
+          messagesRef.current.push({
+            role: "assistant",
+            content: sanitizeString(researchResult.content),
+          });
+
+          setEvents((e) =>
+            e.map((ev) =>
+              ev.kind === "assistant" && ev.id === asstId
+                ? { ...ev, text: researchResult.content, streaming: false }
+                : ev,
+            ),
+          );
+
+          usageRef.current = researchResult.usage;
+          setUsage(researchResult.usage);
+          const sid = ensureSessionId();
+          void recordUsage(sid, researchResult.usage, gatewayUsageLookupFromConfig(cfg, researchResult.gatewayMeta ?? gatewayMetaRef.current));
+          void getCostReport(sid).then((report) => setSessionUsage(report.session));
+          if (researchResult.gatewayMeta) {
+            gatewayMetaRef.current = researchResult.gatewayMeta;
+            setGatewayMeta(researchResult.gatewayMeta);
+          }
+
+          await saveSessionSafe();
+        } else {
+          await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: overrideModel ?? cfg.model,
@@ -2724,7 +2780,7 @@ function App({
             sessionId: ensureSessionId(),
             memoryManager: memoryManagerRef.current,
             keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-            codeMode,
+            codeMode: effectiveCodeMode,
             intentClassification: classification,
             onFileChange: (path, content) => {
               if (content) {
@@ -2740,6 +2796,7 @@ function App({
             callbacks: sharedCallbacks,
           });
           await saveSessionSafe();
+        }
 
         // Auto-compact after turn when thresholds are met. With compiled
         // context on, use the heuristic compactor; otherwise fall back to the
@@ -2866,6 +2923,7 @@ function App({
           }
         }
       } finally {
+        setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
