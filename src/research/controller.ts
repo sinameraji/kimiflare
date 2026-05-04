@@ -28,7 +28,6 @@ import {
   killTask,
   appendFinding,
   requestLease,
-  releaseLease,
   expireLeases,
   addOpenQuestions,
   checkpoint,
@@ -44,6 +43,7 @@ import {
 import { runScout } from "./scout.js";
 import { runWorker } from "./worker.js";
 import { runSynthesis } from "./synthesis.js";
+import { logResearchTurn } from "./telemetry.js";
 import type {
   ResearchTransactionOpts,
   ResearchResult,
@@ -78,6 +78,10 @@ export async function runResearchTransaction(
   const turnId = opts.turnId ?? randomUUID();
   const signal = opts.signal ?? new AbortController().signal;
   const callbacks = opts.callbacks ?? {};
+  const errors: string[] = [];
+  let workersSpawned = 0;
+  let scoutDurationMs = 0;
+  let synthesisDurationMs = 0;
 
   callbacks.onProgress?.(`Research mode: budget $${(opts.budget?.maxCostUsd ?? 2.0).toFixed(2)}, up to ${opts.budget?.maxWaves ?? 3} waves`);
 
@@ -101,7 +105,7 @@ export async function runResearchTransaction(
   callbacks.onProgress?.("Scouting...");
 
   let scoutUsage: Usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  let scoutStart = performance.now();
+  const scoutStart = performance.now();
 
   try {
     const scoutResult = await runScout({
@@ -117,6 +121,7 @@ export async function runResearchTransaction(
     });
 
     scoutUsage = scoutResult.usage;
+    scoutDurationMs = Math.round(performance.now() - scoutStart);
 
     // Record scout phase usage
     const scoutPhase: PhaseUsage = {
@@ -125,8 +130,8 @@ export async function runResearchTransaction(
       completionTokens: scoutUsage.completion_tokens,
       totalTokens: scoutUsage.total_tokens,
       cachedTokens: scoutUsage.prompt_tokens_details?.cached_tokens ?? 0,
-      costUsd: 0, // TODO: compute from usage
-      durationMs: Math.round(performance.now() - scoutStart),
+      costUsd: 0,
+      durationMs: scoutDurationMs,
     };
     budgetState = recordPhase(budgetState, scoutPhase);
     plan = recordPhaseUsage(plan, scoutPhase);
@@ -137,7 +142,9 @@ export async function runResearchTransaction(
       plan = addNote(plan, `Scout aborted by circuit breaker: ${cb}`);
       plan = setStatus(plan, "aborted");
       await writeLedger(plan);
-      return buildEmergencyResult(plan, budgetState, startTime, "BUDGET_EXHAUSTED");
+      const result = buildEmergencyResult(plan, budgetState, startTime, "BUDGET_EXHAUSTED");
+      await logTurn(opts, plan, result, startTime, scoutDurationMs, 0, errors, workersSpawned);
+      return result;
     }
 
     // Populate ledger with scout results
@@ -162,7 +169,11 @@ export async function runResearchTransaction(
     callbacks.onProgress?.(`${scoutResult.result.proposedTasks.length} tasks planned`);
   } catch (err) {
     // Scout failed — fall back to a single default task
-    plan = addNote(plan, `Scout failed: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = `Scout failed: ${err instanceof Error ? err.message : String(err)}`;
+    plan = addNote(plan, msg);
+    errors.push(msg);
+    scoutDurationMs = Math.round(performance.now() - scoutStart);
+
     plan = addTasks(plan, [{
       id: "fallback-task-0",
       question: opts.query,
@@ -193,9 +204,12 @@ export async function runResearchTransaction(
 
   while (wave < budgetState.budget.maxWaves) {
     if (signal.aborted) {
+      plan = addNote(plan, `Aborted by user at wave ${wave}`);
       plan = setStatus(plan, "aborted");
       await writeLedger(plan);
-      return buildEmergencyResult(plan, budgetState, startTime, "ABORTED");
+      const result = buildEmergencyResult(plan, budgetState, startTime, "ABORTED");
+      await logTurn(opts, plan, result, startTime, scoutDurationMs, synthesisDurationMs, errors, workersSpawned);
+      return result;
     }
 
     // Check circuit breaker before starting wave
@@ -223,9 +237,10 @@ export async function runResearchTransaction(
     // Select tasks for this wave (respect maxWorkersPerWave)
     const tasksToRun = readyTasks.slice(0, budgetState.budget.maxWorkersPerWave);
 
-    // Run workers
+    // Run workers (parallel when maxWorkersPerWave > 1)
     const workerPromises = tasksToRun.map((task) => {
       const workerId = `worker-${wave}-${task.id}`;
+      workersSpawned++;
       plan = updateTask(plan, task.id, { status: "in_progress", ownerWorkerId: workerId });
 
       return runWorker({
@@ -242,7 +257,15 @@ export async function runResearchTransaction(
       });
     });
 
-    const workerResults = await Promise.all(workerPromises);
+    let workerResults: Awaited<ReturnType<typeof runWorker>>[];
+    try {
+      workerResults = await Promise.all(workerPromises);
+    } catch (err) {
+      const msg = `Wave ${wave} worker error: ${err instanceof Error ? err.message : String(err)}`;
+      plan = addNote(plan, msg);
+      errors.push(msg);
+      break;
+    }
 
     // Process worker results
     const filesReadThisWave: string[] = [];
@@ -264,7 +287,7 @@ export async function runResearchTransaction(
         budget: {
           ...task.budget,
           consumedTokens: result.usage.total_tokens,
-          consumedToolCalls: result.usage.total_tokens > 0 ? task.budget.maxToolCalls : 0, // approximate
+          consumedToolCalls: result.usage.total_tokens > 0 ? task.budget.maxToolCalls : 0,
           consumedFilesRead: result.filesRead.length,
         },
       });
@@ -335,7 +358,7 @@ export async function runResearchTransaction(
         0,
       ),
       costUsd: 0,
-      durationMs: 0, // TODO: track per-wave duration
+      durationMs: 0,
     };
     budgetState = recordPhase(budgetState, explorationPhase);
     plan = recordPhaseUsage(plan, explorationPhase);
@@ -394,7 +417,7 @@ export async function runResearchTransaction(
   await writeLedger(plan);
 
   let synthesisUsage: Usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  let synthesisStart = performance.now();
+  const synthesisStart = performance.now();
   let content = "";
   let terminalState: TerminalState = "NOT_FOUND";
   let confidence: Confidence = "low";
@@ -415,6 +438,7 @@ export async function runResearchTransaction(
     terminalState = synthesisResult.terminalState;
     confidence = synthesisResult.confidence;
     synthesisUsage = synthesisResult.usage;
+    synthesisDurationMs = Math.round(performance.now() - synthesisStart);
 
     const synthesisPhase: PhaseUsage = {
       phase: "synthesis",
@@ -423,13 +447,16 @@ export async function runResearchTransaction(
       totalTokens: synthesisUsage.total_tokens,
       cachedTokens: synthesisUsage.prompt_tokens_details?.cached_tokens ?? 0,
       costUsd: 0,
-      durationMs: Math.round(performance.now() - synthesisStart),
+      durationMs: synthesisDurationMs,
     };
     budgetState = recordPhase(budgetState, synthesisPhase);
     plan = recordPhaseUsage(plan, synthesisPhase);
   } catch (err) {
     // Synthesis failed — generate emergency conclusion
-    plan = addNote(plan, `Synthesis failed: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = `Synthesis failed: ${err instanceof Error ? err.message : String(err)}`;
+    plan = addNote(plan, msg);
+    errors.push(msg);
+    synthesisDurationMs = Math.round(performance.now() - synthesisStart);
     content = buildEmergencyConclusion(plan);
     terminalState = "BLOCKED";
     confidence = "low";
@@ -445,7 +472,7 @@ export async function runResearchTransaction(
 
   callbacks.onProgress?.("Research complete.");
 
-  return {
+  const result: ResearchResult = {
     content,
     terminalState,
     confidence,
@@ -459,6 +486,127 @@ export async function runResearchTransaction(
     budgetUsed: budgetState.phases,
     durationMs,
   };
+
+  await logTurn(opts, plan, result, startTime, scoutDurationMs, synthesisDurationMs, errors, workersSpawned);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Resume from checkpoint
+// ---------------------------------------------------------------------------
+
+export interface ResumeOpts extends ControllerOpts {
+  turnId: string;
+}
+
+export async function resumeResearchTransaction(opts: ResumeOpts): Promise<ResearchResult> {
+  const existing = await readLedger(opts.turnId);
+  if (!existing) {
+    throw new Error(`No ledger found for turn ${opts.turnId}`);
+  }
+
+  if (existing.repoFingerprint !== opts.repoFingerprint) {
+    throw new Error(
+      `Repo fingerprint mismatch: ledger has ${existing.repoFingerprint}, current is ${opts.repoFingerprint}. ` +
+      `Cannot resume — repository may have changed.`,
+    );
+  }
+
+  // Reconstruct budget state from ledger phases
+  let budgetState = createBudgetState(existing.budget);
+  for (const phase of existing.phases) {
+    budgetState = recordPhase(budgetState, phase);
+  }
+
+  // Continue from where we left off
+  const callbacks = opts.callbacks ?? {};
+  callbacks.onProgress?.(`Resuming research turn ${opts.turnId} from checkpoint...`);
+
+  // For now, resume just runs synthesis on existing findings
+  // Full resume would need to reconstruct the full controller state
+  const startTime = performance.now();
+
+  let plan = existing;
+  plan = setStatus(plan, "synthesizing");
+  await writeLedger(plan);
+
+  let content = "";
+  let terminalState: TerminalState = "LIKELY_ANSWER";
+  let confidence: Confidence = "medium";
+
+  try {
+    const synthesisResult = await runSynthesis({
+      plan,
+      accountId: opts.accountId,
+      apiToken: opts.apiToken,
+      model: opts.model,
+      signal: opts.signal ?? new AbortController().signal,
+      gateway: opts.gateway,
+      reasoningEffort: opts.reasoningEffort,
+      sessionId: opts.sessionId,
+    });
+
+    content = synthesisResult.content;
+    terminalState = synthesisResult.terminalState;
+    confidence = synthesisResult.confidence;
+  } catch {
+    content = buildEmergencyConclusion(plan);
+    terminalState = "BLOCKED";
+    confidence = "low";
+  }
+
+  plan = setStatus(plan, "done");
+  await writeLedger(plan);
+
+  const result: ResearchResult = {
+    content,
+    terminalState,
+    confidence,
+    coverageReport: {
+      tasksPlanned: plan.tasks.length,
+      tasksCompleted: plan.tasks.filter((t) => t.status === "done").length,
+      filesRead: [],
+      findingsCount: plan.findings.length,
+      openQuestionsRemaining: plan.openQuestions.filter((q) => q.status === "open").length,
+    },
+    budgetUsed: budgetState.phases,
+    durationMs: Math.round(performance.now() - startTime),
+  };
+
+  await logTurn(opts, plan, result, startTime, 0, 0, ["Resumed from checkpoint"], 0);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry helper
+// ---------------------------------------------------------------------------
+
+async function logTurn(
+  opts: ControllerOpts,
+  plan: ResearchPlan,
+  result: ResearchResult,
+  startTime: number,
+  scoutDurationMs: number,
+  synthesisDurationMs: number,
+  errors: string[],
+  workersSpawned: number,
+): Promise<void> {
+  try {
+    await logResearchTurn({
+      sessionId: opts.sessionId ?? "unknown",
+      plan,
+      result,
+      durationMs: Math.round(performance.now() - startTime),
+      scoutDurationMs,
+      synthesisDurationMs,
+      errors,
+      workersSpawned,
+    });
+  } catch {
+    // Telemetry is best-effort; don't fail the transaction
+  }
 }
 
 // ---------------------------------------------------------------------------
