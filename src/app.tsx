@@ -320,6 +320,7 @@ interface Cfg {
   githubRefreshToken?: string;
   githubTokenExpiry?: number;
   githubRepo?: string;
+  researchWorkers?: number;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -2742,6 +2743,9 @@ function App({
               gateway: gatewayFromConfig(cfg),
               reasoningEffort: turnReasoningEffort,
               sessionId: ensureSessionId(),
+              budget: {
+                maxWorkersPerWave: Math.min(2, Math.max(1, cfg.researchWorkers ?? 1)),
+              },
               callbacks: {
                 onProgress: (msg) => {
                   setEvents((e) => [...e, { kind: "info", key: mkKey(), text: msg }]);

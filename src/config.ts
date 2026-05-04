@@ -81,6 +81,8 @@ export interface KimiConfig {
   githubTokenExpiry?: number;
   /** Default GitHub repo for remote sessions (owner/repo). */
   githubRepo?: string;
+  /** Number of parallel research workers (1 or 2). Default: 1. */
+  researchWorkers?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -176,6 +178,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
+  const envResearchWorkers = readNumberEnv("KIMIFLARE_RESEARCH_WORKERS");
 
   if (envAccount && envToken) {
     return {
@@ -203,6 +206,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
+      researchWorkers: envResearchWorkers ?? 1,
     };
   }
 
@@ -237,6 +241,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
+        researchWorkers: envResearchWorkers ?? parsed.researchWorkers ?? 1,
       };
     }
   } catch {
