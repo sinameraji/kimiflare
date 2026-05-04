@@ -174,9 +174,9 @@ async function runResearchAgent(opts: {
         case "usage":
           // Cloudflare emits usage on every SSE chunk; the final chunk has the true totals.
           // Overwrite rather than accumulate to avoid double-counting.
-          totalUsage.prompt_tokens = ev.usage.prompt_tokens;
-          totalUsage.completion_tokens = ev.usage.completion_tokens;
-          totalUsage.total_tokens = ev.usage.total_tokens;
+          // Preserve the full Usage object (including prompt_tokens_details) so cached
+          // tokens are tracked correctly for cost attribution.
+          totalUsage = ev.usage;
           break;
         case "done":
           break;
@@ -359,6 +359,12 @@ export async function runParallelResearch(opts: ResearchOpts): Promise<ResearchR
     prompt_tokens: subAgentResults.reduce((s, r) => s + r.usage.prompt_tokens, 0),
     completion_tokens: subAgentResults.reduce((s, r) => s + r.usage.completion_tokens, 0),
     total_tokens: subAgentResults.reduce((s, r) => s + r.usage.total_tokens, 0),
+    prompt_tokens_details: {
+      cached_tokens: subAgentResults.reduce(
+        (s, r) => s + (r.usage.prompt_tokens_details?.cached_tokens ?? 0),
+        0,
+      ),
+    },
   };
 
   const summaries = subAgentResults.map((r) => r.summary);
@@ -381,6 +387,11 @@ export async function runParallelResearch(opts: ResearchOpts): Promise<ResearchR
     prompt_tokens: subAgentUsage.prompt_tokens + synthesis.usage.prompt_tokens,
     completion_tokens: subAgentUsage.completion_tokens + synthesis.usage.completion_tokens,
     total_tokens: subAgentUsage.total_tokens + synthesis.usage.total_tokens,
+    prompt_tokens_details: {
+      cached_tokens:
+        (subAgentUsage.prompt_tokens_details?.cached_tokens ?? 0) +
+        (synthesis.usage.prompt_tokens_details?.cached_tokens ?? 0),
+    },
   };
 
   return {
