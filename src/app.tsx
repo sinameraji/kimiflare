@@ -2751,15 +2751,24 @@ function App({
 
             usedResearchTransaction = true;
 
-            messagesRef.current.push({
-              role: "assistant",
-              content: sanitizeString(researchResult.content),
-            });
+            const researchContent = sanitizeString(researchResult.content).trim();
+            if (researchContent) {
+              messagesRef.current.push({
+                role: "assistant",
+                content: researchContent,
+              });
+            } else {
+              // Research produced empty output — don't poison message history
+              setEvents((e) => [
+                ...e,
+                { kind: "error", key: mkKey(), text: "Research transaction returned empty output. Check the research ledger for details." },
+              ]);
+            }
 
             setEvents((e) =>
               e.map((ev) =>
                 ev.kind === "assistant" && ev.id === asstId
-                  ? { ...ev, text: researchResult.content, streaming: false }
+                  ? { ...ev, text: researchContent || "(no output)", streaming: false }
                   : ev,
               ),
             );
@@ -2791,6 +2800,7 @@ function App({
               usage: totalUsage,
               durationMs: researchResult.durationMs,
               intentClassification: classification,
+              rejectionSummary: researchResult.rejectionSummary,
             });
           } catch (researchErr) {
             // Fallback to normal agent turn on research transaction failure

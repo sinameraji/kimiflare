@@ -190,6 +190,7 @@ export async function runResearchTransaction(
   let wave = 0;
   let previousFindingsCount = 0;
   const allFilesRead: string[] = [];
+  const rejectionReasons: string[] = [];
 
   while (wave < budgetState.budget.maxWaves) {
     if (signal.aborted) {
@@ -258,9 +259,22 @@ export async function runResearchTransaction(
       allFilesRead.push(...result.filesRead);
       budgetState = recordFilesRead(budgetState, result.filesRead.length);
 
+      // Append findings (must happen before task status is decided)
+      let acceptedFindings = 0;
+      for (const finding of result.findings) {
+        const appendResult = appendFinding(plan, { finding, workerId });
+        if (appendResult.error) {
+          plan = addNote(plan, `Finding rejected: ${appendResult.error}`);
+          rejectionReasons.push(appendResult.error);
+        } else {
+          plan = appendResult.plan;
+          acceptedFindings++;
+        }
+      }
+
       // Update task budget consumption
       plan = updateTask(plan, task.id, {
-        status: result.unknown ? "failed" : result.findings.length > 0 ? "done" : "failed",
+        status: result.unknown ? "failed" : acceptedFindings > 0 ? "done" : "failed",
         budget: {
           ...task.budget,
           consumedTokens: result.usage.total_tokens,
@@ -268,16 +282,6 @@ export async function runResearchTransaction(
           consumedFilesRead: result.filesRead.length,
         },
       });
-
-      // Append findings
-      for (const finding of result.findings) {
-        const appendResult = appendFinding(plan, { finding, workerId });
-        if (appendResult.error) {
-          plan = addNote(plan, `Finding rejected: ${appendResult.error}`);
-        } else {
-          plan = appendResult.plan;
-        }
-      }
 
       // Process followups
       for (const followup of result.followups) {
@@ -445,6 +449,10 @@ export async function runResearchTransaction(
 
   callbacks.onProgress?.("Research complete.");
 
+  const rejectionSummary = rejectionReasons.length > 0
+    ? `${rejectionReasons.length} finding(s) rejected: ${[...new Set(rejectionReasons)].join("; ")}`
+    : undefined;
+
   return {
     content,
     terminalState,
@@ -458,6 +466,7 @@ export async function runResearchTransaction(
     },
     budgetUsed: budgetState.phases,
     durationMs,
+    rejectionSummary,
   };
 }
 

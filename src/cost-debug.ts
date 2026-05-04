@@ -53,6 +53,7 @@ export interface ParallelResearchDebug {
   numSubAgents: number;
   filesExplored: number;
   subAgentSummaries: string[];
+  rejectionSummary?: string;
 }
 
 export interface CostDebugEntry {
@@ -290,6 +291,7 @@ export interface ParallelResearchDebugContext {
   usage: Usage;
   durationMs?: number;
   intentClassification?: IntentClassification;
+  rejectionSummary?: string;
 }
 
 export async function logParallelResearchDebug(ctx: ParallelResearchDebugContext): Promise<void> {
@@ -312,6 +314,7 @@ export async function logParallelResearchDebug(ctx: ParallelResearchDebugContext
       numSubAgents: ctx.numSubAgents,
       filesExplored: ctx.filesExplored,
       subAgentSummaries: ctx.subAgentSummaries,
+      rejectionSummary: ctx.rejectionSummary,
     },
   });
 }

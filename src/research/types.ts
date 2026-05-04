@@ -232,6 +232,8 @@ export interface ResearchResult {
   };
   budgetUsed: PhaseUsage[];
   durationMs: number;
+  /** Summary of ledger rejection reasons, for debugging. */
+  rejectionSummary?: string;
 }
 
 // ---------------------------------------------------------------------------
