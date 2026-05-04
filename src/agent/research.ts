@@ -172,9 +172,11 @@ async function runResearchAgent(opts: {
           break;
         }
         case "usage":
-          totalUsage.prompt_tokens += ev.usage.prompt_tokens;
-          totalUsage.completion_tokens += ev.usage.completion_tokens;
-          totalUsage.total_tokens += ev.usage.total_tokens;
+          // Cloudflare emits usage on every SSE chunk; the final chunk has the true totals.
+          // Overwrite rather than accumulate to avoid double-counting.
+          totalUsage.prompt_tokens = ev.usage.prompt_tokens;
+          totalUsage.completion_tokens = ev.usage.completion_tokens;
+          totalUsage.total_tokens = ev.usage.total_tokens;
           break;
         case "done":
           break;
