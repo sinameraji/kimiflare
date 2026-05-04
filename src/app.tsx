@@ -27,6 +27,7 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
+import { logParallelResearchDebug } from "./cost-debug.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -2725,6 +2726,7 @@ function App({
             { kind: "assistant", key: `asst_${asstId}`, id: asstId, text: "", reasoning: "", streaming: true },
           ]);
 
+          const researchStart = performance.now();
           const researchResult = await runParallelResearch({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
@@ -2762,6 +2764,17 @@ function App({
           }
 
           await saveSessionSafe();
+
+          void logParallelResearchDebug({
+            sessionId: ensureSessionId(),
+            query: trimmed,
+            numSubAgents: researchResult.subAgentSummaries.length,
+            filesExplored: researchResult.filesExplored.length,
+            subAgentSummaries: researchResult.subAgentSummaries,
+            usage: researchResult.usage,
+            durationMs: Math.round(performance.now() - researchStart),
+            intentClassification: classification,
+          });
         } else {
           await runAgentTurn({
             accountId: cfg.accountId,
