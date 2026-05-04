@@ -1402,7 +1402,7 @@ function App({
   }, [cfg, busy, saveSessionSafe]);
 
   const openResumePicker = useCallback(async () => {
-    const sessions = await listSessions(200);
+    const sessions = await listSessions(200, process.cwd());
     setResumeSessions(sessions);
   }, []);
 
