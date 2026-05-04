@@ -201,7 +201,8 @@ function parseScoutOutput(text: string): ScoutResult {
 
   // If no tasks found, create a single fallback task
   if (tasks.length === 0) {
-    tasks.push(createDefaultTask("scout-task-0", text.slice(0, 200)));
+    const fallbackText = text.trim().slice(0, 200) || "Explore the codebase";
+    tasks.push(createDefaultTask("scout-task-0", fallbackText));
   }
 
   const falsification = text.match(/falsification[^:]*:\s*(.+?)(?=\n|$)/i);
@@ -237,9 +238,14 @@ function normalizeScoutResult(parsed: unknown): ScoutResult {
 
 function normalizeTask(t: unknown, index: number): ResearchTask {
   const obj = t as Record<string, unknown>;
+  const question = typeof obj.question === "string" && obj.question.trim().length > 0
+    ? obj.question.trim()
+    : typeof obj.description === "string" && obj.description.trim().length > 0
+      ? obj.description.trim()
+      : "Explore the codebase";
   return createDefaultTask(
     typeof obj.id === "string" ? obj.id : `scout-task-${index}`,
-    typeof obj.question === "string" ? obj.question : typeof obj.description === "string" ? obj.description : "Explore",
+    question,
     typeof obj.description === "string" ? obj.description : undefined,
     typeof obj.priority === "number" && obj.priority >= 1 && obj.priority <= 5 ? (obj.priority as 1 | 2 | 3 | 4 | 5) : 3,
     Array.isArray(obj.suggestedFiles) ? obj.suggestedFiles.filter((f): f is string => typeof f === "string") : undefined,
