@@ -302,8 +302,8 @@ export async function runWorker(opts: WorkerOpts): Promise<WorkerOutput> {
 
       // Intercept ledger tool outputs
       if (tc.function.name === "record_finding") {
-        const parsed = parseLedgerOutput(result.content);
-        if (parsed && parsed.type === "record_finding") {
+        const parsed = parseLedgerOutput(result.content) as RecordFindingArgs | null;
+        if (parsed) {
           const finding: Finding = {
             id: `finding-${opts.workerId}-${findings.length}`,
             taskId: opts.task.id,
@@ -318,8 +318,8 @@ export async function runWorker(opts: WorkerOpts): Promise<WorkerOutput> {
           findings.push(finding);
         }
       } else if (tc.function.name === "propose_followup_task") {
-        const parsed = parseLedgerOutput(result.content);
-        if (parsed && parsed.type === "propose_followup_task") {
+        const parsed = parseLedgerOutput(result.content) as ProposeFollowupArgs | null;
+        if (parsed) {
           followups.push({
             question: parsed.question,
             description: parsed.description,
@@ -328,13 +328,13 @@ export async function runWorker(opts: WorkerOpts): Promise<WorkerOutput> {
           });
         }
       } else if (tc.function.name === "request_file") {
-        const parsed = parseLedgerOutput(result.content);
-        if (parsed && parsed.type === "request_file") {
+        const parsed = parseLedgerOutput(result.content) as RequestFileArgs | null;
+        if (parsed) {
           fileRequests.push({ filePath: parsed.filePath, purpose: parsed.purpose });
         }
       } else if (tc.function.name === "mark_unknown") {
-        const parsed = parseLedgerOutput(result.content);
-        if (parsed && parsed.type === "mark_unknown") {
+        const parsed = parseLedgerOutput(result.content) as MarkUnknownArgs | null;
+        if (parsed) {
           unknown = { reason: parsed.reason, missingContext: parsed.missingContext };
         }
       }

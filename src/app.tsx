@@ -3,7 +3,7 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
-import { runParallelResearch } from "./agent/research.js";
+import { runResearchTransaction } from "./research/index.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -2712,11 +2712,13 @@ function App({
         (classification.intent === "explore" && classification.tier === "heavy") ||
         /\bparallel research\b/i.test(trimmed);
 
+      let usedResearchTransaction = false;
+
       try {
         if (useParallelResearch) {
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: `parallel research: ${classification.intent} (${classification.tier}) — spawning agents` },
+            { kind: "info", key: mkKey(), text: `research mode: ${classification.intent} (${classification.tier})` },
           ]);
 
           const asstId = nextAssistantId++;
@@ -2727,55 +2729,81 @@ function App({
           ]);
 
           const researchStart = performance.now();
-          const researchResult = await runParallelResearch({
-            accountId: cfg.accountId,
-            apiToken: cfg.apiToken,
-            model: overrideModel ?? cfg.model,
-            query: trimmed,
-            cwd: process.cwd(),
-            signal: controller.signal,
-            gateway: gatewayFromConfig(cfg),
-            reasoningEffort: turnReasoningEffort,
-            sessionId: ensureSessionId(),
-          });
 
-          messagesRef.current.push({
-            role: "assistant",
-            content: sanitizeString(researchResult.content),
-          });
+          try {
+            const researchResult = await runResearchTransaction({
+              query: trimmed,
+              repoFingerprint: process.cwd(),
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              model: overrideModel ?? cfg.model,
+              cwd: process.cwd(),
+              signal: controller.signal,
+              gateway: gatewayFromConfig(cfg),
+              reasoningEffort: turnReasoningEffort,
+              sessionId: ensureSessionId(),
+              callbacks: {
+                onProgress: (msg) => {
+                  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: msg }]);
+                },
+              },
+            });
 
-          setEvents((e) =>
-            e.map((ev) =>
-              ev.kind === "assistant" && ev.id === asstId
-                ? { ...ev, text: researchResult.content, streaming: false }
-                : ev,
-            ),
-          );
+            usedResearchTransaction = true;
 
-          usageRef.current = researchResult.usage;
-          setUsage(researchResult.usage);
-          const sid = ensureSessionId();
-          await recordUsage(sid, researchResult.usage, gatewayUsageLookupFromConfig(cfg, researchResult.gatewayMeta ?? gatewayMetaRef.current));
-          const report = await getCostReport(sid);
-          setSessionUsage(report.session);
-          if (researchResult.gatewayMeta) {
-            gatewayMetaRef.current = researchResult.gatewayMeta;
-            setGatewayMeta(researchResult.gatewayMeta);
+            messagesRef.current.push({
+              role: "assistant",
+              content: sanitizeString(researchResult.content),
+            });
+
+            setEvents((e) =>
+              e.map((ev) =>
+                ev.kind === "assistant" && ev.id === asstId
+                  ? { ...ev, text: researchResult.content, streaming: false }
+                  : ev,
+              ),
+            );
+
+            const totalUsage: Usage = {
+              prompt_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.promptTokens, 0),
+              completion_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.completionTokens, 0),
+              total_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.totalTokens, 0),
+              prompt_tokens_details: {
+                cached_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.cachedTokens, 0),
+              },
+            };
+
+            usageRef.current = totalUsage;
+            setUsage(totalUsage);
+            const sid = ensureSessionId();
+            await recordUsage(sid, totalUsage, gatewayUsageLookupFromConfig(cfg, gatewayMetaRef.current));
+            const report = await getCostReport(sid);
+            setSessionUsage(report.session);
+
+            await saveSessionSafe();
+
+            void logParallelResearchDebug({
+              sessionId: ensureSessionId(),
+              query: trimmed,
+              numSubAgents: 1,
+              filesExplored: researchResult.coverageReport.filesRead.length,
+              subAgentSummaries: [`Terminal: ${researchResult.terminalState}, Confidence: ${researchResult.confidence}`],
+              usage: totalUsage,
+              durationMs: researchResult.durationMs,
+              intentClassification: classification,
+            });
+          } catch (researchErr) {
+            // Fallback to normal agent turn on research transaction failure
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `Research mode failed (${researchErr instanceof Error ? researchErr.message : String(researchErr)}). Falling back to normal mode.` },
+            ]);
+            // Clear the streaming assistant event so normal mode can create its own
+            setEvents((e) => e.filter((ev) => !(ev.kind === "assistant" && ev.id === asstId)));
           }
+        }
 
-          await saveSessionSafe();
-
-          void logParallelResearchDebug({
-            sessionId: ensureSessionId(),
-            query: trimmed,
-            numSubAgents: researchResult.subAgentSummaries.length,
-            filesExplored: researchResult.filesExplored.length,
-            subAgentSummaries: researchResult.subAgentSummaries,
-            usage: researchResult.usage,
-            durationMs: Math.round(performance.now() - researchStart),
-            intentClassification: classification,
-          });
-        } else {
+        if (!usedResearchTransaction) {
           await runAgentTurn({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
