@@ -51,22 +51,49 @@ const SYNTHESIS_SYSTEM_PROMPT =
   `- If summaries conflict, note the discrepancy.\n` +
   `- Be thorough but concise.`;
 
+const STOP_WORDS = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "must", "shall", "can", "need", "dare",
+  "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+  "from", "as", "into", "through", "during", "before", "after",
+  "above", "below", "between", "under", "and", "but", "or", "yet",
+  "so", "if", "because", "although", "though", "while", "where",
+  "when", "that", "which", "who", "whom", "whose", "what", "this",
+  "these", "those", "i", "you", "he", "she", "it", "we", "they",
+  "me", "him", "her", "us", "them", "my", "your", "his", "its",
+  "our", "their", "mine", "yours", "hers", "ours", "theirs",
+  "how", "why", "where", "there", "here", "then", "than", "too",
+  "very", "just", "now", "only", "also", "back", "after", "over",
+]);
+
 async function discoverFiles(query: string, cwd: string, signal: AbortSignal): Promise<string[]> {
   const files = new Set<string>();
 
+  // Build a regex from meaningful keywords (≥4 chars, not stop words).
+  // Using the first 3 raw words produced patterns like "a|is|the" that
+  // matched nearly every file in the repo.
+  const keywords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !STOP_WORDS.has(w))
+    .slice(0, 5);
+
   // Try grep first to find relevant files
-  try {
-    const grepResult = await grepTool.run(
-      { pattern: query.split(/\s+/).slice(0, 3).join("|"), path: cwd, output_mode: "files" },
-      { cwd, signal },
-    );
-    const grepFiles = String(grepResult)
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    for (const f of grepFiles) files.add(f);
-  } catch {
-    // ignore
+  if (keywords.length > 0) {
+    try {
+      const grepResult = await grepTool.run(
+        { pattern: keywords.join("|"), path: cwd, output_mode: "files" },
+        { cwd, signal },
+      );
+      const grepFiles = String(grepResult)
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      for (const f of grepFiles) files.add(f);
+    } catch {
+      // ignore
+    }
   }
 
   // Fall back to glob for source files
