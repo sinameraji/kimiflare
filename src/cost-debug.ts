@@ -48,11 +48,18 @@ export interface IntentClassification {
   confidence: number;
 }
 
+export interface ParallelResearchDebug {
+  query: string;
+  numSubAgents: number;
+  filesExplored: number;
+  subAgentSummaries: string[];
+}
+
 export interface CostDebugEntry {
   v: number;
   ts: string;
   sessionId: string;
-  turn: number;
+  turn?: number;
   usage: Usage;
   promptSections: PromptSection[];
   promptTotalChars: number;
@@ -68,6 +75,7 @@ export interface CostDebugEntry {
   durationMs?: number; // NEW: wall-clock time for this turn
   intentClassification?: IntentClassification; // NEW: what we predicted
   codeMode?: boolean; // NEW: was Code Mode enabled this turn
+  parallelResearch?: ParallelResearchDebug; // NEW: set for parallel research turns
 }
 
 function debugDir(): string {
@@ -270,5 +278,40 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     durationMs: ctx.durationMs,
     intentClassification: ctx.intentClassification,
     codeMode: ctx.codeMode,
+  });
+}
+
+export interface ParallelResearchDebugContext {
+  sessionId: string;
+  query: string;
+  numSubAgents: number;
+  filesExplored: number;
+  subAgentSummaries: string[];
+  usage: Usage;
+  durationMs?: number;
+  intentClassification?: IntentClassification;
+}
+
+export async function logParallelResearchDebug(ctx: ParallelResearchDebugContext): Promise<void> {
+  await logCostDebug({
+    v: LOG_VERSION,
+    ts: now(),
+    sessionId: ctx.sessionId,
+    usage: ctx.usage,
+    promptSections: [],
+    promptTotalChars: 0,
+    promptTotalApproxTokens: 0,
+    toolStats: [],
+    toolTotalRawBytes: 0,
+    toolTotalReducedBytes: 0,
+    toolSavingsPct: 0,
+    durationMs: ctx.durationMs,
+    intentClassification: ctx.intentClassification,
+    parallelResearch: {
+      query: ctx.query,
+      numSubAgents: ctx.numSubAgents,
+      filesExplored: ctx.filesExplored,
+      subAgentSummaries: ctx.subAgentSummaries,
+    },
   });
 }
