@@ -62,6 +62,9 @@ function isRetryable(err: KimiApiError, attempt: number): boolean {
 }
 
 export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, void, void> {
+  if (opts.cloudMode && !opts.cloudToken) {
+    throw new KimiApiError("kimiflare: cloud mode requires a cloud token. Run `kimiflare auth cloud` to authenticate.", undefined, 401);
+  }
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
