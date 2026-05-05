@@ -495,6 +495,7 @@ function App({
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
   const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
+  const [cloudToken, setCloudToken] = useState(initialCloudToken);
   const [events, setRawEvents] = useState<ChatEvent[]>([]);
   const setEvents = useCallback(
     (updater: React.SetStateAction<ChatEvent[]>) => {
@@ -1585,7 +1586,7 @@ function App({
         memoryManager: memoryManagerRef.current,
         codeMode: effectiveCodeMode,
         cloudMode: cfg.cloudMode,
-        cloudToken: initialCloudToken,
+        cloudToken: cloudToken ?? initialCloudToken,
         onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
@@ -2853,7 +2854,7 @@ function App({
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
           cloudMode: cfg.cloudMode,
-          cloudToken: initialCloudToken,
+          cloudToken: cloudToken ?? initialCloudToken,
           onIterationEnd,
           intentClassification: classification,
           onFileChange: (path, content) => {
@@ -3072,6 +3073,7 @@ function App({
             const { loadCloudCredentials } = await import("./cloud/auth.js");
             const creds = await loadCloudCredentials();
             if (creds) {
+              setCloudToken(creds.accessToken);
               setEvents((e) => [
                 ...e,
                 { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare! (cloud mode)" },
