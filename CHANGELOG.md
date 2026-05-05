@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/sinameraji/kimiflare/compare/v0.36.2...v0.37.0) (2026-05-05)
+
+
+### Features
+
+* **cloud:** refresh token budget in real time after each turn ([#284](https://github.com/sinameraji/kimiflare/issues/284)) ([957671c](https://github.com/sinameraji/kimiflare/commit/957671c01ab45d93ded4369f95d3d278a924dbb6))
+
 ## [0.36.2](https://github.com/sinameraji/kimiflare/compare/v0.36.1...v0.36.2) (2026-05-05)
 
 
