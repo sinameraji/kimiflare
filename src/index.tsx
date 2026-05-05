@@ -18,6 +18,7 @@ program
   .version(getAppVersion())
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
+  .option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
@@ -50,6 +51,29 @@ program
     await runCostCommand({ ...cmdOpts, config: cfg });
   });
 
+program
+  .command("usage")
+  .description("Show Kimiflare Cloud token usage (requires cloud authentication)")
+  .action(async () => {
+    const { loadCloudCredentials } = await import("./cloud/auth.js");
+    const creds = await loadCloudCredentials();
+    if (!creds) {
+      console.error("Not authenticated with Kimiflare Cloud. Run: kimiflare auth cloud");
+      process.exit(1);
+    }
+    const res = await fetch("https://api.kimiflare.com/v1/usage", {
+      headers: { Authorization: `Bearer ${creds.accessToken}` },
+    });
+    if (!res.ok) {
+      console.error(`Failed to fetch usage: ${res.status} ${res.statusText}`);
+      process.exit(1);
+    }
+    const usage = await res.json() as { input_token_limit: number; input_tokens_used: number; remaining: number; expires_at: string };
+    console.log(`Token budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
+    console.log(`Used: ${usage.input_tokens_used.toLocaleString()}`);
+    console.log(`Grant expires: ${usage.expires_at}`);
+  });
+
 program.addCommand(createRemoteCommand());
 
 program
@@ -70,6 +94,37 @@ program
           if (step.error) process.exit(1);
         }
       }),
+  )
+  .addCommand(
+    new Command("cloud")
+      .description("Authenticate with Kimiflare Cloud")
+      .action(async () => {
+        const { authenticateDevice } = await import("./cloud/auth.js");
+        try {
+          const creds = await authenticateDevice(({ url, userCode, polling }) => {
+            if (!polling) {
+              console.log(`\nKimiflare Cloud Authentication`);
+              console.log(`\n1. Open this URL in your browser:`);
+              console.log(`   ${url}`);
+              console.log(`\n2. Sign in with GitHub\n`);
+            }
+          });
+          console.log(`Authenticated! Token expires at ${new Date(creds.expiresAt * 1000).toISOString()}`);
+
+          // Fetch usage info
+          const usageRes = await fetch("https://api.kimiflare.com/v1/usage", {
+            headers: { Authorization: `Bearer ${creds.accessToken}` },
+          });
+          if (usageRes.ok) {
+            const usage = await usageRes.json() as { input_token_limit: number; input_tokens_used: number; remaining: number; expires_at: string };
+            console.log(`\nToken budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
+            console.log(`Grant expires: ${usage.expires_at}`);
+          }
+        } catch (err) {
+          console.error("Authentication failed:", err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      }),
   );
 
 program.action(async () => {
@@ -80,6 +135,7 @@ program.parse();
 const opts = program.opts<{
   print?: string;
   model?: string;
+  cloud?: boolean;
   dangerouslyAllowAll?: boolean;
   reasoning?: boolean;
   continueOnLimit?: boolean;
@@ -105,13 +161,31 @@ async function main() {
     lspProjectPath = resolved.projectPath;
   }
 
+  // Handle cloud mode
+  const cloudMode = opts.cloud ?? cfg?.cloudMode ?? false;
+  let cloudToken: string | undefined;
+  if (cloudMode) {
+    const { loadCloudCredentials, authenticateDevice } = await import("./cloud/auth.js");
+    let cloudCreds = await loadCloudCredentials();
+    if (!cloudCreds) {
+      console.error("kimiflare: cloud mode requires authentication.\nRun: kimiflare auth cloud\n");
+      process.exit(2);
+    }
+    cloudToken = cloudCreds.accessToken;
+    cfg = {
+      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL }),
+      cloudMode: true,
+    };
+  }
+
   if (opts.print !== undefined) {
     if (!cfg) {
       console.error(
         "kimiflare: missing credentials.\n" +
           "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
           "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
-          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }",
+          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }\n" +
+          "Or use cloud mode: kimiflare --cloud -p \"...\"",
       );
       process.exit(2);
     }
@@ -123,6 +197,7 @@ async function main() {
       allowAll: !!opts.dangerouslyAllowAll,
       showReasoning: !!opts.reasoning,
       codeMode: cfg.codeMode,
+      cloudToken,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
       updateResult,
@@ -140,9 +215,9 @@ async function main() {
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath);
+    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath, cloudToken);
   } else {
-    await renderApp(null, updateResult, lspScope, lspProjectPath);
+    await renderApp(null, updateResult, lspScope, lspProjectPath, cloudToken);
   }
 }
 
@@ -165,6 +240,8 @@ interface PrintOpts {
   codeMode?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
+  cloudMode?: boolean;
+  cloudToken?: string;
 }
 
 function gatewayFromPrintOpts(opts: PrintOpts): AiGatewayOptions | undefined {
@@ -179,6 +256,9 @@ function gatewayFromPrintOpts(opts: PrintOpts): AiGatewayOptions | undefined {
 }
 
 async function runPrintMode(opts: PrintOpts): Promise<void> {
+  if (opts.cloudMode) {
+    process.stderr.write(`[cloud mode: api.kimiflare.com]\n`);
+  }
   if (opts.updateResult.hasUpdate) {
     process.stderr.write(
       `\x1b[33mkimiflare update available: ${opts.updateResult.localVersion} → ${opts.updateResult.latestVersion}\x1b[0m\n` +
@@ -213,6 +293,8 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
       codeMode: opts.codeMode,
       continueOnLimit: opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
+      cloudMode: opts.cloudMode,
+      cloudToken: opts.cloudToken,
       coauthor:
         opts.coauthor !== false
           ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }

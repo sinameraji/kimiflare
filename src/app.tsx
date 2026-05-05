@@ -319,6 +319,8 @@ interface Cfg {
   githubRefreshToken?: string;
   githubTokenExpiry?: number;
   githubRepo?: string;
+  cloudMode?: boolean;
+  cloudToken?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -479,11 +481,13 @@ function App({
   initialUpdateResult,
   initialLspScope,
   initialLspProjectPath,
+  initialCloudToken,
 }: {
   initialCfg: Cfg | null;
   initialUpdateResult?: UpdateCheckResult;
   initialLspScope: "project" | "global";
   initialLspProjectPath: string | null;
+  initialCloudToken?: string;
 }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
@@ -1560,6 +1564,8 @@ function App({
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
         codeMode: effectiveCodeMode,
+        cloudMode: cfg.cloudMode,
+        cloudToken: initialCloudToken,
         onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
@@ -1903,6 +1909,10 @@ function App({
       if (c === "/gateway") {
         if (!cfg) {
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no config loaded" }]);
+          return true;
+        }
+        if (cfg.cloudMode) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "AI Gateway is managed by Kimiflare Cloud" }]);
           return true;
         }
         const sub = rest[0]?.toLowerCase() ?? "";
@@ -2816,6 +2826,8 @@ function App({
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
+          cloudMode: cfg.cloudMode,
+          cloudToken: initialCloudToken,
           onIterationEnd,
           intentClassification: classification,
           onFileChange: (path, content) => {
@@ -3024,12 +3036,28 @@ function App({
     return (
       <ThemeProvider theme={theme}>
         <Onboarding
-        onDone={(newCfg) => {
+        onDone={async (newCfg) => {
           setCfg(newCfg);
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare!" },
-          ]);
+          if (newCfg.cloudMode) {
+            const { loadCloudCredentials } = await import("./cloud/auth.js");
+            const creds = await loadCloudCredentials();
+            if (creds) {
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare! (cloud mode)" },
+              ]);
+            } else {
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "cloud mode configured — run `kimiflare auth cloud` to sign in" },
+              ]);
+            }
+          } else {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare!" },
+            ]);
+          }
         }}
       />
       </ThemeProvider>
@@ -3092,6 +3120,7 @@ function App({
               .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
               .map((c) => ({ name: c.name, description: c.description }))}
             costAttributionEnabled={cfg?.costAttribution}
+            cloudMode={cfg?.cloudMode}
             onDone={() => setShowHelpMenu(false)}
             onCommand={handleHelpCommand}
           />
@@ -3285,6 +3314,7 @@ function App({
               latestVersion={latestVersion}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
+              cloudMode={cfg.cloudMode}
             />
             {activePicker?.kind === "file" && (
               <FilePicker
@@ -3363,6 +3393,7 @@ export async function renderApp(
   updateResult?: UpdateCheckResult,
   lspScope: "project" | "global" = "global",
   lspProjectPath: string | null = null,
+  cloudToken?: string,
 ) {
   const instance = render(
     <App
@@ -3370,6 +3401,7 @@ export async function renderApp(
       initialUpdateResult={updateResult}
       initialLspScope={lspScope}
       initialLspProjectPath={lspProjectPath}
+      initialCloudToken={cloudToken}
     />,
     {
       incrementalRendering: true,

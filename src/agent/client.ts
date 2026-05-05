@@ -26,6 +26,8 @@ export interface RunKimiOpts {
   reasoningEffort?: "low" | "medium" | "high";
   sessionId?: string;
   gateway?: AiGatewayOptions;
+  cloudMode?: boolean;
+  cloudToken?: string;
 }
 
 export interface AiGatewayOptions {
@@ -78,7 +80,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     let res: Response;
     try {
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${opts.apiToken}`,
+        Authorization: `Bearer ${opts.cloudMode && opts.cloudToken ? opts.cloudToken : opts.apiToken}`,
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
         ...gatewayHeaders,
@@ -149,6 +151,12 @@ export function validateModelId(model: string): void {
 
 function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
   validateModelId(opts.model);
+  if (opts.cloudMode) {
+    return {
+      url: "https://api.kimiflare.com/v1/chat",
+      headers: opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {},
+    };
+  }
   if (!opts.gateway?.id) {
     return {
       url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(opts.accountId)}/ai/run/${opts.model}`,
