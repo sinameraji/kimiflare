@@ -25,6 +25,9 @@ export interface AgentCallbacks {
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
+  /** Called when the tool-call iteration limit is reached. Return "continue" to
+   *  reset the counter and keep going, or "stop" to end the turn immediately. */
+  onToolLimitReached?: () => Promise<"continue" | "stop">;
 }
 
 export interface AgentTurnOpts {
@@ -151,7 +154,20 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     if (iter >= max) {
-      if (opts.continueOnLimit) {
+      if (opts.callbacks.onToolLimitReached) {
+        const decision = await opts.callbacks.onToolLimitReached();
+        if (decision === "continue") {
+          opts.messages.push({
+            role: "system",
+            content:
+              "You have reached the tool-call limit for this session. " +
+              "The counter has been reset so you can continue working. Please proceed with your task.",
+          });
+          iter = 0;
+        } else {
+          return;
+        }
+      } else if (opts.continueOnLimit) {
         opts.messages.push({
           role: "system",
           content:

@@ -30,6 +30,7 @@ import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
+import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
@@ -512,6 +513,7 @@ function App({
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
+  const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -573,6 +575,7 @@ function App({
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
+  const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
@@ -774,7 +777,8 @@ function App({
       showCommandList ||
       showLspWizard ||
       resumeSessions !== null ||
-      perm !== null;
+      perm !== null ||
+      limitModal !== null;
     if (modalActive && activePicker !== null) {
       setActivePicker(null);
     }
@@ -787,6 +791,7 @@ function App({
     showLspWizard,
     resumeSessions,
     perm,
+    limitModal,
     activePicker,
   ]);
 
@@ -1304,16 +1309,22 @@ function App({
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       const hadPerm = permResolveRef.current !== null;
+      const hadLimit = limitResolveRef.current !== null;
       if (hadPerm) {
         permResolveRef.current!("deny");
         permResolveRef.current = null;
         setPerm(null);
       }
+      if (hadLimit) {
+        limitResolveRef.current!("stop");
+        limitResolveRef.current = null;
+        setLimitModal(null);
+      }
       if (busy && activeControllerRef.current) {
         activeControllerRef.current.abort();
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-      } else if (!hadPerm) {
+      } else if (!hadPerm && !hadLimit) {
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
@@ -1321,6 +1332,7 @@ function App({
     if (key.escape) {
       const modalOpen =
         perm !== null ||
+        limitModal !== null ||
         showHelpMenu ||
         showLspWizard ||
         showCommandList ||
@@ -1332,6 +1344,11 @@ function App({
           permResolveRef.current("deny");
           permResolveRef.current = null;
           setPerm(null);
+        }
+        if (limitResolveRef.current) {
+          limitResolveRef.current("stop");
+          limitResolveRef.current = null;
+          setLimitModal(null);
         }
         activeControllerRef.current.abort();
         setQueue([]);
@@ -1506,6 +1523,7 @@ function App({
       setTurnStartedAt(null);
       activeControllerRef.current = null;
       permResolveRef.current = null;
+      limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
     }
   }, [cfg, busy, saveSessionSafe]);
@@ -1724,6 +1742,7 @@ function App({
       activeAsstIdRef.current = null;
       activeControllerRef.current = null;
       permResolveRef.current = null;
+      limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
     }
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
@@ -2801,6 +2820,11 @@ function App({
             permResolveRef.current = resolve;
             setPerm({ tool: req.tool, args: req.args, resolve });
           }),
+        onToolLimitReached: () =>
+          new Promise<LimitDecision>((resolve) => {
+            limitResolveRef.current = resolve;
+            setLimitModal({ limit: 50, resolve });
+          }),
       };
 
       try {
@@ -2975,6 +2999,7 @@ function App({
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
         permResolveRef.current = null;
+        limitResolveRef.current = null;
         pendingToolCallsRef.current.clear();
       }
     },
@@ -3279,6 +3304,15 @@ function App({
               perm.resolve(d);
               permResolveRef.current = null;
               setPerm(null);
+            }}
+          />
+        ) : limitModal ? (
+          <LimitModal
+            limit={limitModal.limit}
+            onDecide={(d) => {
+              limitModal.resolve(d);
+              limitResolveRef.current = null;
+              setLimitModal(null);
             }}
           />
         ) : (
