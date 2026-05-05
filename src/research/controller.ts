@@ -397,6 +397,17 @@ export async function runResearchTransaction(
   plan = setStatus(plan, "synthesizing");
   await writeLedger(plan);
 
+  // Check circuit breaker before synthesis: only total-budget exhaustion
+  // can abort at this point. Context-window overflow is handled internally
+  // by runSynthesis via ledger-reading mode.
+  const preSynthesisCb = checkCircuitBreaker(budgetState);
+  if (preSynthesisCb === "emergency_conclusion") {
+    plan = addNote(plan, `Research aborted by circuit breaker: ${preSynthesisCb}`);
+    plan = setStatus(plan, "aborted");
+    await writeLedger(plan);
+    return buildEmergencyResult(plan, budgetState, startTime, "BUDGET_EXHAUSTED");
+  }
+
   let synthesisUsage: Usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
   let synthesisStart = performance.now();
   let content = "";
@@ -419,6 +430,15 @@ export async function runResearchTransaction(
     terminalState = synthesisResult.terminalState;
     confidence = synthesisResult.confidence;
     synthesisUsage = synthesisResult.usage;
+
+    // Empty-content fallback: if synthesis returned nothing but we have findings,
+    // emit an emergency conclusion so the user is never left with silence.
+    if (!content.trim() && plan.findings.length > 0) {
+      plan = addNote(plan, "Synthesis produced empty content; emitting emergency conclusion");
+      content = buildEmergencyConclusion(plan);
+      terminalState = "BLOCKED";
+      confidence = "low";
+    }
 
     const synthesisPhase: PhaseUsage = {
       phase: "synthesis",

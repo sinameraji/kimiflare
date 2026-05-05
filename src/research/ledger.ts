@@ -142,6 +142,24 @@ export interface AppendFindingOpts {
   workerId: string;
 }
 
+/** Simple dedup heuristic: same first file + claim overlap. */
+function isDuplicateFinding(a: Finding, b: Finding): boolean {
+  const aFile = a.evidence[0]?.filePath;
+  const bFile = b.evidence[0]?.filePath;
+  if (!aFile || !bFile || aFile !== bFile) return false;
+
+  const aClaim = a.claim.toLowerCase();
+  const bClaim = b.claim.toLowerCase();
+  // If one claim contains the other, they're likely duplicates
+  if (aClaim.includes(bClaim) || bClaim.includes(aClaim)) return true;
+
+  // Or if they share >60% of words
+  const aWords = new Set(aClaim.split(/\s+/));
+  const bWords = bClaim.split(/\s+/);
+  const overlap = bWords.filter((w) => aWords.has(w)).length;
+  return bWords.length > 0 && overlap / bWords.length > 0.6;
+}
+
 export function appendFinding(
   plan: ResearchPlan,
   opts: AppendFindingOpts,
@@ -162,6 +180,30 @@ export function appendFinding(
       error: `Task ${opts.finding.taskId} is not in_progress`,
     };
   }
+
+  // Deduplicate: if a very similar finding already exists, merge instead of append.
+  const existingIndex = plan.findings.findIndex((f) => isDuplicateFinding(f, opts.finding));
+  if (existingIndex >= 0) {
+    const existing = plan.findings[existingIndex]!;
+    const confidenceOrder: Record<Finding["confidence"], number> = { high: 3, medium: 2, low: 1 };
+    const merged: Finding = {
+      ...existing,
+      confidence:
+        confidenceOrder[opts.finding.confidence] > confidenceOrder[existing.confidence]
+          ? opts.finding.confidence
+          : existing.confidence,
+      evidence: [...existing.evidence, ...opts.finding.evidence],
+      implications: [...(existing.implications ?? []), ...(opts.finding.implications ?? [])],
+      unresolvedFollowups: [
+        ...(existing.unresolvedFollowups ?? []),
+        ...(opts.finding.unresolvedFollowups ?? []),
+      ],
+    };
+    const newFindings = [...plan.findings];
+    newFindings[existingIndex] = merged;
+    return { plan: { ...plan, findings: newFindings } };
+  }
+
   return { plan: { ...plan, findings: [...plan.findings, opts.finding] } };
 }
 

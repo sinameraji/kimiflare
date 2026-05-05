@@ -8,6 +8,7 @@
 
 import { runKimi } from "../agent/client.js";
 import type { AiGatewayOptions, GatewayMeta } from "../agent/client.js";
+import { compactMessages } from "../agent/compact.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import { ToolExecutor } from "../tools/executor.js";
 import type { PermissionAsker, ToolResult } from "../tools/executor.js";
@@ -180,13 +181,26 @@ export interface WorkerOutput {
   filesRead: string[];
 }
 
+/** Rough token estimate for a message array. */
+function estimateTokens(messages: ChatMessage[]): number {
+  return Math.ceil(
+    messages.reduce((sum, m) => {
+      const text =
+        typeof m.content === "string"
+          ? m.content
+          : m.content?.map((p) => (p.type === "text" ? p.text : "")).join(" ") ?? "";
+      return sum + text.length;
+    }, 0) / 4,
+  );
+}
+
 export async function runWorker(opts: WorkerOpts): Promise<WorkerOutput> {
   const maxIter = opts.task.budget.maxToolCalls;
   const toolDefs = toOpenAIToolDefs(WORKER_TOOLS);
   const executor = new ToolExecutor(WORKER_TOOLS);
   const autoAllow: PermissionAsker = async () => "allow";
 
-  const messages: ChatMessage[] = [
+  let messages: ChatMessage[] = [
     { role: "system", content: WORKER_SYSTEM_PROMPT },
     {
       role: "user",
@@ -209,6 +223,27 @@ export async function runWorker(opts: WorkerOpts): Promise<WorkerOutput> {
 
   for (let iter = 0; iter < maxIter; iter++) {
     if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
+
+    // -------------------------------------------------------------------------
+    // Compaction: if the worker's context is getting long, summarize older
+    // turns so we don't hit the context window. We keep the system prompt,
+    // the original task, and the last 2 turns of working memory.
+    // -------------------------------------------------------------------------
+    const WORKER_COMPACT_THRESHOLD = 60_000;
+    if (estimateTokens(messages) > WORKER_COMPACT_THRESHOLD && iter > 0) {
+      const compacted = await compactMessages({
+        accountId: opts.accountId,
+        apiToken: opts.apiToken,
+        model: opts.model,
+        messages,
+        keepLastTurns: 2,
+        signal: opts.signal,
+        gateway: opts.gateway,
+      });
+      if (compacted.replacedCount > 0) {
+        messages = compacted.newMessages;
+      }
+    }
 
     const toolCalls: ToolCall[] = [];
     let content = "";
