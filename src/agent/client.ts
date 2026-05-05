@@ -217,46 +217,55 @@ async function* parseStream(
       yield { type: "usage", usage: chunk.usage };
     }
 
-    const choice = chunk.choices?.[0];
-    if (!choice) continue;
-
-    const d = choice.delta;
-    if (d) {
-      if (typeof d.reasoning_content === "string" && d.reasoning_content.length) {
-        yield { type: "reasoning", delta: d.reasoning_content };
-      }
-      if (typeof d.content === "string" && d.content.length) {
-        yield { type: "text", delta: d.content };
-      }
-      if (Array.isArray(d.tool_calls)) {
-        for (const tc of d.tool_calls) {
-          const idx = typeof tc.index === "number" ? tc.index : 0;
-          let buf = toolCalls.get(idx);
-          const incomingName = tc.function?.name ?? null;
-          const incomingId = tc.id ?? null;
-          if (!buf) {
-            buf = { id: incomingId ?? `tc_${idx}`, name: incomingName ?? "", args: "" };
-            toolCalls.set(idx, buf);
-            if (buf.name) {
-              yield { type: "tool_call_start", index: idx, id: buf.id, name: buf.name };
-            }
-          } else {
-            if (!buf.name && incomingName) {
-              buf.name = incomingName;
-              yield { type: "tool_call_start", index: idx, id: buf.id, name: buf.name };
-            }
-            if (buf.id.startsWith("tc_") && incomingId) buf.id = incomingId;
-          }
-          const argDelta = tc.function?.arguments;
-          if (typeof argDelta === "string" && argDelta.length) {
-            buf.args += argDelta;
-            yield { type: "tool_call_args", index: idx, argsDelta: argDelta };
-          }
-        }
+    // Cloudflare native format: { response: "..." }
+    if (typeof (chunk as Record<string, unknown>).response === "string") {
+      const resp = (chunk as Record<string, unknown>).response as string;
+      if (resp.length) {
+        yield { type: "text", delta: resp };
       }
     }
 
-    if (choice.finish_reason) finishReason = choice.finish_reason;
+    // OpenAI-compatible format: { choices: [{ delta: { content: "..." } }] }
+    const choice = chunk.choices?.[0];
+    if (choice) {
+      const d = choice.delta;
+      if (d) {
+        if (typeof d.reasoning_content === "string" && d.reasoning_content.length) {
+          yield { type: "reasoning", delta: d.reasoning_content };
+        }
+        if (typeof d.content === "string" && d.content.length) {
+          yield { type: "text", delta: d.content };
+        }
+        if (Array.isArray(d.tool_calls)) {
+          for (const tc of d.tool_calls) {
+            const idx = typeof tc.index === "number" ? tc.index : 0;
+            let buf = toolCalls.get(idx);
+            const incomingName = tc.function?.name ?? null;
+            const incomingId = tc.id ?? null;
+            if (!buf) {
+              buf = { id: incomingId ?? `tc_${idx}`, name: incomingName ?? "", args: "" };
+              toolCalls.set(idx, buf);
+              if (buf.name) {
+                yield { type: "tool_call_start", index: idx, id: buf.id, name: buf.name };
+              }
+            } else {
+              if (!buf.name && incomingName) {
+                buf.name = incomingName;
+                yield { type: "tool_call_start", index: idx, id: buf.id, name: buf.name };
+              }
+              if (buf.id.startsWith("tc_") && incomingId) buf.id = incomingId;
+            }
+            const argDelta = tc.function?.arguments;
+            if (typeof argDelta === "string" && argDelta.length) {
+              buf.args += argDelta;
+              yield { type: "tool_call_args", index: idx, argsDelta: argDelta };
+            }
+          }
+        }
+      }
+
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
   }
 
   for (const [idx, buf] of [...toolCalls.entries()].sort((a, b) => a[0] - b[0])) {
