@@ -304,6 +304,7 @@ interface Cfg {
   memoryMaxEntries?: number;
   memoryEmbeddingModel?: string;
   plumbingModel?: string;
+  memoryExtractionModel?: string;
   codeMode?: boolean;
   lspEnabled?: boolean;
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
@@ -806,6 +807,7 @@ function App({
         apiToken: cfg.apiToken,
         model: cfg.model,
         plumbingModel: cfg.plumbingModel,
+        extractionModel: cfg.memoryExtractionModel,
         embeddingModel: cfg.memoryEmbeddingModel,
         gateway: gatewayFromConfig(cfg),
         maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,

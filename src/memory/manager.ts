@@ -28,6 +28,7 @@ export interface MemoryManagerOpts {
   apiToken: string;
   model?: string;
   plumbingModel?: string;
+  extractionModel?: string;
   embeddingModel?: string;
   gateway?: AiGatewayOptions;
   maxAgeDays?: number;
@@ -172,6 +173,20 @@ export class MemoryManager {
     };
   }
 
+  private get extractionLlmOpts(): LlmOpts {
+    return {
+      accountId: this.opts.accountId,
+      apiToken: this.opts.apiToken,
+      model: this.opts.extractionModel ?? "@cf/meta/llama-3.2-3b-instruct",
+      gateway: this.opts.gateway,
+    };
+  }
+
+  /** Expose extraction LLM opts so the agent loop can pass them to extractors. */
+  getExtractionLlmOpts(): LlmOpts {
+    return this.extractionLlmOpts;
+  }
+
   private shouldRedact(): boolean {
     return this.opts.redactSecrets !== false;
   }
@@ -187,7 +202,8 @@ export class MemoryManager {
     repoPath: string,
     sessionId: string,
     signal?: AbortSignal,
-    agentRole?: string
+    agentRole?: string,
+    topicKey?: string
   ): Promise<{ id: string; superseded?: string[] }> {
     if (!this.db) throw new Error("Memory DB not open");
 
@@ -206,13 +222,13 @@ export class MemoryManager {
       safeContent = verified.corrected_content;
     }
 
-    // 3. Normalize topic key
-    const topicKey = this.normalizeTopicKey(safeContent, repoPath);
+    // 3. Normalize topic key (trust caller-provided key for auto-extracted memories)
+    const resolvedTopicKey = topicKey?.trim() || this.normalizeTopicKey(safeContent, repoPath);
 
     // 4. Check for supersession
     const supersededIds: string[] = [];
-    if (topicKey) {
-      const existing = findMemoriesByTopicKey(this.db, repoPath, topicKey);
+    if (resolvedTopicKey) {
+      const existing = findMemoriesByTopicKey(this.db, repoPath, resolvedTopicKey);
       for (const old of existing) {
         // Simple heuristic: same topic key + similar content length = likely superseded
         // A more robust approach would use an LLM, but this avoids extra tokens
@@ -240,7 +256,7 @@ export class MemoryManager {
       sourceSessionId: sessionId,
       repoPath,
       importance: Math.max(1, Math.min(5, importance)),
-      topicKey: topicKey ?? undefined,
+      topicKey: resolvedTopicKey ?? undefined,
       agentRole,
     };
 
