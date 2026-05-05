@@ -1,3 +1,5 @@
+import { join, dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { ToolSpec, ToolContext } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
 
@@ -10,6 +12,8 @@ export interface SandboxResult {
   error?: string;
   /** Tool calls made during execution */
   toolCalls: SandboxToolCall[];
+  /** Warnings emitted during transpilation or execution */
+  warnings?: string[];
 }
 
 export interface SandboxToolCall {
@@ -71,6 +75,39 @@ export function stripTypescript(code: string): string {
   return js.trim();
 }
 
+async function loadTypescript(cwd: string): Promise<typeof import("typescript") | null> {
+  let dir = cwd;
+  while (dir !== dirname(dir)) {
+    try {
+      const tsPath = join(dir, "node_modules", "typescript", "lib", "typescript.js");
+      return await import(pathToFileURL(tsPath).href);
+    } catch {
+      // continue walking up
+    }
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+async function transpileOrStrip(code: string, cwd: string): Promise<{ js: string; warnings: string[] }> {
+  const ts = await loadTypescript(cwd);
+  if (ts) {
+    const result = ts.transpileModule(code, {
+      compilerOptions: {
+        module: ts.ModuleKind.ES2022,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+        isolatedModules: true,
+      },
+    });
+    return { js: result.outputText, warnings: [] };
+  }
+  return {
+    js: stripTypescript(code),
+    warnings: ["TypeScript not found in node_modules. Using fallback parser; install typescript for reliable transpilation."],
+  };
+}
+
 async function runWithIsolatedVm(opts: SandboxOptions): Promise<SandboxResult> {
   const { Isolate } = await import("isolated-vm");
   const isolate = new Isolate({ memoryLimit: opts.memoryLimitMB ?? 128 });
@@ -130,7 +167,7 @@ async function runWithIsolatedVm(opts: SandboxOptions): Promise<SandboxResult> {
   await context.eval(`var api = {\n${apiMethods}\n};`);
 
   // Compile TS to JS
-  const jsCode = stripTypescript(opts.code);
+  const { js: jsCode, warnings } = await transpileOrStrip(opts.code, opts.ctx.cwd);
 
   // Wrap in async IIFE to support top-level await
   const wrapped = `(async function() {\n${jsCode}\n})();`;
@@ -143,12 +180,12 @@ async function runWithIsolatedVm(opts: SandboxOptions): Promise<SandboxResult> {
     await new Promise((r) => setTimeout(r, 10));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { output: "", logs, error: message, toolCalls };
+    return { output: "", logs, error: message, toolCalls, warnings };
   } finally {
     isolate.dispose();
   }
 
-  return { output: logs.join("\n"), logs, toolCalls };
+  return { output: logs.join("\n"), logs, toolCalls, warnings };
 }
 
 async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
@@ -225,7 +262,7 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
     };
   }
 
-  const jsCode = stripTypescript(opts.code);
+  const { js: jsCode, warnings } = await transpileOrStrip(opts.code, opts.ctx.cwd);
   const wrapped = `"use strict";\n(async function() {\n${jsCode}\n})();`;
 
   try {
@@ -235,10 +272,10 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
     await new Promise((r) => setTimeout(r, 10));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { output: "", logs, error: message, toolCalls };
+    return { output: "", logs, error: message, toolCalls, warnings };
   }
 
-  return { output: logs.join("\n"), logs, toolCalls };
+  return { output: logs.join("\n"), logs, toolCalls, warnings };
 }
 
 export async function runInSandbox(opts: SandboxOptions): Promise<SandboxResult> {
