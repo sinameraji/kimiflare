@@ -177,7 +177,7 @@ export class MemoryManager {
     return {
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.extractionModel ?? "@cf/meta/llama-3.2-1b-instruct",
+      model: this.opts.extractionModel ?? "@cf/meta/llama-3.2-3b-instruct",
       gateway: this.opts.gateway,
     };
   }

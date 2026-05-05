@@ -53,7 +53,7 @@ export interface KimiConfig {
   memoryEmbeddingModel?: string;
   /** Model for internal plumbing tasks (memory verification, hypothetical queries). Default: @cf/meta/llama-4-scout-17b-16e-instruct. */
   plumbingModel?: string;
-  /** Model for auto-extracting high-signal edit events. Default: @cf/meta/llama-3.2-1b-instruct. */
+  /** Model for auto-extracting high-signal edit events. Default: @cf/meta/llama-3.2-3b-instruct. */
   memoryExtractionModel?: string;
   /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
   codeMode?: boolean;
