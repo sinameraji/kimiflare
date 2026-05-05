@@ -61,7 +61,7 @@ export async function pruneSessions(): Promise<number> {
   return pruneFiles(files, RETENTION.sessionMaxAgeDays, RETENTION.sessionMaxCount);
 }
 
-export async function listSessions(limit = 30): Promise<SessionSummary[]> {
+export async function listSessions(limit = 30, cwd?: string): Promise<SessionSummary[]> {
   const dir = sessionsDir();
   let entries: string[];
   try {
@@ -77,6 +77,7 @@ export async function listSessions(limit = 30): Promise<SessionSummary[]> {
     try {
       const [s, raw] = await Promise.all([stat(path), readFile(path, "utf8")]);
       const parsed = JSON.parse(raw) as SessionFile;
+      if (cwd && parsed.cwd !== cwd) continue;
       const firstUser = parsed.messages.find((m) => m.role === "user");
       const firstPrompt =
         typeof firstUser?.content === "string"
