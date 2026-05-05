@@ -596,6 +596,7 @@ function App({
   const lspManagerRef = useRef(new LspManager());
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
+  const busyRef = useRef(busy);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
 
@@ -605,6 +606,10 @@ function App({
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customCommandsRef = useRef<CustomCommand[]>([]);
   const pickerCancelRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   // ── Picker logic (file mention `@` and slash command `/`) ──────────────
   // Depend on stable fields (kind, anchor) — not the activePicker reference,
@@ -1320,7 +1325,7 @@ function App({
         limitResolveRef.current = null;
         setLimitModal(null);
       }
-      if (busy && activeControllerRef.current) {
+      if (busyRef.current && activeControllerRef.current) {
         activeControllerRef.current.abort();
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
@@ -1339,7 +1344,7 @@ function App({
         commandWizard !== null ||
         commandToDelete !== null ||
         resumeSessions !== null;
-      if (!modalOpen && busy && activeControllerRef.current) {
+      if (!modalOpen && busyRef.current && activeControllerRef.current) {
         if (permResolveRef.current) {
           permResolveRef.current("deny");
           permResolveRef.current = null;
@@ -2922,6 +2927,8 @@ function App({
                     text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
                   },
                 ]);
+              } else {
+                throw compactErr;
               }
             }
           }

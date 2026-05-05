@@ -15,11 +15,9 @@ export async function* readSSE(
   let buffer = "";
 
   const onAbort = () => {
-    try {
-      reader.cancel(new DOMException("aborted", "AbortError"));
-    } catch {
-      /* reader may already be closed */
-    }
+    reader.cancel(new DOMException("aborted", "AbortError")).catch(() => {
+      /* reader may already be closed or stream may have errored */
+    });
   };
   signal?.addEventListener("abort", onAbort, { once: true });
 
