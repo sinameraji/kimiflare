@@ -1,9 +1,27 @@
 /**
  * Deterministic extractors that auto-populate memory from tool results.
- * No LLM calls — pure regex / JSON.parse.
+ * Most are pure regex / JSON.parse. The edit_event extractor can optionally
+ * use a lightweight LLM for high-signal synthesis when context is available.
  */
 
+import { runKimi } from "../agent/client.js";
+import type { ChatMessage } from "../agent/messages.js";
 import type { MemoryCategory } from "./schema.js";
+
+export interface ExtractorContext {
+  /** Arguments passed to the tool (e.g. old_string, new_string, path). */
+  toolArgs?: Record<string, unknown>;
+  /** The assistant message that triggered this tool call. */
+  assistantMessage?: string;
+  /** LLM opts for synthesis (accountId, apiToken, model, gateway). */
+  llmOpts?: {
+    accountId: string;
+    apiToken: string;
+    model: string;
+    gateway?: { id: string; cacheTtl?: number; skipCache?: boolean; collectLogPayload?: boolean; metadata?: Record<string, string | number | boolean> };
+    signal?: AbortSignal;
+  };
+}
 
 export interface Extractor {
   /** Unique identifier for this extractor */
@@ -14,7 +32,14 @@ export interface Extractor {
   extract: (
     content: string,
     filePath: string | undefined,
-  ) => {
+    ctx?: ExtractorContext,
+  ) => Promise<{
+    content: string;
+    category: MemoryCategory;
+    importance: number;
+    topicKey: string;
+    relatedFiles?: string[];
+  } | null> | {
     content: string;
     category: MemoryCategory;
     importance: number;
@@ -26,6 +51,74 @@ export interface Extractor {
 function safeJsonParse<T>(text: string): T | null {
   try {
     return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function truncate(str: string, max: number): string {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + "…";
+}
+
+const EDIT_SYNTHESIS_SYSTEM = `You summarize code edits for a memory system. Write ONE concise sentence (max 20 words) describing what was done and why.
+Focus on intent and impact, not mechanics.
+
+Examples:
+- Fixed race condition in loop.ts by adding AbortSignal guard before recursive calls.
+- Refactored auth middleware to use JWT tokens instead of session cookies.
+- Added vitest dependency and removed jest from package.json.
+- Updated tsconfig strict mode to true and enabled noUncheckedIndexedAccess.
+
+Respond with only the summary sentence. No quotes, no preamble.`;
+
+async function synthesizeEditEvent(
+  file: string,
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  assistantMessage: string | undefined,
+  llmOpts: ExtractorContext["llmOpts"],
+): Promise<string | null> {
+  if (!llmOpts) return null;
+
+  const oldString = typeof toolArgs.old_string === "string" ? toolArgs.old_string : "";
+  const newString = typeof toolArgs.new_string === "string" ? toolArgs.new_string : "";
+  const fullContent = typeof toolArgs.content === "string" ? toolArgs.content : "";
+
+  // For write tools, the "new" content is the full file content
+  const isWrite = toolName === "write";
+  const before = isWrite ? "(new file)" : truncate(oldString, 600);
+  const after = isWrite ? truncate(fullContent, 600) : truncate(newString, 600);
+  const intent = truncate(assistantMessage || "", 1200);
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: EDIT_SYNTHESIS_SYSTEM },
+    {
+      role: "user",
+      content: `File: ${file}\nTool: ${toolName}\nIntent: ${intent}\nBefore:\n${before}\n\nAfter:\n${after}\n\nSummary:`,
+    },
+  ];
+
+  try {
+    const events = runKimi({
+      accountId: llmOpts.accountId,
+      apiToken: llmOpts.apiToken,
+      model: llmOpts.model,
+      messages,
+      temperature: 0.1,
+      maxCompletionTokens: 64,
+      gateway: llmOpts.gateway,
+      signal: llmOpts.signal,
+    });
+
+    let text = "";
+    for await (const ev of events) {
+      if (ev.type === "text") text += ev.delta;
+    }
+
+    const summary = text.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, " ");
+    if (summary.length < 10 || summary.length > 200) return null;
+    return summary;
   } catch {
     return null;
   }
@@ -86,9 +179,31 @@ export const EXTRACTORS: Extractor[] = [
   {
     id: "edit_event",
     match: (tool, file) => (tool === "edit" || tool === "write") && !!file,
-    extract: (_content, file) => {
+    extract: async (_content, file, ctx) => {
       if (!file) return null;
       const safeKey = file.replace(/[^a-zA-Z0-9]/g, "_");
+
+      // Try LLM synthesis when we have context
+      if (ctx?.llmOpts && (ctx.toolArgs || ctx.assistantMessage)) {
+        const summary = await synthesizeEditEvent(
+          file,
+          ctx.toolArgs?._toolName as string || "edit",
+          ctx.toolArgs || {},
+          ctx.assistantMessage,
+          ctx.llmOpts,
+        );
+        if (summary) {
+          return {
+            content: summary,
+            category: "event",
+            importance: 3,
+            topicKey: `event_edit_${safeKey}`,
+            relatedFiles: [file],
+          };
+        }
+      }
+
+      // Fallback to deterministic low-signal memory
       return {
         content: `File modified: ${file}.`,
         category: "event",

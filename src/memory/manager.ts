@@ -28,6 +28,7 @@ export interface MemoryManagerOpts {
   apiToken: string;
   model?: string;
   plumbingModel?: string;
+  extractionModel?: string;
   embeddingModel?: string;
   gateway?: AiGatewayOptions;
   maxAgeDays?: number;
@@ -170,6 +171,20 @@ export class MemoryManager {
       model: this.opts.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
       gateway: this.opts.gateway,
     };
+  }
+
+  private get extractionLlmOpts(): LlmOpts {
+    return {
+      accountId: this.opts.accountId,
+      apiToken: this.opts.apiToken,
+      model: this.opts.extractionModel ?? "@cf/meta/llama-3.2-1b-instruct",
+      gateway: this.opts.gateway,
+    };
+  }
+
+  /** Expose extraction LLM opts so the agent loop can pass them to extractors. */
+  getExtractionLlmOpts(): LlmOpts {
+    return this.extractionLlmOpts;
   }
 
   private shouldRedact(): boolean {
