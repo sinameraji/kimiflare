@@ -1316,7 +1316,7 @@ function App({
         setPerm(null);
       }
       if (hadLimit) {
-        limitResolveRef.current!("summarize");
+        limitResolveRef.current!("stop");
         limitResolveRef.current = null;
         setLimitModal(null);
       }
@@ -1346,7 +1346,7 @@ function App({
           setPerm(null);
         }
         if (limitResolveRef.current) {
-          limitResolveRef.current("summarize");
+          limitResolveRef.current("stop");
           limitResolveRef.current = null;
           setLimitModal(null);
         }

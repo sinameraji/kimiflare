@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 
-export type LimitDecision = "continue" | "summarize";
+export type LimitDecision = "continue" | "stop";
 
 interface Props {
   limit: number;
@@ -14,7 +14,7 @@ export function LimitModal({ limit, onDecide }: Props) {
   const theme = useTheme();
   const items = [
     { label: "Continue", value: "continue" as const },
-    { label: "Present findings so far", value: "summarize" as const },
+    { label: "Stop", value: "stop" as const },
   ];
 
   return (

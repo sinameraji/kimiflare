@@ -26,9 +26,8 @@ export interface AgentCallbacks {
   onTasks?: (tasks: Task[]) => void;
   askPermission: PermissionAsker;
   /** Called when the tool-call iteration limit is reached. Return "continue" to
-   *  reset the counter and keep going, or "summarize" to ask the model to present
-   *  findings and end the turn. */
-  onToolLimitReached?: () => Promise<"continue" | "summarize">;
+   *  reset the counter and keep going, or "stop" to end the turn immediately. */
+  onToolLimitReached?: () => Promise<"continue" | "stop">;
 }
 
 export interface AgentTurnOpts {
@@ -166,13 +165,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           });
           iter = 0;
         } else {
-          opts.messages.push({
-            role: "system",
-            content:
-              "You have reached the tool-call limit for this session. " +
-              "Please synthesize your findings and present a summary of what was accomplished so far.",
-          });
-          budgetExhausted = true;
+          return;
         }
       } else if (opts.continueOnLimit) {
         opts.messages.push({
