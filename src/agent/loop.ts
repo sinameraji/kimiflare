@@ -491,6 +491,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                     opts.cwd,
                     opts.sessionId ?? "unknown",
                     opts.signal,
+                    undefined,
+                    memory.topicKey,
                   )
                   .catch(() => {
                     // Swallow auto-extraction errors so they never break the loop
