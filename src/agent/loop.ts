@@ -438,9 +438,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           opts.callbacks.onToolResult?.(toolResult);
         }
 
+        const warningPrefix = sandboxResult.warnings?.length
+          ? `Warning: ${sandboxResult.warnings.join(" ")}\n\n`
+          : "";
         const resultContent = sandboxResult.error
-          ? `Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
-          : sandboxResult.output;
+          ? `${warningPrefix}Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
+          : `${warningPrefix}${sandboxResult.output}`;
 
         const result: ToolResult = {
           tool_call_id: tc.id,
@@ -477,29 +480,50 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         // Auto-extract memories from tool results
         if (opts.memoryManager) {
           let filePath: string | undefined;
+          let toolArgs: Record<string, unknown> = {};
           try {
-            const args = JSON.parse(tc.function.arguments || "{}") as { path?: string };
-            filePath = args.path;
+            toolArgs = JSON.parse(tc.function.arguments || "{}") as Record<string, unknown>;
+            filePath = toolArgs.path as string | undefined;
           } catch {
             // ignore parse errors
           }
+
+          // Find the preceding assistant message for intent context
+          const lastAssistant = [...opts.messages].reverse().find(
+            (m) => m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0
+          );
+          const assistantMessage = lastAssistant?.content ?? "";
+
+          const llmOpts = opts.memoryManager.getExtractionLlmOpts();
+
           for (const extractor of EXTRACTORS) {
             if (extractor.match(tc.function.name, filePath)) {
-              const memory = extractor.extract(result.content, filePath);
-              if (memory) {
-                void opts.memoryManager
-                  .remember(
-                    memory.content,
-                    memory.category,
-                    memory.importance,
-                    opts.cwd,
-                    opts.sessionId ?? "unknown",
-                    opts.signal,
-                  )
-                  .catch(() => {
-                    // Swallow auto-extraction errors so they never break the loop
+              void (async () => {
+                try {
+                  const memory = await extractor.extract(result.content, filePath, {
+                    toolArgs: { ...toolArgs, _toolName: tc.function.name },
+                    assistantMessage: typeof assistantMessage === "string" ? assistantMessage : "",
+                    llmOpts: {
+                      ...llmOpts,
+                      signal: opts.signal,
+                    },
                   });
-              }
+                  if (memory) {
+                    await opts.memoryManager!.remember(
+                      memory.content,
+                      memory.category,
+                      memory.importance,
+                      opts.cwd,
+                      opts.sessionId ?? "unknown",
+                      opts.signal,
+                      undefined,
+                      memory.topicKey,
+                    );
+                  }
+                } catch {
+                  // Swallow auto-extraction errors so they never break the loop
+                }
+              })();
             }
           }
         }

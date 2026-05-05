@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.34.1](https://github.com/sinameraji/kimiflare/compare/v0.34.0...v0.34.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **memory:** supersession + LLM-synthesized edit events ([#267](https://github.com/sinameraji/kimiflare/issues/267)) ([298fa8b](https://github.com/sinameraji/kimiflare/commit/298fa8b1536c0913c53f317bff31bc9e88b9f3a0))
+* remove hardcoded 200k input token budget from code mode ([#268](https://github.com/sinameraji/kimiflare/issues/268)) ([b90c995](https://github.com/sinameraji/kimiflare/commit/b90c9954c1ed619e7d4dc77ff747896154142621))
+
 ## [0.34.0](https://github.com/sinameraji/kimiflare/compare/v0.33.0...v0.34.0) (2026-05-05)
 
 

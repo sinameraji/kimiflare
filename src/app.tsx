@@ -304,6 +304,7 @@ interface Cfg {
   memoryMaxEntries?: number;
   memoryEmbeddingModel?: string;
   plumbingModel?: string;
+  memoryExtractionModel?: string;
   codeMode?: boolean;
   lspEnabled?: boolean;
   lspServers?: Record<string, { command: string[]; env?: Record<string, string>; enabled?: boolean; rootPatterns?: string[] }>;
@@ -810,6 +811,7 @@ function App({
         apiToken: cfg.apiToken,
         model: cfg.model,
         plumbingModel: cfg.plumbingModel,
+        extractionModel: cfg.memoryExtractionModel,
         embeddingModel: cfg.memoryEmbeddingModel,
         gateway: gatewayFromConfig(cfg),
         maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
@@ -1562,8 +1564,6 @@ function App({
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
         codeMode: effectiveCodeMode,
-        maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
-        continueOnLimit: effectiveCodeMode ? true : undefined,
         cloudMode: cfg.cloudMode,
         cloudToken: initialCloudToken,
         onIterationEnd,
@@ -2826,8 +2826,6 @@ function App({
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
-          maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
-          continueOnLimit: effectiveCodeMode ? true : undefined,
           cloudMode: cfg.cloudMode,
           cloudToken: initialCloudToken,
           onIterationEnd,

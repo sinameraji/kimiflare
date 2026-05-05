@@ -53,6 +53,8 @@ export interface KimiConfig {
   memoryEmbeddingModel?: string;
   /** Model for internal plumbing tasks (memory verification, hypothetical queries). Default: @cf/meta/llama-4-scout-17b-16e-instruct. */
   plumbingModel?: string;
+  /** Model for auto-extracting high-signal edit events. Default: @cf/meta/llama-3.2-3b-instruct. */
+  memoryExtractionModel?: string;
   /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
   codeMode?: boolean;
   /** Enable LSP integration. Default: false. */
@@ -164,7 +166,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const cacheStablePrompts = envCacheStable === "0" || envCacheStable === "false" ? false : true;
 
   const envCompiled = process.env.KIMIFLARE_COMPILED_CONTEXT;
-  const compiledContext = envCompiled === "1" || envCompiled === "true" ? true : false;
+  const compiledContext = envCompiled === "0" || envCompiled === "false" ? false : true;
 
   const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
   const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
@@ -175,6 +177,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envMemoryMaxEntries = readNumberEnv("KIMIFLARE_MEMORY_MAX_ENTRIES");
   const envMemoryEmbeddingModel = process.env.KIMIFLARE_MEMORY_EMBEDDING_MODEL;
   const envPlumbingModel = process.env.KIMIFLARE_PLUMBING_MODEL;
+  const envMemoryExtractionModel = process.env.KIMIFLARE_MEMORY_EXTRACTION_MODEL;
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
@@ -222,14 +225,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       cacheStablePrompts,
       compiledContext,
       imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
-      memoryEnabled: envMemoryEnabled,
+      memoryEnabled: envMemoryEnabled ?? true,
       memoryDbPath: envMemoryDbPath,
       memoryMaxAgeDays: envMemoryMaxAgeDays,
       memoryMaxEntries: envMemoryMaxEntries,
       memoryEmbeddingModel: envMemoryEmbeddingModel,
       plumbingModel: envPlumbingModel,
-      codeMode: envCodeMode,
-      costAttribution: envCostAttribution ?? false,
+      memoryExtractionModel: envMemoryExtractionModel,
+      codeMode: envCodeMode ?? true,
+      costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
     };
   }
@@ -281,14 +285,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
         imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
-        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled,
+        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? true,
         memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
         memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
         memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
         memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
-        codeMode: envCodeMode ?? parsed.codeMode,
-        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
+        memoryExtractionModel: envMemoryExtractionModel ?? parsed.memoryExtractionModel,
+        codeMode: envCodeMode ?? parsed.codeMode ?? true,
+        costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         cloudMode: envCloudMode ?? parsed.cloudMode,
       };
