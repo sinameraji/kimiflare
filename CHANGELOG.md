@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.0](https://github.com/sinameraji/kimiflare/compare/v0.34.1...v0.35.0) (2026-05-05)
+
+
+### Features
+
+* add Kimiflare Cloud mode with device auth and API proxy ([#272](https://github.com/sinameraji/kimiflare/issues/272)) ([ae86eb0](https://github.com/sinameraji/kimiflare/commit/ae86eb0c01b98d080ad82ae1e0b6082c4ddcf17c))
+
+
+### Bug Fixes
+
+* **code-mode:** use typescript compiler when available for transpilation ([#270](https://github.com/sinameraji/kimiflare/issues/270)) ([febf38a](https://github.com/sinameraji/kimiflare/commit/febf38a681a99e82c53fabe8da79f0040001949a))
+
 ## [0.34.1](https://github.com/sinameraji/kimiflare/compare/v0.34.0...v0.34.1) (2026-05-05)
 
 
