@@ -61,15 +61,16 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + "…";
 }
 
-const EDIT_SYNTHESIS_SYSTEM = `You summarize a SINGLE code edit for a memory system. Write ONE concise sentence (max 20 words) describing exactly what changed in the file and why.
+const EDIT_SYNTHESIS_SYSTEM = `You summarize a SINGLE code edit for a memory system. Write ONE concise sentence (max 20 words) describing exactly what changed in the file.
 
 Rules:
 - Use ONLY the Before/After diff below. IGNORE any conversation history or unrelated context.
-- Focus on the specific file change, not the broader task.
+- For new files, describe what the file contains or its purpose.
+- For edits, describe the specific change, not just "updated file".
 - Mention the file name if it clarifies the change.
 
 Examples:
-- Created test-memory.md with a single line marking it as a memory test.
+- Created test-memory.md containing a single line with the text "Memory test".
 - Fixed race condition in loop.ts by adding AbortSignal guard before recursive calls.
 - Refactored auth middleware to use JWT tokens instead of session cookies.
 - Added vitest dependency and removed jest from package.json.
