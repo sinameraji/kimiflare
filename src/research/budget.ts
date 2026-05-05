@@ -10,7 +10,7 @@ import type { PhaseUsage, ResearchBudget, ResearchTask } from "./types.js";
 export const DEFAULT_BUDGET: ResearchBudget = {
   maxCostUsd: 2.0,
   maxInputTokens: 2_000_000,
-  maxOutputTokens: 80_000,
+  maxOutputTokens: 16_384,
   maxWallTimeMs: 8 * 60_000,
   maxFilesRead: 80,
   maxWaves: 3,
