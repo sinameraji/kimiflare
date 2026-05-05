@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.34.0](https://github.com/sinameraji/kimiflare/compare/v0.33.0...v0.34.0) (2026-05-05)
+
+
+### Features
+
+* add Zed Agent Panel (ACP) integration ([#262](https://github.com/sinameraji/kimiflare/issues/262)) ([8e61752](https://github.com/sinameraji/kimiflare/commit/8e61752f0e6b72836df725333bf27ff421df1cec))
+* auto-enable Code Mode for heavy tasks (Phase 4) ([#252](https://github.com/sinameraji/kimiflare/issues/252)) ([631fb36](https://github.com/sinameraji/kimiflare/commit/631fb36ade69e2ca8d4532a3d9a3e44a5a63a322))
+* implement phase five — parallel research agents ([#253](https://github.com/sinameraji/kimiflare/issues/253)) ([4ab70a2](https://github.com/sinameraji/kimiflare/commit/4ab70a2542fa64a940be709facb8ddc74e92aa88))
+* Phase 3 — intent classification + telemetry ([#250](https://github.com/sinameraji/kimiflare/issues/250)) ([c706b9c](https://github.com/sinameraji/kimiflare/commit/c706b9c8f44de157f46321b0554e768570d7da40))
+* **remote:** Phase 1 MVP — end-to-end /remote command ([#254](https://github.com/sinameraji/kimiflare/issues/254)) ([ad11946](https://github.com/sinameraji/kimiflare/commit/ad11946dacae069f6681664170556bebdb927943))
+* **remote:** Phase 2 — Resilience & Polish ([#255](https://github.com/sinameraji/kimiflare/issues/255)) ([3c53d32](https://github.com/sinameraji/kimiflare/commit/3c53d3233a9b4b6a99e32a2762baa700ae3d677d))
+
+
+### Bug Fixes
+
+* equip heavy explorer mode with missing superpowers (auto-compact, budget, continue-on-limit) ([#266](https://github.com/sinameraji/kimiflare/issues/266)) ([8508ee0](https://github.com/sinameraji/kimiflare/commit/8508ee02e75fc87b7c4dc7f6c4935708da39f233))
+* parallel research cost bugs ([#257](https://github.com/sinameraji/kimiflare/issues/257)) ([7d31a87](https://github.com/sinameraji/kimiflare/commit/7d31a87c55a7cd2cfc7542c92404bf066c3f2efa))
+* **research:** prevent empty scout questions from breaking worker ([#260](https://github.com/sinameraji/kimiflare/issues/260)) ([c82d50b](https://github.com/sinameraji/kimiflare/commit/c82d50b56bf9f1c963b94f28a21cbd0d961fe10c))
+* **research:** prevent false convergence and empty synthesis output ([#259](https://github.com/sinameraji/kimiflare/issues/259)) ([873157c](https://github.com/sinameraji/kimiflare/commit/873157c2cddb4c49fd80fc86fabb3ad87ca18d8d))
+* **research:** remove parallel research system, route heavy explore to normal agent ([#265](https://github.com/sinameraji/kimiflare/issues/265)) ([8de4c5f](https://github.com/sinameraji/kimiflare/commit/8de4c5f05c24b7c20ea498509563f5fb69570aa9))
+* scope /resume to current project directory ([#256](https://github.com/sinameraji/kimiflare/issues/256)) ([31ec123](https://github.com/sinameraji/kimiflare/commit/31ec123d5401e67e59e45d67f73cc6cb5a20738d))
+
 ## [0.33.0](https://github.com/sinameraji/kimiflare/compare/v0.32.0...v0.33.0) (2026-05-03)
 
 
