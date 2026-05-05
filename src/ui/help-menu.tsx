@@ -12,6 +12,7 @@ interface CustomCommandSummary {
 interface Props {
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
+  cloudMode?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -162,7 +163,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, onDone, onCommand }: Props) {
   const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
@@ -182,8 +183,10 @@ export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCom
     onDone();
   };
 
+  const categories = cloudMode ? CATEGORIES.filter((c) => c.key !== "gateway") : CATEGORIES;
+
   if (page === "main") {
-    const items: { label: string; value: string; key: string }[] = CATEGORIES.map((cat) => ({
+    const items: { label: string; value: string; key: string }[] = categories.map((cat) => ({
       label: cat.label,
       value: cat.key,
       key: cat.key,
@@ -263,7 +266,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCom
     );
   }
 
-  const category = CATEGORIES.find((c) => c.key === page)!;
+  const category = categories.find((c) => c.key === page)!;
   const selectable = category.commands.filter((cmd) => cmd.selectable !== false);
   const staticCmds = category.commands.filter((cmd) => cmd.selectable === false);
 

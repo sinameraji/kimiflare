@@ -60,6 +60,8 @@ export interface AgentTurnOpts {
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
+  cloudMode?: boolean;
+  cloudToken?: string;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -229,6 +231,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       reasoningEffort: opts.reasoningEffort,
       sessionId: opts.sessionId,
       gateway: opts.gateway,
+      cloudMode: opts.cloudMode,
+      cloudToken: opts.cloudToken,
     });
 
     for await (const ev of events) {

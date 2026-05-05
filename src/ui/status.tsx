@@ -23,9 +23,10 @@ interface Props {
   latestVersion?: string | null;
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
+  cloudMode?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -41,6 +42,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
 
   const leftParts: string[] = [`${shortModel(model)}`, effort];
+  if (cloudMode) leftParts.push("CLOUD");
   if (codeMode) leftParts.push("CODE");
 
   return (
