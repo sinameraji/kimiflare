@@ -1558,8 +1558,6 @@ function App({
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
         codeMode: effectiveCodeMode,
-        maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
-        continueOnLimit: effectiveCodeMode ? true : undefined,
         onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
@@ -2816,8 +2814,6 @@ function App({
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
-          maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
-          continueOnLimit: effectiveCodeMode ? true : undefined,
           onIterationEnd,
           intentClassification: classification,
           onFileChange: (path, content) => {
