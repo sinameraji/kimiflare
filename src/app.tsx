@@ -82,6 +82,7 @@ import { BUILTIN_COMMANDS, BUILTIN_COMMAND_NAMES } from "./commands/builtins.js"
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { CommandWizard } from "./ui/command-wizard.js";
+import { buildInitPrompt } from "./init/context-generator.js";
 import { CommandPicker } from "./ui/command-picker.js";
 import { CommandList } from "./ui/command-list.js";
 import { LspWizard } from "./ui/lsp-wizard.js";
@@ -1505,29 +1506,9 @@ function App({
       return;
     }
     const cwd = process.cwd();
-    const existingName = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"].find((n) => existsSync(join(cwd, n)));
-    const isRefresh = existingName !== undefined;
-    const promptParts = [
-      isRefresh
-        ? `Regenerate ${existingName} at the repository root to refresh project context. If the file already exists, read it first and preserve anything still accurate, updating only what has changed.`
-        : "Generate a KIMI.md at the repository root so future agents have project context.",
-      "",
-      "First, use the `glob`, `read`, and `grep` tools to understand the project: read `package.json`, the top-level `README.md` if present, the tsconfig / build config, and skim the top-level source directory structure.",
-      isRefresh ? `Also read the existing ${existingName} so you know what to keep vs. update.` : null,
-      "",
-      "Then call the `write` tool to create `KIMI.md` at the repo root with these sections, terse (aim ≤ 100 lines total):",
-      "",
-      "- **Project** — one-line description + primary language/runtime.",
-      "- **Build / test / run** — exact shell commands an agent should use.",
-      "- **Layout** — key directories and what lives in each.",
-      "- **Conventions** — naming, import style, file structure, commit style, anything surprising.",
-      "- **Do / Don't** — quirks or rules future agents should know.",
-      "",
-      "Do not call `tasks_set` for this. Just read what you need, then write the file.",
-    ];
-    const prompt = promptParts.filter((p): p is string => p !== null).join("\n");
+    const { prompt, targetFilename, isRefresh } = buildInitPrompt(cwd);
 
-    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${existingName})` : "/init" }]);
+    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
     setTurnStartedAt(Date.now());
