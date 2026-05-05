@@ -61,14 +61,18 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + "…";
 }
 
-const EDIT_SYNTHESIS_SYSTEM = `You summarize code edits for a memory system. Write ONE concise sentence (max 20 words) describing what was done and why.
-Focus on intent and impact, not mechanics.
+const EDIT_SYNTHESIS_SYSTEM = `You summarize a SINGLE code edit for a memory system. Write ONE concise sentence (max 20 words) describing exactly what changed in the file and why.
+
+Rules:
+- Use ONLY the Before/After diff below. IGNORE any conversation history or unrelated context.
+- Focus on the specific file change, not the broader task.
+- Mention the file name if it clarifies the change.
 
 Examples:
+- Created test-memory.md with a single line marking it as a memory test.
 - Fixed race condition in loop.ts by adding AbortSignal guard before recursive calls.
 - Refactored auth middleware to use JWT tokens instead of session cookies.
 - Added vitest dependency and removed jest from package.json.
-- Updated tsconfig strict mode to true and enabled noUncheckedIndexedAccess.
 
 Respond with only the summary sentence. No quotes, no preamble.`;
 
@@ -89,13 +93,14 @@ async function synthesizeEditEvent(
   const isWrite = toolName === "write";
   const before = isWrite ? "(new file)" : truncate(oldString, 600);
   const after = isWrite ? truncate(fullContent, 600) : truncate(newString, 600);
-  const intent = truncate(assistantMessage || "", 1200);
+  // Only use the tail of the assistant message — the most recent intent is usually at the end.
+  const intent = assistantMessage ? assistantMessage.slice(-300).trim() : "";
 
   const messages: ChatMessage[] = [
     { role: "system", content: EDIT_SYNTHESIS_SYSTEM },
     {
       role: "user",
-      content: `File: ${file}\nTool: ${toolName}\nIntent: ${intent}\nBefore:\n${before}\n\nAfter:\n${after}\n\nSummary:`,
+      content: `File: ${file}\nTool: ${toolName}\n\nBefore:\n${before}\n\nAfter:\n${after}${intent ? `\n\nContext (do not quote verbatim): ${intent}` : ""}\n\nSummary:`,
     },
   ];
 
