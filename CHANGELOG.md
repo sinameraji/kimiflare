@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.2](https://github.com/sinameraji/kimiflare/compare/v0.36.1...v0.36.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* **cloud:** bind JWT to CLI device ID instead of browser fingerprint ([#282](https://github.com/sinameraji/kimiflare/issues/282)) ([da2d977](https://github.com/sinameraji/kimiflare/commit/da2d9772d2f26704a9fef6e6093552f049ed9fb6))
+
 ## [0.36.1](https://github.com/sinameraji/kimiflare/compare/v0.36.0...v0.36.1) (2026-05-05)
 
 
