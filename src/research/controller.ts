@@ -173,7 +173,7 @@ export async function runResearchTransaction(
       status: "pending",
       budget: {
         maxTokens: 100_000,
-        maxToolCalls: 10,
+        maxToolCalls: 150,
         maxFilesRead: 10,
         consumedTokens: 0,
         consumedToolCalls: 0,
@@ -295,7 +295,7 @@ export async function runResearchTransaction(
           status: "pending",
           budget: {
             maxTokens: 50_000,
-            maxToolCalls: 8,
+            maxToolCalls: 150,
             maxFilesRead: 10,
             consumedTokens: 0,
             consumedToolCalls: 0,

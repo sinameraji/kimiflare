@@ -146,6 +146,7 @@ const WORKER_SYSTEM_PROMPT =
 Rules:
 - Use read, glob, and grep to explore files.
 - Use record_finding to document what you discover.
+- MANDATORY: You MUST call record_finding at least once every 20 tool calls. If you have read files and discovered anything relevant, document it immediately before continuing.
 - Use propose_followup_task if you discover something that needs separate investigation.
 - Use request_file before reading a file to check for lease conflicts.
 - Use mark_unknown if you cannot answer the question after reasonable effort.
