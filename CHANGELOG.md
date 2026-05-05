@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.36.0](https://github.com/sinameraji/kimiflare/compare/v0.35.0...v0.36.0) (2026-05-05)
+
+
+### Features
+
+* add GitHub Sponsors funding configuration ([#275](https://github.com/sinameraji/kimiflare/issues/275)) ([9c0ad43](https://github.com/sinameraji/kimiflare/commit/9c0ad439e0a83edf053fce5d601f326faa971c7e))
+* **init:** structured context generation with project-type detection ([#273](https://github.com/sinameraji/kimiflare/issues/273)) ([11c4d7a](https://github.com/sinameraji/kimiflare/commit/11c4d7a3c1591b12b4117879d4d93ecdd023a7be))
+* inline cloud auth in onboarding + strikethrough cost display ([#276](https://github.com/sinameraji/kimiflare/issues/276)) ([5c0ef78](https://github.com/sinameraji/kimiflare/commit/5c0ef78a087750e7e36617e8810795e4ecd54247))
+* interactive modal when tool-call limit is reached ([#277](https://github.com/sinameraji/kimiflare/issues/277)) ([5247572](https://github.com/sinameraji/kimiflare/commit/5247572aaf18814394dc3279fa162ee2f4ba1277))
+
+
+### Bug Fixes
+
+* handle Escape abort gracefully and prevent crashes ([#278](https://github.com/sinameraji/kimiflare/issues/278)) ([71e509f](https://github.com/sinameraji/kimiflare/commit/71e509f8828ff3183898fff5531043a09d975b8e)), closes [#276](https://github.com/sinameraji/kimiflare/issues/276)
+
 ## [0.35.0](https://github.com/sinameraji/kimiflare/compare/v0.34.1...v0.35.0) (2026-05-05)
 
 
