@@ -484,18 +484,21 @@ function App({
   initialLspScope,
   initialLspProjectPath,
   initialCloudToken,
+  initialCloudDeviceId,
 }: {
   initialCfg: Cfg | null;
   initialUpdateResult?: UpdateCheckResult;
   initialLspScope: "project" | "global";
   initialLspProjectPath: string | null;
   initialCloudToken?: string;
+  initialCloudDeviceId?: string;
 }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
   const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
   const [cloudToken, setCloudToken] = useState(initialCloudToken);
+  const [cloudDeviceId, setCloudDeviceId] = useState(initialCloudDeviceId);
   const [events, setRawEvents] = useState<ChatEvent[]>([]);
   const setEvents = useCallback(
     (updater: React.SetStateAction<ChatEvent[]>) => {
@@ -552,7 +555,7 @@ function App({
     let cancelled = false;
     const fetchBudget = async () => {
       const { fetchCloudUsage } = await import("./cloud/auth.js");
-      const usage = await fetchCloudUsage(initialCloudToken);
+      const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
       if (usage && !cancelled) {
         setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
       }
@@ -1587,6 +1590,7 @@ function App({
         codeMode: effectiveCodeMode,
         cloudMode: cfg.cloudMode,
         cloudToken: cloudToken ?? initialCloudToken,
+        cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
         onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
@@ -2855,6 +2859,7 @@ function App({
           codeMode: effectiveCodeMode,
           cloudMode: cfg.cloudMode,
           cloudToken: cloudToken ?? initialCloudToken,
+          cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
           onFileChange: (path, content) => {
@@ -3436,6 +3441,7 @@ export async function renderApp(
   lspScope: "project" | "global" = "global",
   lspProjectPath: string | null = null,
   cloudToken?: string,
+  cloudDeviceId?: string,
 ) {
   const instance = render(
     <App
@@ -3444,6 +3450,7 @@ export async function renderApp(
       initialLspScope={lspScope}
       initialLspProjectPath={lspProjectPath}
       initialCloudToken={cloudToken}
+      initialCloudDeviceId={cloudDeviceId}
     />,
     {
       incrementalRendering: true,

@@ -65,6 +65,7 @@ export interface AgentTurnOpts {
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
   cloudMode?: boolean;
   cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -249,6 +250,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       gateway: opts.gateway,
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
+      cloudDeviceId: opts.cloudDeviceId,
     });
 
     for await (const ev of events) {
