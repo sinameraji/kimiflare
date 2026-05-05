@@ -1191,6 +1191,93 @@ function App({
     }
   }, [cfg, ensureSessionId]);
 
+  /** Mid-turn compaction hook: called between tool-iteration cycles in runAgentTurn.
+   *  Prevents context overflow during long exploration sessions. */
+  const onIterationEnd = useCallback(
+    async (messages: ChatMessage[], signal: AbortSignal): Promise<ChatMessage[]> => {
+      if (signal.aborted) return messages;
+      if (!shouldCompact({ messages })) return messages;
+
+      if (compiledContextRef.current) {
+        const store = artifactStoreRef.current;
+        const result = compactCompiled({
+          messages,
+          state: sessionStateRef.current,
+          store,
+        });
+        if (result.metrics.rawTurnsRemoved > 0) {
+          sessionStateRef.current = result.newState;
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+            },
+          ]);
+          await saveSessionSafe();
+        }
+        // After compaction, recall memories so the model retains durable anchors
+        const manager = memoryManagerRef.current;
+        if (manager && !signal.aborted) {
+          try {
+            const cwd = process.cwd();
+            const queryText = sessionStateRef.current.task || cwd;
+            const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+            if (results.length > 0 && !signal.aborted) {
+              const text = await manager.synthesizeRecalled(results);
+              const lastSystemIdx = result.newMessages.findLastIndex((m) => m.role === "system");
+              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : result.newMessages.length;
+              result.newMessages.splice(insertIdx, 0, { role: "system", content: text });
+              setEvents((e) => [
+                ...e,
+                {
+                  kind: "memory",
+                  key: mkKey(),
+                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                },
+              ]);
+              await saveSessionSafe();
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
+        return result.newMessages;
+      }
+
+      // Non-compiled context: fall back to LLM summarizer
+      if (cfg && !signal.aborted) {
+        try {
+          const result = await compactMessages({
+            accountId: cfg.accountId,
+            apiToken: cfg.apiToken,
+            model: cfg.model,
+            messages,
+            signal,
+            gateway: gatewayFromConfig(cfg),
+          });
+          if (result.replacedCount > 0) {
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: `auto-compacted: ${result.replacedCount} messages summarized`,
+              },
+            ]);
+            await saveSessionSafe();
+          }
+          return result.newMessages;
+        } catch {
+          // Non-fatal: if compaction fails, continue with original messages
+        }
+      }
+      return messages;
+    },
+    [cfg],
+  );
+
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       const hadPerm = permResolveRef.current !== null;
@@ -1471,6 +1558,9 @@ function App({
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
         codeMode: effectiveCodeMode,
+        maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
+        continueOnLimit: effectiveCodeMode ? true : undefined,
+        onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
             lspManagerRef.current.notifyChange(path, content);
@@ -2726,6 +2816,9 @@ function App({
           memoryManager: memoryManagerRef.current,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
+          maxInputTokens: effectiveCodeMode ? 200_000 : undefined,
+          continueOnLimit: effectiveCodeMode ? true : undefined,
+          onIterationEnd,
           intentClassification: classification,
           onFileChange: (path, content) => {
             if (content) {

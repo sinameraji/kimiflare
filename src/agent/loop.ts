@@ -57,6 +57,9 @@ export interface AgentTurnOpts {
   maxInputTokens?: number;
   /** Intent classification result for this turn, for telemetry. */
   intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
+  /** Called after each tool-iteration cycle to allow external compaction or state management.
+   *  Return the (possibly mutated) messages array. */
+  onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -500,6 +503,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       }
+    }
+
+    // Allow external compaction / state management between iterations
+    if (opts.onIterationEnd) {
+      opts.messages = await opts.onIterationEnd(opts.messages, opts.signal);
+      if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
     }
 
     if (opts.sessionId && lastUsage) {
