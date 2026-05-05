@@ -61,21 +61,48 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + "…";
 }
 
-const EDIT_SYNTHESIS_SYSTEM = `You summarize a SINGLE code edit for a memory system. Write ONE concise sentence (max 20 words) describing exactly what changed in the file.
+const EDIT_SYNTHESIS_SYSTEM = `You summarize a SINGLE code edit. Write ONE concise sentence (max 20 words) describing exactly what changed.
 
 Rules:
-- Use ONLY the Before/After diff below. IGNORE any conversation history or unrelated context.
-- For new files, describe what the file contains or its purpose.
-- For edits, describe the specific change, not just "updated file".
-- Mention the file name if it clarifies the change.
+- Use ONLY the Before/After diff below.
+- For new files: describe the file's content or purpose. Never say just "added a new file".
+- For edits: describe the specific code change.
 
 Examples:
-- Created test-memory.md containing a single line with the text "Memory test".
-- Fixed race condition in loop.ts by adding AbortSignal guard before recursive calls.
-- Refactored auth middleware to use JWT tokens instead of session cookies.
+- Created test-memory.md containing the text "Memory test".
+- Fixed race condition in loop.ts by adding AbortSignal guard.
 - Added vitest dependency and removed jest from package.json.
 
 Respond with only the summary sentence. No quotes, no preamble.`;
+
+const VERIFIER_SYSTEM = `You verify whether a summary accurately describes a code edit.
+Answer exactly "yes" if the summary correctly captures what changed in the file.
+Answer exactly "no" if the summary is vague, wrong, or misses the actual change.
+
+Respond with only "yes" or "no".`;
+
+async function callLlm(
+  messages: ChatMessage[],
+  llmOpts: ExtractorContext["llmOpts"],
+  maxTokens = 64,
+): Promise<string> {
+  if (!llmOpts) return "";
+  const events = runKimi({
+    accountId: llmOpts.accountId,
+    apiToken: llmOpts.apiToken,
+    model: llmOpts.model,
+    messages,
+    temperature: 0.1,
+    maxCompletionTokens: maxTokens,
+    gateway: llmOpts.gateway,
+    signal: llmOpts.signal,
+  });
+  let text = "";
+  for await (const ev of events) {
+    if (ev.type === "text") text += ev.delta;
+  }
+  return text.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, " ").toLowerCase();
+}
 
 async function synthesizeEditEvent(
   file: string,
@@ -90,44 +117,63 @@ async function synthesizeEditEvent(
   const newString = typeof toolArgs.new_string === "string" ? toolArgs.new_string : "";
   const fullContent = typeof toolArgs.content === "string" ? toolArgs.content : "";
 
-  // For write tools, the "new" content is the full file content
   const isWrite = toolName === "write";
   const before = isWrite ? "(new file)" : truncate(oldString, 600);
   const after = isWrite ? truncate(fullContent, 600) : truncate(newString, 600);
-  // Only use the tail of the assistant message — the most recent intent is usually at the end.
   const intent = assistantMessage ? assistantMessage.slice(-300).trim() : "";
 
-  const messages: ChatMessage[] = [
-    { role: "system", content: EDIT_SYNTHESIS_SYSTEM },
-    {
-      role: "user",
-      content: `File: ${file}\nTool: ${toolName}\n\nBefore:\n${before}\n\nAfter:\n${after}${intent ? `\n\nContext (do not quote verbatim): ${intent}` : ""}\n\nSummary:`,
-    },
-  ];
+  const changeContext = `File: ${file}\nTool: ${toolName}\n\nBefore:\n${before}\n\nAfter:\n${after}${intent ? `\n\nContext: ${intent}` : ""}`;
 
-  try {
-    const events = runKimi({
-      accountId: llmOpts.accountId,
-      apiToken: llmOpts.apiToken,
-      model: llmOpts.model,
-      messages,
-      temperature: 0.1,
-      maxCompletionTokens: 64,
-      gateway: llmOpts.gateway,
-      signal: llmOpts.signal,
-    });
+  // --- Attempt 1 ---
+  const summary1 = await callLlm(
+    [
+      { role: "system", content: EDIT_SYNTHESIS_SYSTEM },
+      { role: "user", content: `${changeContext}\n\nSummary:` },
+    ],
+    llmOpts,
+  );
 
-    let text = "";
-    for await (const ev of events) {
-      if (ev.type === "text") text += ev.delta;
-    }
-
-    const summary = text.trim().replace(/^["']|["']$/g, "").replace(/\s+/g, " ");
-    if (summary.length < 10 || summary.length > 200) return null;
-    return summary;
-  } catch {
-    return null;
+  if (summary1.length >= 10 && summary1.length <= 200) {
+    const verdict = await callLlm(
+      [
+        { role: "system", content: VERIFIER_SYSTEM },
+        {
+          role: "user",
+          content: `${changeContext}\n\nProposed summary: "${summary1}"\n\nIs this accurate?`,
+        },
+      ],
+      llmOpts,
+      8,
+    );
+    if (verdict.startsWith("yes")) return summary1;
   }
+
+  // --- Attempt 2 (stronger prompt) ---
+  const retrySystem = `${EDIT_SYNTHESIS_SYSTEM}\n\nCRITICAL: The previous summary was rejected. Be specific. Include concrete details from the After section.`;
+  const summary2 = await callLlm(
+    [
+      { role: "system", content: retrySystem },
+      { role: "user", content: `${changeContext}\n\nSummary:` },
+    ],
+    llmOpts,
+  );
+
+  if (summary2.length >= 10 && summary2.length <= 200) {
+    const verdict2 = await callLlm(
+      [
+        { role: "system", content: VERIFIER_SYSTEM },
+        {
+          role: "user",
+          content: `${changeContext}\n\nProposed summary: "${summary2}"\n\nIs this accurate?`,
+        },
+      ],
+      llmOpts,
+      8,
+    );
+    if (verdict2.startsWith("yes")) return summary2;
+  }
+
+  return null;
 }
 
 export const EXTRACTORS: Extractor[] = [
