@@ -434,9 +434,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           opts.callbacks.onToolResult?.(toolResult);
         }
 
+        const warningPrefix = sandboxResult.warnings?.length
+          ? `Warning: ${sandboxResult.warnings.join(" ")}\n\n`
+          : "";
         const resultContent = sandboxResult.error
-          ? `Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
-          : sandboxResult.output;
+          ? `${warningPrefix}Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
+          : `${warningPrefix}${sandboxResult.output}`;
 
         const result: ToolResult = {
           tool_call_id: tc.id,
