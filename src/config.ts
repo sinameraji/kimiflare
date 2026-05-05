@@ -205,7 +205,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       plumbingModel: envPlumbingModel,
       memoryExtractionModel: envMemoryExtractionModel,
       codeMode: envCodeMode ?? true,
-      costAttribution: envCostAttribution ?? false,
+      costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
     };
   }
@@ -240,7 +240,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         memoryExtractionModel: envMemoryExtractionModel ?? parsed.memoryExtractionModel,
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
-        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
+        costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
       };
     }
