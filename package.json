@@ -63,6 +63,7 @@
     "isolated-vm": "^6.1.2",
     "react": "^19.2.0",
     "turndown": "^7.2.0",
+    "typescript": "^5.7.2",
     "vscode-languageserver-protocol": "^3.17.5"
   },
   "devDependencies": {
@@ -72,7 +73,6 @@
     "@types/react": "^19.2.0",
     "@types/turndown": "^5.0.5",
     "tsup": "^8.3.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "tsx": "^4.19.2"
   }
 }

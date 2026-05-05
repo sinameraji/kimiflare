@@ -83,8 +83,9 @@ describe("runInSandbox", () => {
     }
   });
 
-  it("emits a warning when typescript is not found", async () => {
-    // Use a non-existent cwd to force typescript resolution to fail
+  it("finds typescript even with a non-existent cwd", async () => {
+    // loadTypescript now uses import.meta.resolve first, so it should find
+    // typescript relative to kimiflare itself regardless of cwd.
     const result = await runInSandbox({
       code: `console.log(1);`,
       tools: mockTools,
@@ -93,7 +94,9 @@ describe("runInSandbox", () => {
       ctx: { ...mockCtx, cwd: "/nonexistent/path" },
     });
 
-    assert.ok(result.warnings && result.warnings.length > 0);
-    assert.ok(result.warnings![0].includes("fallback parser"));
+    // Should execute successfully with no fallback warning
+    assert.strictEqual(result.output, "1");
+    assert.strictEqual(result.error, undefined);
+    assert.ok(!result.warnings || result.warnings.length === 0);
   });
 });
