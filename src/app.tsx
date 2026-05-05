@@ -3,7 +3,6 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
-import { runResearchTransaction } from "./research/index.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -27,7 +26,6 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { logParallelResearchDebug } from "./cost-debug.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -2708,147 +2706,41 @@ function App({
           }),
       };
 
-      const useParallelResearch =
-        (classification.intent === "explore" && classification.tier === "heavy") ||
-        /\bparallel research\b/i.test(trimmed);
-
-      let usedResearchTransaction = false;
-
       try {
-        if (useParallelResearch) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: `research mode: ${classification.intent} (${classification.tier})` },
-          ]);
-
-          const asstId = nextAssistantId++;
-          activeAsstIdRef.current = asstId;
-          setEvents((e) => [
-            ...e,
-            { kind: "assistant", key: `asst_${asstId}`, id: asstId, text: "", reasoning: "", streaming: true },
-          ]);
-
-          const researchStart = performance.now();
-
-          try {
-            const researchResult = await runResearchTransaction({
-              query: trimmed,
-              repoFingerprint: process.cwd(),
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              model: overrideModel ?? cfg.model,
-              cwd: process.cwd(),
-              signal: controller.signal,
-              gateway: gatewayFromConfig(cfg),
-              reasoningEffort: turnReasoningEffort,
-              sessionId: ensureSessionId(),
-              callbacks: {
-                onProgress: (msg) => {
-                  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: msg }]);
-                },
-              },
-            });
-
-            usedResearchTransaction = true;
-
-            const researchContent = sanitizeString(researchResult.content).trim();
-            if (researchContent) {
-              messagesRef.current.push({
-                role: "assistant",
-                content: researchContent,
-              });
+        await runAgentTurn({
+          accountId: cfg.accountId,
+          apiToken: cfg.apiToken,
+          model: overrideModel ?? cfg.model,
+          gateway: gatewayFromConfig(cfg),
+          messages: messagesRef.current,
+          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+          executor: executorRef.current,
+          cwd: process.cwd(),
+          signal: controller.signal,
+          reasoningEffort: turnReasoningEffort,
+          coauthor:
+            cfg.coauthor !== false
+              ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
+              : undefined,
+          sessionId: ensureSessionId(),
+          memoryManager: memoryManagerRef.current,
+          keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
+          codeMode: effectiveCodeMode,
+          intentClassification: classification,
+          onFileChange: (path, content) => {
+            if (content) {
+              lspManagerRef.current.notifyChange(path, content);
             } else {
-              // Research produced empty output — don't poison message history
-              setEvents((e) => [
-                ...e,
-                { kind: "error", key: mkKey(), text: "Research transaction returned empty output. Check the research ledger for details." },
-              ]);
+              void import("node:fs/promises").then(({ readFile }) =>
+                readFile(path, "utf8")
+                  .then((c) => lspManagerRef.current.notifyChange(path, c))
+                  .catch(() => {}),
+              );
             }
-
-            setEvents((e) =>
-              e.map((ev) =>
-                ev.kind === "assistant" && ev.id === asstId
-                  ? { ...ev, text: researchContent || "(no output)", streaming: false }
-                  : ev,
-              ),
-            );
-
-            const totalUsage: Usage = {
-              prompt_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.promptTokens, 0),
-              completion_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.completionTokens, 0),
-              total_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.totalTokens, 0),
-              prompt_tokens_details: {
-                cached_tokens: researchResult.budgetUsed.reduce((s, p) => s + p.cachedTokens, 0),
-              },
-            };
-
-            usageRef.current = totalUsage;
-            setUsage(totalUsage);
-            const sid = ensureSessionId();
-            await recordUsage(sid, totalUsage, gatewayUsageLookupFromConfig(cfg, gatewayMetaRef.current));
-            const report = await getCostReport(sid);
-            setSessionUsage(report.session);
-
-            await saveSessionSafe();
-
-            void logParallelResearchDebug({
-              sessionId: ensureSessionId(),
-              query: trimmed,
-              numSubAgents: 1,
-              filesExplored: researchResult.coverageReport.filesRead.length,
-              subAgentSummaries: [`Terminal: ${researchResult.terminalState}, Confidence: ${researchResult.confidence}`],
-              usage: totalUsage,
-              durationMs: researchResult.durationMs,
-              intentClassification: classification,
-              rejectionSummary: researchResult.rejectionSummary,
-            });
-          } catch (researchErr) {
-            // Fallback to normal agent turn on research transaction failure
-            setEvents((e) => [
-              ...e,
-              { kind: "info", key: mkKey(), text: `Research mode failed (${researchErr instanceof Error ? researchErr.message : String(researchErr)}). Falling back to normal mode.` },
-            ]);
-            // Clear the streaming assistant event so normal mode can create its own
-            setEvents((e) => e.filter((ev) => !(ev.kind === "assistant" && ev.id === asstId)));
-          }
-        }
-
-        if (!usedResearchTransaction) {
-          await runAgentTurn({
-            accountId: cfg.accountId,
-            apiToken: cfg.apiToken,
-            model: overrideModel ?? cfg.model,
-            gateway: gatewayFromConfig(cfg),
-            messages: messagesRef.current,
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            executor: executorRef.current,
-            cwd: process.cwd(),
-            signal: controller.signal,
-            reasoningEffort: turnReasoningEffort,
-            coauthor:
-              cfg.coauthor !== false
-                ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
-                : undefined,
-            sessionId: ensureSessionId(),
-            memoryManager: memoryManagerRef.current,
-            keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-            codeMode: effectiveCodeMode,
-            intentClassification: classification,
-            onFileChange: (path, content) => {
-              if (content) {
-                lspManagerRef.current.notifyChange(path, content);
-              } else {
-                void import("node:fs/promises").then(({ readFile }) =>
-                  readFile(path, "utf8")
-                    .then((c) => lspManagerRef.current.notifyChange(path, c))
-                    .catch(() => {}),
-                );
-              }
-            },
-            callbacks: sharedCallbacks,
-          });
-          await saveSessionSafe();
-        }
+          },
+          callbacks: sharedCallbacks,
+        });
+        await saveSessionSafe();
 
         // Auto-compact after turn when thresholds are met. With compiled
         // context on, use the heuristic compactor; otherwise fall back to the
