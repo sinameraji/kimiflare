@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.1](https://github.com/sinameraji/kimiflare/compare/v0.36.0...v0.36.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **cloud:** use cloudToken state instead of stale prop in runAgentTurn ([#280](https://github.com/sinameraji/kimiflare/issues/280)) ([983dbd1](https://github.com/sinameraji/kimiflare/commit/983dbd162a03966ccefd2284f2fb38c6e93b7402))
+* **cloud:** validate fetchCloudUsage response to prevent crash on undefined remaining ([#279](https://github.com/sinameraji/kimiflare/issues/279)) ([f232e7c](https://github.com/sinameraji/kimiflare/commit/f232e7c4bc24fef95e4e898706c3c6864b75ba5d))
+
 ## [0.36.0](https://github.com/sinameraji/kimiflare/compare/v0.35.0...v0.36.0) (2026-05-05)
 
 
