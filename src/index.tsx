@@ -62,7 +62,7 @@ program
       process.exit(1);
     }
     const { fetchCloudUsage } = await import("./cloud/auth.js");
-    const usage = await fetchCloudUsage(creds.accessToken);
+    const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
     if (!usage) {
       console.error("Failed to fetch usage: invalid response from server");
       process.exit(1);
@@ -111,7 +111,7 @@ program
 
           // Fetch usage info
           const { fetchCloudUsage } = await import("./cloud/auth.js");
-          const usage = await fetchCloudUsage(creds.accessToken);
+          const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
           if (usage) {
             console.log(`\nToken budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
             console.log(`Grant expires: ${usage.expires_at}`);
@@ -160,6 +160,7 @@ async function main() {
   // Handle cloud mode
   const cloudMode = opts.cloud ?? cfg?.cloudMode ?? false;
   let cloudToken: string | undefined;
+  let cloudDeviceId: string | undefined;
   if (cloudMode) {
     const { loadCloudCredentials, authenticateDevice } = await import("./cloud/auth.js");
     let cloudCreds = await loadCloudCredentials();
@@ -168,6 +169,7 @@ async function main() {
       process.exit(2);
     }
     cloudToken = cloudCreds.accessToken;
+    cloudDeviceId = cloudCreds.deviceId;
     cfg = {
       ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL }),
       cloudMode: true,
@@ -194,6 +196,7 @@ async function main() {
       showReasoning: !!opts.reasoning,
       codeMode: cfg.codeMode,
       cloudToken,
+      cloudDeviceId,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
       updateResult,
@@ -211,9 +214,9 @@ async function main() {
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath, cloudToken);
+    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath, cloudToken, cloudDeviceId);
   } else {
-    await renderApp(null, updateResult, lspScope, lspProjectPath, cloudToken);
+    await renderApp(null, updateResult, lspScope, lspProjectPath, cloudToken, cloudDeviceId);
   }
 }
 
@@ -238,6 +241,7 @@ interface PrintOpts {
   maxInputTokens?: number;
   cloudMode?: boolean;
   cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 function gatewayFromPrintOpts(opts: PrintOpts): AiGatewayOptions | undefined {
@@ -291,6 +295,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
       maxInputTokens: opts.maxInputTokens,
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
+      cloudDeviceId: opts.cloudDeviceId,
       coauthor:
         opts.coauthor !== false
           ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }

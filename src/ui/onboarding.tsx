@@ -85,9 +85,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
         }
 
         try {
-          const creds = await pollForToken(cloudAuth.codes.deviceCode);
+          const creds = await pollForToken(cloudAuth.codes.deviceCode, cloudAuth.codes.deviceId);
           if (creds && !cancelled) {
-            const usage = await fetchCloudUsage(creds.accessToken);
+            const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
             if (usage && !cancelled) {
               setCloudAuth({
                 phase: "success",

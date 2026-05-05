@@ -28,6 +28,7 @@ export interface RunKimiOpts {
   gateway?: AiGatewayOptions;
   cloudMode?: boolean;
   cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 export interface AiGatewayOptions {
@@ -155,9 +156,11 @@ export function validateModelId(model: string): void {
 function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
   validateModelId(opts.model);
   if (opts.cloudMode) {
+    const headers: Record<string, string> = opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {};
+    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
     return {
       url: "https://api.kimiflare.com/v1/chat",
-      headers: opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {},
+      headers,
     };
   }
   if (!opts.gateway?.id) {

@@ -20,12 +20,14 @@ export const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (RFC 8628 standard)
 export interface CloudCredentials {
   accessToken: string;
   expiresAt: number;
+  deviceId: string;
 }
 
 export interface DeviceCodes {
   deviceCode: string;
   userCode: string;
   authUrl: string;
+  deviceId: string;
 }
 
 function cloudCredPath(): string {
@@ -42,18 +44,25 @@ function generateCode(): string {
   return out;
 }
 
+function generateDeviceId(): string {
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function generateDeviceCodes(): DeviceCodes {
   const deviceCode = `device-${generateCode()}-${Date.now()}`;
   const userCode = `${generateCode()}-${generateCode()}`;
   const authUrl = `${CLOUD_API_URL}/auth/github?code=${encodeURIComponent(userCode)}`;
-  return { deviceCode, userCode, authUrl };
+  const deviceId = generateDeviceId();
+  return { deviceCode, userCode, authUrl, deviceId };
 }
 
 export async function registerDevice(codes: DeviceCodes): Promise<void> {
   const registerRes = await fetch(`${CLOUD_API_URL}/auth/device`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ device_code: codes.deviceCode, user_code: codes.userCode }),
+    body: JSON.stringify({ device_code: codes.deviceCode, user_code: codes.userCode, device_id: codes.deviceId }),
   });
 
   if (!registerRes.ok) {
@@ -62,7 +71,7 @@ export async function registerDevice(codes: DeviceCodes): Promise<void> {
   }
 }
 
-export async function pollForToken(deviceCode: string): Promise<CloudCredentials | null> {
+export async function pollForToken(deviceCode: string, deviceId: string): Promise<CloudCredentials | null> {
   const pollRes = await fetch(`${CLOUD_API_URL}/auth/poll`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -76,6 +85,7 @@ export async function pollForToken(deviceCode: string): Promise<CloudCredentials
     const creds: CloudCredentials = {
       accessToken: pollData.access_token,
       expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days
+      deviceId,
     };
     await saveCloudCredentials(creds);
     return creds;
@@ -83,15 +93,15 @@ export async function pollForToken(deviceCode: string): Promise<CloudCredentials
   return null;
 }
 
-export async function fetchCloudUsage(token: string): Promise<{
+export async function fetchCloudUsage(token: string, deviceId?: string): Promise<{
   input_token_limit: number;
   input_tokens_used: number;
   remaining: number;
   expires_at: string;
 } | null> {
-  const res = await fetch(`${CLOUD_API_URL}/v1/usage`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (deviceId) headers["X-Device-ID"] = deviceId;
+  const res = await fetch(`${CLOUD_API_URL}/v1/usage`, { headers });
   if (!res.ok) return null;
   const data = (await res.json()) as Record<string, unknown>;
   if (
@@ -114,7 +124,7 @@ export async function loadCloudCredentials(): Promise<CloudCredentials | null> {
   try {
     const raw = await readFile(cloudCredPath(), "utf8");
     const parsed = JSON.parse(raw) as CloudCredentials;
-    if (parsed.expiresAt && parsed.expiresAt > Date.now() / 1000) {
+    if (parsed.expiresAt && parsed.expiresAt > Date.now() / 1000 && parsed.accessToken) {
       return parsed;
     }
   } catch {
@@ -150,7 +160,7 @@ export async function authenticateDevice(
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     onStatus({ url: codes.authUrl, userCode: codes.userCode, polling: true });
 
-    const creds = await pollForToken(codes.deviceCode);
+    const creds = await pollForToken(codes.deviceCode, codes.deviceId);
     if (creds) return creds;
   }
 
