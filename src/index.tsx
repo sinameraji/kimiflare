@@ -61,14 +61,12 @@ program
       console.error("Not authenticated with Kimiflare Cloud. Run: kimiflare auth cloud");
       process.exit(1);
     }
-    const res = await fetch("https://api.kimiflare.com/v1/usage", {
-      headers: { Authorization: `Bearer ${creds.accessToken}` },
-    });
-    if (!res.ok) {
-      console.error(`Failed to fetch usage: ${res.status} ${res.statusText}`);
+    const { fetchCloudUsage } = await import("./cloud/auth.js");
+    const usage = await fetchCloudUsage(creds.accessToken);
+    if (!usage) {
+      console.error("Failed to fetch usage: invalid response from server");
       process.exit(1);
     }
-    const usage = await res.json() as { input_token_limit: number; input_tokens_used: number; remaining: number; expires_at: string };
     console.log(`Token budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
     console.log(`Used: ${usage.input_tokens_used.toLocaleString()}`);
     console.log(`Grant expires: ${usage.expires_at}`);
@@ -112,11 +110,9 @@ program
           console.log(`Authenticated! Token expires at ${new Date(creds.expiresAt * 1000).toISOString()}`);
 
           // Fetch usage info
-          const usageRes = await fetch("https://api.kimiflare.com/v1/usage", {
-            headers: { Authorization: `Bearer ${creds.accessToken}` },
-          });
-          if (usageRes.ok) {
-            const usage = await usageRes.json() as { input_token_limit: number; input_tokens_used: number; remaining: number; expires_at: string };
+          const { fetchCloudUsage } = await import("./cloud/auth.js");
+          const usage = await fetchCloudUsage(creds.accessToken);
+          if (usage) {
             console.log(`\nToken budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
             console.log(`Grant expires: ${usage.expires_at}`);
           }

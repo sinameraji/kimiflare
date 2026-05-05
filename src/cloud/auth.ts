@@ -93,11 +93,20 @@ export async function fetchCloudUsage(token: string): Promise<{
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return null;
-  return (await res.json()) as {
-    input_token_limit: number;
-    input_tokens_used: number;
-    remaining: number;
-    expires_at: string;
+  const data = (await res.json()) as Record<string, unknown>;
+  if (
+    typeof data.remaining !== "number" ||
+    typeof data.input_token_limit !== "number" ||
+    typeof data.input_tokens_used !== "number" ||
+    typeof data.expires_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    input_token_limit: data.input_token_limit,
+    input_tokens_used: data.input_tokens_used,
+    remaining: data.remaining,
+    expires_at: data.expires_at,
   };
 }
 
