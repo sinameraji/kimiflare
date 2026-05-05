@@ -164,7 +164,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const cacheStablePrompts = envCacheStable === "0" || envCacheStable === "false" ? false : true;
 
   const envCompiled = process.env.KIMIFLARE_COMPILED_CONTEXT;
-  const compiledContext = envCompiled === "1" || envCompiled === "true" ? true : false;
+  const compiledContext = envCompiled === "0" || envCompiled === "false" ? false : true;
 
   const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
   const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
@@ -197,14 +197,14 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       cacheStablePrompts,
       compiledContext,
       imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
-      memoryEnabled: envMemoryEnabled,
+      memoryEnabled: envMemoryEnabled ?? true,
       memoryDbPath: envMemoryDbPath,
       memoryMaxAgeDays: envMemoryMaxAgeDays,
       memoryMaxEntries: envMemoryMaxEntries,
       memoryEmbeddingModel: envMemoryEmbeddingModel,
       plumbingModel: envPlumbingModel,
       memoryExtractionModel: envMemoryExtractionModel,
-      codeMode: envCodeMode,
+      codeMode: envCodeMode ?? true,
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
     };
@@ -232,14 +232,14 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
         imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
-        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled,
+        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? true,
         memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
         memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
         memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
         memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         memoryExtractionModel: envMemoryExtractionModel ?? parsed.memoryExtractionModel,
-        codeMode: envCodeMode ?? parsed.codeMode,
+        codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
       };
