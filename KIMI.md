@@ -1,65 +1,205 @@
-# kimiflare
+# KimiFlare — Project Context
 
-**Project** — Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. TypeScript / Node.js ≥20, React + Ink TUI. LSP, MCP, and persistent memory integration.
+> Auto-generated context for AI agents working in this repository.
+> Last updated: 2026-05-05
 
-**Build / test / run**
-- `npm run build` — bundle with tsup (`dist/` + `bin/kimiflare.mjs`)
-- `npm run dev` — run via tsx (`tsx src/index.tsx`)
-- `npm run typecheck` — `tsc --noEmit`
-- `npm test` — Node.js built-in test runner (`tsx --test src/**/*.test.ts* src/**/*.test.tsx`)
-- `npm start` — run compiled bin
-- `npm link` — symlink CLI for local development
+---
 
-**Layout**
-- `src/index.tsx` — CLI entry (Commander args, print mode, TUI bootstrap)
-- `src/app.tsx` — Ink TUI root (chat, status bar, permission modals, input)
-- `src/agent/` — LLM client, agent loop, system prompt builder, message compaction, session state
-- `src/tools/` — Tool specs & executors: `read`, `write`, `edit`, `bash`, `glob`, `grep`, `web_fetch`, `tasks`, `lsp_*`, `memory`, `expand-artifact`
-- `src/lsp/` — Language Server Protocol integration: connection manager, client, protocol types, output formatters
-- `src/ui/` — Ink components: chat, diff view, permission modal, task list, status bar, theme, text input, pickers, wizards
-- `src/util/` — Helpers: SSE parser, paths, errors, update check, fuzzy search, config
-- `src/commands/` — Slash command loader, renderer, builtins, and custom command support
-- `src/memory/` — Persistent cross-session memory: SQLite DB, embedding search, extraction, cleanup
-- `src/mcp/` — Model Context Protocol server integration
-- `src/code-mode/` — Sandboxed code execution mode
-- `src/cost-attribution/` — Cost attribution by task type (`kimiflare cost`)
-- `feedback-worker/` — Cloudflare Worker for feedback collection
-- `bin/` — Compiled CLI shim (`kimiflare.mjs`)
-- `dist/` — tsup ESM output
-- `docs/` — Documentation, plans, guardrails, and learnings
-- `scripts/` — Build and utility scripts
+## 1. Project
 
-**Conventions**
-- ESM only (`"type": "module"`).
-- Import paths **must** use `.js` extensions even for `.ts`/`.tsx` files (TypeScript `moduleResolution: Bundler`).
-- Use `node:` prefix for all Node built-ins.
-- TSX extension used throughout (even non-JSX files).
-- Strict TS: `noUncheckedIndexedAccess`, `noImplicitOverride`, `isolatedModules`.
-- React 19 + Ink 7 for terminal UI.
-- tsup externalizes runtime deps (`ink`, `react`, `commander`, etc.); bundles source only.
-- Tests use Node.js built-in test runner (`node:test`).
-- Git branches: `feat/...`, `fix/...`, `chore/...`, `redesign/...`, `ui/...`. Releases managed by release-please; tags are `vX.Y.Z`.
+**KimiFlare** is a terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. It provides an interactive TUI (Terminal User Interface) for AI-assisted coding, file editing, shell command execution, and project exploration with a 262k-token context window.
 
-**Cost Attribution (opt-in)**
-- Enable with `costAttribution: true` in config or `KIMI_COST_ATTRIBUTION=1`.
-- Run `kimiflare cost --week` to see spend by literal task type (e.g. `editing-source-code`, `running-tests`).
-- Classification is lazy (runs on first `cost` invocation), deterministic heuristic with optional LLM fallback.
-- Results cached in `usage.json`; no runtime cost when disabled.
+- **Primary language:** TypeScript 5.7
+- **Runtime:** Node.js ≥ 20 (ESM only)
+- **Key frameworks:** React + Ink (TUI), Commander (CLI)
+- **AI backend:** Cloudflare Workers AI (Kimi-K2.6 via AI Gateway)
+- **License:** MIT
 
-**@ File Mention Picker (opt-in)**
-- Enable with `filePicker: true` in config or `KIMIFLARE_FILE_PICKER=1`.
-- Type `@` in the chat input to open a file picker with inline filtering and keyboard navigation.
-- Searches the current working directory, respecting `.gitignore` and common ignore patterns.
+---
 
-**/ Slash Command Picker**
-- Type `/` at the start of the chat input to open a picker with all built-in and custom slash commands.
-- Filters as you type (fuzzy match); arrow keys navigate, Enter inserts the command name (does not auto-submit), Esc cancels.
+## 2. Build / Test / Run
 
-**Do / Don't**
-- Do keep agent responses terse; don't re-summarize tool output the user already sees inline.
-- Do call `tasks_set` at the start of multi-step work and update it as steps complete; skip for trivial one-offs.
-- Do read files and explore with `glob`/`grep` before editing; don't guess structure.
-- Do state what you're about to do before any mutating tool call (`write`, `edit`, `bash`).
-- Do stop when a task is finished; don't add closing summaries.
-- Don't paste code in chat that could be applied via `edit` or `write`.
-- Don't retry the same failed tool call blindly; read errors and adjust.
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `npm install` | Install dependencies | — |
+| `npm run dev` | Run in development mode | `tsx src/index.tsx` |
+| `npm run build` | Production build | `tsup` → outputs to `dist/` |
+| `npm run typecheck` | Type-check without emit | `tsc --noEmit` |
+| `npm test` | Run all tests | `tsx --test src/**/*.test.ts src/**/*.test.tsx` |
+| `npm start` | Run built CLI | `node bin/kimiflare.mjs` |
+| `npm run build:remote` | Build remote worker + agent | Separate sub-projects in `remote/` |
+
+**Slow / special commands:**
+- `npm run build:remote` requires sub-project dependencies to be installed.
+- Tests use the Node.js native test runner; no Jest/Vitest setup.
+
+---
+
+## 3. Layout
+
+| Directory | Rationale |
+|-----------|-----------|
+| `src/` | Main application source. Flat-ish structure by domain (agent, tools, ui, memory, etc.). |
+| `src/index.tsx` | CLI entry point. Parses arguments with Commander, then launches TUI or print mode. |
+| `src/app.tsx` | Ink-based TUI root. Handles keyboard input, chat rendering, pickers, and agent orchestration. |
+| `src/agent/` | AI interaction layer: API client, turn loop, message formatting, compaction, session state. |
+| `src/tools/` | Tool implementations (read, write, edit, bash, glob, grep, web-fetch, tasks, memory, LSP). |
+| `src/ui/` | Ink React components: chat, pickers, diff viewer, markdown renderer, status bars. |
+| `src/memory/` | Persistent memory with SQLite: extraction, embeddings, retrieval, cleanup. |
+| `src/lsp/` | LSP client integration for semantic code intelligence (go-to-def, hover, etc.). |
+| `src/mcp/` | MCP (Model Context Protocol) manager for external tool servers. |
+| `src/remote/` | Remote deployment sub-system: Cloudflare Worker + containerized agent. |
+| `bin/` | Production CLI shim. `kimiflare.mjs` simply imports `../dist/index.js`. |
+| `dist/` | Build output (generated by `tsup`, gitignored). |
+| `acp/` | Zed Agent Panel (ACP) integration — separate mini-package. |
+| `feedback-worker/` | Cloudflare Worker for collecting user feedback. |
+| `docs/` | README assets (screenshots, logos). |
+| `.github/workflows/` | CI: `release-please` for versioning, `publish` for npm publish on main push. |
+
+---
+
+## 4. Conventions
+
+### Naming
+- **Files:** kebab-case (`loop.test.ts`, `cost-attribution.ts`).
+- **Tests:** Co-located with source as `*.test.ts` or `*.test.tsx`.
+- **Types:** PascalCase interfaces/types; `type` preferred for simple unions.
+- **Variables:** camelCase. Avoid Hungarian notation.
+
+### Imports
+- **ESM only.** Always use `import` / `export`.
+- **Extensions required:** Import paths must include `.js` even for `.ts` files (Node ESM resolution).
+- **Node built-ins:** Prefix with `node:` (e.g., `import { readFile } from "node:fs/promises"`).
+
+### TypeScript Strictness
+- `strict: true`
+- `noUncheckedIndexedAccess: true`
+- `noImplicitOverride: true`
+- `isolatedModules: true`
+- `moduleResolution: Bundler`
+- JSX: `react-jsx` transform, import source `react`.
+
+### Testing
+- **Framework:** Node.js native test runner (`node:test` + `node:assert`).
+- **Pattern:** `describe` / `it` blocks. Mock `globalThis.fetch` for API tests.
+- **Location:** Co-located next to the file under test.
+
+### Git & Release
+- **Commit style:** Conventional Commits (`feat(scope):`, `fix(scope):`, `chore:`).
+- **Branching:** `main` is the release branch. Feature branches are short-lived.
+- **Release:** Automated via `release-please` on every push to `main`.
+- **Versioning:** Single-package repo (no workspaces).
+
+### Code Style
+- Prefer `async/await` over raw Promises.
+- Use `type` imports (`import type { Foo } from "..."`) where possible.
+- Error handling: custom `KimiApiError` class for API errors; graceful degradation in TUI.
+
+---
+
+## 5. Dependencies
+
+**Package manager:** npm (lockfile committed).
+
+**Adding dependencies:**
+```bash
+npm install <pkg>        # runtime
+npm install -D <pkg>     # dev
+```
+
+**Bundling policy:**
+- `tsup` bundles the app but keeps these **external** (must be in `node_modules` at runtime):
+  - `ink`, `ink-text-input`, `ink-spinner`, `ink-select-input`
+  - `react`, `commander`, `fast-glob`, `diff`, `turndown`
+- Do **not** add heavy native deps to the main CLI bundle without updating `tsup.config.ts` `external` array.
+
+**Version pinning:** Use `package-lock.json` for reproducibility. Avoid caret ranges for critical runtime deps.
+
+---
+
+## 6. Do / Don't
+
+1. **Never commit secrets.** API tokens, account IDs, and `.env` files are gitignored. Config lives in `~/.config/kimiflare/config.json`.
+2. **Never bundle `ink` or `react`.** They must remain external so peer resolution works correctly.
+3. **Always use `.js` extensions in imports** — even for `.ts` files. Node ESM requires this.
+4. **Don't use `require()` or `module.exports`.** This is an ESM-only project.
+5. **Don't add new tools without updating `ALL_TOOLS` in `src/tools/executor.ts`.**
+6. **Don't forget to handle `AbortSignal`** in long-running async operations (fetch, streams).
+7. **Always run `npm run typecheck` before committing.** The CI does not run tests on PRs, but the publish workflow builds.
+8. **Don't bump version manually.** `release-please` handles versioning and `CHANGELOG.md`.
+9. **Keep tests co-located.** Do not create a separate `tests/` directory.
+10. **Respect the 50-tool-call limit** in agent loops — or explicitly support `continueOnLimit`.
+
+---
+
+## 7. Debugging & Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| `Cannot find module` | Ensure import paths end with `.js`. Check `tsconfig.json` `include` only covers `src/`. |
+| Build fails with JSX errors | Verify `jsx: "react-jsx"` is set in `tsconfig.json`. |
+| Tests fail with `fetch` mock leak | Restore `globalThis.fetch` in `after` hooks. |
+| TUI renders blank | Check terminal supports ANSI. Ink requires a TTY. |
+| Agent stops with "budget exhausted" | Check `maxInputTokens` config. Print mode exits 42 on budget exhaustion. |
+| Memory/SQLite issues | Delete `~/.config/kimiflare/memory.db` to reset. |
+| Type errors after adding deps | Run `npm run typecheck`. Ensure `@types/*` packages are installed if needed. |
+
+**Clean reset:**
+```bash
+rm -rf dist/ node_modules/ .npm-cache/
+npm install
+npm run build
+```
+
+**Debug the CLI:**
+```bash
+node --inspect-brk bin/kimiflare.mjs
+# or	npm run dev -- <args>
+```
+
+---
+
+## 8. Architecture Notes
+
+### Key Abstractions
+
+| Layer | Responsibility |
+|-------|----------------|
+| `src/index.tsx` | CLI argument parsing (Commander). Routes to TUI, print mode, or sub-commands. |
+| `src/app.tsx` | Ink TUI root. Manages React state for chat, pickers, tasks, and permissions. |
+| `src/agent/loop.ts` | **Agent turn loop.** Calls AI, handles streaming, invokes tools, manages callbacks. |
+| `src/agent/client.ts` | **HTTP client.** Streams SSE from Cloudflare Workers AI. Handles retries, errors, usage. |
+| `src/tools/executor.ts` | **Tool dispatcher.** Maps tool names to implementations, handles permissions, output reduction. |
+| `src/tools/registry.ts` | Tool type definitions and OpenAI-compatible schema generation. |
+| `src/memory/manager.ts` | Persistent memory: SQLite storage, embedding-based retrieval, extraction. |
+| `src/lsp/manager.ts` | LSP client lifecycle: starts servers, routes requests, exposes as tools. |
+| `src/mcp/manager.ts` | MCP client lifecycle: connects to external tool servers (stdio/SSE). |
+| `src/agent/session-state.ts` | Artifact store and session serialization for `/resume` functionality. |
+
+### Data Flow
+1. User input → `app.tsx` (Ink state).
+2. Messages + tools → `agent/loop.ts`.
+3. `agent/client.ts` streams SSE from Workers AI.
+4. AI emits text deltas or tool calls.
+5. `tools/executor.ts` runs the tool (bash, read, edit, etc.).
+6. Tool result → appended to messages → next turn.
+7. Optional: memory extraction, cost tracking, compaction.
+
+### External Integrations
+- **Cloudflare Workers AI** — primary LLM backend (Kimi-K2.6).
+- **Cloudflare AI Gateway** — caching, rate limiting, observability.
+- **KimiFlare Cloud** — optional proxy mode with device auth.
+- **MCP Servers** — external tools via Model Context Protocol.
+- **LSP Servers** — language servers for code intelligence.
+
+### State Management
+- **TUI state:** React hooks (`useState`, `useRef`) in `app.tsx`.
+- **Session state:** Serialized to `~/.config/kimiflare/sessions/` for resume.
+- **Memory:** SQLite database with embedding-based semantic search.
+- **Tasks:** Simple in-memory array with `pending | in_progress | completed` status.
+
+### Sub-Projects
+- `remote/worker/` — Cloudflare Worker (Wrangler) that proxies AI requests.
+- `remote/agent/` — Containerized agent for remote TUI sessions.
+- `acp/` — Zed ACP integration (separate package with its own `package.json`).
+- `feedback-worker/` — Cloudflare Pages function for feedback collection.
