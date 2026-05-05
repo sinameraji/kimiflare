@@ -508,6 +508,7 @@ function App({
   const [usage, setUsage] = useState<Usage | null>(null);
   const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
+  const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
@@ -540,6 +541,21 @@ function App({
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
+
+  // Fetch cloud token budget on startup
+  useEffect(() => {
+    if (!cfg?.cloudMode || !initialCloudToken) return;
+    let cancelled = false;
+    const fetchBudget = async () => {
+      const { fetchCloudUsage } = await import("./cloud/auth.js");
+      const usage = await fetchCloudUsage(initialCloudToken);
+      if (usage && !cancelled) {
+        setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+      }
+    };
+    fetchBudget();
+    return () => { cancelled = true; };
+  }, [cfg?.cloudMode, initialCloudToken]);
 
   // Picker state — single popup at a time (file mention or slash command).
   const [cursorOffset, setCursorOffset] = useState(0);
@@ -3036,6 +3052,7 @@ function App({
     return (
       <ThemeProvider theme={theme}>
         <Onboarding
+        onCancel={() => exit()}
         onDone={async (newCfg) => {
           setCfg(newCfg);
           if (newCfg.cloudMode) {
@@ -3315,6 +3332,7 @@ function App({
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}
+              cloudBudget={cloudBudget}
             />
             {activePicker?.kind === "file" && (
               <FilePicker

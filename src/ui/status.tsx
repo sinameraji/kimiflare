@@ -24,9 +24,10 @@ interface Props {
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
   cloudMode?: boolean;
+  cloudBudget?: { remaining: number; limit: number } | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -66,7 +67,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
       {usage && (
         <Box>
           <Text color={theme.info.color} >
-            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta).join("  ·  ")}
+            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget).join("  ·  ")}
           </Text>
           {warn ? (
             <Text color={theme.warn} bold>
@@ -89,6 +90,8 @@ export function buildRightParts(
   contextLimit: number,
   sessionUsage?: DailyUsage | null,
   gatewayMeta?: GatewayMeta | null,
+  cloudMode?: boolean,
+  cloudBudget?: { remaining: number; limit: number } | null,
 ): string[] {
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
   const parts: string[] = [];
@@ -97,18 +100,35 @@ export function buildRightParts(
     parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`out ${sessionUsage.completionTokens}`);
     parts.push(`ctx ${pct}%`);
-    parts.push(`$${sessionUsage.cost.toFixed(5)}`);
+    if (cloudMode) {
+      parts.push(`\x1b[9m${sessionUsage.cost.toFixed(5)}\x1b[29m`);
+    } else {
+      parts.push(`${sessionUsage.cost.toFixed(5)}`);
+    }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
     const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`out ${usage.completion_tokens}`);
     parts.push(`ctx ${pct}%`);
-    parts.push(`$${cost.total.toFixed(5)}`);
+    if (cloudMode) {
+      parts.push(`\x1b[9m${cost.total.toFixed(5)}\x1b[29m`);
+    } else {
+      parts.push(`${cost.total.toFixed(5)}`);
+    }
+  }
+  if (cloudMode && cloudBudget) {
+    parts.push(`${formatTokens(cloudBudget.remaining)}/${formatTokens(cloudBudget.limit)} tokens`);
   }
   const gatewayCache = formatGatewayCacheStatus(gatewayMeta);
   if (gatewayCache) parts.push(gatewayCache);
   return parts;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {

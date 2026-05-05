@@ -13,13 +13,19 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const CLOUD_API_URL = "https://api.kimiflare.com";
-const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+export const CLOUD_API_URL = "https://api.kimiflare.com";
+export const POLL_INTERVAL_MS = 5000;
+export const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (RFC 8628 standard)
 
 export interface CloudCredentials {
   accessToken: string;
   expiresAt: number;
+}
+
+export interface DeviceCodes {
+  deviceCode: string;
+  userCode: string;
+  authUrl: string;
 }
 
 function cloudCredPath(): string {
@@ -34,6 +40,65 @@ function generateCode(): string {
     out += chars[Math.floor(Math.random() * chars.length)];
   }
   return out;
+}
+
+export function generateDeviceCodes(): DeviceCodes {
+  const deviceCode = `device-${generateCode()}-${Date.now()}`;
+  const userCode = `${generateCode()}-${generateCode()}`;
+  const authUrl = `${CLOUD_API_URL}/auth/github?code=${encodeURIComponent(userCode)}`;
+  return { deviceCode, userCode, authUrl };
+}
+
+export async function registerDevice(codes: DeviceCodes): Promise<void> {
+  const registerRes = await fetch(`${CLOUD_API_URL}/auth/device`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_code: codes.deviceCode, user_code: codes.userCode }),
+  });
+
+  if (!registerRes.ok) {
+    const err = (await registerRes.json().catch(() => ({}))) as { error?: string };
+    throw new Error(`Failed to register device: ${err.error || registerRes.statusText}`);
+  }
+}
+
+export async function pollForToken(deviceCode: string): Promise<CloudCredentials | null> {
+  const pollRes = await fetch(`${CLOUD_API_URL}/auth/poll`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_code: deviceCode }),
+  });
+
+  if (!pollRes.ok) return null;
+
+  const pollData = (await pollRes.json()) as { status: string; access_token?: string };
+  if (pollData.status === "approved" && pollData.access_token) {
+    const creds: CloudCredentials = {
+      accessToken: pollData.access_token,
+      expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days
+    };
+    await saveCloudCredentials(creds);
+    return creds;
+  }
+  return null;
+}
+
+export async function fetchCloudUsage(token: string): Promise<{
+  input_token_limit: number;
+  input_tokens_used: number;
+  remaining: number;
+  expires_at: string;
+} | null> {
+  const res = await fetch(`${CLOUD_API_URL}/v1/usage`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as {
+    input_token_limit: number;
+    input_tokens_used: number;
+    remaining: number;
+    expires_at: string;
+  };
 }
 
 export async function loadCloudCredentials(): Promise<CloudCredentials | null> {
@@ -63,50 +128,21 @@ export async function clearCloudCredentials(): Promise<void> {
   }
 }
 
+/** Legacy CLI-only flow (used by `kimiflare auth cloud`). */
 export async function authenticateDevice(
   onStatus: (status: { url: string; userCode: string; polling: boolean }) => void,
 ): Promise<CloudCredentials> {
-  const deviceCode = `device-${generateCode()}-${Date.now()}`;
-  const userCode = `${generateCode()}-${generateCode()}`;
+  const codes = generateDeviceCodes();
+  await registerDevice(codes);
+  onStatus({ url: codes.authUrl, userCode: codes.userCode, polling: false });
 
-  // Register device code
-  const registerRes = await fetch(`${CLOUD_API_URL}/auth/device`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ device_code: deviceCode, user_code: userCode }),
-  });
-
-  if (!registerRes.ok) {
-    const err = (await registerRes.json().catch(() => ({}))) as { error?: string };
-    throw new Error(`Failed to register device: ${err.error || registerRes.statusText}`);
-  }
-
-  const authUrl = `${CLOUD_API_URL}/auth/github?code=${encodeURIComponent(userCode)}`;
-  onStatus({ url: authUrl, userCode, polling: false });
-
-  // Poll for approval
   const startTime = Date.now();
   while (Date.now() - startTime < POLL_TIMEOUT_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    onStatus({ url: authUrl, userCode, polling: true });
+    onStatus({ url: codes.authUrl, userCode: codes.userCode, polling: true });
 
-    const pollRes = await fetch(`${CLOUD_API_URL}/auth/poll`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device_code: deviceCode }),
-    });
-
-    if (!pollRes.ok) continue;
-
-    const pollData = (await pollRes.json()) as { status: string; access_token?: string };
-    if (pollData.status === "approved" && pollData.access_token) {
-      const creds: CloudCredentials = {
-        accessToken: pollData.access_token,
-        expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60, // 7 days
-      };
-      await saveCloudCredentials(creds);
-      return creds;
-    }
+    const creds = await pollForToken(codes.deviceCode);
+    if (creds) return creds;
   }
 
   throw new Error("Authentication timed out. Please try again.");
