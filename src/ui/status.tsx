@@ -101,9 +101,9 @@ export function buildRightParts(
     parts.push(`out ${sessionUsage.completionTokens}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
-      parts.push(`\x1b[9m${sessionUsage.cost.toFixed(5)}\x1b[29m`);
+      parts.push(`\x1b[9m$${sessionUsage.cost.toFixed(5)}\x1b[29m`);
     } else {
-      parts.push(`${sessionUsage.cost.toFixed(5)}`);
+      parts.push(`$${sessionUsage.cost.toFixed(5)}`);
     }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
@@ -112,9 +112,9 @@ export function buildRightParts(
     parts.push(`out ${usage.completion_tokens}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
-      parts.push(`\x1b[9m${cost.total.toFixed(5)}\x1b[29m`);
+      parts.push(`\x1b[9m$${cost.total.toFixed(5)}\x1b[29m`);
     } else {
-      parts.push(`${cost.total.toFixed(5)}`);
+      parts.push(`$${cost.total.toFixed(5)}`);
     }
   }
   if (cloudMode && cloudBudget) {
@@ -126,6 +126,7 @@ export function buildRightParts(
 }
 
 function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);

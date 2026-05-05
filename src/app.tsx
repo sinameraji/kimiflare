@@ -1661,6 +1661,17 @@ function App({
             const sid = ensureSessionId();
             void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
             void getCostReport(sid).then((report) => setSessionUsage(report.session));
+            if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
+              const token = cloudToken ?? initialCloudToken!;
+              const did = cloudDeviceId ?? initialCloudDeviceId;
+              void (async () => {
+                const { fetchCloudUsage } = await import("./cloud/auth.js");
+                const usage = await fetchCloudUsage(token, did);
+                if (usage) {
+                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+                }
+              })();
+            }
           },
           onGatewayMeta: updateGatewayMeta,
           askPermission: (req) =>
@@ -2787,6 +2798,18 @@ function App({
           const sid = ensureSessionId();
           void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
+          // Refresh cloud budget so remaining tokens update in real time
+          if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
+            const token = cloudToken ?? initialCloudToken!;
+            const did = cloudDeviceId ?? initialCloudDeviceId;
+            void (async () => {
+              const { fetchCloudUsage } = await import("./cloud/auth.js");
+              const usage = await fetchCloudUsage(token, did);
+              if (usage) {
+                setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+              }
+            })();
+          }
         },
         onGatewayMeta: updateGatewayMeta,
         onTasks: (nextTasks: Task[]) => {
