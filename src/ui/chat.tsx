@@ -19,12 +19,14 @@ export type ChatEvent =
   | ({ kind: "tool"; key: string } & ToolEventState)
   | { kind: "info"; key: string; text: string }
   | { kind: "error"; key: string; text: string }
-  | { kind: "memory"; key: string; text: string };
+  | { kind: "memory"; key: string; text: string }
+  | { kind: "activity"; key: string; text: string; feature?: "memory" | "code" | "triage" | "compact" | "explore" };
 
 interface Props {
   events: ChatEvent[];
   showReasoning: boolean;
   verbose?: boolean;
+  suppressTools?: boolean;
 }
 
 interface StaticItem {
@@ -37,7 +39,7 @@ function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, suppressTools }: Props) {
   const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
@@ -57,6 +59,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i]!;
+    if (suppressTools && e.kind === "tool") continue;
     const isStreaming = e.kind === "assistant" && e.streaming;
     if (isStreaming) {
       active.push(e);
@@ -172,6 +175,13 @@ const EventView = React.memo(function EventView({
     return (
       <Text color={theme.info.color} >
         ◈ {evt.text}
+      </Text>
+    );
+  }
+  if (evt.kind === "activity") {
+    return (
+      <Text italic color={theme.info.dim ? theme.info.color : theme.palette.secondary}>
+        ~ {evt.text}
       </Text>
     );
   }

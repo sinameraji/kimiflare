@@ -30,9 +30,10 @@ interface Props {
   phase?: TurnPhase;
   currentTool?: string | null;
   lastActivityAt?: number | null;
+  kimiMdStale?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, phase, currentTool, lastActivityAt }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, phase, currentTool, lastActivityAt, kimiMdStale }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -86,6 +87,11 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
           {hasUpdate ? (
             <Text color={theme.warn} bold>
               {"  ·  "}update available{latestVersion ? ` → ${latestVersion}` : ""} · run /update
+            </Text>
+          ) : null}
+          {kimiMdStale ? (
+            <Text color={theme.warn} bold>
+              {"  ·  "}⚠ KIMI.md stale · run /init
             </Text>
           ) : null}
         </Box>
