@@ -42,7 +42,6 @@ import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
-import { HelpMenu } from "./ui/help-menu.js";
 import {
   configPath,
   DEFAULT_MODEL,
@@ -532,7 +531,6 @@ function App({
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
-  const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
   const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
@@ -785,7 +783,6 @@ function App({
   // picker state would survive the modal and re-render on close.
   useEffect(() => {
     const modalActive =
-      showHelpMenu ||
       commandWizard !== null ||
       commandPicker !== null ||
       commandToDelete !== null ||
@@ -798,7 +795,6 @@ function App({
       setActivePicker(null);
     }
   }, [
-    showHelpMenu,
     commandWizard,
     commandPicker,
     commandToDelete,
@@ -1348,7 +1344,6 @@ function App({
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
-        showHelpMenu ||
         showLspWizard ||
         showCommandList ||
         commandWizard !== null ||
@@ -2682,23 +2677,26 @@ function App({
         return true;
       }
       if (c === "/help") {
-        setShowHelpMenu(true);
+        const lines = [
+          "commands:",
+          "  /mode edit|plan|auto     switch agent mode",
+          "  /thinking low|medium|high set reasoning effort",
+          "  /skills list|add|edit|... manage skills",
+          "  /memory on|off|clear      manage memory",
+          "  /cost                     show cost report",
+          "  /compact                  summarize old turns",
+          "  /resume                   pick a past session",
+          "  /clear                    clear conversation",
+          "  /init                     scan repo and write KIMI.md",
+          "  /update                   check for updates",
+          "  /exit                     exit kimiflare",
+        ];
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
         return true;
       }
       return false;
     },
     [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg, setShowRemoteDashboard, setSelectedRemoteSession],
-  );
-
-  const handleHelpCommand = useCallback(
-    (command: string) => {
-      setShowHelpMenu(false);
-      const executed = handleSlash(command);
-      if (!executed) {
-        setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown command: ${command}` }]);
-      }
-    },
-    [handleSlash],
   );
 
   const handleCommandSave = useCallback(
@@ -3347,24 +3345,6 @@ function App({
               onCancel={() => setShowRemoteDashboard(false)}
             />
           )}
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showHelpMenu) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <HelpMenu
-            customCommands={customCommandsRef.current
-              .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
-              .map((c) => ({ name: c.name, description: c.description }))}
-            costAttributionEnabled={cfg?.costAttribution}
-            cloudMode={cfg?.cloudMode}
-            onDone={() => setShowHelpMenu(false)}
-            onCommand={handleHelpCommand}
-          />
         </Box>
       </ThemeProvider>
     );
