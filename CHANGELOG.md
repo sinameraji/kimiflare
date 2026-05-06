@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/sinameraji/kimiflare/compare/v0.38.0...v0.38.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* make isolated-vm optional with fallback warning ([#288](https://github.com/sinameraji/kimiflare/issues/288)) ([fc1b562](https://github.com/sinameraji/kimiflare/commit/fc1b5623e8b02c41063c5003bc4e0cb9573374b1))
+
 ## [0.38.0](https://github.com/sinameraji/kimiflare/compare/v0.37.0...v0.38.0) (2026-05-06)
 
 
