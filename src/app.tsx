@@ -1711,8 +1711,6 @@ function App({
             toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
             if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
             toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
-            // In plan mode, suppress the individual tool card
-            if (modeRef.current === "plan") return;
             setEvents((e) => [
               ...e,
               {
@@ -3082,8 +3080,6 @@ function App({
           toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
           if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
           toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
-          // In plan mode, suppress the individual tool card
-          if (modeRef.current === "plan") return;
           setEvents((e) => [
             ...e,
             {
@@ -3660,7 +3656,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} suppressTools={mode === "plan"} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} />
         )}
         {perm ? (
           <PermissionModal
