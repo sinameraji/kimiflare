@@ -548,6 +548,7 @@ function App({
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [kimiMdStale, setKimiMdStale] = useState(false);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -605,7 +606,8 @@ function App({
   const busyRef = useRef(busy);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
-
+  const kimiMdStaleNudgedRef = useRef(false);
+  const turnCounterRef = useRef(0);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -893,6 +895,16 @@ function App({
           // Non-fatal: session works fine without recalled memories
         }
       })();
+
+      // Session-start drift check (Trigger A): if KIMI.md exists and high-signal
+      // memories have been learned since the last refresh, mark as stale.
+      if (existsSync(join(cwd, "KIMI.md"))) {
+        const lastRefresh = manager.getLastKimiMdRefreshTime(cwd);
+        const driftCount = manager.countHighSignalMemoriesSince(cwd, lastRefresh);
+        if (driftCount >= 5) {
+          setKimiMdStale(true);
+        }
+      }
     } else {
       memoryManagerRef.current?.close();
       memoryManagerRef.current = null;
@@ -1726,6 +1738,16 @@ function App({
               permResolveRef.current = resolve;
               setPerm({ tool: req.tool, args: req.args, resolve });
             }),
+          onKimiMdStale: () => {
+            if (!kimiMdStaleNudgedRef.current) {
+              kimiMdStaleNudgedRef.current = true;
+              setKimiMdStale(true);
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes." },
+              ]);
+            }
+          },
         },
       });
 
@@ -1755,6 +1777,10 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "KIMI.md generated; context loaded for future turns" },
         ]);
+        // Record refresh so drift detection knows this snapshot is current
+        void memoryManagerRef.current?.recordKimiMdRefresh(cwd, ensureSessionId());
+        setKimiMdStale(false);
+        kimiMdStaleNudgedRef.current = false;
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
@@ -2743,6 +2769,19 @@ function App({
         }
       }
 
+      // Occasional gentle nudge about /init (educational, not a warning)
+      turnCounterRef.current += 1;
+      if (
+        turnCounterRef.current % 15 === 0 &&
+        existsSync(join(process.cwd(), "KIMI.md")) &&
+        !kimiMdStale
+      ) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Tip: Rerunning /init occasionally helps KimiFlare stay accurate as your project evolves." },
+        ]);
+      }
+
       setBusy(true);
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
@@ -2894,6 +2933,16 @@ function App({
             limitResolveRef.current = resolve;
             setLimitModal({ limit: 50, resolve });
           }),
+        onKimiMdStale: () => {
+          if (!kimiMdStaleNudgedRef.current) {
+            kimiMdStaleNudgedRef.current = true;
+            setKimiMdStale(true);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes." },
+            ]);
+          }
+        },
       };
 
       try {
@@ -3433,6 +3482,7 @@ function App({
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}
               cloudBudget={cloudBudget}
+              kimiMdStale={kimiMdStale}
             />
             {activePicker?.kind === "file" && (
               <FilePicker

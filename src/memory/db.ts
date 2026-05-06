@@ -441,3 +441,23 @@ export function getMemoryById(db: Database.Database, id: string): Memory | null 
     | undefined;
   return row ? rowToMemory(row) : null;
 }
+
+export function countHighSignalMemoriesSince(
+  db: Database.Database,
+  repoPath: string,
+  since: number,
+): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as count FROM memories
+       WHERE repo_path = ? AND created_at > ?
+       AND forgotten = 0 AND superseded_by IS NULL
+       AND (
+         topic_key IN ('project_dependencies', 'project_tsconfig', 'project_entry_point')
+         OR category IN ('instruction', 'preference')
+         OR (category = 'event' AND importance >= 3)
+       )`,
+    )
+    .get(repoPath, since) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
