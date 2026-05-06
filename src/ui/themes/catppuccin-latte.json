@@ -1,0 +1,37 @@
+{
+  "name": "catppuccin-latte",
+  "label": "Catppuccin Latte",
+  "palette": {
+    "background": "#eff1f5",
+    "foreground": "#4c4f69",
+    "primary": "#1e66f5",
+    "secondary": "#8c8fa1",
+    "success": "#40a02b",
+    "error": "#d20f39"
+  },
+  "user": "#1e66f5",
+  "assistant": null,
+  "reasoning": { "color": "#8c8fa1", "dim": true },
+  "info": { "color": "#4c4f69", "dim": false },
+  "error": "#d20f39",
+  "warn": "#df8e1d",
+  "tool": "#8839ef",
+  "spinner": "#1e66f5",
+  "permission": "#d20f39",
+  "queue": { "color": "#8c8fa1", "dim": true },
+  "accent": "#1e66f5",
+  "modeBadge": {
+    "plan": "#1e66f5",
+    "auto": "#40a02b",
+    "edit": "#d20f39"
+  },
+  "blockquote": { "color": "#8c8fa1", "dim": true },
+  "codeInline": "#8839ef",
+  "codeBlock": "#8839ef",
+  "link": "#1e66f5",
+  "strikethrough": "#8c8fa1",
+  "tableBorder": "#bcc0cc",
+  "tableHeader": "#4c4f69",
+  "tableCell": "#4c4f69",
+  "muted": { "color": "#8c8fa1", "dim": true }
+}

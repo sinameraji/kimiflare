@@ -1,0 +1,37 @@
+{
+  "name": "solarized-light",
+  "label": "Solarized Light",
+  "palette": {
+    "background": "#fdf6e3",
+    "foreground": "#657b83",
+    "primary": "#268bd2",
+    "secondary": "#93a1a1",
+    "success": "#859900",
+    "error": "#dc322f"
+  },
+  "user": "#268bd2",
+  "assistant": null,
+  "reasoning": { "color": "#93a1a1", "dim": true },
+  "info": { "color": "#657b83", "dim": false },
+  "error": "#dc322f",
+  "warn": "#b58900",
+  "tool": "#2aa198",
+  "spinner": "#268bd2",
+  "permission": "#dc322f",
+  "queue": { "color": "#93a1a1", "dim": true },
+  "accent": "#268bd2",
+  "modeBadge": {
+    "plan": "#268bd2",
+    "auto": "#859900",
+    "edit": "#dc322f"
+  },
+  "blockquote": { "color": "#93a1a1", "dim": true },
+  "codeInline": "#2aa198",
+  "codeBlock": "#2aa198",
+  "link": "#268bd2",
+  "strikethrough": "#93a1a1",
+  "tableBorder": "#eee8d5",
+  "tableHeader": "#586e75",
+  "tableCell": "#657b83",
+  "muted": { "color": "#93a1a1", "dim": true }
+}
