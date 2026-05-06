@@ -29,7 +29,6 @@ import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
-import { generateActivityText, narrativizeInfo, type ToolBatchItem } from "./ui/narrative.js";
 import { PermissionModal } from "./ui/permission.js";
 import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
@@ -627,8 +626,6 @@ function App({
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
-  const toolBatchRef = useRef<ToolBatchItem[]>([]);
-  const toolBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
@@ -931,7 +928,7 @@ function App({
             messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
             setEvents((e) => [
               ...e,
-              { kind: "activity", key: mkKey(), text: "Remembering what we know about this repo…", feature: "memory" },
+              { kind: "memory", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
             ]);
           }
         } catch {
@@ -1174,7 +1171,7 @@ function App({
       }
       setEvents((e) => [
         ...e,
-        { kind: "activity", key: mkKey(), text: "Plugging in external tools…" },
+        { kind: "info", key: mkKey(), text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available` },
       ]);
     }
   }, [cfg]);
@@ -1233,7 +1230,7 @@ function App({
       }
       setEvents((e) => [
         ...e,
-        { kind: "activity", key: mkKey(), text: "Waking up the language servers…" },
+        { kind: "info", key: mkKey(), text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active` },
       ]);
     } else {
       setEvents((e) => [
@@ -1499,17 +1496,6 @@ function App({
     [],
   );
 
-  const flushToolBatch = useCallback(() => {
-    toolBatchTimerRef.current = null;
-    const batch = toolBatchRef.current;
-    toolBatchRef.current = [];
-    if (batch.length === 0) return;
-    const text = generateActivityText(batch, { mode: modeRef.current });
-    if (text) {
-      setEvents((e) => [...e, { kind: "activity", key: mkKey(), text, feature: "explore" }]);
-    }
-  }, []);
-
   const updateGatewayMeta = useCallback((meta: GatewayMeta) => {
     gatewayMetaRef.current = meta;
     setGatewayMeta(meta);
@@ -1700,17 +1686,12 @@ function App({
             pendingToolCallsRef.current.set(call.id, call.function.name);
             const spec = executorRef.current.list().find((t) => t.name === call.function.name);
             let renderMeta: ToolRender | undefined;
-            let argsParsed: Record<string, unknown> = {};
             try {
-              argsParsed = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-              renderMeta = spec?.render?.(argsParsed);
+              const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+              renderMeta = spec?.render?.(args);
             } catch {
               /* ignore */
             }
-            // Batch for narrative activity line
-            toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
-            if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
-            toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
             setEvents((e) => [
               ...e,
               {
@@ -1858,17 +1839,8 @@ function App({
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
-      // Clear task state so timers and spinners stop
-      tasksRef.current = [];
-      setTasks([]);
-      setTasksStartedAt(null);
-      setTasksStartTokens(0);
-      // Final sweep: force any still-running tools to error
-      setEvents((evts) =>
-        evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
-      );
     }
-  }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta, flushToolBatch]);
+  }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
   const handleThemePick = useCallback(
     (picked: Theme | null) => {
@@ -3028,11 +3000,6 @@ function App({
         },
       ]);
 
-      // Narrative: triage + code mode
-      const triageActivity = narrativizeInfo("", { tier: classification.tier, codeMode: effectiveCodeMode });
-      if (triageActivity) {
-        setEvents((e) => [...e, { kind: "activity", key: mkKey(), text: triageActivity.text, feature: triageActivity.feature }]);
-      }
       const controller = new AbortController();
       activeControllerRef.current = controller;
 
@@ -3069,17 +3036,12 @@ function App({
           setLastActivityAt(Date.now());
           const spec = executorRef.current.list().find((t) => t.name === call.function.name);
           let renderMeta: ToolRender | undefined;
-          let argsParsed: Record<string, unknown> = {};
           try {
-            argsParsed = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-            renderMeta = spec?.render?.(argsParsed);
+            const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+            renderMeta = spec?.render?.(args);
           } catch {
             /* ignore render failure */
           }
-          // Batch for narrative activity line
-          toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
-          if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
-          toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
           setEvents((e) => [
             ...e,
             {
@@ -3245,10 +3207,9 @@ function App({
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "activity",
+                  kind: "info",
                   key: mkKey(),
-                  text: "Making room by summarizing older turns…",
-                  feature: "compact",
+                  text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
                 },
               ]);
               await saveSessionSafe();
@@ -3268,10 +3229,9 @@ function App({
                 setEvents((e) => [
                   ...e,
                   {
-                    kind: "activity",
+                    kind: "info",
                     key: mkKey(),
-                    text: "Making room by summarizing older turns…",
-                    feature: "compact",
+                    text: `auto-compacted: ${result.replacedCount} messages summarized`,
                   },
                 ]);
                 await saveSessionSafe();
@@ -3308,10 +3268,9 @@ function App({
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "activity",
+                  kind: "memory",
                   key: mkKey(),
-                  text: "Remembering what we learned before…",
-                  feature: "memory",
+                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
                 },
               ]);
               await saveSessionSafe();
@@ -3371,18 +3330,9 @@ function App({
         permResolveRef.current = null;
         limitResolveRef.current = null;
         pendingToolCallsRef.current.clear();
-        // Clear task state so timers and spinners stop
-        tasksRef.current = [];
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        // Final sweep: force any still-running tools to error
-        setEvents((evts) =>
-          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
-        );
       }
     },
-    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta, flushToolBatch],
+    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
   );
 
   useEffect(() => {
