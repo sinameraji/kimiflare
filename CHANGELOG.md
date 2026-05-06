@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.0](https://github.com/sinameraji/kimiflare/compare/v0.41.0...v0.42.0) (2026-05-06)
+
+
+### Features
+
+* **ui:** extensible JSON themes with WCAG contrast validation ([#302](https://github.com/sinameraji/kimiflare/issues/302)) ([bced1f7](https://github.com/sinameraji/kimiflare/commit/bced1f7b18b46e601f93911fdf242b390a54b22c))
+* **ui:** improve progress visibility during agent turns ([#299](https://github.com/sinameraji/kimiflare/issues/299)) ([7c4f44e](https://github.com/sinameraji/kimiflare/commit/7c4f44e18b4b291a0dbace34b64d193f49349c25))
+
 ## [0.41.0](https://github.com/sinameraji/kimiflare/compare/v0.40.0...v0.41.0) (2026-05-06)
 
 
