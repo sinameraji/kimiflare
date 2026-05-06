@@ -104,7 +104,7 @@ program
               console.log(`\nKimiflare Cloud Authentication`);
               console.log(`\n1. Open this URL in your browser:`);
               console.log(`   ${url}`);
-              console.log(`\n2. Sign in with GitHub\n`);
+              console.log(`\n2. Sign in with GitHub or Email\n`);
             }
           });
           console.log(`Authenticated! Token expires at ${new Date(creds.expiresAt * 1000).toISOString()}`);

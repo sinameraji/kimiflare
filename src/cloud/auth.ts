@@ -4,7 +4,7 @@
  * Flow:
  * 1. CLI generates device_code + user_code
  * 2. POST /auth/device to register
- * 3. Show user URL: https://api.kimiflare.com/auth/github?code=<user_code>
+ * 3. Show user URL: https://api.kimiflare.com/auth?code=<user_code>
  * 4. Poll POST /auth/poll until approved
  * 5. Store JWT in config
  */
@@ -53,7 +53,7 @@ function generateDeviceId(): string {
 export function generateDeviceCodes(): DeviceCodes {
   const deviceCode = `device-${generateCode()}-${Date.now()}`;
   const userCode = `${generateCode()}-${generateCode()}`;
-  const authUrl = `${CLOUD_API_URL}/auth/github?code=${encodeURIComponent(userCode)}`;
+  const authUrl = `${CLOUD_API_URL}/auth?code=${encodeURIComponent(userCode)}`;
   const deviceId = generateDeviceId();
   return { deviceCode, userCode, authUrl, deviceId };
 }
