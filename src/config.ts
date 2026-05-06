@@ -264,6 +264,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
+        theme: parsed.theme,
       };
     }
     if (parsed.accountId && parsed.apiToken) {
@@ -296,6 +297,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         cloudMode: envCloudMode ?? parsed.cloudMode,
+        theme: parsed.theme,
       };
     }
   } catch {
