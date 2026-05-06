@@ -35,9 +35,10 @@ interface Props {
   currentTool?: string | null;
   lastActivityAt?: number | null;
   kimiMdStale?: boolean;
+  gitBranch?: string | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -53,6 +54,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
 
   const leftParts: string[] = [`${shortModel(model)}`, effort];
+  if (gitBranch) leftParts.push(gitBranch);
   if (cloudMode) leftParts.push("CLOUD");
   if (codeMode) leftParts.push("CODE");
 
