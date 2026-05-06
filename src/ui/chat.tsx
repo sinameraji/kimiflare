@@ -33,10 +33,27 @@ interface StaticItem {
   showSeparator: boolean;
 }
 
+function toolSignature(name: string, args: string): string {
+  return `${name}:${args}`;
+}
+
 export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
   const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
+
+  // Detect repetitive tool calls in this turn (≥3 identical signatures)
+  const toolCounts = new Map<string, number>();
+  for (const e of events) {
+    if (e.kind === "tool") {
+      const sig = toolSignature(e.name, e.args);
+      toolCounts.set(sig, (toolCounts.get(sig) ?? 0) + 1);
+    }
+  }
+  const repeatedSigs = new Set<string>();
+  for (const [sig, count] of toolCounts) {
+    if (count >= 3) repeatedSigs.add(sig);
+  }
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i]!;
@@ -64,7 +81,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} />
+            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} />
           </Box>
         )}
       </Static>
@@ -81,7 +98,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} />
+            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} />
           </Box>
         );
       })}
@@ -93,10 +110,12 @@ const EventView = React.memo(function EventView({
   evt,
   showReasoning,
   verbose,
+  repeatedSigs,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
   verbose?: boolean;
+  repeatedSigs?: Set<string>;
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
@@ -139,7 +158,8 @@ const EventView = React.memo(function EventView({
     );
   }
   if (evt.kind === "tool") {
-    return <ToolView evt={evt} verbose={verbose} />;
+    const isRepeated = repeatedSigs?.has(toolSignature(evt.name, evt.args)) ?? false;
+    return <ToolView evt={evt} verbose={verbose} isRepeated={isRepeated} />;
   }
   if (evt.kind === "info") {
     return (

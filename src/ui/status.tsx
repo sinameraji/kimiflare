@@ -10,6 +10,8 @@ import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 import type { DailyUsage } from "../usage-tracker.js";
 
+export type TurnPhase = "generating" | "executing" | "waiting";
+
 interface Props {
   model: string;
   usage: Usage | null;
@@ -25,9 +27,12 @@ interface Props {
   codeMode?: boolean;
   cloudMode?: boolean;
   cloudBudget?: { remaining: number; limit: number } | null;
+  phase?: TurnPhase;
+  currentTool?: string | null;
+  lastActivityAt?: number | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, phase, currentTool, lastActivityAt }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -46,6 +51,10 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   if (cloudMode) leftParts.push("CLOUD");
   if (codeMode) leftParts.push("CODE");
 
+  const phaseLabel = phase === "generating" ? "generating" : phase === "executing" ? `executing ${currentTool ?? ""}` : phase === "waiting" ? "waiting" : "thinking";
+  const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
+  const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
+
   return (
     <Box flexDirection="column">
       <Box>
@@ -56,7 +65,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
         {thinking ? (
           <Text color={theme.spinner}>
             <Spinner type="dots" />{" "}
-            thinking{elapsed ? ` · ${elapsed}` : ""}
+            {phaseLabel}{elapsed ? ` · ${elapsed}` : ""}{idleLabel}
           </Text>
         ) : (
           <Text color={theme.info.color} >
