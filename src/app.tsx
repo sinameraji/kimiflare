@@ -510,6 +510,22 @@ function App({
     },
     [],
   );
+
+  /** Append an activity event, or replace the previous one if it was also an activity.
+   *  This keeps the TUI calm by avoiding a vertical stack of transient status lines. */
+  const pushActivityEvent = useCallback(
+    (text: string, feature?: Extract<ChatEvent, { kind: "activity" }>["feature"]) => {
+      setEvents((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.kind === "activity") {
+          return [...prev.slice(0, -1), { ...last, text, feature }];
+        }
+        return [...prev, { kind: "activity", key: mkKey(), text, feature }];
+      });
+    },
+    [setEvents],
+  );
+
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -886,10 +902,7 @@ function App({
             const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
             const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
             messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-            setEvents((e) => [
-              ...e,
-              { kind: "activity", key: mkKey(), text: "Remembering what we know about this repo…", feature: "memory" },
-            ]);
+            pushActivityEvent("Remembering what we know about this repo…", "memory");
           }
         } catch {
           // Non-fatal: session works fine without recalled memories
@@ -1129,10 +1142,7 @@ function App({
           }),
         };
       }
-      setEvents((e) => [
-        ...e,
-        { kind: "activity", key: mkKey(), text: "Plugging in external tools…" },
-      ]);
+      pushActivityEvent("Plugging in external tools…");
     }
   }, [cfg]);
 
@@ -1188,10 +1198,7 @@ function App({
           }),
         };
       }
-      setEvents((e) => [
-        ...e,
-        { kind: "activity", key: mkKey(), text: "Waking up the language servers…" },
-      ]);
+      pushActivityEvent("Waking up the language servers…");
     } else {
       setEvents((e) => [
         ...e,
@@ -1464,7 +1471,7 @@ function App({
     if (batch.length === 0) return;
     const text = generateActivityText(batch, { mode: modeRef.current });
     if (text) {
-      setEvents((e) => [...e, { kind: "activity", key: mkKey(), text, feature: "explore" }]);
+      pushActivityEvent(text, "explore");
     }
   }, []);
 
@@ -2800,7 +2807,7 @@ function App({
       // Narrative: triage + code mode
       const triageActivity = narrativizeInfo("", { tier: classification.tier, codeMode: effectiveCodeMode });
       if (triageActivity) {
-        setEvents((e) => [...e, { kind: "activity", key: mkKey(), text: triageActivity.text, feature: triageActivity.feature }]);
+        pushActivityEvent(triageActivity.text, triageActivity.feature);
       }
 
       const controller = new AbortController();
@@ -2999,15 +3006,7 @@ function App({
             if (result.metrics.rawTurnsRemoved > 0) {
               messagesRef.current = result.newMessages;
               sessionStateRef.current = result.newState;
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "activity",
-                  key: mkKey(),
-                  text: "Making room by summarizing older turns…",
-                  feature: "compact",
-                },
-              ]);
+              pushActivityEvent("Making room by summarizing older turns…", "compact");
               await saveSessionSafe();
             }
           } else {
@@ -3022,15 +3021,7 @@ function App({
               });
               if (result.replacedCount > 0) {
                 messagesRef.current = result.newMessages;
-                setEvents((e) => [
-                  ...e,
-                  {
-                    kind: "activity",
-                    key: mkKey(),
-                    text: "Making room by summarizing older turns…",
-                    feature: "compact",
-                  },
-                ]);
+                pushActivityEvent("Making room by summarizing older turns…", "compact");
                 await saveSessionSafe();
               }
             } catch (compactErr) {
@@ -3062,15 +3053,7 @@ function App({
               const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
               const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
               messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "activity",
-                  key: mkKey(),
-                  text: "Remembering what we learned before…",
-                  feature: "memory",
-                },
-              ]);
+              pushActivityEvent("Remembering what we learned before…", "memory");
               await saveSessionSafe();
             }
           } catch {
