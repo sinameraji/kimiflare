@@ -3448,7 +3448,6 @@ function App({
               cloudBudget={cloudBudget}
               skillsActive={skillsActive}
               memoryRecalled={memoryRecalled}
-              intentTier={intentTier}
             />
             {activePicker?.kind === "file" && (
               <FilePicker

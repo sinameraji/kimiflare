@@ -29,11 +29,9 @@ interface Props {
   skillsActive?: number;
   /** Whether memory was recalled this turn */
   memoryRecalled?: boolean;
-  /** Intent tier for this turn */
-  intentTier?: "light" | "medium" | "heavy" | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, intentTier }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -53,11 +51,6 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   if (codeMode) leftParts.push("CODE");
 
   const labelParts: string[] = [];
-  if (intentTier) {
-    const tierLabel =
-      intentTier === "light" ? "Quick thought" : intentTier === "medium" ? "Deep dive" : "Heavy lifting";
-    labelParts.push(tierLabel);
-  }
   if (skillsActive !== undefined && skillsActive > 0) {
     labelParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"} on deck`);
   }
