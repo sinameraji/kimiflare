@@ -349,7 +349,7 @@ function gatewayUsageLookupFromConfig(
   };
 }
 
-const FEEDBACK_WORKER_URL = "https://kimiflare-feedback.sina-b35.workers.dev";
+const FEEDBACK_WORKER_URL = "https://hello.kimiflare.com";
 
 function openBrowser(url: string): void {
   const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
