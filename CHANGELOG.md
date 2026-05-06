@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/sinameraji/kimiflare/compare/v0.38.1...v0.39.0) (2026-05-06)
+
+
+### Features
+
+* **auth:** update CLI auth URL for generic portal ([#290](https://github.com/sinameraji/kimiflare/issues/290)) ([48fa8e1](https://github.com/sinameraji/kimiflare/commit/48fa8e140a38a61fdb794bc56c44f573e1fbe73a))
+
 ## [0.38.1](https://github.com/sinameraji/kimiflare/compare/v0.38.0...v0.38.1) (2026-05-06)
 
 
