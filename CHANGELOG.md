@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/sinameraji/kimiflare/compare/v0.39.1...v0.40.0) (2026-05-06)
+
+
+### Features
+
+* **ui:** narrative activity layer, plan-mode suppression, and interruption cleanup ([#300](https://github.com/sinameraji/kimiflare/issues/300)) ([085d2ea](https://github.com/sinameraji/kimiflare/commit/085d2eabf4dbd9667783fa1d1228223493ea7bba))
+
 ## [0.39.1](https://github.com/sinameraji/kimiflare/compare/v0.39.0...v0.39.1) (2026-05-06)
 
 
