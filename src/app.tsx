@@ -91,6 +91,7 @@ import { LspWizard } from "./ui/lsp-wizard.js";
 import { ThemeProvider } from "./ui/theme-context.js";
 import { ThemePicker } from "./ui/theme-picker.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
+import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
 import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
@@ -549,6 +550,29 @@ function App({
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [kimiMdStale, setKimiMdStale] = useState(false);
+
+  // Load user and project themes at startup
+  useEffect(() => {
+    let cancelled = false;
+    loadAndMergeThemes().then(({ errors, wcagWarnings }) => {
+      if (cancelled) return;
+      if (errors.length > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: `theme load errors:\n${errors.join("\n")}` },
+        ]);
+      }
+      if (wcagWarnings.length > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `theme WCAG warnings:\n${wcagWarnings.join("\n")}` },
+        ]);
+      }
+      // Re-resolve current theme in case a user/project theme overrides the built-in
+      setTheme(resolveTheme(initialCfg?.theme));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -1828,14 +1852,18 @@ function App({
     (picked: Theme | null) => {
       setShowThemePicker(false);
       if (!picked) return;
-      setCfg((c) => (c ? { ...c, theme: picked.name } : c));
-      if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, theme: picked.name };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
       setEvents((e) => [
         ...e,
         { kind: "info", key: mkKey(), text: `theme: ${picked.label} — restart to apply` },
       ]);
     },
-    [cfg],
+    [],
   );
 
   const handleResumePick = useCallback(
@@ -2168,8 +2196,12 @@ function App({
           ]);
           return true;
         }
-        setCfg((c) => (c ? { ...c, theme: next.name } : c));
-        if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
+        setCfg((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, theme: next.name };
+          void saveConfig(updated).catch(() => {});
+          return updated;
+        });
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: `theme: ${next.label} — restart to apply` },
