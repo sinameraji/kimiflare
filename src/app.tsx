@@ -377,6 +377,14 @@ function detectGitHubRepo(cachedRepo?: string): { owner: string; name: string } 
   return null;
 }
 
+function detectGitBranch(): string | null {
+  try {
+    return execSync("git branch --show-current", { cwd: process.cwd(), encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -558,6 +566,11 @@ function App({
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
   const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+
+  useEffect(() => {
+    setGitBranch(detectGitBranch());
+  }, []);
 
   // Load user and project themes at startup
   useEffect(() => {
@@ -3707,6 +3720,7 @@ function App({
               currentTool={currentToolName}
               lastActivityAt={lastActivityAt}
               kimiMdStale={kimiMdStale}
+              gitBranch={gitBranch}
             />
             {activePicker?.kind === "file" && (
               <FilePicker
