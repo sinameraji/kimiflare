@@ -29,6 +29,7 @@ export interface RunKimiOpts {
   cloudMode?: boolean;
   cloudToken?: string;
   cloudDeviceId?: string;
+  requestId?: string;
 }
 
 export interface AiGatewayOptions {
@@ -66,6 +67,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   if (opts.cloudMode && !opts.cloudToken) {
     throw new KimiApiError("kimiflare: cloud mode requires a cloud token. Run `kimiflare auth cloud` to authenticate.", undefined, 401);
   }
+  const requestId = opts.requestId ?? crypto.randomUUID();
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
@@ -93,6 +95,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
         headers["X-Session-ID"] = opts.sessionId;
         headers["x-session-affinity"] = opts.sessionId;
       }
+      headers["X-Request-ID"] = requestId;
       res = await fetch(url, {
         method: "POST",
         headers,
@@ -138,7 +141,34 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
     const meta = readGatewayMeta(res.headers);
     if (meta) yield { type: "gateway_meta", meta };
-    yield* parseStream(res.body, opts.signal);
+
+    let lastUsage: Usage | null = null;
+    for await (const ev of parseStream(res.body, opts.signal)) {
+      if (ev.type === "usage") lastUsage = ev.usage;
+      yield ev;
+    }
+
+    // Client-side fallback: report usage to cloud worker for reconciliation
+    if (opts.cloudMode && lastUsage && opts.cloudToken) {
+      const reportUrl = "https://api.kimiflare.com/v1/usage/report";
+      const reportHeaders: Record<string, string> = {
+        Authorization: `Bearer ${opts.cloudToken}`,
+        "Content-Type": "application/json",
+      };
+      if (opts.cloudDeviceId) reportHeaders["X-Device-ID"] = opts.cloudDeviceId;
+      if (opts.sessionId) reportHeaders["X-Session-ID"] = opts.sessionId;
+      fetch(reportUrl, {
+        method: "POST",
+        headers: reportHeaders,
+        body: JSON.stringify({
+          request_id: requestId,
+          prompt_tokens: lastUsage.prompt_tokens,
+          completion_tokens: lastUsage.completion_tokens,
+          cached_tokens: lastUsage.prompt_tokens_details?.cached_tokens ?? 0,
+        }),
+      }).catch(() => {}); // Best-effort fire-and-forget
+    }
+
     return;
   }
 }
