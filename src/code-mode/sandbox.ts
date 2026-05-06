@@ -287,6 +287,11 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
   return { output: logs.join("\n"), logs, toolCalls, warnings };
 }
 
+const ISOLATED_VM_FALLBACK_WARNING =
+  "⚠️  Code sandbox is running without memory limits or true process isolation " +
+  "(isolated-vm unavailable or failed to load). " +
+  "For a secure sandbox, install with Node 22 LTS: nvm install 22 && nvm use 22 && npm install -g kimiflare";
+
 export async function runInSandbox(opts: SandboxOptions): Promise<SandboxResult> {
   try {
     return await runWithIsolatedVm(opts);
@@ -294,9 +299,11 @@ export async function runInSandbox(opts: SandboxOptions): Promise<SandboxResult>
     const message = err instanceof Error ? err.message : String(err);
     // If isolated-vm fails (e.g., not compiled), fall back to node:vm
     if (message.includes("isolated-vm") || message.includes("Cannot find module") || message.includes("bindings")) {
-      return runWithNodeVm(opts);
+      const result = await runWithNodeVm(opts);
+      return { ...result, warnings: [ISOLATED_VM_FALLBACK_WARNING, ...(result.warnings ?? [])] };
     }
     // For other errors, also try fallback
-    return runWithNodeVm(opts);
+    const result = await runWithNodeVm(opts);
+    return { ...result, warnings: [ISOLATED_VM_FALLBACK_WARNING, ...(result.warnings ?? [])] };
   }
 }
