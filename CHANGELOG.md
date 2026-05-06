@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.0](https://github.com/sinameraji/kimiflare/compare/v0.40.0...v0.41.0) (2026-05-06)
+
+
+### Features
+
+* KIMI.md drift detection with memory-based staleness indicators ([#303](https://github.com/sinameraji/kimiflare/issues/303)) ([052b46c](https://github.com/sinameraji/kimiflare/commit/052b46c614fae8d3a30bd3fc4e9741ab987bdef6))
+
 ## [0.40.0](https://github.com/sinameraji/kimiflare/compare/v0.39.1...v0.40.0) (2026-05-06)
 
 
