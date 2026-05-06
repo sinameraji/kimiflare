@@ -23,6 +23,7 @@ type Page =
   | "thinking"
   | "session"
   | "memory"
+  | "skills"
   | "cost"
   | "mcp"
   | "lsp"
@@ -81,6 +82,18 @@ const CATEGORIES: Category[] = [
       { command: "/memory off", description: "disable memory" },
       { command: "/memory clear", description: "wipe memories for this repo" },
       { command: "/memory search <query>", description: "search stored memories", selectable: false },
+    ],
+  },
+  {
+    key: "skills",
+    label: "Skills",
+    commands: [
+      { command: "/skills list", description: "list all skills" },
+      { command: "/skills add <name>", description: "create a new skill", selectable: false },
+      { command: "/skills edit <name>", description: "show path to a skill file", selectable: false },
+      { command: "/skills delete <name>", description: "delete a skill", selectable: false },
+      { command: "/skills enable <name>", description: "enable a skill", selectable: false },
+      { command: "/skills disable <name>", description: "disable a skill", selectable: false },
     ],
   },
   {

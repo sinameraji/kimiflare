@@ -59,6 +59,7 @@ import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
 import { routeSkills, type SkillRoutingResult } from "./skills/index.js";
+import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
 import {
   listSessions,
   loadSession,
@@ -2145,6 +2146,125 @@ function App({
       if (c === "/edit") {
         setMode("edit");
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: edit" }]);
+        return true;
+      }
+      if (c === "/skills") {
+        const sub = rest[0]?.toLowerCase() ?? "";
+        const subRest = rest.slice(1).join(" ").trim();
+
+        if (sub === "list" || sub === "") {
+          void listAllSkills(process.cwd()).then((all) => {
+            const lines: string[] = [];
+            if (all.project.length > 0) {
+              lines.push("project skills:");
+              for (const s of all.project) {
+                const status = s.enabled ? "✓" : "✗";
+                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
+              }
+            }
+            if (all.global.length > 0) {
+              lines.push("global skills:");
+              for (const s of all.global) {
+                const status = s.enabled ? "✓" : "✗";
+                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
+              }
+            }
+            if (lines.length === 0) {
+              lines.push("no skills found. create one with /skills add <name>");
+            }
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to list skills: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "add") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills add <name>" }]);
+            return true;
+          }
+          void createSkill({ name, scope: "project", cwd: process.cwd() }).then((result) => {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `created skill '${name}' → ${result.filepath}` },
+              { kind: "info", key: mkKey(), text: `edit the file to add your instructions` },
+            ]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to create skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "edit") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills edit <name>" }]);
+            return true;
+          }
+          void findSkillFile(name, process.cwd()).then((filepath) => {
+            if (!filepath) {
+              setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `skill '${name}' not found` }]);
+              return;
+            }
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `skill '${name}' → ${filepath}` },
+              { kind: "info", key: mkKey(), text: `open it in your editor to make changes` },
+            ]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to find skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "delete") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills delete <name>" }]);
+            return true;
+          }
+          void deleteSkill(name, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `deleted skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to delete skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "enable") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills enable <name>" }]);
+            return true;
+          }
+          void setSkillEnabled(name, true, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `enabled skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to enable skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "disable") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills disable <name>" }]);
+            return true;
+          }
+          void setSkillEnabled(name, false, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `disabled skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to disable skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /skills list | add <name> | edit <name> | delete <name> | enable <name> | disable <name>" },
+        ]);
         return true;
       }
       if (c === "/memory") {
