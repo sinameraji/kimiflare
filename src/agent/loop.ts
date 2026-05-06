@@ -28,6 +28,8 @@ export interface AgentCallbacks {
   /** Called when the tool-call iteration limit is reached. Return "continue" to
    *  reset the counter and keep going, or "stop" to end the turn immediately. */
   onToolLimitReached?: () => Promise<"continue" | "stop">;
+  /** Called when accumulated high-signal memories suggest KIMI.md may be stale. */
+  onKimiMdStale?: () => void;
 }
 
 export interface AgentTurnOpts {
@@ -78,6 +80,25 @@ export class BudgetExhaustedError extends Error {
 }
 
 const codeModeApiCache = new Map<string, string>();
+
+/** Per-session accumulator for high-signal memories that may indicate KIMI.md drift. */
+const driftAccumulator = new Map<string, number>();
+const DRIFT_THRESHOLD = 5;
+
+function isHighSignalMemory(memory: {
+  topicKey: string;
+  category: string;
+  importance: number;
+}): boolean {
+  return (
+    memory.topicKey === "project_dependencies" ||
+    memory.topicKey === "project_tsconfig" ||
+    memory.topicKey === "project_entry_point" ||
+    memory.category === "instruction" ||
+    memory.category === "preference" ||
+    (memory.category === "event" && memory.importance >= 3)
+  );
+}
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const turnStart = performance.now();
@@ -539,6 +560,17 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                       undefined,
                       memory.topicKey,
                     );
+
+                    // Real-time drift detection (Trigger B)
+                    if (isHighSignalMemory(memory)) {
+                      const sid = opts.sessionId ?? "default";
+                      const current = (driftAccumulator.get(sid) ?? 0) + 1;
+                      driftAccumulator.set(sid, current);
+                      if (current >= DRIFT_THRESHOLD) {
+                        opts.callbacks.onKimiMdStale?.();
+                        driftAccumulator.set(sid, 0);
+                      }
+                    }
                   }
                 } catch {
                   // Swallow auto-extraction errors so they never break the loop
@@ -550,6 +582,15 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      }
+    }
+
+    // Decay drift accumulator at end of turn (clustered changes = drift,
+    // spread-out changes = incremental and not worth nagging)
+    if (opts.sessionId) {
+      const current = driftAccumulator.get(opts.sessionId) ?? 0;
+      if (current > 0) {
+        driftAccumulator.set(opts.sessionId, Math.max(0, current - 1));
       }
     }
 

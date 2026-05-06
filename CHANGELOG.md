@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.41.0](https://github.com/sinameraji/kimiflare/compare/v0.40.0...v0.41.0) (2026-05-06)
+
+
+### Features
+
+* KIMI.md drift detection with memory-based staleness indicators ([#303](https://github.com/sinameraji/kimiflare/issues/303)) ([052b46c](https://github.com/sinameraji/kimiflare/commit/052b46c614fae8d3a30bd3fc4e9741ab987bdef6))
+
+## [0.40.0](https://github.com/sinameraji/kimiflare/compare/v0.39.1...v0.40.0) (2026-05-06)
+
+
+### Features
+
+* **ui:** narrative activity layer, plan-mode suppression, and interruption cleanup ([#300](https://github.com/sinameraji/kimiflare/issues/300)) ([085d2ea](https://github.com/sinameraji/kimiflare/commit/085d2eabf4dbd9667783fa1d1228223493ea7bba))
+
+## [0.39.1](https://github.com/sinameraji/kimiflare/compare/v0.39.0...v0.39.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **app:** update /hello feedback worker URL to hello.kimiflare.com ([#292](https://github.com/sinameraji/kimiflare/issues/292)) ([376eaed](https://github.com/sinameraji/kimiflare/commit/376eaed67ab64b54502d2fd5116df92729178da1))
+* **build:** remove logMemory import and calls ([#297](https://github.com/sinameraji/kimiflare/issues/297)) ([ef5b22c](https://github.com/sinameraji/kimiflare/commit/ef5b22caf65eeaed30028949cafd428eb47aae92))
+* **ui:** remove live theme preview to prevent memory leak ([#296](https://github.com/sinameraji/kimiflare/issues/296)) ([2980dc9](https://github.com/sinameraji/kimiflare/commit/2980dc98c6550d0a392b3772bdf82fd25ba5e266))
+
 ## [0.39.0](https://github.com/sinameraji/kimiflare/compare/v0.38.1...v0.39.0) (2026-05-06)
 
 

@@ -3,6 +3,7 @@ import type { AiGatewayOptions } from "../agent/client.js";
 import { runKimi } from "../agent/client.js";
 import type { ChatMessage } from "../agent/messages.js";
 import type { MemoryInput, MemoryQuery, HybridResult, MemoryStats, MemoryCategory } from "./schema.js";
+import { DEFAULT_EMBEDDING_DIM } from "./schema.js";
 import {
   openMemoryDb,
   closeMemoryDb,
@@ -17,6 +18,7 @@ import {
   listUnvectorizedMemories,
   updateMemoryEmbedding,
   getMemoryById,
+  countHighSignalMemoriesSince,
 } from "./db.js";
 import { fetchEmbeddings } from "./embeddings.js";
 import { retrieveMemories } from "./retrieval.js";
@@ -268,6 +270,53 @@ export class MemoryManager {
     }
 
     return { id: memory.id, superseded: supersededIds.length > 0 ? supersededIds : undefined };
+  }
+
+  /**
+   * Count high-signal memories created since the given timestamp.
+   * Used for KIMI.md drift detection (Trigger A: session-start check).
+   */
+  countHighSignalMemoriesSince(repoPath: string, since: number): number {
+    if (!this.db) return 0;
+    return countHighSignalMemoriesSince(this.db, repoPath, since);
+  }
+
+  /**
+   * Get the timestamp of the most recent KIMI.md refresh memory.
+   * Returns 0 if none exists.
+   */
+  getLastKimiMdRefreshTime(repoPath: string): number {
+    if (!this.db) return 0;
+    const rows = this.db
+      .prepare(
+        `SELECT created_at FROM memories
+         WHERE repo_path = ? AND topic_key = 'kimi_md_refresh'
+         AND forgotten = 0 AND superseded_by IS NULL
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .all(repoPath) as Array<{ created_at: number }>;
+    return rows[0]?.created_at ?? 0;
+  }
+
+  /**
+   * Record that KIMI.md was refreshed. Creates a lightweight memory
+   * so drift detection knows when the snapshot was last updated.
+   */
+  async recordKimiMdRefresh(repoPath: string, sessionId: string): Promise<void> {
+    if (!this.db) return;
+    const embedding = new Float32Array(DEFAULT_EMBEDDING_DIM);
+    insertMemory(
+      this.db,
+      {
+        content: `KIMI.md refreshed for ${repoPath}`,
+        category: "event",
+        sourceSessionId: sessionId,
+        repoPath,
+        importance: 2,
+        topicKey: "kimi_md_refresh",
+      },
+      embedding,
+    );
   }
 
   /**

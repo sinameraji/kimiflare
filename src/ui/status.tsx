@@ -29,9 +29,10 @@ interface Props {
   skillsActive?: number;
   /** Whether memory was recalled this turn */
   memoryRecalled?: boolean;
+  kimiMdStale?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, kimiMdStale }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -96,6 +97,11 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
           {hasUpdate ? (
             <Text color={theme.warn} bold>
               {"  ·  "}update available{latestVersion ? ` → ${latestVersion}` : ""} · run /update
+            </Text>
+          ) : null}
+          {kimiMdStale ? (
+            <Text color={theme.warn} bold>
+              {"  ·  "}⚠ KIMI.md stale · run /init
             </Text>
           ) : null}
         </Box>

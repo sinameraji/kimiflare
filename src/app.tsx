@@ -29,6 +29,7 @@ import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
+import { generateActivityText, narrativizeInfo, type ToolBatchItem } from "./ui/narrative.js";
 import { PermissionModal } from "./ui/permission.js";
 import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
@@ -552,6 +553,7 @@ function App({
   const [memoryRecalled, setMemoryRecalled] = useState(false);
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
   const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
+  const [kimiMdStale, setKimiMdStale] = useState(false);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -585,6 +587,8 @@ function App({
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
+  const toolBatchRef = useRef<ToolBatchItem[]>([]);
+  const toolBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
@@ -607,7 +611,8 @@ function App({
   const busyRef = useRef(busy);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
-
+  const kimiMdStaleNudgedRef = useRef(false);
+  const turnCounterRef = useRef(0);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -886,13 +891,23 @@ function App({
             messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
             setEvents((e) => [
               ...e,
-              { kind: "memory", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
+              { kind: "activity", key: mkKey(), text: "Remembering what we know about this repo…", feature: "memory" },
             ]);
           }
         } catch {
           // Non-fatal: session works fine without recalled memories
         }
       })();
+
+      // Session-start drift check (Trigger A): if KIMI.md exists and high-signal
+      // memories have been learned since the last refresh, mark as stale.
+      if (existsSync(join(cwd, "KIMI.md"))) {
+        const lastRefresh = manager.getLastKimiMdRefreshTime(cwd);
+        const driftCount = manager.countHighSignalMemoriesSince(cwd, lastRefresh);
+        if (driftCount >= 5) {
+          setKimiMdStale(true);
+        }
+      }
     } else {
       memoryManagerRef.current?.close();
       memoryManagerRef.current = null;
@@ -1119,7 +1134,7 @@ function App({
       }
       setEvents((e) => [
         ...e,
-        { kind: "info", key: mkKey(), text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available` },
+        { kind: "activity", key: mkKey(), text: "Plugging in external tools…" },
       ]);
     }
   }, [cfg]);
@@ -1178,7 +1193,7 @@ function App({
       }
       setEvents((e) => [
         ...e,
-        { kind: "info", key: mkKey(), text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active` },
+        { kind: "activity", key: mkKey(), text: "Waking up the language servers…" },
       ]);
     } else {
       setEvents((e) => [
@@ -1348,7 +1363,8 @@ function App({
         showCommandList ||
         commandWizard !== null ||
         commandToDelete !== null ||
-        resumeSessions !== null;
+        resumeSessions !== null ||
+        showThemePicker;
       if (!modalOpen && busyRef.current && activeControllerRef.current) {
         if (permResolveRef.current) {
           permResolveRef.current("deny");
@@ -1442,6 +1458,17 @@ function App({
     },
     [],
   );
+
+  const flushToolBatch = useCallback(() => {
+    toolBatchTimerRef.current = null;
+    const batch = toolBatchRef.current;
+    toolBatchRef.current = [];
+    if (batch.length === 0) return;
+    const text = generateActivityText(batch, { mode: modeRef.current });
+    if (text) {
+      setEvents((e) => [...e, { kind: "activity", key: mkKey(), text, feature: "explore" }]);
+    }
+  }, []);
 
   const updateGatewayMeta = useCallback((meta: GatewayMeta) => {
     gatewayMetaRef.current = meta;
@@ -1630,12 +1657,19 @@ function App({
             pendingToolCallsRef.current.set(call.id, call.function.name);
             const spec = executorRef.current.list().find((t) => t.name === call.function.name);
             let renderMeta: ToolRender | undefined;
+            let argsParsed: Record<string, unknown> = {};
             try {
-              const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-              renderMeta = spec?.render?.(args);
+              argsParsed = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+              renderMeta = spec?.render?.(argsParsed);
             } catch {
               /* ignore */
             }
+            // Batch for narrative activity line
+            toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
+            if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
+            toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
+            // In plan mode, suppress the individual tool card
+            if (modeRef.current === "plan") return;
             setEvents((e) => [
               ...e,
               {
@@ -1706,6 +1740,16 @@ function App({
               permResolveRef.current = resolve;
               setPerm({ tool: req.tool, args: req.args, resolve });
             }),
+          onKimiMdStale: () => {
+            if (!kimiMdStaleNudgedRef.current) {
+              kimiMdStaleNudgedRef.current = true;
+              setKimiMdStale(true);
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes." },
+              ]);
+            }
+          },
         },
       });
 
@@ -1735,6 +1779,10 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "KIMI.md generated; context loaded for future turns" },
         ]);
+        // Record refresh so drift detection knows this snapshot is current
+        void memoryManagerRef.current?.recordKimiMdRefresh(cwd, ensureSessionId());
+        setKimiMdStale(false);
+        kimiMdStaleNudgedRef.current = false;
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") {
@@ -1766,26 +1814,30 @@ function App({
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
+      // Clear task state so timers and spinners stop
+      tasksRef.current = [];
+      setTasks([]);
+      setTasksStartedAt(null);
+      setTasksStartTokens(0);
+      // Final sweep: force any still-running tools to error
+      setEvents((evts) =>
+        evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+      );
     }
-  }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
+  }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta, flushToolBatch]);
 
   const handleThemePick = useCallback(
     (picked: Theme | null) => {
       setShowThemePicker(false);
-      setOriginalTheme(null);
-      if (!picked) {
-        if (originalTheme) setTheme(originalTheme);
-        return;
-      }
-      setTheme(picked);
+      if (!picked) return;
       setCfg((c) => (c ? { ...c, theme: picked.name } : c));
       if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
       setEvents((e) => [
         ...e,
-        { kind: "info", key: mkKey(), text: `theme: ${picked.label}` },
+        { kind: "info", key: mkKey(), text: `theme: ${picked.label} — restart to apply` },
       ]);
     },
-    [cfg, originalTheme],
+    [cfg],
   );
 
   const handleResumePick = useCallback(
@@ -2107,7 +2159,6 @@ function App({
       }
       if (c === "/theme") {
         if (!arg) {
-          setOriginalTheme(theme);
           setShowThemePicker(true);
           return true;
         }
@@ -2119,12 +2170,11 @@ function App({
           ]);
           return true;
         }
-        setTheme(next);
         setCfg((c) => (c ? { ...c, theme: next.name } : c));
         if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
         setEvents((e) => [
           ...e,
-          { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
+          { kind: "info", key: mkKey(), text: `theme: ${next.label} — restart to apply` },
         ]);
         return true;
       }
@@ -2843,6 +2893,19 @@ function App({
         }
       }
 
+      // Occasional gentle nudge about /init (educational, not a warning)
+      turnCounterRef.current += 1;
+      if (
+        turnCounterRef.current % 15 === 0 &&
+        existsSync(join(process.cwd(), "KIMI.md")) &&
+        !kimiMdStale
+      ) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Tip: Rerunning /init occasionally helps KimiFlare stay accurate as your project evolves." },
+        ]);
+      }
+
       setBusy(true);
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
@@ -2913,6 +2976,11 @@ function App({
         },
       ]);
 
+      // Narrative: triage + code mode
+      const triageActivity = narrativizeInfo("", { tier: classification.tier, codeMode: effectiveCodeMode });
+      if (triageActivity) {
+        setEvents((e) => [...e, { kind: "activity", key: mkKey(), text: triageActivity.text, feature: triageActivity.feature }]);
+      }
       const controller = new AbortController();
       activeControllerRef.current = controller;
 
@@ -2941,12 +3009,19 @@ function App({
           pendingToolCallsRef.current.set(call.id, call.function.name);
           const spec = executorRef.current.list().find((t) => t.name === call.function.name);
           let renderMeta: ToolRender | undefined;
+          let argsParsed: Record<string, unknown> = {};
           try {
-            const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-            renderMeta = spec?.render?.(args);
+            argsParsed = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+            renderMeta = spec?.render?.(argsParsed);
           } catch {
             /* ignore render failure */
           }
+          // Batch for narrative activity line
+          toolBatchRef.current.push({ name: call.function.name, args: argsParsed });
+          if (toolBatchTimerRef.current) clearTimeout(toolBatchTimerRef.current);
+          toolBatchTimerRef.current = setTimeout(flushToolBatch, 120);
+          // In plan mode, suppress the individual tool card
+          if (modeRef.current === "plan") return;
           setEvents((e) => [
             ...e,
             {
@@ -3036,6 +3111,16 @@ function App({
             limitResolveRef.current = resolve;
             setLimitModal({ limit: 50, resolve });
           }),
+        onKimiMdStale: () => {
+          if (!kimiMdStaleNudgedRef.current) {
+            kimiMdStaleNudgedRef.current = true;
+            setKimiMdStale(true);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes." },
+            ]);
+          }
+        },
       };
 
       try {
@@ -3096,9 +3181,10 @@ function App({
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "info",
+                  kind: "activity",
                   key: mkKey(),
-                  text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                  text: "Making room by summarizing older turns…",
+                  feature: "compact",
                 },
               ]);
               await saveSessionSafe();
@@ -3118,9 +3204,10 @@ function App({
                 setEvents((e) => [
                   ...e,
                   {
-                    kind: "info",
+                    kind: "activity",
                     key: mkKey(),
-                    text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                    text: "Making room by summarizing older turns…",
+                    feature: "compact",
                   },
                 ]);
                 await saveSessionSafe();
@@ -3157,9 +3244,10 @@ function App({
               setEvents((e) => [
                 ...e,
                 {
-                  kind: "memory",
+                  kind: "activity",
                   key: mkKey(),
-                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                  text: "Remembering what we learned before…",
+                  feature: "memory",
                 },
               ]);
               await saveSessionSafe();
@@ -3216,9 +3304,18 @@ function App({
         permResolveRef.current = null;
         limitResolveRef.current = null;
         pendingToolCallsRef.current.clear();
+        // Clear task state so timers and spinners stop
+        tasksRef.current = [];
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        // Final sweep: force any still-running tools to error
+        setEvents((evts) =>
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+        );
       }
     },
-    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
+    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta, flushToolBatch],
   );
 
   useEffect(() => {
@@ -3478,7 +3575,7 @@ function App({
     return (
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
-          <ThemePicker themes={themeList()} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
+          <ThemePicker themes={themeList()} onPick={handleThemePick} />
         </Box>
       </ThemeProvider>
     );
@@ -3492,7 +3589,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} suppressTools={mode === "plan"} />
         )}
         {perm ? (
           <PermissionModal
@@ -3548,6 +3645,7 @@ function App({
               cloudBudget={cloudBudget}
               skillsActive={skillsActive}
               memoryRecalled={memoryRecalled}
+              kimiMdStale={kimiMdStale}
             />
             {activePicker?.kind === "file" && (
               <FilePicker

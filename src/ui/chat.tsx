@@ -26,12 +26,14 @@ export type ChatEvent =
       intentTier?: "light" | "medium" | "heavy";
       skillsActive?: number;
       memoryRecalled?: boolean;
-    };
+    }
+  | { kind: "activity"; key: string; text: string; feature?: "memory" | "code" | "triage" | "compact" | "explore" };
 
 interface Props {
   events: ChatEvent[];
   showReasoning: boolean;
   verbose?: boolean;
+  suppressTools?: boolean;
 }
 
 interface StaticItem {
@@ -40,13 +42,14 @@ interface StaticItem {
   showSeparator: boolean;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, suppressTools }: Props) {
   const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i]!;
+    if (suppressTools && e.kind === "tool") continue;
     const isStreaming = e.kind === "assistant" && e.streaming;
     if (isStreaming) {
       active.push(e);
@@ -179,6 +182,13 @@ const EventView = React.memo(function EventView({
     return (
       <Text color={theme.info.color} dimColor>
         {parts.join(" · ")}
+      </Text>
+    );
+  }
+  if (evt.kind === "activity") {
+    return (
+      <Text italic color={theme.info.dim ? theme.info.color : theme.palette.secondary}>
+        ~ {evt.text}
       </Text>
     );
   }
