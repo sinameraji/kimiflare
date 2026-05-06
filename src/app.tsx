@@ -3458,7 +3458,7 @@ function App({
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
         {!hasConversation && events.length === 0 ? (
-          <Welcome accountId={cfg.accountId} />
+          <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} suppressTools={mode === "plan"} />
         )}

@@ -5,6 +5,7 @@ import type { Theme } from "./theme.js";
 
 interface Props {
   accountId?: string;
+  cloudMode?: boolean;
 }
 
 const SUGGESTIONS = [
@@ -13,7 +14,7 @@ const SUGGESTIONS = [
   "Refactor a file",
 ];
 
-export function Welcome({ accountId }: Props) {
+export function Welcome({ accountId, cloudMode }: Props) {
   const theme = useTheme();
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -25,7 +26,7 @@ export function Welcome({ accountId }: Props) {
           {"  "}Ready when you are.
         </Text>
       </Box>
-      {accountId && (
+      {accountId && !cloudMode && (
         <Box marginBottom={1}>
           <Text color={theme.info.color} >
             {"  "}Check your Cloudflare billing: https://dash.cloudflare.com/{accountId}/billing/billable-usage
