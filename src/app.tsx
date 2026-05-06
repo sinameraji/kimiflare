@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { logMemory } from "./util/memory-logger.js";
 import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
@@ -1330,9 +1329,7 @@ function App({
         setLimitModal(null);
       }
       if (busyRef.current && activeControllerRef.current) {
-        logMemory("interrupt: before abort");
         activeControllerRef.current.abort();
-        logMemory("interrupt: after abort");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else if (!hadPerm && !hadLimit) {
@@ -1362,9 +1359,7 @@ function App({
           limitResolveRef.current = null;
           setLimitModal(null);
         }
-        logMemory("interrupt: before abort");
         activeControllerRef.current.abort();
-        logMemory("interrupt: after abort");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         return;
@@ -1386,7 +1381,6 @@ function App({
 
   const flushAssistantUpdates = useCallback(() => {
     flushTimeoutRef.current = null;
-    logMemory("flush: 1 deltas");
     const pending = pendingTextRef.current;
     if (pending.size === 0) return;
     pendingTextRef.current = new Map();
@@ -2621,7 +2615,6 @@ function App({
 
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
-      logMemory("processMessage: start");
       if (!cfg) return;
       let trimmed = text.trim();
       if (!trimmed) return;
@@ -2861,7 +2854,6 @@ function App({
       };
 
       try {
-        logMemory("processMessage: before runAgentTurn");
         await runAgentTurn({
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
@@ -3028,7 +3020,6 @@ function App({
           }
         }
       } finally {
-        logMemory("processMessage: finally done");
         setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
