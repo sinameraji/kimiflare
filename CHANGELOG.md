@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/sinameraji/kimiflare/compare/v0.37.0...v0.38.0) (2026-05-06)
+
+
+### Features
+
+* **cloud:** client-side usage fallback reporting ([#286](https://github.com/sinameraji/kimiflare/issues/286)) ([38448e5](https://github.com/sinameraji/kimiflare/commit/38448e5ff60094107bf8509af3802d81c4aaae50))
+
 ## [0.37.0](https://github.com/sinameraji/kimiflare/compare/v0.36.2...v0.37.0) (2026-05-05)
 
 
