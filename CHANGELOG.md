@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.39.1](https://github.com/sinameraji/kimiflare/compare/v0.39.0...v0.39.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **app:** update /hello feedback worker URL to hello.kimiflare.com ([#292](https://github.com/sinameraji/kimiflare/issues/292)) ([376eaed](https://github.com/sinameraji/kimiflare/commit/376eaed67ab64b54502d2fd5116df92729178da1))
+* **build:** remove logMemory import and calls ([#297](https://github.com/sinameraji/kimiflare/issues/297)) ([ef5b22c](https://github.com/sinameraji/kimiflare/commit/ef5b22caf65eeaed30028949cafd428eb47aae92))
+* **ui:** remove live theme preview to prevent memory leak ([#296](https://github.com/sinameraji/kimiflare/issues/296)) ([2980dc9](https://github.com/sinameraji/kimiflare/commit/2980dc98c6550d0a392b3772bdf82fd25ba5e266))
+
 ## [0.39.0](https://github.com/sinameraji/kimiflare/compare/v0.38.1...v0.39.0) (2026-05-06)
 
 
