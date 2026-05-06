@@ -68,6 +68,7 @@ export interface CostDebugEntry {
   durationMs?: number; // NEW: wall-clock time for this turn
   intentClassification?: IntentClassification; // NEW: what we predicted
   codeMode?: boolean; // NEW: was Code Mode enabled this turn
+  selectedSkills?: string[]; // NEW: skill names injected this turn
 }
 
 function debugDir(): string {
@@ -162,6 +163,8 @@ export interface TurnDebugContext {
   durationMs?: number;
   intentClassification?: IntentClassification;
   codeMode?: boolean;
+  /** Skills injected into this turn */
+  selectedSkills?: { name: string; body: string }[];
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -270,6 +273,7 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     durationMs: ctx.durationMs,
     intentClassification: ctx.intentClassification,
     codeMode: ctx.codeMode,
+    selectedSkills: ctx.selectedSkills?.map((s) => s.name),
   });
 }
 

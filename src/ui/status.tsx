@@ -25,9 +25,15 @@ interface Props {
   codeMode?: boolean;
   cloudMode?: boolean;
   cloudBudget?: { remaining: number; limit: number } | null;
+  /** Number of skills active this turn */
+  skillsActive?: number;
+  /** Whether memory was recalled this turn */
+  memoryRecalled?: boolean;
+  /** Intent tier for this turn */
+  intentTier?: "light" | "medium" | "heavy" | null;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -45,6 +51,19 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   const leftParts: string[] = [`${shortModel(model)}`, effort];
   if (cloudMode) leftParts.push("CLOUD");
   if (codeMode) leftParts.push("CODE");
+
+  const labelParts: string[] = [];
+  if (intentTier) {
+    const tierLabel =
+      intentTier === "light" ? "Quick thought" : intentTier === "medium" ? "Deep dive" : "Heavy lifting";
+    labelParts.push(tierLabel);
+  }
+  if (skillsActive !== undefined && skillsActive > 0) {
+    labelParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"} on deck`);
+  }
+  if (memoryRecalled) {
+    labelParts.push("Memory recalled");
+  }
 
   return (
     <Box flexDirection="column">
@@ -64,6 +83,13 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
           </Text>
         )}
       </Box>
+      {labelParts.length > 0 && (
+        <Box>
+          <Text color={theme.info.color} dimColor>
+            {labelParts.join("  ·  ")}
+          </Text>
+        </Box>
+      )}
       {usage && (
         <Box>
           <Text color={theme.info.color} >

@@ -58,6 +58,7 @@ import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
+import { routeSkills, type SkillRoutingResult } from "./skills/index.js";
 import {
   listSessions,
   loadSession,
@@ -548,6 +549,10 @@ function App({
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
+  const [skillsActive, setSkillsActive] = useState(0);
+  const [memoryRecalled, setMemoryRecalled] = useState(false);
+  const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
+  const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -2726,6 +2731,23 @@ function App({
       setTurnStartedAt(Date.now());
 
       const classification = classifyIntent(trimmed);
+      setIntentTier(classification.tier);
+
+      // Route skills based on intent tier
+      let skillResult: SkillRoutingResult | undefined;
+      try {
+        skillResult = await routeSkills(skillsDirRef.current, {
+          cwd: process.cwd(),
+          prompt: trimmed,
+          memorySnippets: [], // TODO: wire memory snippets when available
+          tier: classification.tier,
+          maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
+        });
+        setSkillsActive(skillResult.selectedSkills.length);
+      } catch {
+        setSkillsActive(0);
+      }
+
       const effortForTier: Record<string, ReasoningEffort> = {
         light: "low",
         medium: "medium",
@@ -2734,6 +2756,44 @@ function App({
       const turnReasoningEffort = overrideEffort ?? effortForTier[classification.tier] ?? effortRef.current;
       const effectiveCodeMode = classification.tier === "heavy";
       setCodeMode(effectiveCodeMode);
+
+      // Inject selected skills into system prompt
+      const selectedSkills = skillResult?.selectedSkills.map((s) => ({ name: s.name, body: s.body }));
+      if (cacheStableRef.current) {
+        messagesRef.current[1] = {
+          role: "system",
+          content: buildSessionPrefix({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model,
+            mode: modeRef.current,
+            selectedSkills,
+          }),
+        };
+      } else {
+        messagesRef.current[0] = {
+          role: "system",
+          content: buildSystemPrompt({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model,
+            mode: modeRef.current,
+            selectedSkills,
+          }),
+        };
+      }
+
+      // Emit metadata banner
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "meta",
+          key: mkKey(),
+          intentTier: classification.tier,
+          skillsActive: skillResult?.selectedSkills.length ?? 0,
+          memoryRecalled: false,
+        },
+      ]);
 
       const controller = new AbortController();
       activeControllerRef.current = controller;
@@ -2885,6 +2945,7 @@ function App({
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
+          selectedSkills,
           onFileChange: (path, content) => {
             if (content) {
               lspManagerRef.current.notifyChange(path, content);
@@ -3385,6 +3446,9 @@ function App({
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}
               cloudBudget={cloudBudget}
+              skillsActive={skillsActive}
+              memoryRecalled={memoryRecalled}
+              intentTier={intentTier}
             />
             {activePicker?.kind === "file" && (
               <FilePicker
