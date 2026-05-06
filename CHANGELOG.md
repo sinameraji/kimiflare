@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.43.0](https://github.com/sinameraji/kimiflare/compare/v0.42.0...v0.43.0) (2026-05-06)
+
+
+### Features
+
+* **skills:** implement tiered skill routing with TUI visibility ([#298](https://github.com/sinameraji/kimiflare/issues/298)) ([809e06e](https://github.com/sinameraji/kimiflare/commit/809e06ee7757dd37285853756ffa3ef922ea5e9c))
+
+
+### Bug Fixes
+
+* **ui:** hide Cloudflare billing link in cloud mode ([#307](https://github.com/sinameraji/kimiflare/issues/307)) ([4f9b93f](https://github.com/sinameraji/kimiflare/commit/4f9b93f05a63c2f1b81ad7607c664820b87973f3))
+
 ## [0.42.0](https://github.com/sinameraji/kimiflare/compare/v0.41.0...v0.42.0) (2026-05-06)
 
 
