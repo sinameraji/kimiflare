@@ -92,6 +92,7 @@ import { LspWizard } from "./ui/lsp-wizard.js";
 import { ThemeProvider } from "./ui/theme-context.js";
 import { ThemePicker } from "./ui/theme-picker.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
+import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
 import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
@@ -543,6 +544,9 @@ function App({
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
   const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  const [turnPhase, setTurnPhase] = useState<import("./ui/status.js").TurnPhase>("waiting");
+  const [currentToolName, setCurrentToolName] = useState<string | null>(null);
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
   const [verbose, setVerbose] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
@@ -554,6 +558,29 @@ function App({
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
   const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
+
+  // Load user and project themes at startup
+  useEffect(() => {
+    let cancelled = false;
+    loadAndMergeThemes().then(({ errors, wcagWarnings }) => {
+      if (cancelled) return;
+      if (errors.length > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: `theme load errors:\n${errors.join("\n")}` },
+        ]);
+      }
+      if (wcagWarnings.length > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `theme WCAG warnings:\n${wcagWarnings.join("\n")}` },
+        ]);
+      }
+      // Re-resolve current theme in case a user/project theme overrides the built-in
+      setTheme(resolveTheme(initialCfg?.theme));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -1558,6 +1585,9 @@ function App({
     } finally {
       setBusy(false);
       setTurnStartedAt(null);
+      setTurnPhase("waiting");
+      setCurrentToolName(null);
+      setLastActivityAt(null);
       activeControllerRef.current = null;
       permResolveRef.current = null;
       limitResolveRef.current = null;
@@ -1809,6 +1839,9 @@ function App({
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
       setTurnStartedAt(null);
+      setTurnPhase("waiting");
+      setCurrentToolName(null);
+      setLastActivityAt(null);
       activeAsstIdRef.current = null;
       activeControllerRef.current = null;
       permResolveRef.current = null;
@@ -1830,14 +1863,18 @@ function App({
     (picked: Theme | null) => {
       setShowThemePicker(false);
       if (!picked) return;
-      setCfg((c) => (c ? { ...c, theme: picked.name } : c));
-      if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, theme: picked.name };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
       setEvents((e) => [
         ...e,
         { kind: "info", key: mkKey(), text: `theme: ${picked.label} — restart to apply` },
       ]);
     },
-    [cfg],
+    [],
   );
 
   const handleResumePick = useCallback(
@@ -2170,8 +2207,12 @@ function App({
           ]);
           return true;
         }
-        setCfg((c) => (c ? { ...c, theme: next.name } : c));
-        if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
+        setCfg((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, theme: next.name };
+          void saveConfig(updated).catch(() => {});
+          return updated;
+        });
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: `theme: ${next.label} — restart to apply` },
@@ -2988,6 +3029,8 @@ function App({
         onAssistantStart: () => {
           const id = nextAssistantId++;
           activeAsstIdRef.current = id;
+          setTurnPhase("generating");
+          setLastActivityAt(Date.now());
           setEvents((e) => [
             ...e,
             { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
@@ -2996,17 +3039,23 @@ function App({
         onReasoningDelta: (d: string) => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
+          setLastActivityAt(Date.now());
         },
         onTextDelta: (d: string) => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
+          setLastActivityAt(Date.now());
         },
         onAssistantFinal: () => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));
+          setTurnPhase("waiting");
         },
         onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
           pendingToolCallsRef.current.set(call.id, call.function.name);
+          setTurnPhase("executing");
+          setCurrentToolName(call.function.name);
+          setLastActivityAt(Date.now());
           const spec = executorRef.current.list().find((t) => t.name === call.function.name);
           let renderMeta: ToolRender | undefined;
           let argsParsed: Record<string, unknown> = {};
@@ -3033,11 +3082,17 @@ function App({
               status: "running",
               render: renderMeta,
               expanded: false,
+              startedAt: Date.now(),
             },
           ]);
         },
         onToolResult: (r: import("./tools/executor.js").ToolResult) => {
           pendingToolCallsRef.current.delete(r.tool_call_id);
+          setLastActivityAt(Date.now());
+          if (pendingToolCallsRef.current.size === 0) {
+            setTurnPhase("waiting");
+            setCurrentToolName(null);
+          }
           updateTool(r.tool_call_id, {
             status: r.ok ? "done" : "error",
             result: r.content,
@@ -3299,6 +3354,9 @@ function App({
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
         setTurnStartedAt(null);
+        setTurnPhase("waiting");
+        setCurrentToolName(null);
+        setLastActivityAt(null);
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
         permResolveRef.current = null;
@@ -3645,6 +3703,9 @@ function App({
               cloudBudget={cloudBudget}
               skillsActive={skillsActive}
               memoryRecalled={memoryRecalled}
+              phase={turnPhase}
+              currentTool={currentToolName}
+              lastActivityAt={lastActivityAt}
               kimiMdStale={kimiMdStale}
             />
             {activePicker?.kind === "file" && (

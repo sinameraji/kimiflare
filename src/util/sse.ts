@@ -9,10 +9,12 @@
 export async function* readSSE(
   stream: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
+  idleTimeoutMs?: number,
 ): AsyncGenerator<string, void, void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
+  let lastDataAt = Date.now();
 
   const onAbort = () => {
     reader.cancel(new DOMException("aborted", "AbortError")).catch(() => {
@@ -24,8 +26,15 @@ export async function* readSSE(
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+      if (idleTimeoutMs !== undefined && Date.now() - lastDataAt > idleTimeoutMs) {
+        throw new DOMException(
+          `kimiflare: stream idle for ${idleTimeoutMs}ms — no data received from API`,
+          "TimeoutError",
+        );
+      }
       const { done, value } = await reader.read();
       if (done) break;
+      lastDataAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
       buffer = buffer.replace(/\r\n/g, "\n");
 

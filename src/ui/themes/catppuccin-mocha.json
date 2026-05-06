@@ -1,0 +1,37 @@
+{
+  "name": "catppuccin-mocha",
+  "label": "Catppuccin Mocha",
+  "palette": {
+    "background": "#1e1e2e",
+    "foreground": "#cdd6f4",
+    "primary": "#89b4fa",
+    "secondary": "#6c7086",
+    "success": "#a6e3a1",
+    "error": "#f38ba8"
+  },
+  "user": "#89b4fa",
+  "assistant": null,
+  "reasoning": { "color": "#6c7086", "dim": true },
+  "info": { "color": "#cdd6f4", "dim": false },
+  "error": "#f38ba8",
+  "warn": "#f9e2af",
+  "tool": "#cba6f7",
+  "spinner": "#89b4fa",
+  "permission": "#f38ba8",
+  "queue": { "color": "#6c7086", "dim": true },
+  "accent": "#89b4fa",
+  "modeBadge": {
+    "plan": "#89b4fa",
+    "auto": "#a6e3a1",
+    "edit": "#f38ba8"
+  },
+  "blockquote": { "color": "#6c7086", "dim": true },
+  "codeInline": "#cba6f7",
+  "codeBlock": "#cba6f7",
+  "link": "#89b4fa",
+  "strikethrough": "#6c7086",
+  "tableBorder": "#45475a",
+  "tableHeader": "#cdd6f4",
+  "tableCell": "#cdd6f4",
+  "muted": { "color": "#6c7086", "dim": true }
+}

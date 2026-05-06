@@ -8,8 +8,9 @@ interface Props {
 }
 
 interface InlineSegment {
-  kind: "plain" | "bold" | "italic" | "code";
+  kind: "plain" | "bold" | "italic" | "code" | "strikethrough" | "link";
   text: string;
+  url?: string;
 }
 
 export function MD({ text }: Props) {
@@ -28,8 +29,10 @@ type Block =
   | { kind: "paragraph"; text: string }
   | { kind: "heading"; level: 1 | 2 | 3; text: string }
   | { kind: "bullet"; items: string[] }
+  | { kind: "numbered"; items: string[] }
   | { kind: "quote"; text: string }
   | { kind: "code"; lang?: string; text: string }
+  | { kind: "table"; headers: string[]; rows: string[][] }
   | { kind: "blank" };
 
 function parseBlocks(src: string): Block[] {
@@ -68,6 +71,16 @@ function parseBlocks(src: string): Block[] {
       out.push({ kind: "quote", text: quoteLines.join("\n") });
       continue;
     }
+    // Numbered list
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]!)) {
+        items.push(lines[i]!.replace(/^\s*\d+\.\s+/, ""));
+        i++;
+      }
+      out.push({ kind: "numbered", items });
+      continue;
+    }
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
       while (i < lines.length && /^\s*[-*]\s+/.test(lines[i]!)) {
@@ -77,6 +90,27 @@ function parseBlocks(src: string): Block[] {
       out.push({ kind: "bullet", items });
       continue;
     }
+    // Table
+    if (i + 1 < lines.length && /^\|/.test(line) && /^\|[\s\-:|]+\|$/.test(lines[i + 1]!)) {
+      const headerLine = line;
+      const headers = headerLine
+        .split("|")
+        .slice(1, -1)
+        .map((h) => h.trim());
+      i += 2; // skip header and separator
+      const rows: string[][] = [];
+      while (i < lines.length && /^\|/.test(lines[i]!)) {
+        rows.push(
+          lines[i]!
+            .split("|")
+            .slice(1, -1)
+            .map((c) => c.trim()),
+        );
+        i++;
+      }
+      out.push({ kind: "table", headers, rows });
+      continue;
+    }
     const paraLines: string[] = [line];
     i++;
     while (
@@ -84,8 +118,10 @@ function parseBlocks(src: string): Block[] {
       lines[i]!.trim() !== "" &&
       !/^(#{1,3})\s+/.test(lines[i]!) &&
       !/^\s*[-*]\s+/.test(lines[i]!) &&
+      !/^\s*\d+\.\s+/.test(lines[i]!) &&
       !/^\s*>\s?/.test(lines[i]!) &&
-      !/^```/.test(lines[i]!)
+      !/^```/.test(lines[i]!) &&
+      !/^\|/.test(lines[i]!)
     ) {
       paraLines.push(lines[i]!);
       i++;
@@ -119,22 +155,75 @@ const Block = React.memo(function Block({ block }: { block: Block }) {
       </Box>
     );
   }
+  if (block.kind === "numbered") {
+    return (
+      <Box flexDirection="column">
+        {block.items.map((item, idx) => (
+          <Box key={idx}>
+            <Text color={theme.accent}>  {idx + 1}. </Text>
+            <Text>{renderInline(item, theme)}</Text>
+          </Box>
+        ))}
+      </Box>
+    );
+  }
   if (block.kind === "quote") {
+    const quoteColor = theme.blockquote?.color ?? theme.info.color;
+    const dim = theme.blockquote?.dim ?? false;
     return (
       <Box marginLeft={2}>
-        <Text color={theme.info.color} italic>
+        <Text color={quoteColor} dimColor={dim} italic>
           {renderInline(block.text, theme)}
         </Text>
       </Box>
     );
   }
   if (block.kind === "code") {
+    const codeColor = theme.codeBlock ?? theme.tool;
     return (
       <Box flexDirection="column" marginLeft={2}>
         {block.text.split("\n").map((l, i) => (
-          <Text key={i} color={theme.tool}>
+          <Text key={i} color={codeColor}>
             {l}
           </Text>
+        ))}
+      </Box>
+    );
+  }
+  if (block.kind === "table") {
+    const borderColor = theme.tableBorder ?? theme.accent;
+    const headerColor = theme.tableHeader ?? theme.accent;
+    const cellColor = theme.tableCell ?? theme.palette.foreground;
+    const colCount = block.headers.length;
+    return (
+      <Box flexDirection="column" marginLeft={2}>
+        {/* Header row */}
+        <Box>
+          <Text color={borderColor}>│ </Text>
+          {block.headers.map((h, ci) => (
+            <React.Fragment key={ci}>
+              <Text bold color={headerColor}>{h}</Text>
+              {ci < colCount - 1 && <Text color={borderColor}> │ </Text>}
+            </React.Fragment>
+          ))}
+          <Text color={borderColor}> │</Text>
+        </Box>
+        {/* Separator */}
+        <Box>
+          <Text color={borderColor}>├{Array(colCount).fill("─".repeat(8)).join("┼")}┤</Text>
+        </Box>
+        {/* Data rows */}
+        {block.rows.map((row, ri) => (
+          <Box key={ri}>
+            <Text color={borderColor}>│ </Text>
+            {row.map((cell, ci) => (
+              <React.Fragment key={ci}>
+                <Text color={cellColor}>{cell}</Text>
+                {ci < colCount - 1 && <Text color={borderColor}> │ </Text>}
+              </React.Fragment>
+            ))}
+            <Text color={borderColor}> │</Text>
+          </Box>
         ))}
       </Box>
     );
@@ -147,7 +236,18 @@ function renderInline(src: string, theme: Theme): React.ReactNode {
   return segments.map((seg, i) => {
     if (seg.kind === "bold") return <Text key={i} bold>{seg.text}</Text>;
     if (seg.kind === "italic") return <Text key={i} italic>{seg.text}</Text>;
-    if (seg.kind === "code") return <Text key={i} color={theme.tool}>{seg.text}</Text>;
+    if (seg.kind === "code") {
+      const color = theme.codeInline ?? theme.tool;
+      return <Text key={i} color={color}>{seg.text}</Text>;
+    }
+    if (seg.kind === "strikethrough") {
+      const color = theme.strikethrough ?? theme.muted?.color ?? theme.palette.secondary;
+      return <Text key={i} strikethrough color={color}>{seg.text}</Text>;
+    }
+    if (seg.kind === "link") {
+      const color = theme.link ?? theme.accent;
+      return <Text key={i} underline color={color}>{seg.text}</Text>;
+    }
     return <Text key={i}>{seg.text}</Text>;
   });
 }
@@ -164,6 +264,7 @@ function parseInline(src: string): InlineSegment[] {
   };
   while (i < src.length) {
     const ch = src[i]!;
+    // Code: `text`
     if (ch === "`") {
       const end = src.indexOf("`", i + 1);
       if (end > i) {
@@ -173,6 +274,33 @@ function parseInline(src: string): InlineSegment[] {
         continue;
       }
     }
+    // Strikethrough: ~~text~~
+    if (ch === "~" && src[i + 1] === "~") {
+      const end = src.indexOf("~~", i + 2);
+      if (end > i + 1) {
+        flush();
+        out.push({ kind: "strikethrough", text: src.slice(i + 2, end) });
+        i = end + 2;
+        continue;
+      }
+    }
+    // Link: [text](url)
+    if (ch === "[") {
+      const closeBracket = src.indexOf("]", i + 1);
+      const openParen = closeBracket >= 0 ? src.indexOf("(", closeBracket) : -1;
+      const closeParen = openParen >= 0 ? src.indexOf(")", openParen) : -1;
+      if (closeParen > openParen && openParen === closeBracket + 1) {
+        flush();
+        out.push({
+          kind: "link",
+          text: src.slice(i + 1, closeBracket),
+          url: src.slice(openParen + 1, closeParen),
+        });
+        i = closeParen + 1;
+        continue;
+      }
+    }
+    // Bold: **text**
     if (ch === "*" && src[i + 1] === "*") {
       const end = src.indexOf("**", i + 2);
       if (end > i + 1) {
@@ -182,6 +310,7 @@ function parseInline(src: string): InlineSegment[] {
         continue;
       }
     }
+    // Bold: __text__
     if (ch === "_" && src[i + 1] === "_") {
       const end = src.indexOf("__", i + 2);
       if (end > i + 1) {
@@ -191,6 +320,7 @@ function parseInline(src: string): InlineSegment[] {
         continue;
       }
     }
+    // Italic: *text*
     if (ch === "*" && src[i + 1] !== "*") {
       const end = src.indexOf("*", i + 1);
       if (end > i) {
@@ -200,6 +330,7 @@ function parseInline(src: string): InlineSegment[] {
         continue;
       }
     }
+    // Italic: _text_
     if (ch === "_" && !/\w/.test(src[i - 1] ?? "") && src[i + 1] !== "_") {
       const end = src.indexOf("_", i + 1);
       if (end > i && !/\w/.test(src[end + 1] ?? "")) {

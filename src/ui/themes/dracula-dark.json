@@ -1,0 +1,37 @@
+{
+  "name": "dracula-dark",
+  "label": "Dracula Dark",
+  "palette": {
+    "background": "#282a36",
+    "foreground": "#f8f8f2",
+    "primary": "#ff79c6",
+    "secondary": "#6272a4",
+    "success": "#50fa7b",
+    "error": "#ff5555"
+  },
+  "user": "#ff79c6",
+  "assistant": null,
+  "reasoning": { "color": "#6272a4", "dim": true },
+  "info": { "color": "#f8f8f2", "dim": false },
+  "error": "#ff5555",
+  "warn": "#f1fa8c",
+  "tool": "#8be9fd",
+  "spinner": "#ff79c6",
+  "permission": "#ff5555",
+  "queue": { "color": "#6272a4", "dim": true },
+  "accent": "#ff79c6",
+  "modeBadge": {
+    "plan": "#ff79c6",
+    "auto": "#50fa7b",
+    "edit": "#ff5555"
+  },
+  "blockquote": { "color": "#6272a4", "dim": true },
+  "codeInline": "#8be9fd",
+  "codeBlock": "#8be9fd",
+  "link": "#ff79c6",
+  "strikethrough": "#6272a4",
+  "tableBorder": "#44475a",
+  "tableHeader": "#f8f8f2",
+  "tableCell": "#f8f8f2",
+  "muted": { "color": "#6272a4", "dim": true }
+}

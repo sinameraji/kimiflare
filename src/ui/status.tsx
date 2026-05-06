@@ -10,6 +10,8 @@ import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 import type { DailyUsage } from "../usage-tracker.js";
 
+export type TurnPhase = "generating" | "executing" | "waiting";
+
 interface Props {
   model: string;
   usage: Usage | null;
@@ -29,10 +31,13 @@ interface Props {
   skillsActive?: number;
   /** Whether memory was recalled this turn */
   memoryRecalled?: boolean;
+  phase?: TurnPhase;
+  currentTool?: string | null;
+  lastActivityAt?: number | null;
   kimiMdStale?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, kimiMdStale }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -58,6 +63,9 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   if (memoryRecalled) {
     labelParts.push("Memory recalled");
   }
+  const phaseLabel = phase === "generating" ? "generating" : phase === "executing" ? `executing ${currentTool ?? ""}` : phase === "waiting" ? "waiting" : "thinking";
+  const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
+  const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
 
   return (
     <Box flexDirection="column">
@@ -69,7 +77,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
         {thinking ? (
           <Text color={theme.spinner}>
             <Spinner type="dots" />{" "}
-            thinking{elapsed ? ` · ${elapsed}` : ""}
+            {phaseLabel}{elapsed ? ` · ${elapsed}` : ""}{idleLabel}
           </Text>
         ) : (
           <Text color={theme.info.color} >

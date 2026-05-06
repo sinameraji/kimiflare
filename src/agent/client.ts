@@ -30,6 +30,8 @@ export interface RunKimiOpts {
   cloudToken?: string;
   cloudDeviceId?: string;
   requestId?: string;
+  /** Abort the stream if no data arrives for this many milliseconds. Default 60000. */
+  idleTimeoutMs?: number;
 }
 
 export interface AiGatewayOptions {
@@ -143,7 +145,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     if (meta) yield { type: "gateway_meta", meta };
 
     let lastUsage: Usage | null = null;
-    for await (const ev of parseStream(res.body, opts.signal)) {
+    for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs)) {
       if (ev.type === "usage") lastUsage = ev.usage;
       yield ev;
     }
@@ -238,15 +240,19 @@ function readGatewayMeta(headers: Headers): GatewayMeta | null {
   return Object.keys(meta).length > 0 ? meta : null;
 }
 
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+
 async function* parseStream(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
+  idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
 ): AsyncGenerator<KimiEvent, void, void> {
   const toolCalls = new Map<number, { id: string; name: string; args: string }>();
   let lastUsage: Usage | null = null;
   let finishReason: string | null = null;
+  let lastDataAt = Date.now();
 
-  for await (const dataStr of readSSE(body, signal)) {
+  for await (const dataStr of readSSE(body, signal, idleTimeoutMs)) {
     if (dataStr === "[DONE]") break;
     let chunk: StreamChunk | null = null;
     try {

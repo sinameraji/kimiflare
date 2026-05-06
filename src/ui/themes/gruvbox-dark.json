@@ -1,0 +1,37 @@
+{
+  "name": "gruvbox-dark",
+  "label": "Gruvbox Dark",
+  "palette": {
+    "background": "#282828",
+    "foreground": "#ebdbb2",
+    "primary": "#b8bb26",
+    "secondary": "#928374",
+    "success": "#b8bb26",
+    "error": "#fb4934"
+  },
+  "user": "#b8bb26",
+  "assistant": null,
+  "reasoning": { "color": "#928374", "dim": true },
+  "info": { "color": "#ebdbb2", "dim": false },
+  "error": "#fb4934",
+  "warn": "#fabd2f",
+  "tool": "#83a598",
+  "spinner": "#b8bb26",
+  "permission": "#fb4934",
+  "queue": { "color": "#928374", "dim": true },
+  "accent": "#b8bb26",
+  "modeBadge": {
+    "plan": "#b8bb26",
+    "auto": "#b8bb26",
+    "edit": "#fb4934"
+  },
+  "blockquote": { "color": "#928374", "dim": true },
+  "codeInline": "#83a598",
+  "codeBlock": "#83a598",
+  "link": "#b8bb26",
+  "strikethrough": "#928374",
+  "tableBorder": "#504945",
+  "tableHeader": "#ebdbb2",
+  "tableCell": "#ebdbb2",
+  "muted": { "color": "#928374", "dim": true }
+}

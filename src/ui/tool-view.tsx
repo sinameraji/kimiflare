@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
@@ -15,15 +15,38 @@ export interface ToolEventState {
   result?: string;
   render?: { title: string; body?: string; diff?: { path: string; before: string; after: string } };
   expanded?: boolean;
+  startedAt?: number;
 }
 
 interface Props {
   evt: ToolEventState;
   verbose?: boolean;
+  isRepeated?: boolean;
 }
 
-export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  if (total < 1) return "<1s";
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s}s`;
+}
+
+export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated }: Props) {
   const theme = useTheme();
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (evt.startedAt === undefined) return;
+    if (evt.status !== "running") {
+      setNow(Date.now());
+      return;
+    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [evt.status, evt.startedAt]);
+
   const statusIcon =
     evt.status === "running" ? (
       <Text color={theme.info.color} >
@@ -34,7 +57,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
     ) : (
       <Text color={theme.palette.success}>✓</Text>
     );
-  const title =
+  let title =
     evt.render?.title ??
     (() => {
       try {
@@ -44,6 +67,9 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
         return humanizeToolTitle(evt.name);
       }
     })();
+  if (evt.startedAt !== undefined) {
+    title += ` · ${formatElapsed(now - evt.startedAt)}`;
+  }
   const expand = Boolean(evt.expanded || verbose);
   const lines = evt.result ? evt.result.split("\n") : [];
   const showLimit = verbose ? 200 : 20;
@@ -53,6 +79,9 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
       <Text>
         {statusIcon}{" "}
         <Text color={theme.info.color}>{title}</Text>
+        {isRepeated ? (
+          <Text color={theme.warn}> ⚠ repeated</Text>
+        ) : null}
       </Text>
       {evt.render?.diff ? (
         <Box marginLeft={2}>
