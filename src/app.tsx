@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { logMemory } from "./util/memory-logger.js";
 import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
@@ -547,7 +548,6 @@ function App({
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
-  const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
@@ -1330,7 +1330,9 @@ function App({
         setLimitModal(null);
       }
       if (busyRef.current && activeControllerRef.current) {
+        logMemory("interrupt: before abort");
         activeControllerRef.current.abort();
+        logMemory("interrupt: after abort");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else if (!hadPerm && !hadLimit) {
@@ -1347,7 +1349,8 @@ function App({
         showCommandList ||
         commandWizard !== null ||
         commandToDelete !== null ||
-        resumeSessions !== null;
+        resumeSessions !== null ||
+        showThemePicker;
       if (!modalOpen && busyRef.current && activeControllerRef.current) {
         if (permResolveRef.current) {
           permResolveRef.current("deny");
@@ -1359,7 +1362,9 @@ function App({
           limitResolveRef.current = null;
           setLimitModal(null);
         }
+        logMemory("interrupt: before abort");
         activeControllerRef.current.abort();
+        logMemory("interrupt: after abort");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         return;
@@ -1381,6 +1386,7 @@ function App({
 
   const flushAssistantUpdates = useCallback(() => {
     flushTimeoutRef.current = null;
+    logMemory("flush: 1 deltas");
     const pending = pendingTextRef.current;
     if (pending.size === 0) return;
     pendingTextRef.current = new Map();
@@ -1771,20 +1777,15 @@ function App({
   const handleThemePick = useCallback(
     (picked: Theme | null) => {
       setShowThemePicker(false);
-      setOriginalTheme(null);
-      if (!picked) {
-        if (originalTheme) setTheme(originalTheme);
-        return;
-      }
-      setTheme(picked);
+      if (!picked) return;
       setCfg((c) => (c ? { ...c, theme: picked.name } : c));
       if (cfg) void saveConfig({ ...cfg, theme: picked.name }).catch(() => {});
       setEvents((e) => [
         ...e,
-        { kind: "info", key: mkKey(), text: `theme: ${picked.label}` },
+        { kind: "info", key: mkKey(), text: `theme: ${picked.label} — restart to apply` },
       ]);
     },
-    [cfg, originalTheme],
+    [cfg],
   );
 
   const handleResumePick = useCallback(
@@ -2106,7 +2107,6 @@ function App({
       }
       if (c === "/theme") {
         if (!arg) {
-          setOriginalTheme(theme);
           setShowThemePicker(true);
           return true;
         }
@@ -2118,12 +2118,11 @@ function App({
           ]);
           return true;
         }
-        setTheme(next);
         setCfg((c) => (c ? { ...c, theme: next.name } : c));
         if (cfg) void saveConfig({ ...cfg, theme: next.name }).catch(() => {});
         setEvents((e) => [
           ...e,
-          { kind: "info", key: mkKey(), text: `theme: ${next.label}` },
+          { kind: "info", key: mkKey(), text: `theme: ${next.label} — restart to apply` },
         ]);
         return true;
       }
@@ -2622,6 +2621,7 @@ function App({
 
   const processMessage = useCallback(
     async (text: string, displayText?: string) => {
+      logMemory("processMessage: start");
       if (!cfg) return;
       let trimmed = text.trim();
       if (!trimmed) return;
@@ -2861,6 +2861,7 @@ function App({
       };
 
       try {
+        logMemory("processMessage: before runAgentTurn");
         await runAgentTurn({
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
@@ -3027,6 +3028,7 @@ function App({
           }
         }
       } finally {
+        logMemory("processMessage: finally done");
         setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
@@ -3317,7 +3319,7 @@ function App({
     return (
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
-          <ThemePicker themes={themeList()} onPick={handleThemePick} onPreview={(t) => setTheme(t)} />
+          <ThemePicker themes={themeList()} onPick={handleThemePick} />
         </Box>
       </ThemeProvider>
     );
