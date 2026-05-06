@@ -11,6 +11,8 @@ export interface SystemPromptOpts {
   model: string;
   now?: Date;
   mode?: Mode;
+  /** Skills to inject into the system prompt for this turn */
+  selectedSkills?: { name: string; body: string }[];
 }
 
 const CONTEXT_FILENAMES = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"];
@@ -95,7 +97,14 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
     : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
-  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock;
+  const skillsBlock =
+    opts.selectedSkills && opts.selectedSkills.length > 0
+      ? `\n\nActive skills for this turn:\n${opts.selectedSkills
+          .map((s) => `--- ${s.name} ---\n${s.body}`)
+          .join("\n\n")}`
+      : "";
+
+  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */

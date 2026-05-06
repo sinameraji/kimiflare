@@ -62,6 +62,8 @@ export interface AgentTurnOpts {
   maxInputTokens?: number;
   /** Intent classification result for this turn, for telemetry. */
   intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
+  /** Skills injected into the system prompt for this turn. */
+  selectedSkills?: { name: string; body: string }[];
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
@@ -610,6 +612,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         durationMs: Math.round(performance.now() - turnStart),
         intentClassification: opts.intentClassification,
         codeMode: opts.codeMode,
+        selectedSkills: opts.selectedSkills,
       });
     }
 

@@ -43,7 +43,6 @@ import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
-import { HelpMenu } from "./ui/help-menu.js";
 import {
   configPath,
   DEFAULT_MODEL,
@@ -59,6 +58,8 @@ import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
+import { routeSkills, type SkillRoutingResult } from "./skills/index.js";
+import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
 import {
   listSessions,
   loadSession,
@@ -532,7 +533,6 @@ function App({
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
-  const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
   const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
@@ -552,6 +552,11 @@ function App({
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
+  const [skillsActive, setSkillsActive] = useState(0);
+  const [memoryRecalled, setMemoryRecalled] = useState(false);
+  const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
+  const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
 
   // Load user and project themes at startup
@@ -810,7 +815,6 @@ function App({
   // picker state would survive the modal and re-render on close.
   useEffect(() => {
     const modalActive =
-      showHelpMenu ||
       commandWizard !== null ||
       commandPicker !== null ||
       commandToDelete !== null ||
@@ -823,7 +827,6 @@ function App({
       setActivePicker(null);
     }
   }, [
-    showHelpMenu,
     commandWizard,
     commandPicker,
     commandToDelete,
@@ -1383,7 +1386,6 @@ function App({
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
-        showHelpMenu ||
         showLspWizard ||
         showCommandList ||
         commandWizard !== null ||
@@ -2232,6 +2234,125 @@ function App({
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "mode: edit" }]);
         return true;
       }
+      if (c === "/skills") {
+        const sub = rest[0]?.toLowerCase() ?? "";
+        const subRest = rest.slice(1).join(" ").trim();
+
+        if (sub === "list" || sub === "") {
+          void listAllSkills(process.cwd()).then((all) => {
+            const lines: string[] = [];
+            if (all.project.length > 0) {
+              lines.push("project skills:");
+              for (const s of all.project) {
+                const status = s.enabled ? "✓" : "✗";
+                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
+              }
+            }
+            if (all.global.length > 0) {
+              lines.push("global skills:");
+              for (const s of all.global) {
+                const status = s.enabled ? "✓" : "✗";
+                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
+              }
+            }
+            if (lines.length === 0) {
+              lines.push("no skills found. create one with /skills add <name>");
+            }
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to list skills: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "add") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills add <name>" }]);
+            return true;
+          }
+          void createSkill({ name, scope: "project", cwd: process.cwd() }).then((result) => {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `created skill '${name}' → ${result.filepath}` },
+              { kind: "info", key: mkKey(), text: `edit the file to add your instructions` },
+            ]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to create skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "edit") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills edit <name>" }]);
+            return true;
+          }
+          void findSkillFile(name, process.cwd()).then((filepath) => {
+            if (!filepath) {
+              setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `skill '${name}' not found` }]);
+              return;
+            }
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `skill '${name}' → ${filepath}` },
+              { kind: "info", key: mkKey(), text: `open it in your editor to make changes` },
+            ]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to find skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "delete") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills delete <name>" }]);
+            return true;
+          }
+          void deleteSkill(name, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `deleted skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to delete skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "enable") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills enable <name>" }]);
+            return true;
+          }
+          void setSkillEnabled(name, true, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `enabled skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to enable skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        if (sub === "disable") {
+          const name = subRest.trim();
+          if (!name) {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills disable <name>" }]);
+            return true;
+          }
+          void setSkillEnabled(name, false, process.cwd()).then((result) => {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `disabled skill '${name}' (${result.filepath})` }]);
+          }).catch((err) => {
+            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to disable skill: ${(err as Error).message}` }]);
+          });
+          return true;
+        }
+
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "usage: /skills list | add <name> | edit <name> | delete <name> | enable <name> | disable <name>" },
+        ]);
+        return true;
+      }
       if (c === "/memory") {
         if (!cfg) return true;
         if (arg === "on") {
@@ -2647,23 +2768,26 @@ function App({
         return true;
       }
       if (c === "/help") {
-        setShowHelpMenu(true);
+        const lines = [
+          "commands:",
+          "  /mode edit|plan|auto     switch agent mode",
+          "  /thinking low|medium|high set reasoning effort",
+          "  /skills list|add|edit|... manage skills",
+          "  /memory on|off|clear      manage memory",
+          "  /cost                     show cost report",
+          "  /compact                  summarize old turns",
+          "  /resume                   pick a past session",
+          "  /clear                    clear conversation",
+          "  /init                     scan repo and write KIMI.md",
+          "  /update                   check for updates",
+          "  /exit                     exit kimiflare",
+        ];
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
         return true;
       }
       return false;
     },
     [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg, setShowRemoteDashboard, setSelectedRemoteSession],
-  );
-
-  const handleHelpCommand = useCallback(
-    (command: string) => {
-      setShowHelpMenu(false);
-      const executed = handleSlash(command);
-      if (!executed) {
-        setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown command: ${command}` }]);
-      }
-    },
-    [handleSlash],
   );
 
   const handleCommandSave = useCallback(
@@ -2829,6 +2953,23 @@ function App({
       setTurnStartedAt(Date.now());
 
       const classification = classifyIntent(trimmed);
+      setIntentTier(classification.tier);
+
+      // Route skills based on intent tier
+      let skillResult: SkillRoutingResult | undefined;
+      try {
+        skillResult = await routeSkills(skillsDirRef.current, {
+          cwd: process.cwd(),
+          prompt: trimmed,
+          memorySnippets: [], // TODO: wire memory snippets when available
+          tier: classification.tier,
+          maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
+        });
+        setSkillsActive(skillResult.selectedSkills.length);
+      } catch {
+        setSkillsActive(0);
+      }
+
       const effortForTier: Record<string, ReasoningEffort> = {
         light: "low",
         medium: "medium",
@@ -2838,12 +2979,49 @@ function App({
       const effectiveCodeMode = classification.tier === "heavy";
       setCodeMode(effectiveCodeMode);
 
+      // Inject selected skills into system prompt
+      const selectedSkills = skillResult?.selectedSkills.map((s) => ({ name: s.name, body: s.body }));
+      if (cacheStableRef.current) {
+        messagesRef.current[1] = {
+          role: "system",
+          content: buildSessionPrefix({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model,
+            mode: modeRef.current,
+            selectedSkills,
+          }),
+        };
+      } else {
+        messagesRef.current[0] = {
+          role: "system",
+          content: buildSystemPrompt({
+            cwd: process.cwd(),
+            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+            model: cfg.model,
+            mode: modeRef.current,
+            selectedSkills,
+          }),
+        };
+      }
+
+      // Emit metadata banner
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "meta",
+          key: mkKey(),
+          intentTier: classification.tier,
+          skillsActive: skillResult?.selectedSkills.length ?? 0,
+          memoryRecalled: false,
+        },
+      ]);
+
       // Narrative: triage + code mode
       const triageActivity = narrativizeInfo("", { tier: classification.tier, codeMode: effectiveCodeMode });
       if (triageActivity) {
         setEvents((e) => [...e, { kind: "activity", key: mkKey(), text: triageActivity.text, feature: triageActivity.feature }]);
       }
-
       const controller = new AbortController();
       activeControllerRef.current = controller;
 
@@ -3025,6 +3203,7 @@ function App({
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
+          selectedSkills,
           onFileChange: (path, content) => {
             if (content) {
               lspManagerRef.current.notifyChange(path, content);
@@ -3326,24 +3505,6 @@ function App({
     );
   }
 
-  if (showHelpMenu) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <HelpMenu
-            customCommands={customCommandsRef.current
-              .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
-              .map((c) => ({ name: c.name, description: c.description }))}
-            costAttributionEnabled={cfg?.costAttribution}
-            cloudMode={cfg?.cloudMode}
-            onDone={() => setShowHelpMenu(false)}
-            onCommand={handleHelpCommand}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
   if (showLspWizard) {
     return (
       <ThemeProvider theme={theme}>
@@ -3540,6 +3701,8 @@ function App({
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}
               cloudBudget={cloudBudget}
+              skillsActive={skillsActive}
+              memoryRecalled={memoryRecalled}
               phase={turnPhase}
               currentTool={currentToolName}
               lastActivityAt={lastActivityAt}

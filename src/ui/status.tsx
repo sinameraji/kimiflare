@@ -27,13 +27,17 @@ interface Props {
   codeMode?: boolean;
   cloudMode?: boolean;
   cloudBudget?: { remaining: number; limit: number } | null;
+  /** Number of skills active this turn */
+  skillsActive?: number;
+  /** Whether memory was recalled this turn */
+  memoryRecalled?: boolean;
   phase?: TurnPhase;
   currentTool?: string | null;
   lastActivityAt?: number | null;
   kimiMdStale?: boolean;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, phase, currentTool, lastActivityAt, kimiMdStale }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -52,6 +56,13 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   if (cloudMode) leftParts.push("CLOUD");
   if (codeMode) leftParts.push("CODE");
 
+  const labelParts: string[] = [];
+  if (skillsActive !== undefined && skillsActive > 0) {
+    labelParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"} on deck`);
+  }
+  if (memoryRecalled) {
+    labelParts.push("Memory recalled");
+  }
   const phaseLabel = phase === "generating" ? "generating" : phase === "executing" ? `executing ${currentTool ?? ""}` : phase === "waiting" ? "waiting" : "thinking";
   const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
   const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
@@ -74,6 +85,13 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
           </Text>
         )}
       </Box>
+      {labelParts.length > 0 && (
+        <Box>
+          <Text color={theme.info.color} dimColor>
+            {labelParts.join("  ·  ")}
+          </Text>
+        </Box>
+      )}
       {usage && (
         <Box>
           <Text color={theme.info.color} >

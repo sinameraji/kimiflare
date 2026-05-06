@@ -20,6 +20,13 @@ export type ChatEvent =
   | { kind: "info"; key: string; text: string }
   | { kind: "error"; key: string; text: string }
   | { kind: "memory"; key: string; text: string }
+  | {
+      kind: "meta";
+      key: string;
+      intentTier?: "light" | "medium" | "heavy";
+      skillsActive?: number;
+      memoryRecalled?: boolean;
+    }
   | { kind: "activity"; key: string; text: string; feature?: "memory" | "code" | "triage" | "compact" | "explore" };
 
 interface Props {
@@ -175,6 +182,26 @@ const EventView = React.memo(function EventView({
     return (
       <Text color={theme.info.color} >
         ◈ {evt.text}
+      </Text>
+    );
+  }
+  if (evt.kind === "meta") {
+    const parts: string[] = [];
+    if (evt.intentTier) {
+      parts.push(
+        evt.intentTier === "light" ? "Quick thought" : evt.intentTier === "medium" ? "Deep dive" : "Heavy lifting",
+      );
+    }
+    if (evt.skillsActive !== undefined && evt.skillsActive > 0) {
+      parts.push(`${evt.skillsActive} skill${evt.skillsActive === 1 ? "" : "s"} on deck`);
+    }
+    if (evt.memoryRecalled) {
+      parts.push("Memory recalled");
+    }
+    if (parts.length === 0) return null;
+    return (
+      <Text color={theme.info.color} dimColor>
+        {parts.join(" · ")}
       </Text>
     );
   }
