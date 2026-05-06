@@ -5,6 +5,7 @@ import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
+import { humanizeToolTitle } from "./narrative.js";
 
 export interface ToolEventState {
   id: string;
@@ -33,7 +34,16 @@ export const ToolView = React.memo(function ToolView({ evt, verbose }: Props) {
     ) : (
       <Text color={theme.palette.success}>✓</Text>
     );
-  const title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
+  const title =
+    evt.render?.title ??
+    (() => {
+      try {
+        const args = evt.args ? JSON.parse(evt.args) : {};
+        return humanizeToolTitle(evt.name, args);
+      } catch {
+        return humanizeToolTitle(evt.name);
+      }
+    })();
   const expand = Boolean(evt.expanded || verbose);
   const lines = evt.result ? evt.result.split("\n") : [];
   const showLimit = verbose ? 200 : 20;
