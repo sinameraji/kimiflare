@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.44.0](https://github.com/sinameraji/kimiflare/compare/v0.43.0...v0.44.0) (2026-05-06)
+
+
+### Features
+
+* **ui:** show current git branch in status bar ([#311](https://github.com/sinameraji/kimiflare/issues/311)) ([df69ebe](https://github.com/sinameraji/kimiflare/commit/df69ebe5a868d95b788471f7f618857906d2a716))
+* **ui:** show mode-cycle tip in status bar ([#309](https://github.com/sinameraji/kimiflare/issues/309)) ([1f067f8](https://github.com/sinameraji/kimiflare/commit/1f067f8f98f5321b01b416af47682f112fef51bf))
+
+
+### Bug Fixes
+
+* **ui:** restore tool-card visibility in plan mode ([#312](https://github.com/sinameraji/kimiflare/issues/312)) ([c14f022](https://github.com/sinameraji/kimiflare/commit/c14f022f5183c150dec4a5f39055f71b89809ed0))
+
 ## [0.43.0](https://github.com/sinameraji/kimiflare/compare/v0.42.0...v0.43.0) (2026-05-06)
 
 
