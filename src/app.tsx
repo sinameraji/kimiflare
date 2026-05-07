@@ -228,8 +228,7 @@ export function buildFilePickerIgnoreList(cwd: string): string[] {
 }
 
 export function filterPickerItems(items: FilePickerItem[], query: string): FilePickerItem[] {
-  const q = query.toLowerCase();
-  return items.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 50);
+  return fuzzyFilter(items, query, (item) => item.name).slice(0, 50);
 }
 
 export function shouldOpenMentionPicker(

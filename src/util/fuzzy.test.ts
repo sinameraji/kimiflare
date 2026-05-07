@@ -36,9 +36,18 @@ describe("fuzzyMatch", () => {
     assert.strictEqual(fuzzyMatch("MoD", "model").matches, true);
   });
 
-  // Letters and digits are not swapped to match — keep matching simple.
-  it("does NOT swap letters/digits to match", () => {
-    assert.strictEqual(fuzzyMatch("2k", "k2").matches, false);
+  // Swapped letters and digits are tolerated (matches pi-tui behavior).
+  it("swaps letters/digits to match", () => {
+    assert.strictEqual(fuzzyMatch("2k", "k2").matches, true);
+    assert.strictEqual(fuzzyMatch("k2", "2k").matches, true);
+    assert.strictEqual(fuzzyMatch("a1", "1a").matches, true);
+  });
+
+  it("gives exact match the best score", () => {
+    const exact = fuzzyMatch("model", "model");
+    const prefix = fuzzyMatch("mod", "model");
+    assert.ok(exact.matches && prefix.matches);
+    assert.ok(exact.score < prefix.score, `exact(${exact.score}) should beat prefix(${prefix.score})`);
   });
 });
 
