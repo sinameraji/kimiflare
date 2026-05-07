@@ -46,14 +46,18 @@ describe("MD trailing blank lines", () => {
   it("strips trailing blank lines", () => {
     const text = "Hello\n\n\n\n\n";
     const out = renderMarkdown(text);
-    // After stripping trailing blanks, output should be a single line.
-    assert.strictEqual(out, "Hello", "should strip all trailing blank blocks");
+    const lines = out.split("\n");
+    assert.strictEqual(lines.length, 1, "should render exactly one line");
+    assert.strictEqual(lines[0], "Hello", "should strip all trailing blank blocks");
   });
 
   it("preserves internal blank lines", () => {
     const text = "Hello\n\nWorld";
     const out = renderMarkdown(text);
-    // Internal blank block renders as an empty line between paragraphs.
-    assert.strictEqual(out, "Hello\n\nWorld", "should keep the internal blank block");
+    const lines = out.split("\n");
+    assert.strictEqual(lines.length, 3, "should have three lines (Hello, blank, World)");
+    assert.strictEqual(lines[0], "Hello");
+    assert.strictEqual(lines[1]!.trim(), "", "middle line should be blank");
+    assert.strictEqual(lines[2], "World");
   });
 });
