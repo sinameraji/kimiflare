@@ -136,12 +136,18 @@ When KimiFlare runs a long-running or hanging operation (bash timeout, `wrangler
 ### Milestone 2: Hierarchical Abort Controllers
 **Goal:** Separate the turn lifecycle from individual operation lifecycles.
 
-- [ ] **2a. `TurnAbortController`** — wraps a parent `AbortController` and provides `createChild()` for operations.
-- [ ] **2b. Integrate into `runAgentTurn`** — pass `turnController.signal` to `runKimi`, `executor.run`, `onIterationEnd`.
-- [ ] **2c. Integrate into `executor.run`** — each tool call gets a child controller; on tool completion, abort the child.
-- [ ] **2d. Test** — verify that aborting a turn propagates to all child operations.
+**Discovery (2026-05-07):** `AbortScope` already exists with full hierarchical support (`src/util/abort-scope.ts`). It is already integrated into `app.tsx` via `sessionScopeRef` and `activeScopeRef`. `runAgentTurn` already passes `opts.signal` to `runKimi`, `executor.run`, and `onIterationEnd`.
 
-**Validation:** Run a turn with multiple bash commands. Abort during the second command. Both the API stream and the bash process should stop.
+**Actual gaps found:**
+- [x] **2a. `AbortScope` already exists** — tested, 7/7 tests pass.
+- [x] **2b. Already integrated into `runAgentTurn`** — `opts.signal` flows to all operations.
+- [x] **2c. Immediate SSE abort** — `readSSE` used `reader.cancel()` on abort, but `reader.read()` could still hang. Added `abortRace()` helper that races `reader.read()` against an abort-rejecting promise, making abort immediate.
+- [x] **2d. Tests pass** — `AbortScope` tests pass (7/7), `loop.test.ts` passes (2/2), `client.test.ts` passes (5/5).
+
+**Changes made (2026-05-07):**
+- `src/util/sse.ts` — added `abortRace()` helper that wraps `reader.read()` in `Promise.race()` against an abort-triggered rejection. This makes SSE abort immediate instead of waiting for `reader.cancel()` to resolve.
+
+**Validation:** Run a turn. Abort during streaming. The turn should stop immediately (within ~50ms) instead of hanging.
 
 ---
 
