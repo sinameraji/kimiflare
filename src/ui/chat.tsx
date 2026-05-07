@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, Static } from "ink";
+import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
@@ -44,20 +44,12 @@ interface Props {
   intentTier?: IntentTier;
 }
 
-interface StaticItem {
-  id: string;
-  evt: ChatEvent;
-  showSeparator: boolean;
-}
-
 function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
 export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier }: Props) {
   const theme = useTheme();
-  const finalized: StaticItem[] = [];
-  const active: ChatEvent[] = [];
 
   // Detect repetitive tool calls in this turn (≥3 identical signatures)
   const toolCounts = new Map<string, number>();
@@ -72,45 +64,18 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
     if (count >= 3) repeatedSigs.add(sig);
   }
 
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i]!;
-    const isStreaming = e.kind === "assistant" && e.streaming;
-    if (isStreaming) {
-      active.push(e);
-    } else {
-      const prev = events[i - 1];
-      const showSeparator = !!(
-        e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
-      );
-      finalized.push({ id: e.key, evt: e, showSeparator });
-    }
-  }
-
   return (
     <Box flexDirection="column">
-      <Static items={finalized}>
-        {(item) => (
-          <Box key={item.id} flexDirection="column">
-            {item.showSeparator && (
-              <Box marginY={1}>
-                <Text color={theme.info.color} >
-                  {"─".repeat(40)}
-                </Text>
-              </Box>
-            )}
-            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} />
-          </Box>
-        )}
-      </Static>
-      {active.map((e, i) => {
-        const prevEvt = i > 0 ? active[i - 1] : finalized[finalized.length - 1]?.evt;
-        const showSeparator =
-          e.kind === "user" && prevEvt && (prevEvt.kind === "assistant" || prevEvt.kind === "tool");
+      {events.map((e, i) => {
+        const prev = events[i - 1];
+        const showSeparator = !!(
+          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
+        );
         return (
           <Box key={e.key} flexDirection="column">
             {showSeparator && (
               <Box marginY={1}>
-                <Text color={theme.info.color} >
+                <Text color={theme.info.color}>
                   {"─".repeat(40)}
                 </Text>
               </Box>
@@ -166,7 +131,7 @@ const EventView = React.memo(function EventView({
         </Box>
         {evt.images && evt.images.length > 0 && (
           <Box paddingLeft={2}>
-            <Text color={theme.info.color} >
+            <Text color={theme.info.color}>
               🖼️ {evt.images.join(", ")}
             </Text>
           </Box>
@@ -200,14 +165,14 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "info") {
     return (
-      <Text color={theme.info.color} >
+      <Text color={theme.info.color}>
         · {humanizeInfo(evt.text, intentTier)}
       </Text>
     );
   }
   if (evt.kind === "memory") {
     return (
-      <Text color={theme.info.color} >
+      <Text color={theme.info.color}>
         ◈ {humanizeMemory(evt.text, intentTier)}
       </Text>
     );
