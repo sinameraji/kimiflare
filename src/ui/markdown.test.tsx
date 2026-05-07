@@ -41,3 +41,19 @@ describe("MD numbered lists", () => {
     assert.ok(out.includes("4. Third"), "should show 4. for third item");
   });
 });
+
+describe("MD trailing blank lines", () => {
+  it("strips trailing blank lines", () => {
+    const text = "Hello\n\n\n\n\n";
+    const out = renderMarkdown(text);
+    // After stripping trailing blanks, output should be a single line.
+    assert.strictEqual(out, "Hello", "should strip all trailing blank blocks");
+  });
+
+  it("preserves internal blank lines", () => {
+    const text = "Hello\n\nWorld";
+    const out = renderMarkdown(text);
+    // Internal blank block renders as an empty line between paragraphs.
+    assert.strictEqual(out, "Hello\n\nWorld", "should keep the internal blank block");
+  });
+});

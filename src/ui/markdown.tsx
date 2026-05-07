@@ -131,6 +131,9 @@ function parseBlocks(src: string): Block[] {
     }
     out.push({ kind: "paragraph", text: paraLines.join("\n") });
   }
+  while (out.length > 0 && out[out.length - 1]!.kind === "blank") {
+    out.pop();
+  }
   return out;
 }
 
