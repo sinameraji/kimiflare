@@ -529,7 +529,7 @@ function App({
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
-  const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
+  const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState("");
@@ -2842,7 +2842,7 @@ function App({
   );
 
   const processMessage = useCallback(
-    async (text: string, displayText?: string) => {
+    async (text: string, displayText?: string, opts?: { queuedKey?: string }) => {
       if (!cfg) return;
       let trimmed = text.trim();
       if (!trimmed) return;
@@ -2918,7 +2918,17 @@ function App({
         sessionStartRecallRef.current = null;
       }
 
-      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+      if (opts?.queuedKey) {
+        setEvents((evts) =>
+          evts.map((e) =>
+            e.kind === "user" && e.key === opts.queuedKey
+              ? { ...e, text: display, images: images.length > 0 ? images : undefined, queued: false }
+              : e,
+          ),
+        );
+      } else {
+        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+      }
 
       // LSP nudge: if user references code files and LSP is not configured
       const nudge = maybeLspNudge(display, cfg?.lspEnabled ?? false, cfg?.lspServers ?? {});
@@ -3393,7 +3403,7 @@ function App({
     if (!busy && queue.length > 0 && supervisorRef.current.phase === "idle") {
       const next = queue[0]!;
       setQueue((q) => q.slice(1));
-      processMessage(next.full, next.display);
+      processMessage(next.full, next.display, { queuedKey: next.key });
     }
   }, [busy, queue, processMessage]);
 
@@ -3418,7 +3428,9 @@ function App({
           setTasksStartTokens(0);
           tasksRef.current = [];
         }
-        setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay }]);
+        const key = mkKey();
+        setEvents((e) => [...e, { kind: "user", key, text: trimmedDisplay, queued: true }]);
+        setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay, key }]);
         setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
         setInput("");
         setHistoryIndex(-1);
