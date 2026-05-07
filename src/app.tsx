@@ -627,6 +627,7 @@ function App({
   const activeScopeRef = useRef<AbortScope | null>(null);
   const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
   const isAbortingRef = useRef(false);
+  const lastEscapeAtRef = useRef(0);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -1389,6 +1390,7 @@ function App({
       }
       if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
+        supervisorRef.current.killTurn();
         activeScopeRef.current.abort("user_interrupt");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
@@ -1398,6 +1400,7 @@ function App({
       return;
     }
     if (key.escape) {
+      const now = Date.now();
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
@@ -1407,8 +1410,10 @@ function App({
         commandToDelete !== null ||
         resumeSessions !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
+      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+        lastEscapeAtRef.current = now;
         isAbortingRef.current = true;
+        supervisorRef.current.killTurn();
         if (permResolveRef.current) {
           permResolveRef.current("deny");
           permResolveRef.current = null;
@@ -3351,7 +3356,7 @@ function App({
   );
 
   useEffect(() => {
-    if (!busy && queue.length > 0) {
+    if (!busy && queue.length > 0 && supervisorRef.current.phase === "idle") {
       const next = queue[0]!;
       setQueue((q) => q.slice(1));
       processMessage(next.full, next.display);
@@ -3370,6 +3375,7 @@ function App({
         // Preempt current turn so user input is not blocked indefinitely
         if (activeScopeRef.current && !isAbortingRef.current) {
           isAbortingRef.current = true;
+          supervisorRef.current.killTurn();
           activeScopeRef.current.abort("preempt");
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(stopping current turn...)" }]);
         }

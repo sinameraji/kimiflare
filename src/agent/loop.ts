@@ -277,6 +277,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
       cloudDeviceId: opts.cloudDeviceId,
+      idleTimeoutMs: 60_000,
     });
 
     let gotFirstChunk = false;
