@@ -49,7 +49,7 @@
       "url": "https://github.com/sinameraji"
     },
     "codeRepository": "https://github.com/sinameraji/kimiflare",
-    "softwareVersion": "0.1.0",
+    "softwareVersion": "0.47.0",
     "programmingLanguage": "TypeScript",
     "license": "https://github.com/sinameraji/kimiflare/blob/main/LICENSE"
   }
@@ -714,7 +714,7 @@
       Claude Code alternative, on your own Cloudflare account.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.
+      An open-source terminal coding agent powered by Kimi K2.6. Run on your own Cloudflare account (BYOK) or try Kimiflare Cloud — no API key needed.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -725,6 +725,12 @@
       <a href="https://www.producthunt.com/products/kimiflare?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-kimiflare" target="_blank" rel="noopener noreferrer">
         <img alt="kimiflare - kimi k2.6 cli code editor hosted on cloudflare workers AI | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1129412&theme=light&t=1776822277935">
       </a>
+    </div>
+
+    <div class="fade-in delay-3" style="margin-top: 1.5rem; padding: 0.75rem 1rem; background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px; max-width: 480px;">
+      <p style="font-size: 0.85rem; color: var(--text); margin: 0;">
+        <strong>Try Kimiflare Cloud free</strong> — sign up and get <strong>5 million tokens</strong> on us until May 14, 2026. No Cloudflare account needed.
+      </p>
     </div>
 
     <!-- Email Capture -->
@@ -841,18 +847,22 @@
         <div class="changelog-list">
           <h4>Recently shipped</h4>
           <ul>
-            <li>Cloudflare Code Mode support</li>
-            <li>Local structured agent memory</li>
-            <li>70–90% token cost reduction work</li>
-            <li>Session compaction improvements</li>
+            <li>Turn supervisor architecture with graceful preemption</li>
+            <li>Web search, GitHub read-only, and headless browser tools</li>
+            <li>Tiered skill routing with TUI visibility</li>
+            <li>Extensible JSON themes with WCAG contrast validation</li>
+            <li>KIMI.md drift detection with memory-based staleness</li>
+            <li>Fuzzy @ file picker with inline filtering</li>
+            <li>Kimiflare Cloud mode — device auth, no API key</li>
+            <li>Context-window guardrails</li>
           </ul>
         </div>
         <div class="changelog-list">
           <h4>Coming next</h4>
           <ul>
-            <li>OpenCode parity features</li>
+            <li>Session tree for branching conversations</li>
             <li>Cost attribution dashboard</li>
-            <li>Cloudflare Artifacts parallel agents</li>
+            <li>More MCP server integrations</li>
           </ul>
         </div>
       </div>
@@ -885,23 +895,23 @@
       </div>
       <div class="feature-item">
         <span class="feature-num">04</span>
-        <h3>14 terminal themes</h3>
-        <p>dark, light, high-contrast, dracula, nord, one-dark, monokai, solarized, tokyo-night, gruvbox, catppuccin, rose-pine. Live preview with Ctrl+T.</p>
+        <h3>Extensible JSON themes</h3>
+        <p>Fully customizable color palettes with WCAG contrast validation. Pick from built-in presets or define your own. Live preview with Ctrl+T.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">05</span>
-        <h3>Paste collapse</h3>
-        <p>Large pastes collapse to <code>[pasted N lines #id]</code>. Full content still goes to the model — scrollback stays clean.</p>
+        <h3>Web search, GitHub, and headless browser</h3>
+        <p>Research the web, read GitHub repos, and fetch JavaScript-rendered pages — all without leaving your terminal.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">06</span>
-        <h3>Type-ahead queue</h3>
-        <p>Type your next prompt while the model is still working. Queued prompts fire in order. Ctrl-C aborts current and clears queue.</p>
+        <h3>LSP semantic code intelligence</h3>
+        <p>Hover, go-to-definition, references, and diagnostics via Language Server Protocol. Auto-configured per project with an interactive wizard.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">07</span>
-        <h3>Smart context management</h3>
-        <p>Compiled context extracts structured state and archives raw tool outputs as recallable artifacts. Auto-compaction kicks in at ~80% usage. The model never loses track of what it learned.</p>
+        <h3>Turn supervisor with tiered skills</h3>
+        <p>The agent picks the right skill depth for the task — from quick edits to deep research — with graceful preemption and visible TUI indicators.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">08</span>
@@ -930,8 +940,8 @@
       </div>
       <div class="feature-item">
         <span class="feature-num">13</span>
-        <h3>Prefix cache optimization</h3>
-        <p>Deterministic system prompts, stable JSON serialization, and session-affinity headers maximize Workers AI prefix-cache hits. Cached tokens are billed at a discount — cost drops as the conversation grows.</p>
+        <h3>Kimiflare Cloud mode</h3>
+        <p>Device auth — no API key needed. Get started in seconds with a managed proxy and real-time token budget tracking. 5 million free tokens until May 14, 2026.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">14</span>
@@ -995,8 +1005,11 @@
 <span class="c"># Install</span><br>
 <span class="v">npm</span> install -g kimiflare<br>
 <br>
-<span class="c"># Run — onboarding will ask for your Cloudflare credentials</span><br>
-<span class="v">kimiflare</span>
+<span class="c"># Run — onboarding asks BYOK or Cloud</span><br>
+<span class="v">kimiflare</span><br>
+<br>
+<span class="c"># Or start in Cloud mode directly</span><br>
+<span class="v">kimiflare</span> --cloud
       </div>
     </div>
 
@@ -1083,6 +1096,21 @@
           <td>web_fetch</td>
           <td>auto</td>
           <td>Fetch a URL, convert HTML → markdown (≤ 100KB)</td>
+        </tr>
+        <tr>
+          <td>web_search</td>
+          <td>auto</td>
+          <td>Search the web and return summarized results</td>
+        </tr>
+        <tr>
+          <td>github_read</td>
+          <td>auto</td>
+          <td>Read files and issues from public GitHub repos</td>
+        </tr>
+        <tr>
+          <td>browser_fetch</td>
+          <td>auto</td>
+          <td>Headless browser for JavaScript-rendered pages</td>
         </tr>
         <tr>
           <td>tasks_set</td>
