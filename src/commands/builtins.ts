@@ -25,6 +25,8 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "skills", argHint: "[list|add|edit|delete|enable|disable]", description: "Manage skills", source: "builtin" },
   { name: "command", argHint: "[create|edit|delete|list]", description: "Manage custom slash commands", source: "builtin" },
   { name: "resume", description: "Pick a past conversation to resume", source: "builtin" },
+  { name: "checkpoint", argHint: "[label]", description: "Save current point in session", source: "builtin" },
+  { name: "checkpoints", description: "List checkpoints in current session", source: "builtin" },
   { name: "compact", description: "Summarize old turns to free context", source: "builtin" },
   { name: "clear", description: "Clear current conversation", source: "builtin" },
   { name: "init", description: "Scan repo and write KIMI.md", source: "builtin" },

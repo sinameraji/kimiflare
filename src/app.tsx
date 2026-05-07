@@ -34,6 +34,7 @@ import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
 import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
+import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tasks-state.js";
 import { existsSync, statSync } from "node:fs";
@@ -64,9 +65,12 @@ import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile
 import {
   listSessions,
   loadSession,
+  loadSessionFromCheckpoint,
+  addCheckpoint,
   makeSessionId,
   saveSession,
   type SessionSummary,
+  type Checkpoint,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
 import { execSync } from "node:child_process";
@@ -541,6 +545,8 @@ function App({
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
+  const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
+  const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
   const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
   const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
   const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
@@ -632,6 +638,7 @@ function App({
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
+  const sessionCreatedAtRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
   const tasksRef = useRef<Task[]>([]);
@@ -834,6 +841,7 @@ function App({
       showCommandList ||
       showLspWizard ||
       resumeSessions !== null ||
+      checkpointSession !== null ||
       perm !== null ||
       limitModal !== null;
     if (modalActive && activePicker !== null) {
@@ -1269,19 +1277,26 @@ function App({
   const saveSessionSafe = useCallback(async () => {
     if (!cfg) return;
     ensureSessionId();
+    const now = new Date().toISOString();
+    if (!sessionCreatedAtRef.current) {
+      sessionCreatedAtRef.current = now;
+    }
     try {
       await saveSession({
         id: sessionIdRef.current!,
         cwd: process.cwd(),
         model: cfg.model,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: sessionCreatedAtRef.current,
+        updatedAt: now,
         messages: messagesRef.current,
         sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
         artifactStore: serializeArtifactStore(artifactStoreRef.current),
       });
-    } catch {
-      /* non-fatal */
+    } catch (e) {
+      setEvents((es) => [
+        ...es,
+        { kind: "error", key: mkKey(), text: `session save failed: ${(e as Error).message}` },
+      ]);
     }
   }, [cfg, ensureSessionId]);
 
@@ -1392,6 +1407,8 @@ function App({
         activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Save session so interrupted turn is not lost
+        void saveSessionSafe();
         // Clear task list immediately so it doesn't keep spinning
         setTasks([]);
         setTasksStartedAt(null);
@@ -1412,6 +1429,7 @@ function App({
         commandWizard !== null ||
         commandToDelete !== null ||
         resumeSessions !== null ||
+        checkpointSession !== null ||
         showThemePicker;
       if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
@@ -1912,14 +1930,15 @@ function App({
     [],
   );
 
-  const handleResumePick = useCallback(
-    async (picked: SessionSummary | null) => {
-      setResumeSessions(null);
-      if (!picked) return;
+  const doResumeSession = useCallback(
+    async (filePath: string, checkpointId?: string) => {
       try {
-        const file = await loadSession(picked.filePath);
+        const file = checkpointId
+          ? (await loadSessionFromCheckpoint(filePath, checkpointId)).file
+          : await loadSession(filePath);
         messagesRef.current = file.messages;
         sessionIdRef.current = file.id;
+        sessionCreatedAtRef.current = file.createdAt;
         if (file.sessionState && compiledContextRef.current) {
           sessionStateRef.current = file.sessionState;
         }
@@ -1945,13 +1964,10 @@ function App({
           }
         }
 
-        setEvents([
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `resumed session ${picked.id} (${picked.messageCount} msgs)`,
-          },
-        ]);
+        const msg = checkpointId
+          ? `resumed session ${file.id} from checkpoint`
+          : `resumed session ${file.id} (${file.messages.filter((m) => m.role !== "system").length} msgs)`;
+        setEvents([{ kind: "info", key: mkKey(), text: msg }]);
         const userMsgs = file.messages
           .filter((m) => m.role === "user" && m.content)
           .map((m) => {
@@ -1975,6 +1991,51 @@ function App({
       }
     },
     [],
+  );
+
+  const handleResumePick = useCallback(
+    async (picked: SessionSummary | null) => {
+      setResumeSessions(null);
+      if (!picked) return;
+      if (picked.checkpointCount > 0) {
+        // Load checkpoints and show picker
+        try {
+          const file = await loadSession(picked.filePath);
+          setCheckpointList(file.checkpoints ?? []);
+          setCheckpointSession(picked);
+        } catch (e) {
+          setEvents((es) => [
+            ...es,
+            { kind: "error", key: mkKey(), text: `failed to load checkpoints: ${(e as Error).message}` },
+          ]);
+          await doResumeSession(picked.filePath);
+        }
+        return;
+      }
+      await doResumeSession(picked.filePath);
+    },
+    [doResumeSession],
+  );
+
+  const handleCheckpointPick = useCallback(
+    async (checkpointId: string | null) => {
+      const session = checkpointSession;
+      setCheckpointSession(null);
+      setCheckpointList([]);
+      if (!session || !checkpointId) {
+        // User cancelled or went back — reopen session list
+        if (session) {
+          setResumeSessions(await listSessions(200, process.cwd()));
+        }
+        return;
+      }
+      if (checkpointId === "__start__") {
+        await doResumeSession(session.filePath);
+        return;
+      }
+      await doResumeSession(session.filePath, checkpointId);
+    },
+    [checkpointSession, doResumeSession],
   );
 
 
@@ -2448,6 +2509,63 @@ function App({
         void openResumePicker();
         return true;
       }
+      if (c === "/checkpoint") {
+        const label = rest.join(" ").trim() || `checkpoint ${new Date().toLocaleString()}`;
+        const turnIndex = messagesRef.current.length;
+        if (turnIndex === 0) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "nothing to checkpoint yet" }]);
+          return true;
+        }
+        const cp: Checkpoint = {
+          id: `cp_${Date.now()}`,
+          label,
+          turnIndex,
+          timestamp: new Date().toISOString(),
+          sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
+          artifactStore: serializeArtifactStore(artifactStoreRef.current),
+        };
+        void (async () => {
+          try {
+            ensureSessionId();
+            const { sessionsDir } = await import("./sessions.js");
+            const filePath = join(sessionsDir(), `${sessionIdRef.current}.json`);
+            await addCheckpoint(filePath, cp);
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `checkpoint saved: "${label}"` }]);
+          } catch (e) {
+            setEvents((es) => [
+              ...es,
+              { kind: "error", key: mkKey(), text: `checkpoint failed: ${(e as Error).message}` },
+            ]);
+          }
+        })();
+        return true;
+      }
+      if (c === "/checkpoints") {
+        const currentId = sessionIdRef.current;
+        if (!currentId) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no active session" }]);
+          return true;
+        }
+        void (async () => {
+          try {
+            const { sessionsDir } = await import("./sessions.js");
+            const file = await loadSession(join(sessionsDir(), `${currentId}.json`));
+            const cps = file.checkpoints ?? [];
+            if (cps.length === 0) {
+              setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no checkpoints in this session" }]);
+              return;
+            }
+            const lines = ["checkpoints:", ...cps.map((cp, i) => `  ${i + 1}. "${cp.label}" — turn ${cp.turnIndex} · ${new Date(cp.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`)];
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+          } catch (e) {
+            setEvents((es) => [
+              ...es,
+              { kind: "error", key: mkKey(), text: `failed to list checkpoints: ${(e as Error).message}` },
+            ]);
+          }
+        })();
+        return true;
+      }
       if (c === "/compact") {
         void runCompact();
         return true;
@@ -2812,6 +2930,8 @@ function App({
           "  /cost                     show cost report",
           "  /compact                  summarize old turns",
           "  /resume                   pick a past session",
+          "  /checkpoint [label]       save current point in session",
+          "  /checkpoints              list checkpoints in session",
           "  /clear                    clear conversation",
           "  /init                     scan repo and write KIMI.md",
           "  /update                   check for updates",
@@ -2965,6 +3085,9 @@ function App({
       }
 
       messagesRef.current.push({ role: "user", content });
+
+      // Pre-turn save: ensure session exists even if user exits mid-turn
+      await saveSessionSafe();
 
       // Recall artifacts before sending if compiled context is enabled
       if (compiledContextRef.current) {
@@ -3547,6 +3670,20 @@ function App({
           }
         }}
       />
+      </ThemeProvider>
+    );
+  }
+
+  if (checkpointSession !== null) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <CheckpointPicker
+            session={checkpointSession}
+            checkpoints={checkpointList}
+            onPick={handleCheckpointPick}
+          />
+        </Box>
       </ThemeProvider>
     );
   }

@@ -12,6 +12,21 @@ export interface SessionSummary {
   firstPrompt: string;
   messageCount: number;
   updatedAt: string;
+  checkpointCount: number;
+}
+
+export interface Checkpoint {
+  /** Unique checkpoint ID */
+  id: string;
+  /** Human-readable label */
+  label: string;
+  /** Index into messages array where checkpoint was taken */
+  turnIndex: number;
+  timestamp: string;
+  /** Snapshot of session state at checkpoint time */
+  sessionState?: SessionState;
+  /** Snapshot of artifact store at checkpoint time */
+  artifactStore?: SerializedArtifact[];
 }
 
 export interface SessionFile {
@@ -25,9 +40,11 @@ export interface SessionFile {
   sessionState?: SessionState;
   /** Persisted artifact store for recalled raw tool outputs (optional). */
   artifactStore?: SerializedArtifact[];
+  /** User-created checkpoints within this session (optional). */
+  checkpoints?: Checkpoint[];
 }
 
-function sessionsDir(): string {
+export function sessionsDir(): string {
   const xdg = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
   return join(xdg, "kimiflare", "sessions");
 }
@@ -92,6 +109,7 @@ export async function listSessions(limit = 30, cwd?: string): Promise<SessionSum
         firstPrompt: firstPrompt.slice(0, 80),
         messageCount: parsed.messages.filter((m) => m.role !== "system").length,
         updatedAt: parsed.updatedAt ?? s.mtime.toISOString(),
+        checkpointCount: parsed.checkpoints?.length ?? 0,
       });
     } catch {
       /* skip unreadable */
@@ -104,4 +122,38 @@ export async function listSessions(limit = 30, cwd?: string): Promise<SessionSum
 export async function loadSession(filePath: string): Promise<SessionFile> {
   const raw = await readFile(filePath, "utf8");
   return JSON.parse(raw) as SessionFile;
+}
+
+/** Add a checkpoint to an existing session file. */
+export async function addCheckpoint(
+  filePath: string,
+  checkpoint: Checkpoint,
+): Promise<void> {
+  const file = await loadSession(filePath);
+  if (!file.checkpoints) file.checkpoints = [];
+  file.checkpoints.push(checkpoint);
+  await saveSession(file);
+}
+
+/** Load a session and truncate to a specific checkpoint. */
+export async function loadSessionFromCheckpoint(
+  filePath: string,
+  checkpointId: string,
+): Promise<{ file: SessionFile; checkpoint: Checkpoint }> {
+  const file = await loadSession(filePath);
+  const checkpoint = file.checkpoints?.find((c) => c.id === checkpointId);
+  if (!checkpoint) {
+    throw new Error(`checkpoint ${checkpointId} not found`);
+  }
+  // Truncate messages to checkpoint turn index
+  const truncated = file.messages.slice(0, checkpoint.turnIndex);
+  return {
+    file: {
+      ...file,
+      messages: truncated,
+      sessionState: checkpoint.sessionState ?? file.sessionState,
+      artifactStore: checkpoint.artifactStore ?? file.artifactStore,
+    },
+    checkpoint,
+  };
 }
