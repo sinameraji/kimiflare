@@ -488,7 +488,7 @@ tail -f ~/.config/kimiflare/logs/kimiflare.log
 | 1.5: Log Injection | ✅ Done | | Logs added to loop.ts, client.ts, bash.ts, sse.ts |
 | 2: Hierarchical Abort | ✅ Done | 2026-05-07 | Committed as 5465921 |
 | 3: Fire-and-Forget Supervisor | ✅ Done | 2026-05-07 | Committed as a2d5a1c |
-| 4: Preemption Support | �� In Progress | | |
+| 4: Preemption Support | ✅ Done | 2026-05-07 | Committed as 0d95b87 |
 | 5: Integration Testing | ⬜ Pending | | |
 | 6: Performance & Polish | ⬜ Pending | | |
 
