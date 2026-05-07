@@ -9,6 +9,7 @@ import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 import type { DailyUsage } from "../usage-tracker.js";
+import { humanizePhase, type IntentTier } from "./narrator.js";
 
 export type TurnPhase = "generating" | "executing" | "waiting";
 
@@ -36,9 +37,10 @@ interface Props {
   lastActivityAt?: number | null;
   kimiMdStale?: boolean;
   gitBranch?: string | null;
+  intentTier?: IntentTier;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch }: Props) {
+export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -65,7 +67,13 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
   if (memoryRecalled) {
     labelParts.push("Memory recalled");
   }
-  const phaseLabel = phase === "generating" ? "generating" : phase === "executing" ? `executing ${currentTool ?? ""}` : phase === "waiting" ? "waiting" : "thinking";
+  const phaseLabel = phase === "generating"
+    ? humanizePhase("generating", intentTier)
+    : phase === "executing"
+      ? `${humanizePhase("executing", intentTier)} ${currentTool ?? ""}`
+      : phase === "waiting"
+        ? humanizePhase("waiting", intentTier)
+        : humanizePhase("generating", intentTier);
   const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
   const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
 

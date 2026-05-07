@@ -3607,7 +3607,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}
         {perm ? (
           <PermissionModal
@@ -3668,6 +3668,7 @@ function App({
               lastActivityAt={lastActivityAt}
               kimiMdStale={kimiMdStale}
               gitBranch={gitBranch}
+              intentTier={intentTier ?? undefined}
             />
             {activePicker?.kind === "file" && (
               <FilePicker
