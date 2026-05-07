@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
+import { logger } from "../util/logger.js";
 
 interface Args {
   command: string;
@@ -86,9 +87,9 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
   const timeout = Math.min(Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT), MAX_TIMEOUT);
   const command = injectCoauthor(args.command, ctx.coauthor);
   return new Promise<ToolOutput>((resolve, reject) => {
+    logger.debug("bash:spawn", { command: args.command.slice(0, 200), cwd: ctx.cwd });
     const child = spawn("bash", ["-lc", command], {
       cwd: ctx.cwd,
-      signal: ctx.signal,
       env: {
         ...process.env,
         GIT_EDITOR: "true",
@@ -97,10 +98,21 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     let stdout = "";
     let stderr = "";
     let killedByTimeout = false;
+    let killedByAbort = false;
+
     const timer = setTimeout(() => {
       killedByTimeout = true;
+      logger.warn("bash:kill_timeout", { command: args.command.slice(0, 200) });
       child.kill("SIGKILL");
     }, timeout);
+
+    const onAbort = () => {
+      killedByAbort = true;
+      logger.warn("bash:kill_abort", { command: args.command.slice(0, 200) });
+      child.kill("SIGKILL");
+    };
+    ctx.signal?.addEventListener("abort", onAbort, { once: true });
+
     child.stdout.on("data", (d: Buffer) => {
       stdout += d.toString("utf8");
     });
@@ -109,13 +121,19 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     });
     child.on("error", (e) => {
       clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", onAbort);
+      logger.error("bash:error", { error: e.message });
       reject(e);
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      ctx.signal?.removeEventListener("abort", onAbort);
+      logger.debug("bash:close", { code, signal, killedByTimeout, killedByAbort });
       const header = killedByTimeout
         ? `(timed out after ${timeout}ms)`
-        : `exit=${code ?? "?"}${signal ? ` signal=${signal}` : ""}`;
+        : killedByAbort
+          ? `(aborted — sent SIGKILL)`
+          : `exit=${code ?? "?"}${signal ? ` signal=${signal}` : ""}`;
       const parts: string[] = [header];
       if (stdout) parts.push(`--- stdout ---\n${stdout.trimEnd()}`);
       if (stderr) parts.push(`--- stderr ---\n${stderr.trimEnd()}`);

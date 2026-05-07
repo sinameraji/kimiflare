@@ -622,6 +622,7 @@ function App({
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const isAbortingRef = useRef(false);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -1382,7 +1383,8 @@ function App({
         limitResolveRef.current = null;
         setLimitModal(null);
       }
-      if (busyRef.current && activeControllerRef.current) {
+      if (busyRef.current && activeControllerRef.current && !isAbortingRef.current) {
+        isAbortingRef.current = true;
         activeControllerRef.current.abort();
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
@@ -1401,7 +1403,8 @@ function App({
         commandToDelete !== null ||
         resumeSessions !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeControllerRef.current) {
+      if (!modalOpen && busyRef.current && activeControllerRef.current && !isAbortingRef.current) {
+        isAbortingRef.current = true;
         if (permResolveRef.current) {
           permResolveRef.current("deny");
           permResolveRef.current = null;
@@ -3326,6 +3329,7 @@ function App({
         setLastActivityAt(null);
         activeAsstIdRef.current = null;
         activeControllerRef.current = null;
+        isAbortingRef.current = false;
         permResolveRef.current = null;
         limitResolveRef.current = null;
         pendingToolCallsRef.current.clear();

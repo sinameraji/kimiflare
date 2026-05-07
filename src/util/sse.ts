@@ -6,6 +6,8 @@
 //  - events that don't start with `data:` (ignored)
 // Does NOT handle retry / event-id / named events — we don't need them.
 
+import { logger } from "./logger.js";
+
 export async function* readSSE(
   stream: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
@@ -27,6 +29,7 @@ export async function* readSSE(
     while (true) {
       if (signal?.aborted) throw new DOMException("aborted", "AbortError");
       if (idleTimeoutMs !== undefined && Date.now() - lastDataAt > idleTimeoutMs) {
+        logger.warn("sse:idle_timeout", { idleTimeoutMs });
         throw new DOMException(
           `kimiflare: stream idle for ${idleTimeoutMs}ms — no data received from API`,
           "TimeoutError",
