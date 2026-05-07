@@ -1,5 +1,5 @@
 /**
- * Fuzzy matching utilities (trimmed port of pi-mono's fuzzy.ts).
+ * Fuzzy matching utilities (port of pi-mono's fuzzy.ts).
  * Match if all query characters appear in `text` in order (not necessarily
  * consecutive). Lower score = better match.
  */
@@ -10,39 +10,59 @@ export interface FuzzyMatch {
 }
 
 export function fuzzyMatch(query: string, text: string): FuzzyMatch {
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
+  const queryLower = query.toLowerCase();
+  const textLower = text.toLowerCase();
 
-  if (q.length === 0) return { matches: true, score: 0 };
-  if (q.length > t.length) return { matches: false, score: 0 };
+  const matchQuery = (normalizedQuery: string): FuzzyMatch => {
+    if (normalizedQuery.length === 0) return { matches: true, score: 0 };
+    if (normalizedQuery.length > textLower.length) return { matches: false, score: 0 };
 
-  let qi = 0;
-  let score = 0;
-  let lastMatch = -1;
-  let consecutive = 0;
+    let queryIndex = 0;
+    let score = 0;
+    let lastMatchIndex = -1;
+    let consecutiveMatches = 0;
 
-  for (let i = 0; i < t.length && qi < q.length; i++) {
-    if (t[i] !== q[qi]) continue;
+    for (let i = 0; i < textLower.length && queryIndex < normalizedQuery.length; i++) {
+      if (textLower[i] !== normalizedQuery[queryIndex]) continue;
 
-    const isWordBoundary = i === 0 || /[\s\-_./:]/.test(t[i - 1]!);
+      const isWordBoundary = i === 0 || /[\s\-_./:]/.test(textLower[i - 1]!);
 
-    if (lastMatch === i - 1) {
-      consecutive++;
-      score -= consecutive * 5;
-    } else {
-      consecutive = 0;
-      if (lastMatch >= 0) score += (i - lastMatch - 1) * 2;
+      if (lastMatchIndex === i - 1) {
+        consecutiveMatches++;
+        score -= consecutiveMatches * 5;
+      } else {
+        consecutiveMatches = 0;
+        if (lastMatchIndex >= 0) score += (i - lastMatchIndex - 1) * 2;
+      }
+
+      if (isWordBoundary) score -= 10;
+      score += i * 0.1;
+
+      lastMatchIndex = i;
+      queryIndex++;
     }
 
-    if (isWordBoundary) score -= 10;
-    score += i * 0.1;
+    if (queryIndex < normalizedQuery.length) return { matches: false, score: 0 };
+    if (normalizedQuery === textLower) score -= 100;
+    return { matches: true, score };
+  };
 
-    lastMatch = i;
-    qi++;
-  }
+  const primaryMatch = matchQuery(queryLower);
+  if (primaryMatch.matches) return primaryMatch;
 
-  if (qi < q.length) return { matches: false, score: 0 };
-  return { matches: true, score };
+  const alphaNumericMatch = queryLower.match(/^(?<letters>[a-z]+)(?<digits>[0-9]+)$/);
+  const numericAlphaMatch = queryLower.match(/^(?<digits>[0-9]+)(?<letters>[a-z]+)$/);
+  const swappedQuery = alphaNumericMatch
+    ? `${alphaNumericMatch.groups?.digits ?? ""}${alphaNumericMatch.groups?.letters ?? ""}`
+    : numericAlphaMatch
+      ? `${numericAlphaMatch.groups?.letters ?? ""}${numericAlphaMatch.groups?.digits ?? ""}`
+      : "";
+
+  if (!swappedQuery) return primaryMatch;
+
+  const swappedMatch = matchQuery(swappedQuery);
+  if (!swappedMatch.matches) return primaryMatch;
+  return { matches: true, score: swappedMatch.score + 5 };
 }
 
 /**
@@ -58,7 +78,9 @@ export function fuzzyFilter<T>(
   const trimmed = query.trim();
   if (trimmed.length === 0) return items;
 
-  const tokens = trimmed.split(/\s+/);
+  const tokens = trimmed.split(/\s+/).filter((t) => t.length > 0);
+  if (tokens.length === 0) return items;
+
   const scored: { item: T; score: number }[] = [];
 
   for (const item of items) {
