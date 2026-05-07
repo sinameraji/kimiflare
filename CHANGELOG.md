@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.45.0](https://github.com/sinameraji/kimiflare/compare/v0.44.0...v0.45.0) (2026-05-07)
+
+
+### Features
+
+* **tools:** add web search, GitHub read-only, and headless browser tools ([#319](https://github.com/sinameraji/kimiflare/issues/319)) ([8740cc9](https://github.com/sinameraji/kimiflare/commit/8740cc913a645ea80bb99f38afe3d39204203af9))
+* **ui:** add cross-background contrast report for themes ([#317](https://github.com/sinameraji/kimiflare/issues/317)) ([60b1482](https://github.com/sinameraji/kimiflare/commit/60b148253213d45010c03fa4472e8bb3ba6809b1))
+* **ui:** fuzzy matching for @ file picker ([#315](https://github.com/sinameraji/kimiflare/issues/315)) ([09f60ad](https://github.com/sinameraji/kimiflare/commit/09f60ad074218662d4dbd590a91ead5fac9f9070))
+* **ui:** humanize system logs with tier-aware storytelling ([#318](https://github.com/sinameraji/kimiflare/issues/318)) ([638f34d](https://github.com/sinameraji/kimiflare/commit/638f34d45a3c51ccc99285eb666ce1c72417009c))
+
+
+### Bug Fixes
+
+* **ui:** preserve original list numbers in markdown rendering ([#320](https://github.com/sinameraji/kimiflare/issues/320)) ([0acfee2](https://github.com/sinameraji/kimiflare/commit/0acfee268b2559b93f3bca14c7547dc310afb6c6))
+
 ## [0.44.0](https://github.com/sinameraji/kimiflare/compare/v0.43.0...v0.44.0) (2026-05-06)
 
 
