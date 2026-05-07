@@ -25,6 +25,16 @@ export interface ReducerConfig {
     maxChars: number;
     maxHeadingChars: number;
   };
+  searchWeb: {
+    maxChars: number;
+    maxResults: number;
+  };
+  github: {
+    maxChars: number;
+  };
+  browser: {
+    maxChars: number;
+  };
   lsp: {
     maxLines: number;
     maxOutputChars: number;
@@ -55,6 +65,16 @@ export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
   webFetch: {
     maxChars: 2000,
     maxHeadingChars: 500,
+  },
+  searchWeb: {
+    maxChars: 3000,
+    maxResults: 10,
+  },
+  github: {
+    maxChars: 4000,
+  },
+  browser: {
+    maxChars: 4000,
   },
   lsp: {
     maxLines: 50,
@@ -112,6 +132,29 @@ export function reduceToolOutput(
     }
     case "web_fetch": {
       const r = reduceWebFetch(raw, args, config.webFetch);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
+      break;
+    }
+    case "search_web": {
+      const r = reduceSearchWeb(raw, args, config.searchWeb);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
+      break;
+    }
+    case "github_read_pr":
+    case "github_read_issue":
+    case "github_read_code": {
+      const r = reduceGithub(raw, config.github);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
+      break;
+    }
+    case "browser_fetch": {
+      const r = reduceBrowser(raw, config.browser);
       reduced = r.body;
       wasReduced = r.wasReduced;
       hint = r.hint;
@@ -491,5 +534,44 @@ function reduceLsp(raw: string, cfg: ReducerConfig["lsp"]): ReduceResult {
     body: result,
     wasReduced: true,
     hint: "LSP output truncated. Use a narrower query, specific file path, or smaller scope to reduce results.",
+  };
+}
+
+// ─── Search Web ──────────────────────────────────────────────────────────────
+
+function reduceSearchWeb(raw: string, _args: Record<string, unknown>, cfg: ReducerConfig["searchWeb"]): ReduceResult {
+  if (raw.length <= cfg.maxChars) {
+    return { body: raw, wasReduced: false };
+  }
+  return {
+    body: raw.slice(0, cfg.maxChars),
+    wasReduced: true,
+    hint: "Search results truncated. Use a more specific query to narrow results.",
+  };
+}
+
+// ─── GitHub ──────────────────────────────────────────────────────────────────
+
+function reduceGithub(raw: string, cfg: ReducerConfig["github"]): ReduceResult {
+  if (raw.length <= cfg.maxChars) {
+    return { body: raw, wasReduced: false };
+  }
+  return {
+    body: raw.slice(0, cfg.maxChars),
+    wasReduced: true,
+    hint: "GitHub response truncated. Use a more specific path or smaller file to reduce size.",
+  };
+}
+
+// ─── Browser ─────────────────────────────────────────────────────────────────
+
+function reduceBrowser(raw: string, cfg: ReducerConfig["browser"]): ReduceResult {
+  if (raw.length <= cfg.maxChars) {
+    return { body: raw, wasReduced: false };
+  }
+  return {
+    body: raw.slice(0, cfg.maxChars),
+    wasReduced: true,
+    hint: "Browser page content truncated. Use a more specific selector or narrower URL scope.",
   };
 }

@@ -5,6 +5,7 @@ import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
+import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[] }
@@ -32,6 +33,7 @@ interface Props {
   events: ChatEvent[];
   showReasoning: boolean;
   verbose?: boolean;
+  intentTier?: IntentTier;
 }
 
 interface StaticItem {
@@ -44,7 +46,7 @@ function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier }: Props) {
   const theme = useTheme();
   const finalized: StaticItem[] = [];
   const active: ChatEvent[] = [];
@@ -88,7 +90,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} />
+            <EventView evt={item.evt} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} />
           </Box>
         )}
       </Static>
@@ -105,7 +107,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} />
+            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} />
           </Box>
         );
       })}
@@ -118,11 +120,13 @@ const EventView = React.memo(function EventView({
   showReasoning,
   verbose,
   repeatedSigs,
+  intentTier,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
   verbose?: boolean;
   repeatedSigs?: Set<string>;
+  intentTier?: IntentTier;
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
@@ -166,39 +170,35 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "tool") {
     const isRepeated = repeatedSigs?.has(toolSignature(evt.name, evt.args)) ?? false;
-    return <ToolView evt={evt} verbose={verbose} isRepeated={isRepeated} />;
+    return <ToolView evt={evt} verbose={verbose} isRepeated={isRepeated} intentTier={intentTier} />;
   }
   if (evt.kind === "info") {
     return (
       <Text color={theme.info.color} >
-        · {evt.text}
+        · {humanizeInfo(evt.text, intentTier)}
       </Text>
     );
   }
   if (evt.kind === "memory") {
     return (
       <Text color={theme.info.color} >
-        ◈ {evt.text}
+        ◈ {humanizeMemory(evt.text, intentTier)}
       </Text>
     );
   }
   if (evt.kind === "meta") {
-    const parts: string[] = [];
-    if (evt.intentTier) {
-      parts.push(
-        evt.intentTier === "light" ? "Quick thought" : evt.intentTier === "medium" ? "Deep dive" : "Heavy lifting",
-      );
-    }
+    const metaParts: { label: string; value?: string | number }[] = [];
     if (evt.skillsActive !== undefined && evt.skillsActive > 0) {
-      parts.push(`${evt.skillsActive} skill${evt.skillsActive === 1 ? "" : "s"} on deck`);
+      metaParts.push({ label: `skill${evt.skillsActive === 1 ? "" : "s"} ready`, value: evt.skillsActive });
     }
     if (evt.memoryRecalled) {
-      parts.push("Memory recalled");
+      metaParts.push({ label: "memory recalled" });
     }
-    if (parts.length === 0) return null;
+    const metaText = humanizeMeta(metaParts, intentTier ?? evt.intentTier);
+    if (!metaText) return null;
     return (
       <Text color={theme.info.color} dimColor>
-        {parts.join(" · ")}
+        {metaText}
       </Text>
     );
   }

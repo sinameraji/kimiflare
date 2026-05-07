@@ -22,9 +22,8 @@ export interface DimColor {
   dim: boolean;
 }
 
-/** Raw palette — now includes background and foreground for WCAG validation. */
+/** Raw palette — foreground is the "default text" color for the theme. */
 export interface ColorPalette {
-  background: string;
   foreground: string;
   primary: string;
   secondary: string;
@@ -36,6 +35,7 @@ export interface ColorPalette {
 export interface Theme {
   name: string;
   label: string;
+  type: "dark" | "light";
   palette: ColorPalette;
   user: ColorName;
   assistant: ColorName | undefined;
@@ -46,7 +46,6 @@ export interface Theme {
   tool: ColorName;
   spinner: ColorName;
   permission: ColorName;
-  queue: DimColor;
   accent: ColorName;
   modeBadge: { plan: ColorName; auto: ColorName; edit: ColorName };
   /** Blockquote text color. */
@@ -67,6 +66,8 @@ export interface Theme {
   tableCell?: ColorName;
   /** Muted / secondary text. */
   muted?: DimColor;
+  /** Input prompt / cursor indicator color. */
+  prompt?: ColorName;
 }
 
 function normalizeTheme(json: unknown): Theme {
@@ -90,6 +91,7 @@ function normalizeTheme(json: unknown): Theme {
   return {
     name: String(obj.name),
     label: String(obj.label),
+    type: obj.type === "light" ? "light" : "dark",
     palette,
     user: String(obj.user ?? palette.primary),
     assistant: obj.assistant === null ? undefined : (typeof obj.assistant === "string" ? obj.assistant : undefined),
@@ -100,7 +102,6 @@ function normalizeTheme(json: unknown): Theme {
     tool: String(obj.tool ?? palette.secondary),
     spinner: String(obj.spinner ?? palette.primary),
     permission: String(obj.permission ?? palette.error),
-    queue: normalizeDim(obj.queue) ?? { color: palette.secondary, dim: false },
     accent: String(obj.accent ?? palette.primary),
     modeBadge: (obj.modeBadge as Theme["modeBadge"]) ?? {
       plan: palette.primary,
@@ -116,10 +117,11 @@ function normalizeTheme(json: unknown): Theme {
     tableHeader: normalizeColor(obj.tableHeader),
     tableCell: normalizeColor(obj.tableCell),
     muted: normalizeDim(obj.muted),
+    prompt: normalizeColor(obj.prompt),
   };
 }
 
-const BUILT_IN_THEMES: Record<string, Theme> = {
+export const BUILT_IN_THEMES: Record<string, Theme> = {
   "everforest-dark": normalizeTheme(everforestDarkJson),
   "everforest-light": normalizeTheme(everforestLightJson),
   "kanagawa-dark": normalizeTheme(kanagawaDarkJson),

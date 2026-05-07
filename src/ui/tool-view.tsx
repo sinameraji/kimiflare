@@ -5,6 +5,7 @@ import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
+import { humanizeToolTitle, type IntentTier } from "./narrator.js";
 
 export interface ToolEventState {
   id: string;
@@ -21,6 +22,7 @@ interface Props {
   evt: ToolEventState;
   verbose?: boolean;
   isRepeated?: boolean;
+  intentTier?: IntentTier;
 }
 
 function formatElapsed(ms: number): string {
@@ -32,7 +34,7 @@ function formatElapsed(ms: number): string {
   return `${m}m ${s}s`;
 }
 
-export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated }: Props) {
+export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
 
@@ -56,7 +58,8 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated 
     ) : (
       <Text color={theme.palette.success}>✓</Text>
     );
-  let title = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
+  const rawTitle = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
+  let title = humanizeToolTitle(evt.name, rawTitle, intentTier);
   if (evt.startedAt !== undefined) {
     title += ` · ${formatElapsed(now - evt.startedAt)}`;
   }

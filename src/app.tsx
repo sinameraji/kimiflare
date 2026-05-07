@@ -1665,6 +1665,7 @@ function App({
             : undefined,
         sessionId: ensureSessionId(),
         memoryManager: memoryManagerRef.current,
+        githubToken: cfg.githubOAuthToken,
         codeMode: effectiveCodeMode,
         cloudMode: cfg.cloudMode,
         cloudToken: cloudToken ?? initialCloudToken,
@@ -3216,6 +3217,7 @@ function App({
               : undefined,
           sessionId: ensureSessionId(),
           memoryManager: memoryManagerRef.current,
+          githubToken: cfg.githubOAuthToken,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
           cloudMode: cfg.cloudMode,
@@ -3666,7 +3668,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}
         {perm ? (
           <PermissionModal
@@ -3727,6 +3729,7 @@ function App({
               lastActivityAt={lastActivityAt}
               kimiMdStale={kimiMdStale}
               gitBranch={gitBranch}
+              intentTier={intentTier ?? undefined}
             />
             {activePicker?.kind === "file" && (
               <FilePicker
@@ -3743,7 +3746,7 @@ function App({
               />
             )}
           <Box marginTop={1}>
-            <Text color="#d699b6">› </Text>
+            <Text color={theme.prompt ?? theme.accent}>› </Text>
             <CustomTextInput
               value={input}
               onChange={setInput}

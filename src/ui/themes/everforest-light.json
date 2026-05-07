@@ -2,36 +2,48 @@
   "name": "everforest-light",
   "label": "Everforest Light",
   "palette": {
-    "background": "#fdf6e3",
     "foreground": "#5c6a72",
-    "primary": "#8da101",
-    "secondary": "#939f91",
-    "success": "#8da101",
-    "error": "#f85552"
+    "primary": "#6f7e01",
+    "secondary": "#70796f",
+    "success": "#6f7e01",
+    "error": "#cf4745"
   },
-  "user": "#8da101",
+  "user": "#6f7e01",
   "assistant": null,
-  "reasoning": { "color": "#939f91", "dim": true },
-  "info": { "color": "#5c6a72", "dim": false },
-  "error": "#f85552",
-  "warn": "#dfa000",
-  "tool": "#3a94c5",
-  "spinner": "#8da101",
-  "permission": "#f85552",
-  "queue": { "color": "#939f91", "dim": true },
-  "accent": "#8da101",
-  "modeBadge": {
-    "plan": "#8da101",
-    "auto": "#8da101",
-    "edit": "#f85552"
+  "reasoning": {
+    "color": "#70796f",
+    "dim": false
   },
-  "blockquote": { "color": "#939f91", "dim": true },
-  "codeInline": "#3a94c5",
-  "codeBlock": "#3a94c5",
-  "link": "#8da101",
-  "strikethrough": "#939f91",
-  "tableBorder": "#bdc3af",
+  "info": {
+    "color": "#5c6a72",
+    "dim": false
+  },
+  "error": "#cf4745",
+  "warn": "#9a6f00",
+  "tool": "#317da7",
+  "spinner": "#6f7e01",
+  "permission": "#cf4745",
+  "accent": "#6f7e01",
+  "modeBadge": {
+    "plan": "#6f7e01",
+    "auto": "#6f7e01",
+    "edit": "#cf4745"
+  },
+  "blockquote": {
+    "color": "#70796f",
+    "dim": false
+  },
+  "codeInline": "#317da7",
+  "codeBlock": "#317da7",
+  "link": "#6f7e01",
+  "strikethrough": "#70796f",
+  "tableBorder": "#75786c",
   "tableHeader": "#5c6a72",
   "tableCell": "#5c6a72",
-  "muted": { "color": "#939f91", "dim": true }
+  "muted": {
+    "color": "#70796f",
+    "dim": false
+  },
+  "prompt": "#6f7e01",
+  "type": "light"
 }

@@ -11,7 +11,7 @@
  *   - Large text: 4.5:1
  */
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const m = hex.match(/^#([0-9a-fA-F]{6})$/);
   if (!m) return null;
   const v = parseInt(m[1]!, 16);
@@ -22,7 +22,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   };
 }
 
-function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+export function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
   const toLinear = (c: number) => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
