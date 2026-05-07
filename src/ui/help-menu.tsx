@@ -20,7 +20,6 @@ interface Props {
 type Page =
   | "main"
   | "mode"
-  | "thinking"
   | "session"
   | "memory"
   | "skills"
@@ -53,15 +52,6 @@ const CATEGORIES: Category[] = [
       { command: "/mode edit", description: "switch to edit mode" },
       { command: "/mode plan", description: "switch to plan mode" },
       { command: "/mode auto", description: "switch to auto mode" },
-    ],
-  },
-  {
-    key: "thinking",
-    label: "Thinking",
-    commands: [
-      { command: "/thinking low", description: "fast, lower quality" },
-      { command: "/thinking medium", description: "balanced" },
-      { command: "/thinking high", description: "slow, higher quality" },
     ],
   },
   {

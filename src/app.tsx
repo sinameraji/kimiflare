@@ -503,11 +503,7 @@ function findImagePaths(text: string): string[] {
 }
 
 
-const EFFORT_DESCRIPTIONS: Record<ReasoningEffort, string> = {
-  low: "low — fastest; lightest reasoning. Best for simple Q&A, small edits, quick coordination.",
-  medium: "medium — balanced (default). Solid quality on most edits, fast on trivial prompts.",
-  high: "high — deepest reasoning; slowest. Best for complex debugging, architecture, multi-file refactors.",
-};
+
 
 function App({
   initialCfg,
@@ -2302,37 +2298,6 @@ function App({
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway enabled: ${rest[0]}` }]);
         return true;
       }
-      if (c === "/thinking" || c === "/effort") {
-        if (!arg) {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: `current: ${effort}  ·  ${EFFORT_DESCRIPTIONS[effort]}\nuse: /thinking low | medium | high`,
-            },
-          ]);
-          return true;
-        }
-        if (arg === "low" || arg === "medium" || arg === "high") {
-          setEffort(arg);
-          if (cfg) void saveConfig({ ...cfg, reasoningEffort: arg }).catch(() => {});
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: `thinking: ${arg}  ·  ${EFFORT_DESCRIPTIONS[arg]}`,
-            },
-          ]);
-          return true;
-        }
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "usage: /thinking low | medium | high" },
-        ]);
-        return true;
-      }
       if (c === "/mode") {
         if (!arg) {
           setEvents((e) => [
@@ -2989,7 +2954,6 @@ function App({
         const lines = [
           "commands:",
           "  /mode edit|plan|auto     switch agent mode",
-          "  /thinking low|medium|high set reasoning effort",
           "  /skills list|add|edit|... manage skills",
           "  /memory on|off|clear      manage memory",
           "  /cost                     show cost report",
@@ -3007,7 +2971,7 @@ function App({
       }
       return false;
     },
-    [cfg, exit, usage, effort, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg, setShowRemoteDashboard, setSelectedRemoteSession],
+    [cfg, exit, usage, theme, mode, openResumePicker, runCompact, runInit, initMcp, setCfg, setShowRemoteDashboard, setSelectedRemoteSession],
   );
 
   const handleCommandSave = useCallback(
@@ -3951,7 +3915,7 @@ function App({
   return (
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
-        {!hasConversation ? (
+        {!hasConversation && events.length === 0 ? (
           <Welcome />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
