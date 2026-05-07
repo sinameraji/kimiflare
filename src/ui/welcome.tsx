@@ -43,11 +43,6 @@ export function Welcome({ accountId, gitBranch, lastSessionTopic }: Props) {
         </Box>
       )}
 
-      <Box marginTop={1}>
-        <Text color={theme.info.color} dimColor>
-          Type a message or /help · ctrl-c to exit
-        </Text>
-      </Box>
     </Box>
   );
 }

@@ -71,8 +71,8 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
                 </Text>
               )}
               <Text color={isSelected ? theme.accent : isRecent ? theme.palette.success : undefined} bold={isSelected || isRecent}>
-                {isSelected ? "› " : "  "}
-                {isRecent ? "★ " : ""}
+                {isSelected ? "› " : isRecent ? "→ " : "  "}
+                {isRecent ? "↻ " : ""}
                 {label}
               </Text>
             </Box>
@@ -82,6 +82,13 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
           <Text color={theme.info.color} dimColor>
             … {items.length - (startIndex + VISIBLE_LIMIT)} more below
           </Text>
+        )}
+        {hasRecentSection && (
+          <Box marginTop={1}>
+            <Text color={theme.info.color} dimColor>
+              ↻ = recently used
+            </Text>
+          </Box>
         )}
       </Box>
     </Box>

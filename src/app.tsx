@@ -706,7 +706,7 @@ function App({
 
   const filteredFileItems = React.useMemo(() => {
     if (pickerKind !== "file" || pickerQuery === null) return [];
-    const items = filterPickerItems(filePickerItems, pickerQuery);
+    const items = filterPickerItems(filePickerItems, pickerQuery).slice();
     const now = Date.now();
     return items.sort((a, b) => {
       const aRecent = recentFilesRef.current.get(a.name) ?? 0;

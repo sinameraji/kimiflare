@@ -46,11 +46,11 @@ export function buildWelcome({
   const suggestions: string[] = [];
 
   if (gitBranch) {
-    suggestions.push(`On branch ${gitBranch}. Ready to ship?`);
+    suggestions.push(`Branch: ${gitBranch}`);
   }
 
   if (lastSessionTopic) {
-    suggestions.push(`Last time: ${lastSessionTopic}`);
+    suggestions.push(`Resume: ${lastSessionTopic}`);
   }
 
   return { headline: greet, suggestions };
