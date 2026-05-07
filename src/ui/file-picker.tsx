@@ -20,7 +20,6 @@ const VISIBLE_LIMIT = 12;
 export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) {
   const theme = useTheme();
   // Scroll the visible window so the selected item is always in view.
-  // Keep the selected item at the bottom edge when scrolling down.
   let startIndex = 0;
   if (selectedIndex >= VISIBLE_LIMIT) {
     startIndex = selectedIndex - VISIBLE_LIMIT + 1;
@@ -29,13 +28,17 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
   const hasMoreAbove = startIndex > 0;
   const hasMoreBelow = items.length > startIndex + VISIBLE_LIMIT;
 
+  // Count how many recent files are in the visible slice
+  const recentInVisible = visible.filter((item) => recentFiles?.has(item.name)).length;
+  const hasRecentSection = recentInVisible > 0;
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
       <Text color={theme.accent} bold>
         {query ? `Files matching "${query}"` : "Mention a file"}
       </Text>
-      <Text color={theme.info.color} dimColor={false}>
-        Arrow keys to navigate, Enter to select, Esc to cancel.
+      <Text color={theme.info.color} dimColor>
+        ↑↓ navigate · Enter pick · Esc cancel
       </Text>
       <Box marginTop={1} flexDirection="column">
         {visible.length === 0 && (
@@ -44,7 +47,7 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
           </Text>
         )}
         {hasMoreAbove && (
-          <Text color={theme.info.color}>
+          <Text color={theme.info.color} dimColor>
             … {startIndex} more above
           </Text>
         )}
@@ -53,16 +56,30 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
           const isSelected = actualIndex === selectedIndex;
           const isRecent = recentFiles?.has(item.name);
           const label = item.isDirectory ? `${item.name}/` : item.name;
+          const isFirstRecent = isRecent && (i === 0 || !recentFiles?.has(visible[i - 1]?.name ?? ""));
+          const isFirstNonRecentAfterRecent = !isRecent && (i > 0 && recentFiles?.has(visible[i - 1]?.name ?? ""));
           return (
-            <Text key={item.name} color={isSelected ? theme.accent : undefined} bold={isSelected}>
-              {isSelected ? "› " : "  "}
-              {isRecent ? <Text color={theme.palette.success}>⏱ </Text> : null}
-              {label}
-            </Text>
+            <Box key={item.name} flexDirection="column">
+              {hasRecentSection && isFirstRecent && (
+                <Text color={theme.palette.success} bold>
+                  {"  "}Recent
+                </Text>
+              )}
+              {hasRecentSection && isFirstNonRecentAfterRecent && (
+                <Text color={theme.info.color} dimColor>
+                  {"  "}All files
+                </Text>
+              )}
+              <Text color={isSelected ? theme.accent : isRecent ? theme.palette.success : undefined} bold={isSelected || isRecent}>
+                {isSelected ? "› " : "  "}
+                {isRecent ? "★ " : ""}
+                {label}
+              </Text>
+            </Box>
           );
         })}
         {hasMoreBelow && (
-          <Text color={theme.info.color}>
+          <Text color={theme.info.color} dimColor>
             … {items.length - (startIndex + VISIBLE_LIMIT)} more below
           </Text>
         )}

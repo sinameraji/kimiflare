@@ -845,6 +845,7 @@ function App({
     if (activePicker.kind === "file") {
       const item = filteredFileItems[activePicker.selected];
       if (!item) return;
+      trackRecentFile(recentFilesRef, item.name, MAX_RECENT_FILES);
       const insert = item.name + (item.isDirectory ? "/" : " ");
       const newInput = input.slice(0, activePicker.anchor) + insert + input.slice(cursorOffset);
       setInput(newInput);
@@ -3803,8 +3804,8 @@ function App({
   return (
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
-        {!hasConversation && events.length === 0 ? (
-          <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} gitBranch={gitBranch} lastSessionTopic={lastSessionTopic} />
+        {!hasConversation ? (
+          <Welcome accountId={cfg.accountId} gitBranch={gitBranch} lastSessionTopic={lastSessionTopic} />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}

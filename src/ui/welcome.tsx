@@ -6,12 +6,11 @@ import { buildWelcome } from "./greetings.js";
 
 interface Props {
   accountId?: string;
-  cloudMode?: boolean;
   gitBranch?: string | null;
   lastSessionTopic?: string | null;
 }
 
-export function Welcome({ accountId, cloudMode, gitBranch, lastSessionTopic }: Props) {
+export function Welcome({ accountId, gitBranch, lastSessionTopic }: Props) {
   const theme = useTheme();
   const now = new Date();
   const { headline, suggestions } = buildWelcome({
@@ -25,37 +24,28 @@ export function Welcome({ accountId, cloudMode, gitBranch, lastSessionTopic }: P
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>
         <Text bold color={theme.accent}>
-          kimiflare
+          {headline}
         </Text>
-        <Text color={theme.info.color} >
-          {"  "}{headline}
-        </Text>
-      </Box>
-      {accountId && !cloudMode && (
-        <Box marginBottom={1}>
-          <Text color={theme.info.color} >
-            {"  "}Check your Cloudflare billing: https://dash.cloudflare.com/{accountId}/billing/billable-usage
+        {gitBranch && (
+          <Text color={theme.info.color}>
+            {" "}· {gitBranch}
           </Text>
+        )}
+      </Box>
+
+      {suggestions.length > 0 && (
+        <Box flexDirection="column">
+          {suggestions.map((s, i) => (
+            <Text key={i} color={theme.info.color} dimColor>
+              {s}
+            </Text>
+          ))}
         </Box>
       )}
-      <Box flexDirection="column">
-        {suggestions.map((s, i) => (
-          <Box key={i}>
-            <Text color={theme.info.color} >
-              {"  "}›{" "}
-            </Text>
-            <Text color={theme.user}>{s}</Text>
-          </Box>
-        ))}
-      </Box>
+
       <Box marginTop={1}>
-        <Text color={theme.info.color} >
-          Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
-        </Text>
-      </Box>
-      <Box>
-        <Text color={theme.info.color} >
-          Tip: type /hello to send feedback to the creator
+        <Text color={theme.info.color} dimColor>
+          Type a message or /help · ctrl-c to exit
         </Text>
       </Box>
     </Box>
