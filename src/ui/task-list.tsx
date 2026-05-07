@@ -16,7 +16,9 @@ const MAX_VISIBLE = 6;
 export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
+  const [celebrating, setCelebrating] = useState(false);
   const tasksRef = useRef(tasks);
+  const prevAllDoneRef = useRef(false);
   tasksRef.current = tasks;
 
   useEffect(() => {
@@ -30,6 +32,17 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
     }, 1000);
     return () => clearInterval(id);
   }, [startedAt]);
+
+  // Celebration trigger: detect transition to all-done
+  useEffect(() => {
+    const allDone = tasks.length > 0 && tasks.every((t) => t.status === "completed");
+    if (allDone && !prevAllDoneRef.current) {
+      setCelebrating(true);
+      const id = setTimeout(() => setCelebrating(false), 1500);
+      return () => clearTimeout(id);
+    }
+    prevAllDoneRef.current = allDone;
+  }, [tasks]);
 
   if (tasks.length === 0) return null;
 
@@ -51,8 +64,8 @@ export function TaskList({ tasks, startedAt, tokensDelta }: Props) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
-        <Text color={allDone ? "green" : theme.accent} bold>
-          {header}
+        <Text color={celebrating ? theme.palette.success : allDone ? "green" : theme.accent} bold>
+          {celebrating ? `✨ ${header}` : header}
         </Text>
         {headerStats && (
           <Text color={theme.info.color} >
