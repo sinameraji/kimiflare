@@ -3367,6 +3367,12 @@ function App({
       const historyEntry = trimmedDisplay;
 
       if (busy) {
+        // Preempt current turn so user input is not blocked indefinitely
+        if (activeScopeRef.current && !isAbortingRef.current) {
+          isAbortingRef.current = true;
+          activeScopeRef.current.abort("preempt");
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(stopping current turn...)" }]);
+        }
         setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay }]);
         setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
         setInput("");
