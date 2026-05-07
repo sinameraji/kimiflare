@@ -1391,7 +1391,7 @@ function App({
       if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
         supervisorRef.current.killTurn();
-        activeScopeRef.current.abort("user_interrupt");
+        activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         // Clear task list immediately so it doesn't keep spinning
@@ -1429,7 +1429,7 @@ function App({
           limitResolveRef.current = null;
           setLimitModal(null);
         }
-        activeScopeRef.current.abort("user_interrupt");
+        activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         // Clear task list immediately so it doesn't keep spinning
@@ -1834,12 +1834,12 @@ function App({
           messagesRef.current.push({
             role: "tool",
             tool_call_id: tcId,
-            content: "(interrupted)",
+            content: "(stopped)",
             name: tcName,
           });
         }
         setEvents((evts) =>
-          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
         );
       } else {
         setEvents((es) => [
@@ -3195,7 +3195,7 @@ function App({
 
         // Mark any still-running tools as interrupted
         setEvents((evts) =>
-          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
         );
       };
 
@@ -3348,12 +3348,12 @@ function App({
                 messagesRef.current.push({
                   role: "tool",
                   tool_call_id: tcId,
-                  content: "(interrupted)",
+                  content: "(stopped)",
                   name: tcName,
                 });
               }
               setEvents((evts) =>
-                evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+                evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
               );
             } else {
               const isInvalidJson400 =
@@ -3406,8 +3406,8 @@ function App({
         if (activeScopeRef.current && !isAbortingRef.current) {
           isAbortingRef.current = true;
           supervisorRef.current.killTurn();
-          activeScopeRef.current.abort("preempt");
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(stopping current turn...)" }]);
+          activeScopeRef.current.abort("new_message");
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(preempted)" }]);
           // Clear task list immediately so it doesn't keep spinning
           setTasks([]);
           setTasksStartedAt(null);

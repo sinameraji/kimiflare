@@ -240,9 +240,16 @@ export function humanizeInfo(text: string, tier?: IntentTier): string {
   // Interruption
   if (text === "(interrupted)") {
     return pick(tier, {
-      light: "Stopped",
-      medium: "Interrupted",
-      heavy: "Halted",
+      light: "Stopped — say 'go on' if you want me to continue",
+      medium: "Interrupted — say 'go on' if you want me to continue",
+      heavy: "Halted — say 'go on' if you want me to resume",
+    });
+  }
+  if (text === "(preempted)") {
+    return pick(tier, {
+      light: "Switching gears…",
+      medium: "Switching to your new message…",
+      heavy: "Switching to your new message…",
     });
   }
 
