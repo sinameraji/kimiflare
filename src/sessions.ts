@@ -10,6 +10,8 @@ export interface SessionSummary {
   filePath: string;
   cwd: string;
   firstPrompt: string;
+  /** Human-readable title generated from first prompt and intent. */
+  title?: string;
   messageCount: number;
   updatedAt: string;
   checkpointCount: number;
@@ -36,6 +38,8 @@ export interface SessionFile {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+  /** Human-readable title generated from first prompt and intent. */
+  title?: string;
   /** Compiled session state for token-optimized context (optional). */
   sessionState?: SessionState;
   /** Persisted artifact store for recalled raw tool outputs (optional). */
@@ -55,6 +59,31 @@ function sanitize(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
+}
+
+const INTENT_PREFIX_MAP: Record<string, string> = {
+  diagnose: "Bug:",
+  feature_bounded: "Feature:",
+  feature_exploratory: "Feature:",
+  polish: "Refactor:",
+  meta: "Plan:",
+  explore: "Explore:",
+  qa: "Q&A:",
+  verify: "Verify:",
+  small_edit: "Edit:",
+  default: "Task:",
+};
+
+/** Generate a short human-readable title from the first user prompt. */
+export function generateSessionTitle(firstPrompt: string, intent: string): string {
+  const prefix = INTENT_PREFIX_MAP[intent] ?? INTENT_PREFIX_MAP.default;
+  const cleaned = firstPrompt
+    .replace(/\s+/g, " ")
+    .replace(/[\n\r]/g, " ")
+    .trim();
+  const words = cleaned.split(" ").slice(0, 6).join(" ");
+  const title = `${prefix} ${words}`;
+  return title.length > 40 ? title.slice(0, 37) + "..." : title;
 }
 
 export function makeSessionId(firstPrompt: string): string {
@@ -107,6 +136,7 @@ export async function listSessions(limit = 30, cwd?: string): Promise<SessionSum
         filePath: path,
         cwd: parsed.cwd,
         firstPrompt: firstPrompt.slice(0, 80),
+        title: parsed.title,
         messageCount: parsed.messages.filter((m) => m.role !== "system").length,
         updatedAt: parsed.updatedAt ?? s.mtime.toISOString(),
         checkpointCount: parsed.checkpoints?.length ?? 0,

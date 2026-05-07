@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import type { SessionSummary } from "../sessions.js";
+import { fuzzyFilter } from "../util/fuzzy.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 
@@ -16,12 +17,17 @@ export function ResumePicker({ sessions, onPick }: Props) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [query, setQuery] = useState("");
 
-  const totalPages = Math.max(1, Math.ceil(sessions.length / PAGE_SIZE));
+  const filtered = query.trim()
+    ? fuzzyFilter(sessions, query, (s) => `${s.title ?? s.firstPrompt} ${s.id}`)
+    : sessions;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const start = safePage * PAGE_SIZE;
-  const end = Math.min(start + PAGE_SIZE, sessions.length);
-  const pageSessions = sessions.slice(start, end);
+  const end = Math.min(start + PAGE_SIZE, filtered.length);
+  const pageSessions = filtered.slice(start, end);
 
   useInput((input, key) => {
     if (key.leftArrow && safePage > 0) {
@@ -31,6 +37,18 @@ export function ResumePicker({ sessions, onPick }: Props) {
     }
     if (key.rightArrow && safePage < totalPages - 1) {
       setPage((p) => p + 1);
+      setSelectedIndex(0);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      setQuery((q) => q.slice(0, -1));
+      setPage(0);
+      setSelectedIndex(0);
+      return;
+    }
+    if (input.length === 1 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+      setQuery((q) => q + input);
+      setPage(0);
       setSelectedIndex(0);
       return;
     }
@@ -58,7 +76,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
   }
 
   const items = pageSessions.map((s) => ({
-    label: `${formatDate(s.updatedAt)}  ·  ${s.messageCount} msgs  ·  ${s.firstPrompt}`,
+    label: `${formatDate(s.updatedAt)}  ·  ${s.messageCount} msgs  ·  ${s.title ?? s.firstPrompt}`,
     value: s.id,
   }));
 
@@ -68,7 +86,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
         Resume a session
       </Text>
       <Text color={theme.info.color}>
-        Page {safePage + 1} of {totalPages} ({sessions.length} total)
+        {query ? `Search: ${query}▌` : "Type to search…"}  ·  Page {safePage + 1} of {totalPages} ({filtered.length} total)
       </Text>
       <Box marginTop={1}>
         <SelectInput

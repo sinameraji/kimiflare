@@ -69,6 +69,7 @@ import {
   addCheckpoint,
   makeSessionId,
   saveSession,
+  generateSessionTitle,
   type SessionSummary,
   type Checkpoint,
 } from "./sessions.js";
@@ -639,6 +640,7 @@ function App({
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const sessionCreatedAtRef = useRef<string | null>(null);
+  const sessionTitleRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
   const tasksRef = useRef<Task[]>([]);
@@ -1288,6 +1290,7 @@ function App({
         model: cfg.model,
         createdAt: sessionCreatedAtRef.current,
         updatedAt: now,
+        title: sessionTitleRef.current ?? undefined,
         messages: messagesRef.current,
         sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
         artifactStore: serializeArtifactStore(artifactStoreRef.current),
@@ -2057,6 +2060,8 @@ function App({
           messagesRef.current = [messagesRef.current[0]!];
         }
         sessionIdRef.current = null;
+        sessionCreatedAtRef.current = null;
+        sessionTitleRef.current = null;
         sessionStateRef.current = emptySessionState();
         artifactStoreRef.current = new ArtifactStore();
         executorRef.current.clearArtifacts();
@@ -3123,6 +3128,11 @@ function App({
 
       const classification = classifyIntent(trimmed);
       setIntentTier(classification.tier);
+
+      // Generate a human-readable title on first turn
+      if (!sessionTitleRef.current) {
+        sessionTitleRef.current = generateSessionTitle(trimmed, classification.intent);
+      }
 
       // Route skills based on intent tier
       let skillResult: SkillRoutingResult | undefined;
