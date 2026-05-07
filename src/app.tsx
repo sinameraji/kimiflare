@@ -3697,7 +3697,7 @@ function App({
               <Box flexDirection="column" marginBottom={1}>
                 {queue.map((q, i) => (
                   <Text key={`queue_${i}`} color={theme.info.color}>
-                    ⏳ {q.display}
+                    <Text dimColor>› {q.display}</Text>
                   </Text>
                 ))}
               </Box>
