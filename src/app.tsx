@@ -662,9 +662,7 @@ function App({
   const customCommandsRef = useRef<CustomCommand[]>([]);
   const pickerCancelRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
+
 
   // ── Picker logic (file mention `@` and slash command `/`) ──────────────
   // Depend on stable fields (kind, anchor) — not the activePicker reference,
@@ -1529,6 +1527,7 @@ function App({
       return;
     }
     setBusy(true);
+    busyRef.current = true;
     setTurnStartedAt(Date.now());
     const turnScope = sessionScopeRef.current.createChild();
     activeScopeRef.current = turnScope;
@@ -1604,6 +1603,7 @@ function App({
       }
     } finally {
       setBusy(false);
+      busyRef.current = false;
       setTurnStartedAt(null);
       setTurnPhase("waiting");
       setCurrentToolName(null);
@@ -1632,6 +1632,7 @@ function App({
     setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
+    busyRef.current = true;
     setTurnStartedAt(Date.now());
     const turnScope = sessionScopeRef.current.createChild();
     activeScopeRef.current = turnScope;
@@ -1852,6 +1853,7 @@ function App({
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
+      busyRef.current = false;
       setTurnStartedAt(null);
       setTurnPhase("waiting");
       setCurrentToolName(null);
@@ -2953,6 +2955,7 @@ function App({
       }
 
       setBusy(true);
+      busyRef.current = true;
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
       setTurnStartedAt(Date.now());
@@ -3176,6 +3179,7 @@ function App({
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
         setBusy(false);
+        busyRef.current = false;
         setTurnStartedAt(null);
         setTurnPhase("waiting");
         setCurrentToolName(null);
@@ -3401,7 +3405,7 @@ function App({
 
       const historyEntry = trimmedDisplay;
 
-      if (busy) {
+      if (busyRef.current) {
         // Preempt current turn so user input is not blocked indefinitely
         if (activeScopeRef.current && !isAbortingRef.current) {
           isAbortingRef.current = true;
@@ -3426,7 +3430,7 @@ function App({
       setHistoryIndex(-1);
       processMessage(trimmedFull, trimmedDisplay !== trimmedFull ? trimmedDisplay : undefined);
     },
-    [busy, processMessage],
+    [processMessage],
   );
   submitRef.current = submit;
 
@@ -3701,7 +3705,7 @@ function App({
             {queue.length > 0 && (
               <Box flexDirection="column" marginBottom={1}>
                 {queue.map((q, i) => (
-                  <Text key={`queue_${i}`} color={theme.info.color}>
+                  <Text key={`queue_${i}`} color={theme.info.color} dimColor={theme.info.dim}>
                     ⏳ {q.display}
                   </Text>
                 ))}
