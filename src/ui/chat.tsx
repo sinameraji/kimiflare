@@ -9,7 +9,7 @@ import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./n
 import { CloudQuotaMessage } from "./cloud-quota-message.js";
 
 export type ChatEvent =
-  | { kind: "user"; key: string; text: string; images?: string[] }
+  | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
   | {
       kind: "assistant";
       key: string;
@@ -138,6 +138,24 @@ const EventView = React.memo(function EventView({
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
+    if (evt.queued) {
+      const mutedColor = theme.muted?.color ?? theme.info.color;
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Text italic color={mutedColor}>
+              ···{" "}
+            </Text>
+            <Text italic color={mutedColor}>
+              {evt.text}
+            </Text>
+            <Text italic color={mutedColor}>
+              {" "}(queued)
+            </Text>
+          </Box>
+        </Box>
+      );
+    }
     return (
       <Box flexDirection="column">
         <Box>
