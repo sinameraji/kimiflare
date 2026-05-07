@@ -2,37 +2,52 @@
   "name": "solarized-light",
   "label": "Solarized Light",
   "palette": {
-    "background": "#fdf6e3",
-    "foreground": "#657b83",
-    "primary": "#268bd2",
-    "secondary": "#93a1a1",
-    "success": "#859900",
+    "foreground": "#657a82",
+    "primary": "#227bbb",
+    "secondary": "#6e7878",
+    "success": "#6e7e00",
     "error": "#dc322f"
   },
-  "user": "#268bd2",
+  "user": "#227bbb",
   "assistant": null,
-  "reasoning": { "color": "#93a1a1", "dim": true },
-  "info": { "color": "#657b83", "dim": false },
+  "reasoning": {
+    "color": "#6e7878",
+    "dim": true
+  },
+  "info": {
+    "color": "#657a82",
+    "dim": false
+  },
   "error": "#dc322f",
-  "warn": "#b58900",
-  "tool": "#2aa198",
-  "spinner": "#268bd2",
+  "warn": "#967100",
+  "tool": "#22847d",
+  "spinner": "#227bbb",
   "permission": "#dc322f",
-  "queue": { "color": "#93a1a1", "dim": true },
-  "accent": "#268bd2",
+  "queue": {
+    "color": "#6e7878",
+    "dim": true
+  },
+  "accent": "#227bbb",
   "modeBadge": {
-    "plan": "#268bd2",
-    "auto": "#859900",
+    "plan": "#227bbb",
+    "auto": "#6e7e00",
     "edit": "#dc322f"
   },
-  "blockquote": { "color": "#93a1a1", "dim": true },
-  "codeInline": "#2aa198",
-  "codeBlock": "#2aa198",
-  "link": "#268bd2",
-  "strikethrough": "#93a1a1",
-  "tableBorder": "#eee8d5",
+  "blockquote": {
+    "color": "#6e7878",
+    "dim": true
+  },
+  "codeInline": "#22847d",
+  "codeBlock": "#22847d",
+  "link": "#227bbb",
+  "strikethrough": "#6e7878",
+  "tableBorder": "#7a766d",
   "tableHeader": "#586e75",
-  "tableCell": "#657b83",
-  "muted": { "color": "#93a1a1", "dim": true },
-  "prompt": "#268bd2"
+  "tableCell": "#657a82",
+  "muted": {
+    "color": "#6e7878",
+    "dim": true
+  },
+  "prompt": "#227bbb",
+  "type": "light"
 }

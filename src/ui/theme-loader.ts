@@ -31,7 +31,7 @@ function validatePalette(p: unknown, errors: string[]): Theme["palette"] | null 
     return null;
   }
   const palette = p as Record<string, unknown>;
-  const required = ["background", "foreground", "primary", "secondary", "success", "error"];
+  const required = ["foreground", "primary", "secondary", "success", "error"];
   for (const key of required) {
     if (typeof palette[key] !== "string") {
       errors.push(`palette.${key} is required and must be a string`);
@@ -41,7 +41,6 @@ function validatePalette(p: unknown, errors: string[]): Theme["palette"] | null 
   }
   if (errors.length > 0) return null;
   return {
-    background: palette.background as string,
     foreground: palette.foreground as string,
     primary: palette.primary as string,
     secondary: palette.secondary as string,
@@ -169,6 +168,7 @@ export async function loadThemesFromDir(
     const theme: Theme = {
       name: obj.name as string,
       label: obj.label as string,
+      type: obj.type === "light" ? "light" : "dark",
       palette,
       user: (typeof obj.user === "string" ? obj.user : palette.primary) as string,
       assistant: obj.assistant === null ? undefined : (typeof obj.assistant === "string" ? obj.assistant : undefined),
@@ -203,9 +203,9 @@ export async function loadThemesFromDir(
       continue;
     }
 
-    // WCAG contrast checks
+    // WCAG contrast checks — validate against realistic terminal backgrounds
     const wcagIssues: ContrastIssue[] = [];
-    const bg = palette.background;
+    const bg = theme.type === "light" ? "#ffffff" : "#000000";
 
     const check = (label: string, color: string | undefined) => {
       if (!color) return;

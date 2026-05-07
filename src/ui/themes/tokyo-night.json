@@ -2,37 +2,52 @@
   "name": "tokyo-night",
   "label": "Tokyo Night",
   "palette": {
-    "background": "#1a1b26",
     "foreground": "#a9b1d6",
     "primary": "#7aa2f7",
-    "secondary": "#565f89",
+    "secondary": "#6b7397",
     "success": "#9ece6a",
     "error": "#f7768e"
   },
   "user": "#7aa2f7",
   "assistant": null,
-  "reasoning": { "color": "#565f89", "dim": true },
-  "info": { "color": "#a9b1d6", "dim": false },
+  "reasoning": {
+    "color": "#6b7397",
+    "dim": true
+  },
+  "info": {
+    "color": "#a9b1d6",
+    "dim": false
+  },
   "error": "#f7768e",
   "warn": "#e0af68",
   "tool": "#bb9af7",
   "spinner": "#7aa2f7",
   "permission": "#f7768e",
-  "queue": { "color": "#565f89", "dim": true },
+  "queue": {
+    "color": "#6b7397",
+    "dim": true
+  },
   "accent": "#7aa2f7",
   "modeBadge": {
     "plan": "#7aa2f7",
     "auto": "#9ece6a",
     "edit": "#f7768e"
   },
-  "blockquote": { "color": "#565f89", "dim": true },
+  "blockquote": {
+    "color": "#6b7397",
+    "dim": true
+  },
   "codeInline": "#bb9af7",
   "codeBlock": "#bb9af7",
   "link": "#7aa2f7",
-  "strikethrough": "#565f89",
-  "tableBorder": "#414868",
+  "strikethrough": "#6b7397",
+  "tableBorder": "#6e748c",
   "tableHeader": "#c0caf5",
   "tableCell": "#a9b1d6",
-  "muted": { "color": "#565f89", "dim": true },
-  "prompt": "#7aa2f7"
+  "muted": {
+    "color": "#6b7397",
+    "dim": true
+  },
+  "prompt": "#7aa2f7",
+  "type": "dark"
 }

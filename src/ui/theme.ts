@@ -22,9 +22,8 @@ export interface DimColor {
   dim: boolean;
 }
 
-/** Raw palette — now includes background and foreground for WCAG validation. */
+/** Raw palette — foreground is the "default text" color for the theme. */
 export interface ColorPalette {
-  background: string;
   foreground: string;
   primary: string;
   secondary: string;
@@ -36,6 +35,7 @@ export interface ColorPalette {
 export interface Theme {
   name: string;
   label: string;
+  type: "dark" | "light";
   palette: ColorPalette;
   user: ColorName;
   assistant: ColorName | undefined;
@@ -92,6 +92,7 @@ function normalizeTheme(json: unknown): Theme {
   return {
     name: String(obj.name),
     label: String(obj.label),
+    type: obj.type === "light" ? "light" : "dark",
     palette,
     user: String(obj.user ?? palette.primary),
     assistant: obj.assistant === null ? undefined : (typeof obj.assistant === "string" ? obj.assistant : undefined),

@@ -2,37 +2,52 @@
   "name": "kanagawa-dark",
   "label": "Kanagawa Dark",
   "palette": {
-    "background": "#1f1f28",
     "foreground": "#dcd7ba",
     "primary": "#7e9cd8",
-    "secondary": "#727169",
+    "secondary": "#75756d",
     "success": "#98bb6c",
     "error": "#ff5d62"
   },
   "user": "#7e9cd8",
   "assistant": null,
-  "reasoning": { "color": "#727169", "dim": true },
-  "info": { "color": "#dcd7ba", "dim": false },
+  "reasoning": {
+    "color": "#75756d",
+    "dim": true
+  },
+  "info": {
+    "color": "#dcd7ba",
+    "dim": false
+  },
   "error": "#ff5d62",
   "warn": "#e6c384",
   "tool": "#7fb4ca",
   "spinner": "#7e9cd8",
   "permission": "#ff5d62",
-  "queue": { "color": "#727169", "dim": true },
+  "queue": {
+    "color": "#75756d",
+    "dim": true
+  },
   "accent": "#7e9cd8",
   "modeBadge": {
     "plan": "#7e9cd8",
     "auto": "#98bb6c",
     "edit": "#ff5d62"
   },
-  "blockquote": { "color": "#727169", "dim": true },
+  "blockquote": {
+    "color": "#75756d",
+    "dim": true
+  },
   "codeInline": "#7fb4ca",
   "codeBlock": "#7fb4ca",
   "link": "#7e9cd8",
-  "strikethrough": "#727169",
-  "tableBorder": "#54546d",
+  "strikethrough": "#75756d",
+  "tableBorder": "#737387",
   "tableHeader": "#dcd7ba",
   "tableCell": "#dcd7ba",
-  "muted": { "color": "#727169", "dim": true },
-  "prompt": "#7e9cd8"
+  "muted": {
+    "color": "#75756d",
+    "dim": true
+  },
+  "prompt": "#7e9cd8",
+  "type": "dark"
 }

@@ -2,37 +2,52 @@
   "name": "solarized-dark",
   "label": "Solarized Dark",
   "palette": {
-    "background": "#002b36",
     "foreground": "#839496",
     "primary": "#268bd2",
-    "secondary": "#586e75",
+    "secondary": "#63787e",
     "success": "#859900",
     "error": "#dc322f"
   },
   "user": "#268bd2",
   "assistant": null,
-  "reasoning": { "color": "#586e75", "dim": true },
-  "info": { "color": "#839496", "dim": false },
+  "reasoning": {
+    "color": "#63787e",
+    "dim": true
+  },
+  "info": {
+    "color": "#839496",
+    "dim": false
+  },
   "error": "#dc322f",
   "warn": "#b58900",
   "tool": "#2aa198",
   "spinner": "#268bd2",
   "permission": "#dc322f",
-  "queue": { "color": "#586e75", "dim": true },
+  "queue": {
+    "color": "#63787e",
+    "dim": true
+  },
   "accent": "#268bd2",
   "modeBadge": {
     "plan": "#268bd2",
     "auto": "#859900",
     "edit": "#dc322f"
   },
-  "blockquote": { "color": "#586e75", "dim": true },
+  "blockquote": {
+    "color": "#63787e",
+    "dim": true
+  },
   "codeInline": "#2aa198",
   "codeBlock": "#2aa198",
   "link": "#268bd2",
-  "strikethrough": "#586e75",
-  "tableBorder": "#073642",
+  "strikethrough": "#63787e",
+  "tableBorder": "#5a7a81",
   "tableHeader": "#93a1a1",
   "tableCell": "#839496",
-  "muted": { "color": "#586e75", "dim": true },
-  "prompt": "#268bd2"
+  "muted": {
+    "color": "#63787e",
+    "dim": true
+  },
+  "prompt": "#268bd2",
+  "type": "dark"
 }
