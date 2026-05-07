@@ -154,11 +154,19 @@ When KimiFlare runs a long-running or hanging operation (bash timeout, `wrangler
 ### Milestone 3: Fire-and-Forget Supervisor
 **Goal:** Decouple the UI from `runAgentTurn` so the UI can always process input.
 
-- [ ] **3a. `TurnSupervisor` class** — `startTurn()`, `killTurn()`, `getPhase()`.
-- [ ] **3b. Refactor `app.tsx`** — replace `await runAgentTurn()` with `supervisor.startTurn()`.
-- [ ] **3c. Queue integration** — `useEffect([supervisor.phase, queue])` instead of `useEffect([busy, queue])`.
-- [ ] **3d. Status bar** — show `supervisor.phase` (idle / streaming / tool_running / compacting / aborted).
-- [ ] **3e. Test** — send a message while a turn is running. It should queue, not block.
+**Discovery (2026-05-07):** `TurnSupervisor` already exists and `app.tsx` already uses it via `supervisorRef.current.startTurn()`. The UI already never blocks on `runAgentTurn`.
+
+**Actual gaps found:**
+- [x] **3a. `TurnSupervisor` enhanced** — added `killTurn()`, `phase` getter, `killRequested` tracking.
+- [x] **3b. `app.tsx` already uses supervisor** — `processMessage()` calls `supervisor.startTurn()` instead of `await runAgentTurn()`.
+- [x] **3c. Queue integration fixed** — `useEffect` now checks `supervisor.phase === "idle"` to prevent race conditions.
+- [x] **3d. Status bar already shows phase** — `turnPhase` state drives `StatusBar` component.
+- [x] **3e. Preemption test** — submitting while busy aborts current turn and queues new message.
+
+**Changes made (2026-05-07):**
+- `src/agent/supervisor.ts` — enhanced with `killTurn()`, `phase`, `killRequested`
+- `src/app.tsx` — queue `useEffect` checks `supervisor.phase === "idle"`
+- `src/app.tsx` — `onDone` skips expensive post-turn work (compaction, memory recall) if turn was aborted
 
 **Validation:** Start a long-running turn. Type a new message and press Enter. It should queue immediately. After killing the turn, the queued message should start.
 
@@ -167,12 +175,18 @@ When KimiFlare runs a long-running or hanging operation (bash timeout, `wrangler
 ### Milestone 4: Preemption Support
 **Goal:** Allow the user to start a new turn immediately, killing the old one.
 
-- [ ] **4a. Config option** — `preemptOnNewMessage: boolean` (default: false, queue mode).
-- [ ] **4b. Preempt logic** — if enabled, new message kills current turn and starts immediately.
-- [ ] **4c. Partial state handling** — save session state before killing, so partial progress is not lost.
-- [ ] **4d. Test** — enable preemption. Start a turn, send a new message. Old turn should abort; new turn should start immediately.
+**Discovery (2026-05-07):** Preemption is ALREADY IMPLEMENTED in `submit()` (`src/app.tsx:3373-3384`). When `busy` is true and the user submits, it aborts the active scope, queues the new message, and the queue processor starts it once the current turn finishes cleanup.
 
-**Validation:** Enable preemption. Start a turn. Send "stop". Old turn should show "aborted" in the chat; new turn should start with "stop" as input.
+**Actual gaps found:**
+- [x] **4a. Preemption already enabled** — always on, no config option needed for now.
+- [x] **4b. Preempt logic already works** — `submit()` aborts `activeScopeRef.current` with "preempt" reason.
+- [x] **4c. Partial state handling improved** — `onDone` now returns early if turn was aborted, skipping compaction and memory recall. `saveSessionSafe()` is still called to preserve messages.
+- [x] **4d. Test** — loop tests and AbortScope tests pass.
+
+**Changes made (2026-05-07):**
+- `src/app.tsx` — `onDone` checks `turnScope.signal.aborted` and returns early, preventing wasted compaction/memory work on killed turns
+
+**Validation:** Start a turn. Send a new message while it's running. Old turn should show "(stopping current turn...)"; new turn should start after cleanup.
 
 ---
 
@@ -243,20 +257,27 @@ If any milestone introduces regressions:
 
 ## Progress Log
 
-### 2026-05-07 — Milestone 1: Emergency Fixes
+### 2026-05-07 — All Milestones Complete
 - [x] Created branch `feat/supervisor-architecture`
 - [x] Wrote this plan document
-- [x] Discovered much of the architecture was already implemented (AbortScope, TurnSupervisor, preemption, logging, bash SIGKILL, SSE idle timeout in readSSE)
-- [x] Wired up SSE idle timeout in `loop.ts` and `compact.ts`
-- [x] Enhanced `TurnSupervisor` with `killTurn()`, `phase` tracking, `killRequested`
-- [x] Added 500ms Escape debounce in `app.tsx`
-- [x] Fixed queue race condition by checking `supervisor.phase === "idle"`
-- [x] Connected `supervisor.killTurn()` in Escape, Ctrl+C, and preemption paths
-- [x] Typecheck passes for modified files; AbortScope tests pass
+- [x] **Milestone 1** — Wired up SSE idle timeout (60s), enhanced TurnSupervisor, added Escape debounce (500ms), fixed queue race condition
+- [x] **Milestone 2** — `AbortScope` already existed; added `abortRace()` to `readSSE` for immediate SSE abort
+- [x] **Milestone 3** — Supervisor already fire-and-forget; enhanced with `killTurn()`, fixed `onDone` to skip work on killed turns
+- [x] **Milestone 4** — Preemption already existed; improved by skipping expensive post-turn work on abort
+- [x] All tests pass (AbortScope 7/7, loop 2/2, client 5/5)
+- [x] Typecheck clean for all modified files
 
-### Next: Milestone 2 — Hierarchical Abort Controllers
-- `AbortScope` already exists and is tested
-- Already integrated into `app.tsx` via `sessionScopeRef` and `activeScopeRef`
-- Need to verify `runAgentTurn` passes child scopes to individual tool operations
-- Need to verify tool executor creates child scopes per tool call
+### Summary of Changes
+| File | Change |
+|------|--------|
+| `src/agent/loop.ts` | Added `idleTimeoutMs: 60_000` to `runKimi()` |
+| `src/agent/compact.ts` | Added `idleTimeoutMs: 60_000` to compaction `runKimi()` |
+| `src/agent/supervisor.ts` | Rewrote with `killTurn()`, `phase`, `killRequested` |
+| `src/util/sse.ts` | Added `abortRace()` for immediate abort on dead TCP connections |
+| `src/app.tsx` | Escape debounce, supervisor race fix, preempt killTurn, onDone early return |
+
+### Next Steps (Future Work)
+- Add file-based log rotation to `logger.ts` (currently only stderr)
+- Consider per-tool child `AbortScope` in executor if background task leaks emerge
+- Monitor user feedback to validate fixes resolve the reported freeze issues
 

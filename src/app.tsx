@@ -3220,6 +3220,13 @@ function App({
           onDone: async () => {
             await saveSessionSafe();
 
+            // If the turn was killed (preempted or aborted), skip expensive
+            // post-turn work so the next turn can start immediately.
+            if (turnScope.signal.aborted) {
+              cleanupTurn();
+              return;
+            }
+
             // Auto-compact after turn when thresholds are met. With compiled
             // context on, use the heuristic compactor; otherwise fall back to the
             // LLM summarizer so users have a safety net regardless of the flag.
