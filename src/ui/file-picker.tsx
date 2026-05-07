@@ -12,11 +12,12 @@ interface Props {
   items: FilePickerItem[];
   selectedIndex: number;
   query: string;
+  recentFiles?: Set<string>;
 }
 
 const VISIBLE_LIMIT = 12;
 
-export function FilePicker({ items, selectedIndex, query }: Props) {
+export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) {
   const theme = useTheme();
   // Scroll the visible window so the selected item is always in view.
   // Keep the selected item at the bottom edge when scrolling down.
@@ -50,10 +51,12 @@ export function FilePicker({ items, selectedIndex, query }: Props) {
         {visible.map((item, i) => {
           const actualIndex = startIndex + i;
           const isSelected = actualIndex === selectedIndex;
+          const isRecent = recentFiles?.has(item.name);
           const label = item.isDirectory ? `${item.name}/` : item.name;
           return (
             <Text key={item.name} color={isSelected ? theme.accent : undefined} bold={isSelected}>
               {isSelected ? "› " : "  "}
+              {isRecent ? <Text color={theme.palette.success}>⏱ </Text> : null}
               {label}
             </Text>
           );

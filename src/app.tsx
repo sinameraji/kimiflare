@@ -391,6 +391,21 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+function trackRecentFile(ref: React.MutableRefObject<Map<string, number>>, path: string, max = 10): void {
+  ref.current.set(path, Date.now());
+  if (ref.current.size > max) {
+    let oldest: string | null = null;
+    let oldestTime = Infinity;
+    for (const [p, t] of ref.current) {
+      if (t < oldestTime) {
+        oldestTime = t;
+        oldest = p;
+      }
+    }
+    if (oldest) ref.current.delete(oldest);
+  }
+}
+
 interface PendingPermission {
   tool: ToolSpec;
   args: Record<string, unknown>;
@@ -567,9 +582,22 @@ function App({
   const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
+  }, []);
+
+  // Fetch last session topic for smart welcome greetings
+  useEffect(() => {
+    void import("./sessions.js").then(({ listSessions }) =>
+      listSessions(1).then((sessions) => {
+        const last = sessions[0];
+        if (last) {
+          setLastSessionTopic(last.firstPrompt);
+        }
+      }),
+    );
   }, []);
 
   // Load user and project themes at startup
@@ -661,6 +689,8 @@ function App({
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customCommandsRef = useRef<CustomCommand[]>([]);
   const pickerCancelRef = useRef<number | null>(null);
+  const recentFilesRef = useRef<Map<string, number>>(new Map());
+  const MAX_RECENT_FILES = 10;
 
 
 
@@ -676,7 +706,18 @@ function App({
 
   const filteredFileItems = React.useMemo(() => {
     if (pickerKind !== "file" || pickerQuery === null) return [];
-    return filterPickerItems(filePickerItems, pickerQuery);
+    const items = filterPickerItems(filePickerItems, pickerQuery);
+    const now = Date.now();
+    return items.sort((a, b) => {
+      const aRecent = recentFilesRef.current.get(a.name) ?? 0;
+      const bRecent = recentFilesRef.current.get(b.name) ?? 0;
+      if (aRecent && !bRecent) return -1;
+      if (!aRecent && bRecent) return 1;
+      if (aRecent && bRecent) return bRecent - aRecent;
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [pickerKind, filePickerItems, pickerQuery]);
 
   // Custom commands that shadow built-ins are warned about and won't run, so
@@ -1709,11 +1750,16 @@ function App({
             pendingToolCallsRef.current.set(call.id, call.function.name);
             const spec = executorRef.current.list().find((t) => t.name === call.function.name);
             let renderMeta: ToolRender | undefined;
+            let args: Record<string, unknown> = {};
             try {
-              const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+              args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
               renderMeta = spec?.render?.(args);
             } catch {
               /* ignore */
+            }
+            // Track file paths from read/edit/write/grep tools for recent-files boost
+            if (typeof args.path === "string") {
+              trackRecentFile(recentFilesRef, args.path, MAX_RECENT_FILES);
             }
             setEvents((e) => [
               ...e,
@@ -2923,6 +2969,13 @@ function App({
         }
       }
 
+      // Track @-mentioned files for recent-files picker boost
+      const mentionMatches = trimmed.matchAll(/@(\S+)/g);
+      for (const m of mentionMatches) {
+        const path = m[1];
+        if (path) trackRecentFile(recentFilesRef, path, MAX_RECENT_FILES);
+      }
+
       const imagePaths = findImagePaths(trimmed).slice(0, MAX_IMAGES_PER_MESSAGE);
       let images: string[] = [];
       let content: string | ContentPart[] = sanitizeString(trimmed);
@@ -3751,7 +3804,7 @@ function App({
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
         {!hasConversation && events.length === 0 ? (
-          <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} />
+          <Welcome accountId={cfg.accountId} cloudMode={cfg.cloudMode} gitBranch={gitBranch} lastSessionTopic={lastSessionTopic} />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}
@@ -3821,6 +3874,7 @@ function App({
                 items={filteredFileItems}
                 selectedIndex={activePicker.selected}
                 query={pickerQuery ?? ""}
+                recentFiles={new Set(recentFilesRef.current.keys())}
               />
             )}
             {activePicker?.kind === "slash" && (

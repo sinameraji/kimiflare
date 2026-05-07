@@ -2,20 +2,25 @@ import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
+import { buildWelcome } from "./greetings.js";
 
 interface Props {
   accountId?: string;
   cloudMode?: boolean;
+  gitBranch?: string | null;
+  lastSessionTopic?: string | null;
 }
 
-const SUGGESTIONS = [
-  "Explain this codebase",
-  "Find and fix a bug",
-  "Refactor a file",
-];
-
-export function Welcome({ accountId, cloudMode }: Props) {
+export function Welcome({ accountId, cloudMode, gitBranch, lastSessionTopic }: Props) {
   const theme = useTheme();
+  const now = new Date();
+  const { headline, suggestions } = buildWelcome({
+    gitBranch: gitBranch ?? null,
+    lastSessionTopic: lastSessionTopic ?? null,
+    hour: now.getHours(),
+    day: now.getDay(),
+  });
+
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={1}>
@@ -23,7 +28,7 @@ export function Welcome({ accountId, cloudMode }: Props) {
           kimiflare
         </Text>
         <Text color={theme.info.color} >
-          {"  "}Ready when you are.
+          {"  "}{headline}
         </Text>
       </Box>
       {accountId && !cloudMode && (
@@ -34,7 +39,7 @@ export function Welcome({ accountId, cloudMode }: Props) {
         </Box>
       )}
       <Box flexDirection="column">
-        {SUGGESTIONS.map((s, i) => (
+        {suggestions.map((s, i) => (
           <Box key={i}>
             <Text color={theme.info.color} >
               {"  "}›{" "}
