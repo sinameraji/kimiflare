@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool } from "./github.js";
+import type { ToolOutput } from "./registry.js";
 
 describe("github_read_pr", () => {
   it("returns PR details", async () => {
@@ -41,7 +42,7 @@ describe("github_read_pr", () => {
     };
 
     try {
-      const result = await githubReadPrTool.run({ owner: "owner", repo: "repo", number: 42 }, { cwd: "/tmp" });
+      const result = (await githubReadPrTool.run({ owner: "owner", repo: "repo", number: 42 }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("Fix bug"));
       assert.ok(result.content.includes("alice"));
       assert.ok(result.content.includes("src/index.ts"));
@@ -82,7 +83,7 @@ describe("github_read_issue", () => {
     };
 
     try {
-      const result = await githubReadIssueTool.run({ owner: "owner", repo: "repo", number: 7 }, { cwd: "/tmp" });
+      const result = (await githubReadIssueTool.run({ owner: "owner", repo: "repo", number: 7 }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("Feature request"));
       assert.ok(result.content.includes("enhancement"));
       assert.ok(result.content.includes("charlie"));
@@ -110,7 +111,7 @@ describe("github_read_code", () => {
     };
 
     try {
-      const result = await githubReadCodeTool.run({ owner: "owner", repo: "repo", path: "src/index.ts" }, { cwd: "/tmp" });
+      const result = (await githubReadCodeTool.run({ owner: "owner", repo: "repo", path: "src/index.ts" }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("console.log('hello')"));
       assert.ok(result.content.includes("21 bytes"));
     } finally {
@@ -131,7 +132,7 @@ describe("github_read_code", () => {
     };
 
     try {
-      const result = await githubReadCodeTool.run({ owner: "owner", repo: "repo", path: "src" }, { cwd: "/tmp" });
+      const result = (await githubReadCodeTool.run({ owner: "owner", repo: "repo", path: "src" }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("index.ts"));
       assert.ok(result.content.includes("utils"));
     } finally {

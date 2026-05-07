@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { searchWebTool } from "./web-search.js";
+import type { ToolOutput } from "./registry.js";
 
 describe("search_web", () => {
   it("returns results for a query", async () => {
@@ -24,7 +25,7 @@ describe("search_web", () => {
       new Response(mockHtml, { status: 200, headers: { "Content-Type": "text/html" } });
 
     try {
-      const result = await searchWebTool.run({ query: "test query", count: 2 }, { cwd: "/tmp" });
+      const result = (await searchWebTool.run({ query: "test query", count: 2 }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("First Result"));
       assert.ok(result.content.includes("https://example.com/page1"));
       assert.ok(result.content.includes("Second Result"));
@@ -40,7 +41,7 @@ describe("search_web", () => {
       new Response("<html><body>No results</body></html>", { status: 200 });
 
     try {
-      const result = await searchWebTool.run({ query: "xyznonexistent" }, { cwd: "/tmp" });
+      const result = (await searchWebTool.run({ query: "xyznonexistent" }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("No results found"));
     } finally {
       globalThis.fetch = originalFetch;
@@ -53,7 +54,7 @@ describe("search_web", () => {
       new Response("Error", { status: 503 });
 
     try {
-      const result = await searchWebTool.run({ query: "test" }, { cwd: "/tmp" });
+      const result = (await searchWebTool.run({ query: "test" }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("Error"));
     } finally {
       globalThis.fetch = originalFetch;
