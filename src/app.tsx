@@ -27,7 +27,7 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { KimiApiError } from "./util/errors.js";
+import { KimiApiError, isCloudQuotaExhaustedError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -1842,6 +1842,34 @@ function App({
         setEvents((evts) =>
           evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
         );
+      } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
+        const token = cloudToken ?? initialCloudToken;
+        const did = cloudDeviceId ?? initialCloudDeviceId;
+        let used = 0;
+        let limit = 0;
+        let expiresAt = "";
+        if (token) {
+          try {
+            const { fetchCloudUsage } = await import("./cloud/auth.js");
+            const usage = await fetchCloudUsage(token, did);
+            if (usage) {
+              used = usage.input_tokens_used;
+              limit = usage.input_token_limit;
+              expiresAt = usage.expires_at;
+            }
+          } catch { /* ignore */ }
+        }
+        if (!limit) {
+          const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
+          if (m && m[1] && m[2]) {
+            used = parseInt(m[1].replace(/,/g, ""), 10);
+            limit = parseInt(m[2].replace(/,/g, ""), 10);
+          }
+        }
+        setEvents((es) => [
+          ...es,
+          { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+        ]);
       } else {
         setEvents((es) => [
           ...es,
@@ -3369,6 +3397,34 @@ function App({
               setEvents((evts) =>
                 evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
               );
+            } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
+              const token = cloudToken ?? initialCloudToken;
+              const did = cloudDeviceId ?? initialCloudDeviceId;
+              let used = 0;
+              let limit = 0;
+              let expiresAt = "";
+              if (token) {
+                try {
+                  const { fetchCloudUsage } = await import("./cloud/auth.js");
+                  const usage = await fetchCloudUsage(token, did);
+                  if (usage) {
+                    used = usage.input_tokens_used;
+                    limit = usage.input_token_limit;
+                    expiresAt = usage.expires_at;
+                  }
+                } catch { /* ignore */ }
+              }
+              if (!limit) {
+                const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
+                if (m && m[1] && m[2]) {
+                  used = parseInt(m[1].replace(/,/g, ""), 10);
+                  limit = parseInt(m[2].replace(/,/g, ""), 10);
+                }
+              }
+              setEvents((es) => [
+                ...es,
+                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+              ]);
             } else {
               const isInvalidJson400 =
                 e instanceof KimiApiError &&

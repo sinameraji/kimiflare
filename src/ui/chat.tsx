@@ -6,6 +6,7 @@ import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
+import { CloudQuotaMessage } from "./cloud-quota-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -27,6 +28,13 @@ export type ChatEvent =
       intentTier?: "light" | "medium" | "heavy";
       skillsActive?: number;
       memoryRecalled?: boolean;
+    }
+  | {
+      kind: "cloud_quota_exhausted";
+      key: string;
+      used: number;
+      limit: number;
+      expiresAt: string;
     };
 
 interface Props {
@@ -202,6 +210,15 @@ const EventView = React.memo(function EventView({
       <Text color={theme.info.color} >
         ◈ {humanizeMemory(evt.text, intentTier)}
       </Text>
+    );
+  }
+  if (evt.kind === "cloud_quota_exhausted") {
+    return (
+      <CloudQuotaMessage
+        used={evt.used}
+        limit={evt.limit}
+        expiresAt={evt.expiresAt}
+      />
     );
   }
   if (evt.kind === "meta") {
