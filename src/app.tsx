@@ -1394,6 +1394,11 @@ function App({
         activeScopeRef.current.abort("user_interrupt");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Clear task list immediately so it doesn't keep spinning
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
       } else if (!hadPerm && !hadLimit) {
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
@@ -1427,6 +1432,11 @@ function App({
         activeScopeRef.current.abort("user_interrupt");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Clear task list immediately so it doesn't keep spinning
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
         return;
       }
     }
@@ -3175,6 +3185,17 @@ function App({
         permResolveRef.current = null;
         limitResolveRef.current = null;
         pendingToolCallsRef.current.clear();
+
+        // Clear task list so it doesn't linger into the next turn
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
+
+        // Mark any still-running tools as interrupted
+        setEvents((evts) =>
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+        );
       };
 
       supervisorRef.current.startTurn(
@@ -3385,6 +3406,11 @@ function App({
           supervisorRef.current.killTurn();
           activeScopeRef.current.abort("preempt");
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(stopping current turn...)" }]);
+          // Clear task list immediately so it doesn't keep spinning
+          setTasks([]);
+          setTasksStartedAt(null);
+          setTasksStartTokens(0);
+          tasksRef.current = [];
         }
         setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay }]);
         setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
