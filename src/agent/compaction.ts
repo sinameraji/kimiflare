@@ -33,11 +33,11 @@ interface Turn {
   tools: ChatMessage[];
 }
 
-function approxTokens(n: number): number {
+export function approxTokens(n: number): number {
   return Math.round(n / 4);
 }
 
-function estimateMessageTokens(m: ChatMessage): number {
+export function estimateMessageTokens(m: ChatMessage): number {
   let chars = 0;
   if (typeof m.content === "string") {
     chars = m.content.length;
@@ -53,7 +53,7 @@ function estimateMessageTokens(m: ChatMessage): number {
   return approxTokens(chars);
 }
 
-function estimatePromptTokens(messages: ChatMessage[]): number {
+export function estimatePromptTokens(messages: ChatMessage[]): number {
   return messages.reduce((sum, m) => sum + estimateMessageTokens(m), 0);
 }
 

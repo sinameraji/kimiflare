@@ -1938,6 +1938,10 @@ function App({
         return true;
       }
       if (c === "/clear") {
+        if (busy) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /clear while model is running — press Esc to interrupt first" }]);
+          return true;
+        }
         if (cacheStableRef.current && messagesRef.current.length >= 2) {
           messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
         } else {
@@ -1947,6 +1951,15 @@ function App({
         sessionStateRef.current = emptySessionState();
         artifactStoreRef.current = new ArtifactStore();
         executorRef.current.clearArtifacts();
+        if (flushTimeoutRef.current) {
+          clearTimeout(flushTimeoutRef.current);
+          flushTimeoutRef.current = null;
+        }
+        pendingTextRef.current.clear();
+        activeAsstIdRef.current = null;
+        pendingToolCallsRef.current.clear();
+        usageRef.current = null;
+        turnCounterRef.current = 0;
         setEvents([]);
         setUsage(null);
         setSessionUsage(null);

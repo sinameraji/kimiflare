@@ -21,6 +21,10 @@ export interface ReducerConfig {
     maxOutputChars: number;
     dedupeConsecutiveLines: boolean;
   };
+  glob: {
+    maxFiles: number;
+    maxOutputChars: number;
+  };
   webFetch: {
     maxChars: number;
     maxHeadingChars: number;
@@ -39,6 +43,8 @@ export interface ReducerConfig {
     maxLines: number;
     maxOutputChars: number;
   };
+  /** Fallback cap for any tool without a dedicated reducer. */
+  defaultMaxChars: number;
 }
 
 export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
@@ -62,6 +68,10 @@ export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
     maxOutputChars: 4000,
     dedupeConsecutiveLines: true,
   },
+  glob: {
+    maxFiles: 1000,
+    maxOutputChars: 20_000,
+  },
   webFetch: {
     maxChars: 2000,
     maxHeadingChars: 500,
@@ -80,6 +90,7 @@ export const DEFAULT_REDUCER_CONFIG: ReducerConfig = {
     maxLines: 50,
     maxOutputChars: 3000,
   },
+  defaultMaxChars: 10_000,
 };
 
 export interface ReducedOutput {
@@ -130,6 +141,13 @@ export function reduceToolOutput(
       hint = r.hint;
       break;
     }
+    case "glob": {
+      const r = reduceGlob(raw, config.glob);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
+      break;
+    }
     case "web_fetch": {
       const r = reduceWebFetch(raw, args, config.webFetch);
       reduced = r.body;
@@ -175,9 +193,13 @@ export function reduceToolOutput(
       hint = r.hint;
       break;
     }
-    default:
-      reduced = raw;
+    default: {
+      const r = reduceDefault(raw, config.defaultMaxChars);
+      reduced = r.body;
+      wasReduced = r.wasReduced;
+      hint = r.hint;
       break;
+    }
   }
 
   if (!wasReduced) {
@@ -573,5 +595,41 @@ function reduceBrowser(raw: string, cfg: ReducerConfig["browser"]): ReduceResult
     body: raw.slice(0, cfg.maxChars),
     wasReduced: true,
     hint: "Browser page content truncated. Use a more specific selector or narrower URL scope.",
+  };
+}
+
+// ─── Glob ────────────────────────────────────────────────────────────────────
+
+function reduceGlob(raw: string, cfg: ReducerConfig["glob"]): ReduceResult {
+  const lines = raw.split("\n").filter((l) => l.trim() !== "");
+  if (lines.length <= cfg.maxFiles && raw.length <= cfg.maxOutputChars) {
+    return { body: raw, wasReduced: false };
+  }
+
+  let result = raw;
+  if (lines.length > cfg.maxFiles) {
+    result = lines.slice(0, cfg.maxFiles).join("\n");
+  }
+  if (result.length > cfg.maxOutputChars) {
+    result = result.slice(0, cfg.maxOutputChars);
+  }
+
+  return {
+    body: result,
+    wasReduced: true,
+    hint: `Glob output truncated (${lines.length} files total). Use a more specific pattern (e.g., "src/**/*.ts") to narrow results.`,
+  };
+}
+
+// ─── Default fallback ────────────────────────────────────────────────────────
+
+function reduceDefault(raw: string, maxChars: number): ReduceResult {
+  if (raw.length <= maxChars) {
+    return { body: raw, wasReduced: false };
+  }
+  return {
+    body: raw.slice(0, maxChars),
+    wasReduced: true,
+    hint: "Output truncated. Use a more specific query or call expand_artifact if you need the full content.",
   };
 }

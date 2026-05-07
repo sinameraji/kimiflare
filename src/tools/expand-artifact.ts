@@ -28,7 +28,14 @@ export function makeExpandArtifactTool(store: ToolArtifactStore): ToolSpec<Args>
       if (!raw) {
         return `Artifact "${args.artifact_id}" not found. It may have been evicted from memory. Re-run the original tool to regenerate the output.`;
       }
-      return raw;
+      const MAX_EXPAND_CHARS = 20_000;
+      if (raw.length <= MAX_EXPAND_CHARS) {
+        return raw;
+      }
+      return (
+        raw.slice(0, MAX_EXPAND_CHARS) +
+        `\n\n[truncated: ${raw.length - MAX_EXPAND_CHARS} chars omitted. The artifact is very large; consider using a more specific tool query instead of expanding the full content.]`
+      );
     },
   };
 }
