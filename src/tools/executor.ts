@@ -6,6 +6,9 @@ import { bashTool } from "./bash.js";
 import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { webFetchTool } from "./web-fetch.js";
+import { searchWebTool } from "./web-search.js";
+import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool } from "./github.js";
+import { browserFetchTool } from "./browser.js";
 import { tasksSetTool } from "./tasks.js";
 import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory.js";
 import { ToolArtifactStore } from "./artifact-store.js";
@@ -20,6 +23,11 @@ export const ALL_TOOLS: ToolSpec[] = [
   globTool,
   grepTool,
   webFetchTool,
+  searchWebTool,
+  githubReadPrTool,
+  githubReadIssueTool,
+  githubReadCodeTool,
+  browserFetchTool,
   tasksSetTool,
   memoryRememberTool,
   memoryRecallTool,

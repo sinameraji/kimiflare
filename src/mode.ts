@@ -24,6 +24,8 @@ export function isBlockedInPlanMode(toolName: string): boolean {
   if (MUTATING_TOOLS.has(toolName)) return true;
   if (toolName.startsWith("mcp_")) return true;
   if (toolName === "lsp_rename" || toolName === "lsp_codeAction") return true;
+  // browser_fetch with screenshot writes files to disk
+  if (toolName === "browser_fetch") return true;
   return false;
 }
 

@@ -48,6 +48,7 @@ export interface AgentTurnOpts {
   reasoningEffort?: "low" | "medium" | "high";
   coauthor?: { name: string; email: string };
   sessionId?: string;
+  githubToken?: string;
   gateway?: AiGatewayOptions;
   /** Drop image_url parts from user messages older than this many turns. */
   keepLastImageTurns?: number;
@@ -462,7 +463,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -506,7 +507,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
           opts.onFileChange,
         );
         toolResults.push(result);

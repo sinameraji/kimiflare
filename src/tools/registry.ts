@@ -8,6 +8,7 @@ export interface ToolContext {
   coauthor?: { name: string; email: string };
   memoryManager?: import("../memory/manager.js").MemoryManager | null;
   sessionId?: string;
+  githubToken?: string;
 }
 
 export interface ToolRender {
