@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.48.0](https://github.com/sinameraji/kimiflare/compare/v0.47.0...v0.48.0) (2026-05-07)
+
+
+### Features
+
+* **session:** checkpoints, reliability fixes, and redesigned resume picker ([#328](https://github.com/sinameraji/kimiflare/issues/328)) ([52e7bf7](https://github.com/sinameraji/kimiflare/commit/52e7bf7d4063175746a38751b4da85629d86fbbd))
+* **ui:** clean up status bar density ([#333](https://github.com/sinameraji/kimiflare/issues/333)) ([e7da31d](https://github.com/sinameraji/kimiflare/commit/e7da31d888e8d89d0e84fc7f7831c1064124f4d1))
+* **ui:** smart welcome greetings, recent files boost, and task celebration ([#329](https://github.com/sinameraji/kimiflare/issues/329)) ([cc3caa6](https://github.com/sinameraji/kimiflare/commit/cc3caa66e1d230f9750c73cafa6f3bfd216c0e60))
+
 ## [0.47.0](https://github.com/sinameraji/kimiflare/compare/v0.46.0...v0.47.0) (2026-05-07)
 
 
