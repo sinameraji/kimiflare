@@ -3682,7 +3682,7 @@ function App({
               />
             )}
           <Box marginTop={1}>
-            <Text color="#d699b6">› </Text>
+            <Text color={theme.prompt ?? theme.accent}>› </Text>
             <CustomTextInput
               value={input}
               onChange={setInput}

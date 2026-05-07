@@ -67,6 +67,8 @@ export interface Theme {
   tableCell?: ColorName;
   /** Muted / secondary text. */
   muted?: DimColor;
+  /** Input prompt / cursor indicator color. */
+  prompt?: ColorName;
 }
 
 function normalizeTheme(json: unknown): Theme {
@@ -116,10 +118,11 @@ function normalizeTheme(json: unknown): Theme {
     tableHeader: normalizeColor(obj.tableHeader),
     tableCell: normalizeColor(obj.tableCell),
     muted: normalizeDim(obj.muted),
+    prompt: normalizeColor(obj.prompt),
   };
 }
 
-const BUILT_IN_THEMES: Record<string, Theme> = {
+export const BUILT_IN_THEMES: Record<string, Theme> = {
   "everforest-dark": normalizeTheme(everforestDarkJson),
   "everforest-light": normalizeTheme(everforestLightJson),
   "kanagawa-dark": normalizeTheme(kanagawaDarkJson),

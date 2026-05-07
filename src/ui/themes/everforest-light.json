@@ -33,5 +33,6 @@
   "tableBorder": "#bdc3af",
   "tableHeader": "#5c6a72",
   "tableCell": "#5c6a72",
-  "muted": { "color": "#939f91", "dim": true }
+  "muted": { "color": "#939f91", "dim": true },
+  "prompt": "#8da101"
 }

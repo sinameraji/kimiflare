@@ -195,6 +195,7 @@ export async function loadThemesFromDir(
       tableHeader: normalizeColor(obj.tableHeader),
       tableCell: normalizeColor(obj.tableCell),
       muted: validateDimColor("muted", obj.muted, fileErrors),
+      prompt: normalizeColor(obj.prompt),
     };
 
     if (fileErrors.length > 0) {
