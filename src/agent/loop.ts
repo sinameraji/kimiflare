@@ -11,6 +11,7 @@ import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
 import { estimatePromptTokens } from "./compaction.js";
+import { logger } from "../util/logger.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -112,6 +113,7 @@ const MAX_TOOL_CONTENT_CHARS = 10_000;
 
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const turnStart = performance.now();
+  logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
 
@@ -277,6 +279,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       );
     }
 
+    logger.debug("turn:api_request", { sessionId: opts.sessionId, messageCount: apiMessages.length });
     const events = runKimi({
       accountId: opts.accountId,
       apiToken: opts.apiToken,
@@ -292,9 +295,15 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
       cloudDeviceId: opts.cloudDeviceId,
+      idleTimeoutMs: 60_000,
     });
 
+    let gotFirstChunk = false;
     for await (const ev of events) {
+      if (!gotFirstChunk) {
+        gotFirstChunk = true;
+        logger.debug("turn:api_first_chunk", { sessionId: opts.sessionId });
+      }
       switch (ev.type) {
         case "gateway_meta":
           gatewayMeta = ev.meta;
@@ -384,6 +393,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       if (budgetExhausted) {
         throw new BudgetExhaustedError();
       }
+      logger.info("turn:complete", { sessionId: opts.sessionId, durationMs: Math.round(performance.now() - turnStart) });
       return;
     }
 
@@ -526,6 +536,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       } else {
+        logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
@@ -538,6 +549,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             content.slice(0, MAX_TOOL_CONTENT_CHARS) +
             `\n\n[truncated: ${content.length - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
         }
+        logger.debug("turn:tool_end", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id, ok: result.ok });
         toolResults.push(result);
         opts.messages.push({
           role: "tool",

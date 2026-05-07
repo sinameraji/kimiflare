@@ -95,6 +95,7 @@ export async function compactMessages(opts: CompactOpts): Promise<CompactResult>
     temperature: 0.1,
     reasoningEffort: "low",
     gateway: opts.gateway,
+    idleTimeoutMs: 60_000,
   });
   for await (const ev of events) {
     if (ev.type === "text") summary += ev.delta;

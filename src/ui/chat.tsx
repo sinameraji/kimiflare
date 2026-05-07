@@ -6,9 +6,10 @@ import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
+import { CloudQuotaMessage } from "./cloud-quota-message.js";
 
 export type ChatEvent =
-  | { kind: "user"; key: string; text: string; images?: string[] }
+  | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
   | {
       kind: "assistant";
       key: string;
@@ -27,6 +28,13 @@ export type ChatEvent =
       intentTier?: "light" | "medium" | "heavy";
       skillsActive?: number;
       memoryRecalled?: boolean;
+    }
+  | {
+      kind: "cloud_quota_exhausted";
+      key: string;
+      used: number;
+      limit: number;
+      expiresAt: string;
     };
 
 interface Props {
@@ -130,6 +138,24 @@ const EventView = React.memo(function EventView({
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
+    if (evt.queued) {
+      const mutedColor = theme.muted?.color ?? theme.info.color;
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Text italic color={mutedColor}>
+              ···{" "}
+            </Text>
+            <Text italic color={mutedColor}>
+              {evt.text}
+            </Text>
+            <Text italic color={mutedColor}>
+              {" "}(queued)
+            </Text>
+          </Box>
+        </Box>
+      );
+    }
     return (
       <Box flexDirection="column">
         <Box>
@@ -184,6 +210,15 @@ const EventView = React.memo(function EventView({
       <Text color={theme.info.color} >
         ◈ {humanizeMemory(evt.text, intentTier)}
       </Text>
+    );
+  }
+  if (evt.kind === "cloud_quota_exhausted") {
+    return (
+      <CloudQuotaMessage
+        used={evt.used}
+        limit={evt.limit}
+        expiresAt={evt.expiresAt}
+      />
     );
   }
   if (evt.kind === "meta") {

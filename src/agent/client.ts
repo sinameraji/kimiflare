@@ -3,6 +3,7 @@ import { KimiApiError } from "../util/errors.js";
 import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
+import { logger } from "../util/logger.js";
 
 export type KimiEvent =
   | { type: "gateway_meta"; meta: GatewayMeta }
@@ -84,6 +85,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     body.reasoning_effort = opts.reasoningEffort;
   }
 
+  logger.debug("runKimi:request", { requestId, attempt: 0, model: opts.model });
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let res: Response;
     try {
@@ -106,6 +108,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       });
     } catch (fetchErr) {
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      logger.warn("runKimi:fetch_error", { requestId, attempt, error: msg });
       if (attempt < MAX_ATTEMPTS - 1) {
         const delay = 500 * 2 ** attempt + Math.random() * 250;
         await sleep(delay, opts.signal);
@@ -145,10 +148,12 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     if (meta) yield { type: "gateway_meta", meta };
 
     let lastUsage: Usage | null = null;
+    logger.debug("runKimi:stream_start", { requestId });
     for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs)) {
       if (ev.type === "usage") lastUsage = ev.usage;
       yield ev;
     }
+    logger.debug("runKimi:stream_end", { requestId });
 
     // Client-side fallback: report usage to cloud worker for reconciliation
     if (opts.cloudMode && lastUsage && opts.cloudToken) {

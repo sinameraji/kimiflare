@@ -15,3 +15,11 @@ export class PermissionDeniedError extends Error {
     this.name = "PermissionDeniedError";
   }
 }
+
+export function isCloudQuotaExhaustedError(err: unknown): err is KimiApiError {
+  return (
+    err instanceof KimiApiError &&
+    err.httpStatus === 429 &&
+    /token quota exhausted/i.test(err.message)
+  );
+}
