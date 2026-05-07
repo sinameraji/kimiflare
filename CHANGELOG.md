@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/sinameraji/kimiflare/compare/v0.48.0...v0.48.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* **ui:** restore slash command output display and remove deprecated commands ([#335](https://github.com/sinameraji/kimiflare/issues/335)) ([4f03673](https://github.com/sinameraji/kimiflare/commit/4f0367394a26c05d91d0d53c6899383b039dc3a0))
+
 ## [0.48.0](https://github.com/sinameraji/kimiflare/compare/v0.47.0...v0.48.0) (2026-05-07)
 
 
