@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.46.0](https://github.com/sinameraji/kimiflare/compare/v0.45.0...v0.46.0) (2026-05-07)
+
+
+### Features
+
+* **cloud:** graceful quota-exhausted message in TUI ([#321](https://github.com/sinameraji/kimiflare/issues/321)) ([e7c26f1](https://github.com/sinameraji/kimiflare/commit/e7c26f15142d3ffd38f41c11864fe42a42e613b4))
+* turn supervisor architecture with graceful preemption and visual cleanup ([#323](https://github.com/sinameraji/kimiflare/issues/323)) ([c25bff2](https://github.com/sinameraji/kimiflare/commit/c25bff217f0455714d2533a8e54d66276158797e))
+
 ## [0.45.0](https://github.com/sinameraji/kimiflare/compare/v0.44.0...v0.45.0) (2026-05-07)
 
 
