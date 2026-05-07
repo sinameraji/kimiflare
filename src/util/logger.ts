@@ -1,12 +1,15 @@
 /**
  * Structured logger for KimiFlare turn lifecycle events.
  * Writes JSON lines to stderr so stdout remains clean for TUI.
- * Tail in a second terminal to observe real-time behavior:
  *
+ * Logging is OFF by default. To enable, set the env var:
+ *   KIMIFLARE_LOG_LEVEL=info npm run dev
+ *
+ * Tail in a second terminal to observe real-time behavior:
  *   npm run dev 2>&1 | jq -r 'select(.event | startswith("turn:"))'
  */
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error" | "off";
 
 export interface LogEntry {
   ts: string;
@@ -17,13 +20,14 @@ export interface LogEntry {
   data?: Record<string, unknown>;
 }
 
-let globalMinLevel: LogLevel = (process.env.KIMIFLARE_LOG_LEVEL as LogLevel) ?? "info";
+let globalMinLevel: LogLevel = (process.env.KIMIFLARE_LOG_LEVEL as LogLevel) ?? "off";
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
   warn: 2,
   error: 3,
+  off: 4,
 };
 
 export function setLogLevel(level: LogLevel): void {
