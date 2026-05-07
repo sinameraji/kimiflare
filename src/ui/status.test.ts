@@ -18,9 +18,8 @@ describe("status gateway cache formatting", () => {
 
     assert.deepStrictEqual(parts, [
       "in 100 (50 cached)",
-      "out 20",
       "ctx 10%",
-      "$0.00014",
+      "$0.00",
       "AI Gateway · cache hit",
     ]);
   });

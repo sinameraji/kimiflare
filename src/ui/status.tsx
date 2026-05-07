@@ -5,7 +5,6 @@ import type { Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
-import type { ReasoningEffort } from "../config.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 import type { DailyUsage } from "../usage-tracker.js";
@@ -14,16 +13,12 @@ import { humanizePhase, type IntentTier } from "./narrator.js";
 export type TurnPhase = "generating" | "executing" | "waiting";
 
 interface Props {
-  model: string;
   usage: Usage | null;
   sessionUsage?: DailyUsage | null;
   thinking: boolean;
   turnStartedAt: number | null;
   mode: Mode;
-  effort: ReasoningEffort;
   contextLimit: number;
-  hasUpdate?: boolean;
-  latestVersion?: string | null;
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
   cloudMode?: boolean;
@@ -40,7 +35,7 @@ interface Props {
   intentTier?: IntentTier;
 }
 
-export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt, mode, effort, contextLimit, hasUpdate, latestVersion, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
+export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -55,18 +50,19 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
 
   const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
 
-  const leftParts: string[] = [`${shortModel(model)}`, effort];
-  if (gitBranch) leftParts.push(gitBranch);
-  if (cloudMode) leftParts.push("CLOUD");
-  if (codeMode) leftParts.push("CODE");
+  const idleParts: string[] = [];
+  if (gitBranch) idleParts.push(gitBranch);
+  if (cloudMode) idleParts.push("CLOUD");
+  if (codeMode) idleParts.push("CODE");
 
-  const labelParts: string[] = [];
+  const metaParts: string[] = [];
   if (skillsActive !== undefined && skillsActive > 0) {
-    labelParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"} on deck`);
+    metaParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"}`);
   }
   if (memoryRecalled) {
-    labelParts.push("Memory recalled");
+    metaParts.push("memory");
   }
+
   const phaseLabel = phase === "generating"
     ? humanizePhase("generating", intentTier)
     : phase === "executing"
@@ -76,6 +72,14 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
         : humanizePhase("generating", intentTier);
   const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
   const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
+
+  const thinkingText = metaParts.length > 0
+    ? `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
+    : `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
+
+  const readyText = idleParts.length > 0
+    ? `${idleParts.join(" · ")} · ready`
+    : "ready";
 
   return (
     <Box flexDirection="column">
@@ -87,21 +91,14 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
         {thinking ? (
           <Text color={theme.spinner}>
             <Spinner type="dots2" />{" "}
-            {phaseLabel}{elapsed ? ` · ${elapsed}` : ""}{idleLabel}
+            {thinkingText}
           </Text>
         ) : (
           <Text color={theme.info.color} >
-            {leftParts.join("  ·  ")}  ·  ready
+            {readyText}
           </Text>
         )}
       </Box>
-      {labelParts.length > 0 && (
-        <Box>
-          <Text color={theme.info.color} dimColor>
-            {labelParts.join("  ·  ")}
-          </Text>
-        </Box>
-      )}
       {usage && (
         <Box>
           <Text color={theme.info.color} >
@@ -112,23 +109,11 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
               {"  ·  "}/compact recommended
             </Text>
           ) : null}
-          {hasUpdate ? (
-            <Text color={theme.warn} bold>
-              {"  ·  "}update available{latestVersion ? ` → ${latestVersion}` : ""} · run /update
-            </Text>
-          ) : null}
           {kimiMdStale ? (
             <Text color={theme.warn} bold>
               {"  ·  "}⚠ KIMI.md stale · run /init
             </Text>
           ) : null}
-        </Box>
-      )}
-      {!thinking && (
-        <Box>
-          <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim}>
-            tip: shift+tab cycles mode
-          </Text>
         </Box>
       )}
     </Box>
@@ -148,23 +133,21 @@ export function buildRightParts(
   if (sessionUsage) {
     const cached = sessionUsage.cachedTokens;
     parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
-    parts.push(`out ${sessionUsage.completionTokens}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
-      parts.push(`\x1b[9m$${sessionUsage.cost.toFixed(5)}\x1b[29m`);
+      parts.push(`\x1b[9m$${sessionUsage.cost.toFixed(2)}\x1b[29m`);
     } else {
-      parts.push(`$${sessionUsage.cost.toFixed(5)}`);
+      parts.push(`$${sessionUsage.cost.toFixed(2)}`);
     }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
     const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
-    parts.push(`out ${usage.completion_tokens}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
-      parts.push(`\x1b[9m$${cost.total.toFixed(5)}\x1b[29m`);
+      parts.push(`\x1b[9m$${cost.total.toFixed(2)}\x1b[29m`);
     } else {
-      parts.push(`$${cost.total.toFixed(5)}`);
+      parts.push(`$${cost.total.toFixed(2)}`);
     }
   }
   if (cloudMode && cloudBudget) {
@@ -185,11 +168,6 @@ function formatTokens(n: number): string {
 export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {
   const status = gatewayMeta?.cacheStatus?.trim();
   return status ? `AI Gateway · cache ${status.toLowerCase()}` : null;
-}
-
-function shortModel(m: string): string {
-  const last = m.split("/").at(-1) ?? m;
-  return last;
 }
 
 function formatElapsed(ms: number): string {

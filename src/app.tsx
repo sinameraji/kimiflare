@@ -3940,16 +3940,12 @@ function App({
               </Box>
             )}
             <StatusBar
-              model={cfg.model}
               usage={usage}
               sessionUsage={sessionUsage}
               thinking={busy}
               turnStartedAt={turnStartedAt}
               mode={mode}
-              effort={effort}
               contextLimit={CONTEXT_LIMIT}
-              hasUpdate={hasUpdate}
-              latestVersion={latestVersion}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}
