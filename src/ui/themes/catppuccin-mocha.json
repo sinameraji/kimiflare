@@ -4,15 +4,15 @@
   "palette": {
     "foreground": "#cdd6f4",
     "primary": "#89b4fa",
-    "secondary": "#707389",
+    "secondary": "#8e91a7",
     "success": "#a6e3a1",
     "error": "#f38ba8"
   },
   "user": "#89b4fa",
   "assistant": null,
   "reasoning": {
-    "color": "#707389",
-    "dim": true
+    "color": "#8e91a7",
+    "dim": false
   },
   "info": {
     "color": "#cdd6f4",
@@ -23,10 +23,6 @@
   "tool": "#cba6f7",
   "spinner": "#89b4fa",
   "permission": "#f38ba8",
-  "queue": {
-    "color": "#707389",
-    "dim": true
-  },
   "accent": "#89b4fa",
   "modeBadge": {
     "plan": "#89b4fa",
@@ -34,19 +30,19 @@
     "edit": "#f38ba8"
   },
   "blockquote": {
-    "color": "#707389",
-    "dim": true
+    "color": "#8e91a7",
+    "dim": false
   },
   "codeInline": "#cba6f7",
   "codeBlock": "#cba6f7",
   "link": "#89b4fa",
-  "strikethrough": "#707389",
-  "tableBorder": "#727482",
+  "strikethrough": "#8e91a7",
+  "tableBorder": "#9092a0",
   "tableHeader": "#cdd6f4",
   "tableCell": "#cdd6f4",
   "muted": {
-    "color": "#707389",
-    "dim": true
+    "color": "#8e91a7",
+    "dim": false
   },
   "prompt": "#89b4fa",
   "type": "dark"

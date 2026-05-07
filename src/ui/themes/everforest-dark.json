@@ -4,15 +4,15 @@
   "palette": {
     "foreground": "#d3c6aa",
     "primary": "#a7c080",
-    "secondary": "#7a8478",
+    "secondary": "#8c968a",
     "success": "#a7c080",
     "error": "#e67e80"
   },
   "user": "#a7c080",
   "assistant": null,
   "reasoning": {
-    "color": "#7a8478",
-    "dim": true
+    "color": "#8c968a",
+    "dim": false
   },
   "info": {
     "color": "#d3c6aa",
@@ -23,10 +23,6 @@
   "tool": "#7fbbb3",
   "spinner": "#a7c080",
   "permission": "#e67e80",
-  "queue": {
-    "color": "#7a8478",
-    "dim": true
-  },
   "accent": "#a7c080",
   "modeBadge": {
     "plan": "#a7c080",
@@ -34,19 +30,19 @@
     "edit": "#e67e80"
   },
   "blockquote": {
-    "color": "#7a8478",
-    "dim": true
+    "color": "#8c968a",
+    "dim": false
   },
   "codeInline": "#7fbbb3",
   "codeBlock": "#7fbbb3",
   "link": "#a7c080",
-  "strikethrough": "#7a8478",
-  "tableBorder": "#6d767a",
+  "strikethrough": "#8c968a",
+  "tableBorder": "#8b9498",
   "tableHeader": "#d3c6aa",
   "tableCell": "#d3c6aa",
   "muted": {
-    "color": "#7a8478",
-    "dim": true
+    "color": "#8c968a",
+    "dim": false
   },
   "prompt": "#a7c080",
   "type": "dark"

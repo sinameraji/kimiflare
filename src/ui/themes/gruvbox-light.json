@@ -12,7 +12,7 @@
   "assistant": null,
   "reasoning": {
     "color": "#827467",
-    "dim": true
+    "dim": false
   },
   "info": {
     "color": "#3c3836",
@@ -23,10 +23,6 @@
   "tool": "#076678",
   "spinner": "#79740e",
   "permission": "#9d0006",
-  "queue": {
-    "color": "#827467",
-    "dim": true
-  },
   "accent": "#79740e",
   "modeBadge": {
     "plan": "#79740e",
@@ -35,7 +31,7 @@
   },
   "blockquote": {
     "color": "#827467",
-    "dim": true
+    "dim": false
   },
   "codeInline": "#076678",
   "codeBlock": "#076678",
@@ -46,7 +42,7 @@
   "tableCell": "#3c3836",
   "muted": {
     "color": "#827467",
-    "dim": true
+    "dim": false
   },
   "prompt": "#79740e",
   "type": "light"

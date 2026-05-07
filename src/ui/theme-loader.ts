@@ -179,7 +179,6 @@ export async function loadThemesFromDir(
       tool: (typeof obj.tool === "string" ? obj.tool : palette.secondary) as string,
       spinner: (typeof obj.spinner === "string" ? obj.spinner : palette.primary) as string,
       permission: (typeof obj.permission === "string" ? obj.permission : palette.error) as string,
-      queue: validateDimColor("queue", obj.queue, fileErrors) ?? { color: palette.secondary, dim: false },
       accent: (typeof obj.accent === "string" ? obj.accent : palette.primary) as string,
       modeBadge: validateModeBadge(obj.modeBadge, fileErrors) ?? {
         plan: palette.primary,

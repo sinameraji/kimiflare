@@ -46,7 +46,6 @@ export interface Theme {
   tool: ColorName;
   spinner: ColorName;
   permission: ColorName;
-  queue: DimColor;
   accent: ColorName;
   modeBadge: { plan: ColorName; auto: ColorName; edit: ColorName };
   /** Blockquote text color. */
@@ -103,7 +102,6 @@ function normalizeTheme(json: unknown): Theme {
     tool: String(obj.tool ?? palette.secondary),
     spinner: String(obj.spinner ?? palette.primary),
     permission: String(obj.permission ?? palette.error),
-    queue: normalizeDim(obj.queue) ?? { color: palette.secondary, dim: false },
     accent: String(obj.accent ?? palette.primary),
     modeBadge: (obj.modeBadge as Theme["modeBadge"]) ?? {
       plan: palette.primary,

@@ -3,27 +3,29 @@ import assert from "node:assert";
 import { checkContrast, type ContrastIssue } from "./wcag.js";
 import { BUILT_IN_THEMES, type Theme, type DimColor } from "./theme.js";
 
-const BLACK = "#000000";
-const WHITE = "#ffffff";
-const NORMAL_THRESHOLD = 4.5;
-const DIM_THRESHOLD = 3.0;
+const THRESHOLD = 4.5;
+
+// We can't detect the actual terminal bg. We test against pure black/white
+// plus common dark grays (#1e1e1e = VS Code, #282c34 = One Dark/Atom)
+// because many users run dark terminals that are not pure black.
+const DARK_BACKGROUNDS = ["#000000", "#1e1e1e", "#282c34"];
+const LIGHT_BACKGROUNDS = ["#ffffff"];
 
 interface ColorEntry {
   theme: string;
   slot: string;
   color: string;
-  dim: boolean;
 }
 
 function extractColors(theme: Theme): ColorEntry[] {
   const entries: ColorEntry[] = [];
 
-  const add = (slot: string, color: string | undefined, dim = false) => {
-    if (color) entries.push({ theme: theme.name, slot, color, dim });
+  const add = (slot: string, color: string | undefined) => {
+    if (color) entries.push({ theme: theme.name, slot, color });
   };
 
   const addDim = (slot: string, d: DimColor | undefined) => {
-    if (d) entries.push({ theme: theme.name, slot, color: d.color, dim: d.dim });
+    if (d) entries.push({ theme: theme.name, slot, color: d.color });
   };
 
   add("palette.foreground", theme.palette.foreground);
@@ -40,7 +42,6 @@ function extractColors(theme: Theme): ColorEntry[] {
   add("tool", theme.tool);
   add("spinner", theme.spinner);
   add("permission", theme.permission);
-  addDim("queue", theme.queue);
   add("accent", theme.accent);
   add("modeBadge.plan", theme.modeBadge.plan);
   add("modeBadge.auto", theme.modeBadge.auto);
@@ -63,16 +64,17 @@ function checkThemes(): ContrastIssue[] {
   const issues: ContrastIssue[] = [];
 
   for (const theme of Object.values(BUILT_IN_THEMES)) {
-    const bg = theme.type === "light" ? WHITE : BLACK;
+    const bgs = theme.type === "light" ? LIGHT_BACKGROUNDS : DARK_BACKGROUNDS;
 
     for (const entry of extractColors(theme)) {
-      const threshold = entry.dim ? DIM_THRESHOLD : NORMAL_THRESHOLD;
-      const issue = checkContrast(entry.color, bg, threshold);
-      if (issue) {
-        issues.push({
-          ...issue,
-          pair: `${entry.theme}.${entry.slot} (${entry.color} on ${bg})`,
-        });
+      for (const bg of bgs) {
+        const issue = checkContrast(entry.color, bg, THRESHOLD);
+        if (issue) {
+          issues.push({
+            ...issue,
+            pair: `${entry.theme}.${entry.slot} (${entry.color} on ${bg})`,
+          });
+        }
       }
     }
   }

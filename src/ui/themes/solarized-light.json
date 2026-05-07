@@ -6,36 +6,32 @@
     "primary": "#227bbb",
     "secondary": "#6e7878",
     "success": "#6e7e00",
-    "error": "#dc322f"
+    "error": "#c0392b"
   },
   "user": "#227bbb",
   "assistant": null,
   "reasoning": {
     "color": "#6e7878",
-    "dim": true
+    "dim": false
   },
   "info": {
     "color": "#657a82",
     "dim": false
   },
-  "error": "#dc322f",
+  "error": "#c0392b",
   "warn": "#967100",
   "tool": "#22847d",
   "spinner": "#227bbb",
-  "permission": "#dc322f",
-  "queue": {
-    "color": "#6e7878",
-    "dim": true
-  },
+  "permission": "#c0392b",
   "accent": "#227bbb",
   "modeBadge": {
     "plan": "#227bbb",
     "auto": "#6e7e00",
-    "edit": "#dc322f"
+    "edit": "#c0392b"
   },
   "blockquote": {
     "color": "#6e7878",
-    "dim": true
+    "dim": false
   },
   "codeInline": "#22847d",
   "codeBlock": "#22847d",
@@ -46,7 +42,7 @@
   "tableCell": "#657a82",
   "muted": {
     "color": "#6e7878",
-    "dim": true
+    "dim": false
   },
   "prompt": "#227bbb",
   "type": "light"
