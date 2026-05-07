@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
+import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -624,6 +625,7 @@ function App({
   const activeAsstIdRef = useRef<number | null>(null);
   const sessionScopeRef = useRef<AbortScope>(new AbortScope());
   const activeScopeRef = useRef<AbortScope | null>(null);
+  const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
   const isAbortingRef = useRef(false);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
@@ -3153,8 +3155,25 @@ function App({
         },
       };
 
-      try {
-        await runAgentTurn({
+      const cleanupTurn = () => {
+        setCodeMode(false);
+        const asstId = activeAsstIdRef.current;
+        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
+        setBusy(false);
+        setTurnStartedAt(null);
+        setTurnPhase("waiting");
+        setCurrentToolName(null);
+        setLastActivityAt(null);
+        activeAsstIdRef.current = null;
+        activeScopeRef.current = null;
+        isAbortingRef.current = false;
+        permResolveRef.current = null;
+        limitResolveRef.current = null;
+        pendingToolCallsRef.current.clear();
+      };
+
+      supervisorRef.current.startTurn(
+        {
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
           model: overrideModel ?? cfg.model,
@@ -3191,151 +3210,142 @@ function App({
             }
           },
           callbacks: sharedCallbacks,
-        });
-        await saveSessionSafe();
+        },
+        {
+          onDone: async () => {
+            await saveSessionSafe();
 
-        // Auto-compact after turn when thresholds are met. With compiled
-        // context on, use the heuristic compactor; otherwise fall back to the
-        // LLM summarizer so users have a safety net regardless of the flag.
-        if (shouldCompact({ messages: messagesRef.current })) {
-          if (compiledContextRef.current) {
-            const store = artifactStoreRef.current;
-            const result = compactCompiled({
-              messages: messagesRef.current,
-              state: sessionStateRef.current,
-              store,
-            });
-            if (result.metrics.rawTurnsRemoved > 0) {
-              messagesRef.current = result.newMessages;
-              sessionStateRef.current = result.newState;
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-                },
-              ]);
-              await saveSessionSafe();
-            }
-          } else {
-            try {
-              const result = await compactMessages({
-                accountId: cfg.accountId,
-                apiToken: cfg.apiToken,
-                model: cfg.model,
-                messages: messagesRef.current,
-                signal: turnScope.signal,
-                gateway: gatewayFromConfig(cfg),
-              });
-              if (result.replacedCount > 0) {
-                messagesRef.current = result.newMessages;
-                setEvents((e) => [
-                  ...e,
-                  {
-                    kind: "info",
-                    key: mkKey(),
-                    text: `auto-compacted: ${result.replacedCount} messages summarized`,
-                  },
-                ]);
-                await saveSessionSafe();
+            // Auto-compact after turn when thresholds are met. With compiled
+            // context on, use the heuristic compactor; otherwise fall back to the
+            // LLM summarizer so users have a safety net regardless of the flag.
+            if (shouldCompact({ messages: messagesRef.current })) {
+              if (compiledContextRef.current) {
+                const store = artifactStoreRef.current;
+                const result = compactCompiled({
+                  messages: messagesRef.current,
+                  state: sessionStateRef.current,
+                  store,
+                });
+                if (result.metrics.rawTurnsRemoved > 0) {
+                  messagesRef.current = result.newMessages;
+                  sessionStateRef.current = result.newState;
+                  setEvents((e) => [
+                    ...e,
+                    {
+                      kind: "info",
+                      key: mkKey(),
+                      text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                    },
+                  ]);
+                  await saveSessionSafe();
+                }
+              } else {
+                try {
+                  const result = await compactMessages({
+                    accountId: cfg.accountId,
+                    apiToken: cfg.apiToken,
+                    model: cfg.model,
+                    messages: messagesRef.current,
+                    signal: turnScope.signal,
+                    gateway: gatewayFromConfig(cfg),
+                  });
+                  if (result.replacedCount > 0) {
+                    messagesRef.current = result.newMessages;
+                    setEvents((e) => [
+                      ...e,
+                      {
+                        kind: "info",
+                        key: mkKey(),
+                        text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                      },
+                    ]);
+                    await saveSessionSafe();
+                  }
+                } catch (compactErr) {
+                  if ((compactErr as Error).name !== "AbortError") {
+                    setEvents((es) => [
+                      ...es,
+                      {
+                        kind: "info",
+                        key: mkKey(),
+                        text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                      },
+                    ]);
+                  }
+                }
               }
-            } catch (compactErr) {
-              if ((compactErr as Error).name !== "AbortError") {
+            }
+
+            // After compaction, recall memories so the model retains durable anchors
+            const manager = memoryManagerRef.current;
+            if (manager) {
+              try {
+                const cwd = process.cwd();
+                const queryText = sessionStateRef.current.task || cwd;
+                const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                if (results.length > 0) {
+                  const text = await manager.synthesizeRecalled(results);
+                  const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                  const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                  messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                  setEvents((e) => [
+                    ...e,
+                    {
+                      kind: "memory",
+                      key: mkKey(),
+                      text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                    },
+                  ]);
+                  await saveSessionSafe();
+                }
+              } catch {
+                // Non-fatal
+              }
+            }
+
+            cleanupTurn();
+          },
+          onError: async (e) => {
+            if (e.name === "AbortError") {
+              // Inject synthetic tool results for any pending tool calls so message
+              // history remains valid (assistant msg with tool_calls needs 1:1 results).
+              for (const [tcId, tcName] of pendingToolCallsRef.current) {
+                messagesRef.current.push({
+                  role: "tool",
+                  tool_call_id: tcId,
+                  content: "(interrupted)",
+                  name: tcName,
+                });
+              }
+              setEvents((evts) =>
+                evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+              );
+            } else {
+              const isInvalidJson400 =
+                e instanceof KimiApiError &&
+                e.httpStatus === 400 &&
+                e.message.includes("invalid escaped character");
+              if (isInvalidJson400) {
+                messagesRef.current.pop();
                 setEvents((es) => [
                   ...es,
                   {
-                    kind: "info",
+                    kind: "error",
                     key: mkKey(),
-                    text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                    text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
                   },
                 ]);
               } else {
-                throw compactErr;
+                setEvents((es) => [
+                  ...es,
+                  { kind: "error", key: mkKey(), text: e.message ?? String(e) },
+                ]);
               }
             }
-          }
-        }
-
-        // After compaction, recall memories so the model retains durable anchors
-        const manager = memoryManagerRef.current;
-        if (manager) {
-          try {
-            const cwd = process.cwd();
-            const queryText = sessionStateRef.current.task || cwd;
-            const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-            if (results.length > 0) {
-              const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-              messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "memory",
-                  key: mkKey(),
-                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                },
-              ]);
-              await saveSessionSafe();
-            }
-          } catch {
-            // Non-fatal
-          }
-        }
-      } catch (e) {
-        if ((e as Error).name === "AbortError") {
-          // Inject synthetic tool results for any pending tool calls so message
-          // history remains valid (assistant msg with tool_calls needs 1:1 results).
-          for (const [tcId, tcName] of pendingToolCallsRef.current) {
-            messagesRef.current.push({
-              role: "tool",
-              tool_call_id: tcId,
-              content: "(interrupted)",
-              name: tcName,
-            });
-          }
-          setEvents((evts) =>
-            evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
-          );
-        } else {
-          const isInvalidJson400 =
-            e instanceof KimiApiError &&
-            e.httpStatus === 400 &&
-            e.message.includes("invalid escaped character");
-          if (isInvalidJson400) {
-            messagesRef.current.pop();
-            setEvents((es) => [
-              ...es,
-              {
-                kind: "error",
-                key: mkKey(),
-                text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
-              },
-            ]);
-          } else {
-            setEvents((es) => [
-              ...es,
-              { kind: "error", key: mkKey(), text: (e as Error).message ?? String(e) },
-            ]);
-          }
-        }
-      } finally {
-        setCodeMode(false);
-        const asstId = activeAsstIdRef.current;
-        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
-        setBusy(false);
-        setTurnStartedAt(null);
-        setTurnPhase("waiting");
-        setCurrentToolName(null);
-        setLastActivityAt(null);
-        activeAsstIdRef.current = null;
-        activeScopeRef.current = null;
-        isAbortingRef.current = false;
-        permResolveRef.current = null;
-        limitResolveRef.current = null;
-        pendingToolCallsRef.current.clear();
-      }
+            cleanupTurn();
+          },
+        },
+      );
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
   );
