@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.2](https://github.com/sinameraji/kimiflare/compare/v0.48.1...v0.48.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* **ui:** remove Static component from ChatView to fix /clear memory leak ([#334](https://github.com/sinameraji/kimiflare/issues/334)) ([e510cb9](https://github.com/sinameraji/kimiflare/commit/e510cb9994c4f480e17db0b24bcf75dbf604dc73)), closes [#322](https://github.com/sinameraji/kimiflare/issues/322)
+
 ## [0.48.1](https://github.com/sinameraji/kimiflare/compare/v0.48.0...v0.48.1) (2026-05-07)
 
 
