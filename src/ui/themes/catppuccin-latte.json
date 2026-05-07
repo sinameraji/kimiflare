@@ -2,36 +2,48 @@
   "name": "catppuccin-latte",
   "label": "Catppuccin Latte",
   "palette": {
-    "background": "#eff1f5",
     "foreground": "#4c4f69",
     "primary": "#1e66f5",
-    "secondary": "#8c8fa1",
-    "success": "#40a02b",
+    "secondary": "#737685",
+    "success": "#368724",
     "error": "#d20f39"
   },
   "user": "#1e66f5",
   "assistant": null,
-  "reasoning": { "color": "#8c8fa1", "dim": true },
-  "info": { "color": "#4c4f69", "dim": false },
+  "reasoning": {
+    "color": "#737685",
+    "dim": false
+  },
+  "info": {
+    "color": "#4c4f69",
+    "dim": false
+  },
   "error": "#d20f39",
-  "warn": "#df8e1d",
+  "warn": "#a66916",
   "tool": "#8839ef",
   "spinner": "#1e66f5",
   "permission": "#d20f39",
-  "queue": { "color": "#8c8fa1", "dim": true },
   "accent": "#1e66f5",
   "modeBadge": {
     "plan": "#1e66f5",
-    "auto": "#40a02b",
+    "auto": "#368724",
     "edit": "#d20f39"
   },
-  "blockquote": { "color": "#8c8fa1", "dim": true },
+  "blockquote": {
+    "color": "#737685",
+    "dim": false
+  },
   "codeInline": "#8839ef",
   "codeBlock": "#8839ef",
   "link": "#1e66f5",
-  "strikethrough": "#8c8fa1",
-  "tableBorder": "#bcc0cc",
+  "strikethrough": "#737685",
+  "tableBorder": "#74767e",
   "tableHeader": "#4c4f69",
   "tableCell": "#4c4f69",
-  "muted": { "color": "#8c8fa1", "dim": true }
+  "muted": {
+    "color": "#737685",
+    "dim": false
+  },
+  "prompt": "#1e66f5",
+  "type": "light"
 }

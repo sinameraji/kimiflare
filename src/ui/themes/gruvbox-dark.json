@@ -2,36 +2,48 @@
   "name": "gruvbox-dark",
   "label": "Gruvbox Dark",
   "palette": {
-    "background": "#282828",
     "foreground": "#ebdbb2",
     "primary": "#b8bb26",
-    "secondary": "#928374",
+    "secondary": "#a19283",
     "success": "#b8bb26",
-    "error": "#fb4934"
+    "error": "#ff5b46"
   },
   "user": "#b8bb26",
   "assistant": null,
-  "reasoning": { "color": "#928374", "dim": true },
-  "info": { "color": "#ebdbb2", "dim": false },
-  "error": "#fb4934",
+  "reasoning": {
+    "color": "#a19283",
+    "dim": false
+  },
+  "info": {
+    "color": "#ebdbb2",
+    "dim": false
+  },
+  "error": "#ff5b46",
   "warn": "#fabd2f",
   "tool": "#83a598",
   "spinner": "#b8bb26",
-  "permission": "#fb4934",
-  "queue": { "color": "#928374", "dim": true },
+  "permission": "#ff5b46",
   "accent": "#b8bb26",
   "modeBadge": {
     "plan": "#b8bb26",
     "auto": "#b8bb26",
-    "edit": "#fb4934"
+    "edit": "#ff5b46"
   },
-  "blockquote": { "color": "#928374", "dim": true },
+  "blockquote": {
+    "color": "#a19283",
+    "dim": false
+  },
   "codeInline": "#83a598",
   "codeBlock": "#83a598",
   "link": "#b8bb26",
-  "strikethrough": "#928374",
-  "tableBorder": "#504945",
+  "strikethrough": "#a19283",
+  "tableBorder": "#97928e",
   "tableHeader": "#ebdbb2",
   "tableCell": "#ebdbb2",
-  "muted": { "color": "#928374", "dim": true }
+  "muted": {
+    "color": "#a19283",
+    "dim": false
+  },
+  "prompt": "#b8bb26",
+  "type": "dark"
 }

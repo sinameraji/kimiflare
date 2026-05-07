@@ -14,8 +14,8 @@ describe("loadThemesFromDir", () => {
       JSON.stringify({
         name: "test-theme",
         label: "Test Theme",
+        type: "dark",
         palette: {
-          background: "#1a1b26",
           foreground: "#a9b1d6",
           primary: "#7aa2f7",
           secondary: "#565f89",
@@ -30,7 +30,7 @@ describe("loadThemesFromDir", () => {
     assert.strictEqual(errors.length, 0);
     assert.strictEqual(themes.length, 1);
     assert.strictEqual(themes[0]!.theme.name, "test-theme");
-    assert.strictEqual(themes[0]!.theme.palette.background, "#1a1b26");
+    assert.strictEqual(themes[0]!.theme.type, "dark");
 
     await rm(dir, { recursive: true });
   });
@@ -43,9 +43,9 @@ describe("loadThemesFromDir", () => {
       JSON.stringify({
         name: "bad-theme",
         label: "Bad Theme",
+        type: "dark",
         palette: {
-          background: "not-a-color",
-          foreground: "#a9b1d6",
+          foreground: "not-a-color",
           primary: "#7aa2f7",
           secondary: "#565f89",
           success: "#9ece6a",
@@ -69,8 +69,8 @@ describe("loadThemesFromDir", () => {
       JSON.stringify({
         name: "low-contrast",
         label: "Low Contrast",
+        type: "light",
         palette: {
-          background: "#ffffff",
           foreground: "#eeeeee",
           primary: "#dddddd",
           secondary: "#cccccc",

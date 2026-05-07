@@ -2,36 +2,48 @@
   "name": "nord",
   "label": "Nord",
   "palette": {
-    "background": "#2e3440",
     "foreground": "#d8dee9",
     "primary": "#88c0d0",
-    "secondary": "#4c566a",
+    "secondary": "#8a96a8",
     "success": "#a3be8c",
-    "error": "#bf616a"
+    "error": "#d08770"
   },
   "user": "#88c0d0",
   "assistant": null,
-  "reasoning": { "color": "#4c566a", "dim": true },
-  "info": { "color": "#d8dee9", "dim": false },
-  "error": "#bf616a",
+  "reasoning": {
+    "color": "#8a96a8",
+    "dim": false
+  },
+  "info": {
+    "color": "#d8dee9",
+    "dim": false
+  },
+  "error": "#d08770",
   "warn": "#ebcb8b",
   "tool": "#81a1c1",
   "spinner": "#88c0d0",
-  "permission": "#bf616a",
-  "queue": { "color": "#4c566a", "dim": true },
+  "permission": "#d08770",
   "accent": "#88c0d0",
   "modeBadge": {
     "plan": "#88c0d0",
     "auto": "#a3be8c",
-    "edit": "#bf616a"
+    "edit": "#d08770"
   },
-  "blockquote": { "color": "#4c566a", "dim": true },
+  "blockquote": {
+    "color": "#8a96a8",
+    "dim": false
+  },
   "codeInline": "#81a1c1",
   "codeBlock": "#81a1c1",
   "link": "#88c0d0",
-  "strikethrough": "#4c566a",
-  "tableBorder": "#434c5e",
+  "strikethrough": "#8a96a8",
+  "tableBorder": "#8a96a8",
   "tableHeader": "#eceff4",
   "tableCell": "#d8dee9",
-  "muted": { "color": "#4c566a", "dim": true }
+  "muted": {
+    "color": "#8a96a8",
+    "dim": false
+  },
+  "prompt": "#88c0d0",
+  "type": "dark"
 }
