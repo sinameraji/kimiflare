@@ -84,7 +84,7 @@ function TaskRow({ task }: { task: Task }) {
   if (task.status === "in_progress") {
     return (
       <Text color={theme.accent} bold>
-        {"  "}<Spinner type="dots" /> {task.title}
+        {"  "}<Spinner type="line" /> {task.title}
       </Text>
     );
   }

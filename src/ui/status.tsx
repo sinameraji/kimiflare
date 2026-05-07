@@ -86,7 +86,7 @@ export function StatusBar({ model, usage, sessionUsage, thinking, turnStartedAt,
         <Text> </Text>
         {thinking ? (
           <Text color={theme.spinner}>
-            <Spinner type="dots" />{" "}
+            <Spinner type="dots2" />{" "}
             {phaseLabel}{elapsed ? ` · ${elapsed}` : ""}{idleLabel}
           </Text>
         ) : (
