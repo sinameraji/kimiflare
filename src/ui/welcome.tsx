@@ -4,18 +4,10 @@ import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { buildWelcome } from "./greetings.js";
 
-interface Props {
-  accountId?: string;
-  gitBranch?: string | null;
-  lastSessionTopic?: string | null;
-}
-
-export function Welcome({ accountId, gitBranch, lastSessionTopic }: Props) {
+export function Welcome() {
   const theme = useTheme();
   const now = new Date();
-  const { headline, suggestions } = buildWelcome({
-    gitBranch: gitBranch ?? null,
-    lastSessionTopic: lastSessionTopic ?? null,
+  const { headline } = buildWelcome({
     hour: now.getHours(),
     day: now.getDay(),
   });
@@ -26,22 +18,13 @@ export function Welcome({ accountId, gitBranch, lastSessionTopic }: Props) {
         <Text bold color={theme.accent}>
           {headline}
         </Text>
-        {gitBranch && (
-          <Text color={theme.info.color}>
-            {" "}· {gitBranch}
-          </Text>
-        )}
       </Box>
 
-      {suggestions.length > 0 && (
-        <Box flexDirection="column">
-          {suggestions.map((s, i) => (
-            <Text key={i} color={theme.info.color} dimColor>
-              {s}
-            </Text>
-          ))}
-        </Box>
-      )}
+      <Box flexDirection="column">
+        <Text color={theme.info.color} dimColor>
+          Type / for commands
+        </Text>
+      </Box>
 
     </Box>
   );

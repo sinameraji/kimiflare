@@ -1,13 +1,10 @@
 interface BuildWelcomeInput {
-  gitBranch: string | null;
-  lastSessionTopic: string | null;
   hour: number;
   day: number;
 }
 
 interface BuildWelcomeOutput {
   headline: string;
-  suggestions: string[];
 }
 
 const WEEKEND_DAYS = [0, 6];
@@ -37,21 +34,9 @@ function greeting(hour: number, day: number): string {
 }
 
 export function buildWelcome({
-  gitBranch,
-  lastSessionTopic,
   hour,
   day,
 }: BuildWelcomeInput): BuildWelcomeOutput {
   const greet = greeting(hour, day);
-  const suggestions: string[] = [];
-
-  if (gitBranch) {
-    suggestions.push(`Branch: ${gitBranch}`);
-  }
-
-  if (lastSessionTopic) {
-    suggestions.push(`Resume: ${lastSessionTopic}`);
-  }
-
-  return { headline: greet, suggestions };
+  return { headline: greet };
 }

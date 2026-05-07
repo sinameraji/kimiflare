@@ -3805,7 +3805,7 @@ function App({
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
         {!hasConversation ? (
-          <Welcome accountId={cfg.accountId} gitBranch={gitBranch} lastSessionTopic={lastSessionTopic} />
+          <Welcome />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}
