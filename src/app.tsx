@@ -27,6 +27,7 @@ import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError } from "./util/errors.js";
+import { AbortScope } from "./util/abort-scope.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -621,7 +622,8 @@ function App({
   );
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
-  const activeControllerRef = useRef<AbortController | null>(null);
+  const sessionScopeRef = useRef<AbortScope>(new AbortScope());
+  const activeScopeRef = useRef<AbortScope | null>(null);
   const isAbortingRef = useRef(false);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
@@ -1383,9 +1385,9 @@ function App({
         limitResolveRef.current = null;
         setLimitModal(null);
       }
-      if (busyRef.current && activeControllerRef.current && !isAbortingRef.current) {
+      if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
-        activeControllerRef.current.abort();
+        activeScopeRef.current.abort("user_interrupt");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       } else if (!hadPerm && !hadLimit) {
@@ -1403,7 +1405,7 @@ function App({
         commandToDelete !== null ||
         resumeSessions !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeControllerRef.current && !isAbortingRef.current) {
+      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
         if (permResolveRef.current) {
           permResolveRef.current("deny");
@@ -1415,7 +1417,7 @@ function App({
           limitResolveRef.current = null;
           setLimitModal(null);
         }
-        activeControllerRef.current.abort();
+        activeScopeRef.current.abort("user_interrupt");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         return;
@@ -1511,8 +1513,8 @@ function App({
     }
     setBusy(true);
     setTurnStartedAt(Date.now());
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
+    const turnScope = sessionScopeRef.current.createChild();
+    activeScopeRef.current = turnScope;
     try {
       if (compiledContextRef.current) {
         const store = artifactStoreRef.current;
@@ -1550,7 +1552,7 @@ function App({
           apiToken: cfg.apiToken,
           model: cfg.model,
           messages: messagesRef.current,
-          signal: controller.signal,
+          signal: turnScope.signal,
           gateway: gatewayFromConfig(cfg),
         });
         if (result.replacedCount === 0) {
@@ -1589,7 +1591,7 @@ function App({
       setTurnPhase("waiting");
       setCurrentToolName(null);
       setLastActivityAt(null);
-      activeControllerRef.current = null;
+      activeScopeRef.current = null;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -1614,8 +1616,8 @@ function App({
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
     setTurnStartedAt(Date.now());
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
+    const turnScope = sessionScopeRef.current.createChild();
+    activeScopeRef.current = turnScope;
 
     const initClassification = classifyIntent(prompt);
     const initEffortForTier: Record<string, ReasoningEffort> = {
@@ -1637,7 +1639,7 @@ function App({
         tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
         executor: executorRef.current,
         cwd,
-        signal: controller.signal,
+        signal: turnScope.signal,
         reasoningEffort: initReasoningEffort,
         intentClassification: initClassification,
         coauthor:
@@ -1837,7 +1839,7 @@ function App({
       setCurrentToolName(null);
       setLastActivityAt(null);
       activeAsstIdRef.current = null;
-      activeControllerRef.current = null;
+      activeScopeRef.current = null;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -2688,7 +2690,7 @@ function App({
             for await (const ev of streamRemoteProgress(
               finalCfg.remoteWorkerUrl!,
               data.sessionId,
-              activeControllerRef.current?.signal,
+              activeScopeRef.current?.signal,
             )) {
               const event = ev as Record<string, unknown>;
               if (event.type === "text_delta") {
@@ -3002,8 +3004,8 @@ function App({
         },
       ]);
 
-      const controller = new AbortController();
-      activeControllerRef.current = controller;
+      const turnScope = sessionScopeRef.current.createChild();
+      activeScopeRef.current = turnScope;
 
       const sharedCallbacks = {
         onAssistantStart: () => {
@@ -3161,7 +3163,7 @@ function App({
           tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           executor: executorRef.current,
           cwd: process.cwd(),
-          signal: controller.signal,
+          signal: turnScope.signal,
           reasoningEffort: turnReasoningEffort,
           coauthor:
             cfg.coauthor !== false
@@ -3223,7 +3225,7 @@ function App({
                 apiToken: cfg.apiToken,
                 model: cfg.model,
                 messages: messagesRef.current,
-                signal: controller.signal,
+                signal: turnScope.signal,
                 gateway: gatewayFromConfig(cfg),
               });
               if (result.replacedCount > 0) {
@@ -3328,7 +3330,7 @@ function App({
         setCurrentToolName(null);
         setLastActivityAt(null);
         activeAsstIdRef.current = null;
-        activeControllerRef.current = null;
+        activeScopeRef.current = null;
         isAbortingRef.current = false;
         permResolveRef.current = null;
         limitResolveRef.current = null;
