@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.47.0](https://github.com/sinameraji/kimiflare/compare/v0.46.0...v0.47.0) (2026-05-07)
+
+
+### Features
+
+* **agent:** add context-window guardrails and fix /clear memory leak ([#322](https://github.com/sinameraji/kimiflare/issues/322)) ([f8d2e5c](https://github.com/sinameraji/kimiflare/commit/f8d2e5cd435416e841150dbc755cc0bb88daa600))
+* **ui:** differentiate spinner animations across the TUI ([#326](https://github.com/sinameraji/kimiflare/issues/326)) ([3917f64](https://github.com/sinameraji/kimiflare/commit/3917f64a02b07b9603943de76a3398d653f82d3e))
+
+
+### Bug Fixes
+
+* **ui:** strip trailing blank blocks from markdown output ([#325](https://github.com/sinameraji/kimiflare/issues/325)) ([e2fbbec](https://github.com/sinameraji/kimiflare/commit/e2fbbec287751f564ff3bb32bb8434f8f54094db))
+
 ## [0.46.0](https://github.com/sinameraji/kimiflare/compare/v0.45.0...v0.46.0) (2026-05-07)
 
 
