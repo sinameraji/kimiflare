@@ -486,8 +486,8 @@ tail -f ~/.config/kimiflare/logs/kimiflare.log
 | 1.3: Escape Debounce | ✅ Done | | `isAbortingRef` prevents multiple `(interrupted)` lines |
 | 1.4: Structured Logging | ✅ Done | | `src/util/logger.ts` writes JSON to stderr |
 | 1.5: Log Injection | ✅ Done | | Logs added to loop.ts, client.ts, bash.ts, sse.ts |
-| 2: Hierarchical Abort | 🔄 In Progress | | |
-| 3: Fire-and-Forget Supervisor | ⬜ Pending | | |
+| 2: Hierarchical Abort | ✅ Done | 2026-05-07 | Committed as 5465921 |
+| 3: Fire-and-Forget Supervisor | 🔄 In Progress | | |
 | 4: Preemption Support | ⬜ Pending | | |
 | 5: Integration Testing | ⬜ Pending | | |
 | 6: Performance & Polish | ⬜ Pending | | |
