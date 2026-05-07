@@ -29,7 +29,7 @@ type Block =
   | { kind: "paragraph"; text: string }
   | { kind: "heading"; level: 1 | 2 | 3; text: string }
   | { kind: "bullet"; items: string[] }
-  | { kind: "numbered"; items: string[] }
+  | { kind: "numbered"; items: { text: string; num: number }[] }
   | { kind: "quote"; text: string }
   | { kind: "code"; lang?: string; text: string }
   | { kind: "table"; headers: string[]; rows: string[][] }
@@ -73,9 +73,12 @@ function parseBlocks(src: string): Block[] {
     }
     // Numbered list
     if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
+      const items: { text: string; num: number }[] = [];
       while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i]!)) {
-        items.push(lines[i]!.replace(/^\s*\d+\.\s+/, ""));
+        const m = lines[i]!.match(/^\s*(\d+)\.\s+(.*)$/);
+        if (m) {
+          items.push({ num: Number(m[1]), text: m[2]! });
+        }
         i++;
       }
       out.push({ kind: "numbered", items });
@@ -156,12 +159,13 @@ const Block = React.memo(function Block({ block }: { block: Block }) {
     );
   }
   if (block.kind === "numbered") {
+    const allOnes = block.items.every((it) => it.num === 1);
     return (
       <Box flexDirection="column">
         {block.items.map((item, idx) => (
           <Box key={idx}>
-            <Text color={theme.accent}>  {idx + 1}. </Text>
-            <Text>{renderInline(item, theme)}</Text>
+            <Text color={theme.accent}>  {allOnes ? idx + 1 : item.num}. </Text>
+            <Text>{renderInline(item.text, theme)}</Text>
           </Box>
         ))}
       </Box>
