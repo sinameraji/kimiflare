@@ -480,13 +480,13 @@ tail -f ~/.config/kimiflare/logs/kimiflare.log
 | Milestone | Status | Date | Notes |
 |-----------|--------|------|-------|
 | 0: Setup | ✅ Done | 2026-05-07 | Branch created, plan written |
-| 1: Emergency Fixes | 🔄 In Progress | | |
-| 1.1: Bash SIGKILL | ⬜ Pending | | |
-| 1.2: SSE Zombie Protection | ⬜ Pending | | |
-| 1.3: Escape Debounce | ⬜ Pending | | |
-| 1.4: Structured Logging | ⬜ Pending | | |
-| 1.5: Log Injection | ⬜ Pending | | |
-| 2: Hierarchical Abort | ⬜ Pending | | |
+| 1: Emergency Fixes | ✅ Done | 2026-05-07 | Committed as 2678d74 |
+| 1.1: Bash SIGKILL | ✅ Done | | `child.kill('SIGKILL')` on abort; removed `signal` from spawn opts |
+| 1.2: SSE Zombie Protection | ✅ Done | | `idleTimeoutMs=60s` already existed; added log warning |
+| 1.3: Escape Debounce | ✅ Done | | `isAbortingRef` prevents multiple `(interrupted)` lines |
+| 1.4: Structured Logging | ✅ Done | | `src/util/logger.ts` writes JSON to stderr |
+| 1.5: Log Injection | ✅ Done | | Logs added to loop.ts, client.ts, bash.ts, sse.ts |
+| 2: Hierarchical Abort | 🔄 In Progress | | |
 | 3: Fire-and-Forget Supervisor | ⬜ Pending | | |
 | 4: Preemption Support | ⬜ Pending | | |
 | 5: Integration Testing | ⬜ Pending | | |
