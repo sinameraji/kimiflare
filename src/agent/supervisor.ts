@@ -46,6 +46,7 @@ export class TurnSupervisor {
 
     this.currentTurn = runAgentTurn(opts)
       .then(async () => {
+        this._phase = "idle";
         if (this._killRequested) {
           logger.debug("supervisor:turn_killed", { sessionId: opts.sessionId });
         } else {
@@ -54,6 +55,7 @@ export class TurnSupervisor {
         await callbacks?.onDone?.();
       })
       .catch(async (error) => {
+        this._phase = "idle";
         const err = error as Error;
         logger.warn("supervisor:turn_error", {
           sessionId: opts.sessionId,
@@ -63,7 +65,6 @@ export class TurnSupervisor {
         await callbacks?.onError?.(err);
       })
       .finally(() => {
-        this._phase = "idle";
         this.currentTurn = null;
         this._killRequested = false;
       });
