@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
 import { runAgentTurn } from "./agent/loop.js";
+import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -27,6 +28,7 @@ import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError } from "./util/errors.js";
+import { AbortScope } from "./util/abort-scope.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -527,7 +529,7 @@ function App({
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
-  const [queue, setQueue] = useState<Array<{ full: string; display: string }>>([]);
+  const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftInput, setDraftInput] = useState("");
@@ -621,7 +623,11 @@ function App({
   );
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
-  const activeControllerRef = useRef<AbortController | null>(null);
+  const sessionScopeRef = useRef<AbortScope>(new AbortScope());
+  const activeScopeRef = useRef<AbortScope | null>(null);
+  const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
+  const isAbortingRef = useRef(false);
+  const lastEscapeAtRef = useRef(0);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -656,9 +662,7 @@ function App({
   const customCommandsRef = useRef<CustomCommand[]>([]);
   const pickerCancelRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
+
 
   // ── Picker logic (file mention `@` and slash command `/`) ──────────────
   // Depend on stable fields (kind, anchor) — not the activePicker reference,
@@ -1382,16 +1386,24 @@ function App({
         limitResolveRef.current = null;
         setLimitModal(null);
       }
-      if (busyRef.current && activeControllerRef.current) {
-        activeControllerRef.current.abort();
+      if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
+        isAbortingRef.current = true;
+        supervisorRef.current.killTurn();
+        activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Clear task list immediately so it doesn't keep spinning
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
       } else if (!hadPerm && !hadLimit) {
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
     }
     if (key.escape) {
+      const now = Date.now();
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
@@ -1401,7 +1413,10 @@ function App({
         commandToDelete !== null ||
         resumeSessions !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeControllerRef.current) {
+      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+        lastEscapeAtRef.current = now;
+        isAbortingRef.current = true;
+        supervisorRef.current.killTurn();
         if (permResolveRef.current) {
           permResolveRef.current("deny");
           permResolveRef.current = null;
@@ -1412,9 +1427,14 @@ function App({
           limitResolveRef.current = null;
           setLimitModal(null);
         }
-        activeControllerRef.current.abort();
+        activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Clear task list immediately so it doesn't keep spinning
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
         return;
       }
     }
@@ -1507,9 +1527,10 @@ function App({
       return;
     }
     setBusy(true);
+    busyRef.current = true;
     setTurnStartedAt(Date.now());
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
+    const turnScope = sessionScopeRef.current.createChild();
+    activeScopeRef.current = turnScope;
     try {
       if (compiledContextRef.current) {
         const store = artifactStoreRef.current;
@@ -1547,7 +1568,7 @@ function App({
           apiToken: cfg.apiToken,
           model: cfg.model,
           messages: messagesRef.current,
-          signal: controller.signal,
+          signal: turnScope.signal,
           gateway: gatewayFromConfig(cfg),
         });
         if (result.replacedCount === 0) {
@@ -1582,11 +1603,12 @@ function App({
       }
     } finally {
       setBusy(false);
+      busyRef.current = false;
       setTurnStartedAt(null);
       setTurnPhase("waiting");
       setCurrentToolName(null);
       setLastActivityAt(null);
-      activeControllerRef.current = null;
+      activeScopeRef.current = null;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -1610,9 +1632,10 @@ function App({
     setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
     setBusy(true);
+    busyRef.current = true;
     setTurnStartedAt(Date.now());
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
+    const turnScope = sessionScopeRef.current.createChild();
+    activeScopeRef.current = turnScope;
 
     const initClassification = classifyIntent(prompt);
     const initEffortForTier: Record<string, ReasoningEffort> = {
@@ -1634,7 +1657,7 @@ function App({
         tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
         executor: executorRef.current,
         cwd,
-        signal: controller.signal,
+        signal: turnScope.signal,
         reasoningEffort: initReasoningEffort,
         intentClassification: initClassification,
         coauthor:
@@ -1812,12 +1835,12 @@ function App({
           messagesRef.current.push({
             role: "tool",
             tool_call_id: tcId,
-            content: "(interrupted)",
+            content: "(stopped)",
             name: tcName,
           });
         }
         setEvents((evts) =>
-          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
         );
       } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
         const token = cloudToken ?? initialCloudToken;
@@ -1858,12 +1881,13 @@ function App({
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
       setBusy(false);
+      busyRef.current = false;
       setTurnStartedAt(null);
       setTurnPhase("waiting");
       setCurrentToolName(null);
       setLastActivityAt(null);
       activeAsstIdRef.current = null;
-      activeControllerRef.current = null;
+      activeScopeRef.current = null;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -2714,7 +2738,7 @@ function App({
             for await (const ev of streamRemoteProgress(
               finalCfg.remoteWorkerUrl!,
               data.sessionId,
-              activeControllerRef.current?.signal,
+              activeScopeRef.current?.signal,
             )) {
               const event = ev as Record<string, unknown>;
               if (event.type === "text_delta") {
@@ -2846,7 +2870,7 @@ function App({
   );
 
   const processMessage = useCallback(
-    async (text: string, displayText?: string) => {
+    async (text: string, displayText?: string, opts?: { queuedKey?: string }) => {
       if (!cfg) return;
       let trimmed = text.trim();
       if (!trimmed) return;
@@ -2922,7 +2946,17 @@ function App({
         sessionStartRecallRef.current = null;
       }
 
-      setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+      if (opts?.queuedKey) {
+        setEvents((evts) =>
+          evts.map((e) =>
+            e.kind === "user" && e.key === opts.queuedKey
+              ? { ...e, text: display, images: images.length > 0 ? images : undefined, queued: false }
+              : e,
+          ),
+        );
+      } else {
+        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+      }
 
       // LSP nudge: if user references code files and LSP is not configured
       const nudge = maybeLspNudge(display, cfg?.lspEnabled ?? false, cfg?.lspServers ?? {});
@@ -2959,6 +2993,7 @@ function App({
       }
 
       setBusy(true);
+      busyRef.current = true;
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
       setTurnStartedAt(Date.now());
@@ -3028,8 +3063,8 @@ function App({
         },
       ]);
 
-      const controller = new AbortController();
-      activeControllerRef.current = controller;
+      const turnScope = sessionScopeRef.current.createChild();
+      activeScopeRef.current = turnScope;
 
       const sharedCallbacks = {
         onAssistantStart: () => {
@@ -3177,8 +3212,37 @@ function App({
         },
       };
 
-      try {
-        await runAgentTurn({
+      const cleanupTurn = () => {
+        setCodeMode(false);
+        const asstId = activeAsstIdRef.current;
+        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
+        setBusy(false);
+        busyRef.current = false;
+        setTurnStartedAt(null);
+        setTurnPhase("waiting");
+        setCurrentToolName(null);
+        setLastActivityAt(null);
+        activeAsstIdRef.current = null;
+        activeScopeRef.current = null;
+        isAbortingRef.current = false;
+        permResolveRef.current = null;
+        limitResolveRef.current = null;
+        pendingToolCallsRef.current.clear();
+
+        // Clear task list so it doesn't linger into the next turn
+        setTasks([]);
+        setTasksStartedAt(null);
+        setTasksStartTokens(0);
+        tasksRef.current = [];
+
+        // Mark any still-running tools as interrupted
+        setEvents((evts) =>
+          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
+        );
+      };
+
+      supervisorRef.current.startTurn(
+        {
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
           model: overrideModel ?? cfg.model,
@@ -3187,7 +3251,7 @@ function App({
           tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
           executor: executorRef.current,
           cwd: process.cwd(),
-          signal: controller.signal,
+          signal: turnScope.signal,
           reasoningEffort: turnReasoningEffort,
           coauthor:
             cfg.coauthor !== false
@@ -3216,187 +3280,186 @@ function App({
             }
           },
           callbacks: sharedCallbacks,
-        });
-        await saveSessionSafe();
+        },
+        {
+          onDone: async () => {
+            await saveSessionSafe();
 
-        // Auto-compact after turn when thresholds are met. With compiled
-        // context on, use the heuristic compactor; otherwise fall back to the
-        // LLM summarizer so users have a safety net regardless of the flag.
-        if (shouldCompact({ messages: messagesRef.current })) {
-          if (compiledContextRef.current) {
-            const store = artifactStoreRef.current;
-            const result = compactCompiled({
-              messages: messagesRef.current,
-              state: sessionStateRef.current,
-              store,
-            });
-            if (result.metrics.rawTurnsRemoved > 0) {
-              messagesRef.current = result.newMessages;
-              sessionStateRef.current = result.newState;
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-                },
-              ]);
-              await saveSessionSafe();
+            // If the turn was killed (preempted or aborted), skip expensive
+            // post-turn work so the next turn can start immediately.
+            if (turnScope.signal.aborted) {
+              cleanupTurn();
+              return;
             }
-          } else {
-            try {
-              const result = await compactMessages({
-                accountId: cfg.accountId,
-                apiToken: cfg.apiToken,
-                model: cfg.model,
-                messages: messagesRef.current,
-                signal: controller.signal,
-                gateway: gatewayFromConfig(cfg),
-              });
-              if (result.replacedCount > 0) {
-                messagesRef.current = result.newMessages;
-                setEvents((e) => [
-                  ...e,
-                  {
-                    kind: "info",
-                    key: mkKey(),
-                    text: `auto-compacted: ${result.replacedCount} messages summarized`,
-                  },
-                ]);
-                await saveSessionSafe();
+
+            // Auto-compact after turn when thresholds are met. With compiled
+            // context on, use the heuristic compactor; otherwise fall back to the
+            // LLM summarizer so users have a safety net regardless of the flag.
+            if (shouldCompact({ messages: messagesRef.current })) {
+              if (compiledContextRef.current) {
+                const store = artifactStoreRef.current;
+                const result = compactCompiled({
+                  messages: messagesRef.current,
+                  state: sessionStateRef.current,
+                  store,
+                });
+                if (result.metrics.rawTurnsRemoved > 0) {
+                  messagesRef.current = result.newMessages;
+                  sessionStateRef.current = result.newState;
+                  setEvents((e) => [
+                    ...e,
+                    {
+                      kind: "info",
+                      key: mkKey(),
+                      text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                    },
+                  ]);
+                  await saveSessionSafe();
+                }
+              } else {
+                try {
+                  const result = await compactMessages({
+                    accountId: cfg.accountId,
+                    apiToken: cfg.apiToken,
+                    model: cfg.model,
+                    messages: messagesRef.current,
+                    signal: turnScope.signal,
+                    gateway: gatewayFromConfig(cfg),
+                  });
+                  if (result.replacedCount > 0) {
+                    messagesRef.current = result.newMessages;
+                    setEvents((e) => [
+                      ...e,
+                      {
+                        kind: "info",
+                        key: mkKey(),
+                        text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                      },
+                    ]);
+                    await saveSessionSafe();
+                  }
+                } catch (compactErr) {
+                  if ((compactErr as Error).name !== "AbortError") {
+                    setEvents((es) => [
+                      ...es,
+                      {
+                        kind: "info",
+                        key: mkKey(),
+                        text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                      },
+                    ]);
+                  }
+                }
               }
-            } catch (compactErr) {
-              if ((compactErr as Error).name !== "AbortError") {
+            }
+
+            // After compaction, recall memories so the model retains durable anchors
+            const manager = memoryManagerRef.current;
+            if (manager) {
+              try {
+                const cwd = process.cwd();
+                const queryText = sessionStateRef.current.task || cwd;
+                const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                if (results.length > 0) {
+                  const text = await manager.synthesizeRecalled(results);
+                  const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                  const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                  messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                  setEvents((e) => [
+                    ...e,
+                    {
+                      kind: "memory",
+                      key: mkKey(),
+                      text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                    },
+                  ]);
+                  await saveSessionSafe();
+                }
+              } catch {
+                // Non-fatal
+              }
+            }
+
+            cleanupTurn();
+          },
+          onError: async (e) => {
+            if (e.name === "AbortError") {
+              // Inject synthetic tool results for any pending tool calls so message
+              // history remains valid (assistant msg with tool_calls needs 1:1 results).
+              for (const [tcId, tcName] of pendingToolCallsRef.current) {
+                messagesRef.current.push({
+                  role: "tool",
+                  tool_call_id: tcId,
+                  content: "(stopped)",
+                  name: tcName,
+                });
+              }
+              setEvents((evts) =>
+                evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
+              );
+            } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
+              const token = cloudToken ?? initialCloudToken;
+              const did = cloudDeviceId ?? initialCloudDeviceId;
+              let used = 0;
+              let limit = 0;
+              let expiresAt = "";
+              if (token) {
+                try {
+                  const { fetchCloudUsage } = await import("./cloud/auth.js");
+                  const usage = await fetchCloudUsage(token, did);
+                  if (usage) {
+                    used = usage.input_tokens_used;
+                    limit = usage.input_token_limit;
+                    expiresAt = usage.expires_at;
+                  }
+                } catch { /* ignore */ }
+              }
+              if (!limit) {
+                const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
+                if (m && m[1] && m[2]) {
+                  used = parseInt(m[1].replace(/,/g, ""), 10);
+                  limit = parseInt(m[2].replace(/,/g, ""), 10);
+                }
+              }
+              setEvents((es) => [
+                ...es,
+                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+              ]);
+            } else {
+              const isInvalidJson400 =
+                e instanceof KimiApiError &&
+                e.httpStatus === 400 &&
+                e.message.includes("invalid escaped character");
+              if (isInvalidJson400) {
+                messagesRef.current.pop();
                 setEvents((es) => [
                   ...es,
                   {
-                    kind: "info",
+                    kind: "error",
                     key: mkKey(),
-                    text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                    text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
                   },
                 ]);
               } else {
-                throw compactErr;
+                setEvents((es) => [
+                  ...es,
+                  { kind: "error", key: mkKey(), text: e.message ?? String(e) },
+                ]);
               }
             }
-          }
-        }
-
-        // After compaction, recall memories so the model retains durable anchors
-        const manager = memoryManagerRef.current;
-        if (manager) {
-          try {
-            const cwd = process.cwd();
-            const queryText = sessionStateRef.current.task || cwd;
-            const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-            if (results.length > 0) {
-              const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-              messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "memory",
-                  key: mkKey(),
-                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                },
-              ]);
-              await saveSessionSafe();
-            }
-          } catch {
-            // Non-fatal
-          }
-        }
-      } catch (e) {
-        if ((e as Error).name === "AbortError") {
-          // Inject synthetic tool results for any pending tool calls so message
-          // history remains valid (assistant msg with tool_calls needs 1:1 results).
-          for (const [tcId, tcName] of pendingToolCallsRef.current) {
-            messagesRef.current.push({
-              role: "tool",
-              tool_call_id: tcId,
-              content: "(interrupted)",
-              name: tcName,
-            });
-          }
-          setEvents((evts) =>
-            evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(interrupted)" } : e)),
-          );
-        } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-          const token = cloudToken ?? initialCloudToken;
-          const did = cloudDeviceId ?? initialCloudDeviceId;
-          let used = 0;
-          let limit = 0;
-          let expiresAt = "";
-          if (token) {
-            try {
-              const { fetchCloudUsage } = await import("./cloud/auth.js");
-              const usage = await fetchCloudUsage(token, did);
-              if (usage) {
-                used = usage.input_tokens_used;
-                limit = usage.input_token_limit;
-                expiresAt = usage.expires_at;
-              }
-            } catch { /* ignore */ }
-          }
-          if (!limit) {
-            const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
-            if (m && m[1] && m[2]) {
-              used = parseInt(m[1].replace(/,/g, ""), 10);
-              limit = parseInt(m[2].replace(/,/g, ""), 10);
-            }
-          }
-          setEvents((es) => [
-            ...es,
-            { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
-          ]);
-        } else {
-          const isInvalidJson400 =
-            e instanceof KimiApiError &&
-            e.httpStatus === 400 &&
-            e.message.includes("invalid escaped character");
-          if (isInvalidJson400) {
-            messagesRef.current.pop();
-            setEvents((es) => [
-              ...es,
-              {
-                kind: "error",
-                key: mkKey(),
-                text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
-              },
-            ]);
-          } else {
-            setEvents((es) => [
-              ...es,
-              { kind: "error", key: mkKey(), text: (e as Error).message ?? String(e) },
-            ]);
-          }
-        }
-      } finally {
-        setCodeMode(false);
-        const asstId = activeAsstIdRef.current;
-        if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
-        setBusy(false);
-        setTurnStartedAt(null);
-        setTurnPhase("waiting");
-        setCurrentToolName(null);
-        setLastActivityAt(null);
-        activeAsstIdRef.current = null;
-        activeControllerRef.current = null;
-        permResolveRef.current = null;
-        limitResolveRef.current = null;
-        pendingToolCallsRef.current.clear();
-      }
+            cleanupTurn();
+          },
+        },
+      );
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
   );
 
   useEffect(() => {
-    if (!busy && queue.length > 0) {
+    if (!busy && queue.length > 0 && supervisorRef.current.phase === "idle") {
       const next = queue[0]!;
       setQueue((q) => q.slice(1));
-      processMessage(next.full, next.display);
+      processMessage(next.full, next.display, { queuedKey: next.key });
     }
   }, [busy, queue, processMessage]);
 
@@ -3408,8 +3471,22 @@ function App({
 
       const historyEntry = trimmedDisplay;
 
-      if (busy) {
-        setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay }]);
+      if (busyRef.current) {
+        // Preempt current turn so user input is not blocked indefinitely
+        if (activeScopeRef.current && !isAbortingRef.current) {
+          isAbortingRef.current = true;
+          supervisorRef.current.killTurn();
+          activeScopeRef.current.abort("new_message");
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(preempted)" }]);
+          // Clear task list immediately so it doesn't keep spinning
+          setTasks([]);
+          setTasksStartedAt(null);
+          setTasksStartTokens(0);
+          tasksRef.current = [];
+        }
+        const key = mkKey();
+        setEvents((e) => [...e, { kind: "user", key, text: trimmedDisplay, queued: true }]);
+        setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay, key }]);
         setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
         setInput("");
         setHistoryIndex(-1);
@@ -3421,7 +3498,7 @@ function App({
       setHistoryIndex(-1);
       processMessage(trimmedFull, trimmedDisplay !== trimmedFull ? trimmedDisplay : undefined);
     },
-    [busy, processMessage],
+    [processMessage],
   );
   submitRef.current = submit;
 
@@ -3696,7 +3773,7 @@ function App({
             {queue.length > 0 && (
               <Box flexDirection="column" marginBottom={1}>
                 {queue.map((q, i) => (
-                  <Text key={`queue_${i}`} color={theme.info.color}>
+                  <Text key={`queue_${i}`} color={theme.info.color} dimColor={theme.info.dim}>
                     ⏳ {q.display}
                   </Text>
                 ))}
