@@ -3,6 +3,7 @@ import { Box, Text, useInput, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import type { Mode } from "../mode.js";
@@ -329,6 +330,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={items}
                 onSelect={(item) => {
                   if (item.value === "cancel") onDone();
@@ -358,6 +360,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={items}
                 onSelect={(item) => {
                   if (item.value === "__back__") setStep("advanced");
@@ -384,6 +387,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={items}
                 onSelect={(item) => {
                   if (item.value === "__back__") setStep("mode");
@@ -428,6 +432,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={items}
                 onSelect={(item) => {
                   if (item.value === "__back__") setStep("advanced");
@@ -465,6 +470,7 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
             </Box>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={items}
                 onSelect={(item) => handleConfirm(item.value as "save" | "cancel")}
               />

@@ -5,6 +5,7 @@ import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
@@ -40,7 +41,11 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
         <Text color={theme.info.color} >args: {JSON.stringify(args)}</Text>
       )}
       <Box marginTop={1}>
-        <SelectInput items={items} onSelect={(item) => onDecide(item.value)} />
+        <SelectInput
+          itemComponent={FilledItem}
+          items={items}
+          onSelect={(item) => onDecide(item.value)}
+        />
       </Box>
     </Frame>
   );

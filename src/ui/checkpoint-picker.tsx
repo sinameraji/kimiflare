@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import type { SessionSummary, Checkpoint } from "../sessions.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 
 interface Props {
@@ -43,6 +44,7 @@ export function CheckpointPicker({ session, checkpoints, onPick }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           initialIndex={selectedIndex}
           onHighlight={(item) => {

@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import type { CustomCommand } from "../commands/types.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
@@ -31,6 +32,7 @@ export function CommandPicker({ commands, title, onPick }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           onSelect={(item) => {
             if (item.key === "__cancel__") {

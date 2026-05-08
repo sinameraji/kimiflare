@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 
 export type LimitDecision = "continue" | "stop";
@@ -28,6 +29,7 @@ export function LimitModal({ limit, onDecide }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           onSelect={(item) => onDecide(item.value)}
         />

@@ -63,10 +63,14 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
           const nameCol = commandLabel(item).padEnd(nameColWidth);
           const badge = sourceBadge(item.source);
           return (
-            <Text key={item.name} color={isSelected ? theme.accent : undefined} bold={isSelected}>
+            <Text
+              key={item.name}
+              backgroundColor={isSelected ? theme.selectedBg : undefined}
+              color={isSelected ? theme.onSelected : undefined}
+            >
               {isSelected ? "› " : "  "}
               {nameCol}
-              <Text color={theme.info.color}>
+              <Text color={isSelected ? theme.onSelected : theme.info.color} dimColor={!isSelected}>
                 {item.description}
                 {badge && `  [${badge}]`}
               </Text>

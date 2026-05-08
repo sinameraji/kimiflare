@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
@@ -210,6 +211,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__close__") {
@@ -256,6 +258,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -291,6 +294,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           onSelect={(item) => {
             if (item.value === "__back__") {

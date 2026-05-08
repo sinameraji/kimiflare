@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme-context.js";
+import { useTerminal } from "./layout.js";
 
 interface FrameProps {
   children: React.ReactNode;
@@ -28,10 +29,10 @@ const SHARP_CORNERS = /[┌┐└┘]/;
  * Throws if sharp corners are detected or the top-left corner is missing.
  */
 export function assertRoundedBorders(frame: string): void {
-  const lines = frame.split("\n").filter((l) => l.length > 0);
+  const lines = frame.split("\n").filter((l) => l.trim().length > 0);
   if (lines.length === 0) return;
 
-  const firstLine = lines[0]!;
+  const firstLine = lines[0]!.trimStart();
   if (!firstLine.startsWith(ROUNDED_CORNER)) {
     throw new Error(
       `Frame border integrity failed: expected top-left corner '╭', got '${firstLine[0]}'. ` +
@@ -51,15 +52,19 @@ export function assertRoundedBorders(frame: string): void {
 export function Frame({
   children,
   title,
-  width,
+  width: explicitWidth,
   padX = 1,
   padY = 0,
   borderColor: explicitBorderColor,
 }: FrameProps): React.ReactElement {
   const theme = useTheme();
+  const { cols, preferredOverlayWidth } = useTerminal();
   const borderColor = explicitBorderColor ?? (typeof theme.info === "object" ? theme.info.color : theme.info);
   // Use backgroundRaised if the theme provides it (kimiflare themes do)
   const bg = theme.palette.backgroundRaised;
+
+  const width = explicitWidth ?? preferredOverlayWidth();
+  const marginLeft = Math.max(0, Math.floor((cols - width) / 2));
 
   return (
     <Box
@@ -70,6 +75,7 @@ export function Frame({
       paddingX={padX}
       paddingY={padY}
       width={width}
+      marginLeft={marginLeft}
     >
       {title ? (
         <Text color={theme.accent} bold>

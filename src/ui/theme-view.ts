@@ -41,6 +41,10 @@ export interface ThemeView extends Theme {
   background?: ColorName;
   /** Elevated surface for overlays/cards */
   backgroundRaised?: ColorName;
+  /** Filled background for selected list items (two-tone affordance) */
+  selectedBg?: ColorName;
+  /** Text color on top of selectedBg */
+  onSelected?: ColorName;
 }
 
 /**
@@ -76,5 +80,7 @@ export function toThemeView(theme: Theme): ThemeView {
         : { color: palette.secondary, dim: true },
     background: palette.background,
     backgroundRaised: palette.backgroundRaised,
+    selectedBg: theme.accent ?? palette.primary,
+    onSelected: palette.background ?? palette.foreground,
   };
 }

@@ -56,10 +56,14 @@ export function ThemePicker({ themes, onPick }: Props) {
             const color = t?.accent ?? current.accent;
             return (
               <Box>
-                <Text color={color} bold={isSelected} dimColor={!isSelected}>
+                <Text
+                  backgroundColor={isSelected ? current.selectedBg : undefined}
+                  color={isSelected ? current.onSelected : color}
+                  dimColor={!isSelected}
+                >
                   {label}
                 </Text>
-                {t && (
+                {t && !isSelected && (
                   <Box marginLeft={1}>
                     <PaletteSwatches palette={t.palette} />
                   </Box>

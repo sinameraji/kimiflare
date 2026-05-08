@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import type { RemoteSession } from "../remote/session-store.js";
 import { listRemoteSessions } from "../remote/session-store.js";
 import { getRemoteStatus, cancelRemoteSession } from "../remote/worker-client.js";
@@ -105,6 +106,7 @@ export function RemoteDashboard({ onSelect, onCancel }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           onSelect={(item) => {
             const session = sessions.find((s) => s.sessionId === item.value);

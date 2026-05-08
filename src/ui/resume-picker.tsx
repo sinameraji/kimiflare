@@ -4,6 +4,7 @@ import SelectInput from "ink-select-input";
 import type { SessionSummary } from "../sessions.js";
 import { fuzzyFilter } from "../util/fuzzy.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
@@ -68,6 +69,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
         <Text color={theme.info.color}>No saved sessions yet. Press Enter to dismiss.</Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={[{ label: "(back)", value: "__cancel__" }]}
             onSelect={() => onPick(null)}
           />
@@ -91,6 +93,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
+          itemComponent={FilledItem}
           items={items}
           initialIndex={selectedIndex}
           onHighlight={(item) => {

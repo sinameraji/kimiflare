@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import type { LspServerConfig } from "../config.js";
@@ -277,6 +278,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={mainItems}
             onSelect={(item) => {
               if (item.value === "__close__") {
@@ -317,6 +319,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -375,6 +378,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
 
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -428,6 +432,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Box>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
             onSelect={() => setPage("add")}
           />
@@ -462,6 +467,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Box>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
             onSelect={() => setPage("custom-name")}
           />
@@ -498,6 +504,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -526,6 +533,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
           <Text color={theme.info.color}>No servers configured.</Text>
           <Box marginTop={1}>
             <SelectInput
+          itemComponent={FilledItem}
               items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
               onSelect={() => setPage("main")}
             />
@@ -557,6 +565,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -584,6 +593,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
           <Text color={theme.info.color}>No servers configured.</Text>
           <Box marginTop={1}>
             <SelectInput
+          itemComponent={FilledItem}
               items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
               onSelect={() => setPage("main")}
             />
@@ -611,6 +621,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         </Text>
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={items}
             onSelect={(item) => {
               if (item.value === "__back__") {
@@ -651,6 +662,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         )}
         <Box marginTop={1}>
           <SelectInput
+          itemComponent={FilledItem}
             items={[{ label: "← Back", value: "__back__", key: "__back__" }]}
             onSelect={() => setPage("main")}
           />

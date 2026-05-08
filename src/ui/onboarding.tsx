@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
 import { useTheme } from "./theme-context.js";
+import { FilledItem } from "./select-item.js";
 import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import {
@@ -245,6 +246,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
             <Text>How do you want to connect?</Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={[
                   { label: "Cloud (managed) — no API key needed", value: "cloud" },
                   { label: "BYOK — bring your own Cloudflare key", value: "byok" },
@@ -330,6 +332,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
             <Text color={theme.info.color}>{cloudAuth.message}</Text>
             <Box marginTop={1}>
               <SelectInput
+          itemComponent={FilledItem}
                 items={[
                   { label: "Retry", value: "retry" },
                   { label: "Switch to BYOK", value: "byok" },
