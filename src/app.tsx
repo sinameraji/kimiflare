@@ -586,6 +586,7 @@ function App({
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1509,6 +1510,27 @@ function App({
       setVerbose((v) => !v);
       return;
     }
+    // Chat scroll: shift+up/down scrolls through history when not in a picker/modal
+    const modalOpen =
+      perm !== null ||
+      limitModal !== null ||
+      showLspWizard ||
+      showCommandList ||
+      commandWizard !== null ||
+      commandToDelete !== null ||
+      resumeSessions !== null ||
+      checkpointSession !== null ||
+      showThemePicker;
+    if (!modalOpen && activePicker === null) {
+      if (key.shift && key.upArrow) {
+        setScrollOffset((o) => Math.min(o + 3, Math.max(0, events.length - 1)));
+        return;
+      }
+      if (key.shift && key.downArrow) {
+        setScrollOffset((o) => Math.max(o - 3, 0));
+        return;
+      }
+    }
   });
 
   const flushAssistantUpdates = useCallback(() => {
@@ -1544,7 +1566,7 @@ function App({
           reasoning: existing.reasoning + (assistantResult.reasoning ?? ""),
         });
         if (!flushTimeoutRef.current) {
-          flushTimeoutRef.current = setTimeout(flushAssistantUpdates, 16); // ~60fps
+          flushTimeoutRef.current = setTimeout(flushAssistantUpdates, 100); // ~10fps, reduces terminal scrollback churn
         }
         return;
       }
@@ -3654,12 +3676,14 @@ function App({
         setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
         setInput("");
         setHistoryIndex(-1);
+        setScrollOffset(0);
         return;
       }
 
       setHistory((h) => (h.length > 0 && h[h.length - 1] === historyEntry ? h : [...h, historyEntry]));
       setInput("");
       setHistoryIndex(-1);
+      setScrollOffset(0);
       processMessage(trimmedFull, trimmedDisplay !== trimmedFull ? trimmedDisplay : undefined);
     },
     [processMessage],
@@ -3918,7 +3942,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} scrollOffset={scrollOffset} />
         )}
         {perm ? (
           <PermissionModal

@@ -42,13 +42,14 @@ interface Props {
   showReasoning: boolean;
   verbose?: boolean;
   intentTier?: IntentTier;
+  scrollOffset?: number;
 }
 
 function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier, scrollOffset = 0 }: Props) {
   const theme = useTheme();
 
   // Detect repetitive tool calls in this turn (≥3 identical signatures)
@@ -64,9 +65,15 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
     if (count >= 3) repeatedSigs.add(sig);
   }
 
+  const visibleEvents = React.useMemo(() => {
+    if (scrollOffset <= 0 || events.length === 0) return events;
+    const hideCount = Math.min(scrollOffset, events.length - 1);
+    return events.slice(0, events.length - hideCount);
+  }, [events, scrollOffset]);
+
   return (
     <Box flexDirection="column">
-      {events.map((e, i) => {
+      {visibleEvents.map((e, i) => {
         const prev = events[i - 1];
         const showSeparator = !!(
           e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
