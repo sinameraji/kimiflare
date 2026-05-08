@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import lockfile from "proper-lockfile";
 import { validateModelId } from "./agent/client.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
@@ -311,7 +312,12 @@ export async function saveConfig(cfg: KimiConfig): Promise<string> {
   const dir = join(p, "..");
   await mkdir(dir, { recursive: true, mode: 0o700 });
   await chmod(dir, 0o700);
-  await writeFile(p, JSON.stringify(cfg, null, 2), "utf8");
-  await chmod(p, 0o600);
+  const release = await lockfile.lock(p, { retries: { retries: 10, factor: 2, minTimeout: 50 }, update: false });
+  try {
+    await writeFile(p, JSON.stringify(cfg, null, 2), "utf8");
+    await chmod(p, 0o600);
+  } finally {
+    await release();
+  }
   return p;
 }
