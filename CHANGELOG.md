@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.4](https://github.com/sinameraji/kimiflare/compare/v0.48.3...v0.48.4) (2026-05-08)
+
+
+### Bug Fixes
+
+* **app:** add missing logger import ([#341](https://github.com/sinameraji/kimiflare/issues/341)) ([fefd47a](https://github.com/sinameraji/kimiflare/commit/fefd47a662e7731362478fc6e37cfa2d123fb3c9))
+
 ## [0.48.3](https://github.com/sinameraji/kimiflare/compare/v0.48.2...v0.48.3) (2026-05-08)
 
 
