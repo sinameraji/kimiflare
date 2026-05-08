@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+// @rust-exception rationale: Node.js tool executor surface; directly wraps node:child_process for AI tool contract
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { logger } from "../util/logger.js";
+import { sanitizeOutput } from "../ui/sanitize-output.js";
 
 interface Args {
   command: string;
@@ -114,10 +116,10 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     ctx.signal?.addEventListener("abort", onAbort, { once: true });
 
     child.stdout.on("data", (d: Buffer) => {
-      stdout += d.toString("utf8");
+      stdout += sanitizeOutput(d.toString("utf8"));
     });
     child.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString("utf8");
+      stderr += sanitizeOutput(d.toString("utf8"));
     });
     child.on("error", (e) => {
       clearTimeout(timer);
