@@ -4,7 +4,7 @@ import Spinner from "ink-spinner";
 import type { Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
 import { useTheme } from "./theme-context.js";
-import type { Theme } from "./theme.js";
+import { useTerminal } from "./layout.js";
 import type { Mode } from "../mode.js";
 import { calculateCost } from "../pricing.js";
 import type { DailyUsage } from "../usage-tracker.js";
@@ -23,9 +23,7 @@ interface Props {
   codeMode?: boolean;
   cloudMode?: boolean;
   cloudBudget?: { remaining: number; limit: number } | null;
-  /** Number of skills active this turn */
   skillsActive?: number;
-  /** Whether memory was recalled this turn */
   memoryRecalled?: boolean;
   phase?: TurnPhase;
   currentTool?: string | null;
@@ -35,12 +33,36 @@ interface Props {
   intentTier?: IntentTier;
 }
 
-export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
+export function StatusBar({
+  usage,
+  sessionUsage,
+  thinking,
+  turnStartedAt,
+  mode,
+  contextLimit,
+  gatewayMeta,
+  codeMode,
+  cloudMode,
+  cloudBudget,
+  skillsActive,
+  memoryRecalled,
+  phase,
+  currentTool,
+  lastActivityAt,
+  kimiMdStale,
+  gitBranch,
+  intentTier,
+}: Props) {
   const theme = useTheme();
+  const { cols, truncate } = useTerminal();
   const [now, setNow] = useState(Date.now());
+
   const modeColor =
-    mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
-  const warn = usage && usage.prompt_tokens / contextLimit >= 0.8;
+    mode === "plan"
+      ? theme.modeBadge.plan
+      : mode === "auto"
+        ? theme.modeBadge.auto
+        : theme.modeBadge.edit;
 
   useEffect(() => {
     if (!thinking || turnStartedAt === null) return;
@@ -48,74 +70,72 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
     return () => clearInterval(id);
   }, [thinking, turnStartedAt]);
 
-  const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
+  const elapsed =
+    turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
+
+  const phaseLabel =
+    phase === "generating"
+      ? humanizePhase("generating", intentTier)
+      : phase === "executing"
+        ? `${humanizePhase("executing", intentTier)} ${currentTool ?? ""}`
+        : phase === "waiting"
+          ? humanizePhase("waiting", intentTier)
+          : humanizePhase("generating", intentTier);
+
+  const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
+  const idleLabel =
+    idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
+
+  // -- Left side: mode + status --
+  const metaParts: string[] = [];
+  if (skillsActive !== undefined && skillsActive > 0) {
+    metaParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"}`);
+  }
+  if (memoryRecalled) metaParts.push("memory");
+
+  const thinkingBody = metaParts.length > 0
+    ? `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
+    : `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
   if (cloudMode) idleParts.push("CLOUD");
   if (codeMode) idleParts.push("CODE");
 
-  const metaParts: string[] = [];
-  if (skillsActive !== undefined && skillsActive > 0) {
-    metaParts.push(`${skillsActive} skill${skillsActive === 1 ? "" : "s"}`);
-  }
-  if (memoryRecalled) {
-    metaParts.push("memory");
-  }
-
-  const phaseLabel = phase === "generating"
-    ? humanizePhase("generating", intentTier)
-    : phase === "executing"
-      ? `${humanizePhase("executing", intentTier)} ${currentTool ?? ""}`
-      : phase === "waiting"
-        ? humanizePhase("waiting", intentTier)
-        : humanizePhase("generating", intentTier);
-  const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
-  const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
-
-  const thinkingText = metaParts.length > 0
-    ? `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
-    : `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
-
-  const readyText = idleParts.length > 0
+  const readyBody = idleParts.length > 0
     ? `${idleParts.join(" · ")} · ready`
     : "ready";
 
+  // -- Right side: usage --
+  let usageText = "";
+  if (usage) {
+    const parts = buildRightParts(
+      usage,
+      contextLimit,
+      sessionUsage,
+      gatewayMeta,
+      cloudMode,
+      cloudBudget,
+    );
+    usageText = parts.join("  ·  ");
+  }
+  if (kimiMdStale) usageText += `${usageText ? "  ·  " : ""}! KIMI.md stale`;
+
+  // -- Assemble single line --
+  const body = thinking ? thinkingBody : readyBody;
+  const leftWidth = mode.length + 3 + body.length;
+  const full = usageText
+    ? `${mode}  ·  ${body}${" ".repeat(Math.max(1, cols - leftWidth - usageText.length - 3))}·  ${usageText}`
+    : `${mode}  ·  ${body}`;
+
+  const line = truncate(full, cols);
+
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={modeColor} bold>
-          [{mode}]
-        </Text>
-        <Text> </Text>
-        {thinking ? (
-          <Text color={theme.spinner}>
-            <Spinner type="dots2" />{" "}
-            {thinkingText}
-          </Text>
-        ) : (
-          <Text color={theme.info.color} >
-            {readyText}
-          </Text>
-        )}
-      </Box>
-      {usage && (
-        <Box>
-          <Text color={theme.info.color} >
-            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget).join("  ·  ")}
-          </Text>
-          {warn ? (
-            <Text color={theme.warn} bold>
-              {"  ·  "}/compact recommended
-            </Text>
-          ) : null}
-          {kimiMdStale ? (
-            <Text color={theme.warn} bold>
-              {"  ·  "}⚠ KIMI.md stale · run /init
-            </Text>
-          ) : null}
-        </Box>
-      )}
+    <Box>
+      <Text color={modeColor} bold>
+        {line.slice(0, mode.length)}
+      </Text>
+      <Text>{line.slice(mode.length)}</Text>
     </Box>
   );
 }
@@ -132,7 +152,9 @@ export function buildRightParts(
   const parts: string[] = [];
   if (sessionUsage) {
     const cached = sessionUsage.cachedTokens;
-    parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
+    parts.push(
+      `in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`,
+    );
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
       parts.push(`\x1b[9m$${sessionUsage.cost.toFixed(2)}\x1b[29m`);
@@ -141,7 +163,11 @@ export function buildRightParts(
     }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
-    const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
+    const cost = calculateCost(
+      usage.prompt_tokens,
+      usage.completion_tokens,
+      cached,
+    );
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {
@@ -151,7 +177,9 @@ export function buildRightParts(
     }
   }
   if (cloudMode && cloudBudget) {
-    parts.push(`${formatTokens(cloudBudget.remaining)}/${formatTokens(cloudBudget.limit)} tokens`);
+    parts.push(
+      `${formatTokens(cloudBudget.remaining)}/${formatTokens(cloudBudget.limit)} tokens`,
+    );
   }
   const gatewayCache = formatGatewayCacheStatus(gatewayMeta);
   if (gatewayCache) parts.push(gatewayCache);
@@ -165,7 +193,9 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {
+export function formatGatewayCacheStatus(
+  gatewayMeta?: GatewayMeta | null,
+): string | null {
   const status = gatewayMeta?.cacheStatus?.trim();
   return status ? `AI Gateway · cache ${status.toLowerCase()}` : null;
 }
