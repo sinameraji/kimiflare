@@ -420,6 +420,15 @@ interface PendingPermission {
   resolve: (d: PermissionDecision) => void;
 }
 
+type Overlay =
+  | { kind: "none" }
+  | { kind: "permission"; perm: PendingPermission }
+  | { kind: "limitModal"; limit: number; resolve: (d: LimitDecision) => void }
+  | { kind: "themePicker" }
+  | { kind: "commandPicker"; mode: "edit" | "delete" }
+  | { kind: "commandDelete"; cmd: CustomCommand }
+  | { kind: "commandList" };
+
 const CONTEXT_LIMIT = 262_000;
 const AUTO_COMPACT_SUGGEST_PCT = 0.8;
 const MAX_EVENTS = 500;
@@ -550,8 +559,7 @@ function App({
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [perm, setPerm] = useState<PendingPermission | null>(null);
-  const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
+  const [overlay, setOverlay] = useState<Overlay>({ kind: "none" });
   const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -567,9 +575,6 @@ function App({
   const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
   const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
   const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
-  const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
-  const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
-  const [showCommandList, setShowCommandList] = useState(false);
   const [showLspWizard, setShowLspWizard] = useState(false);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
@@ -584,7 +589,6 @@ function App({
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
   const [skillsActive, setSkillsActive] = useState(0);
   const [memoryRecalled, setMemoryRecalled] = useState(false);
@@ -883,26 +887,23 @@ function App({
   useEffect(() => {
     const modalActive =
       commandWizard !== null ||
-      commandPicker !== null ||
-      commandToDelete !== null ||
-      showCommandList ||
+      overlay.kind === "commandPicker" ||
+      overlay.kind === "commandDelete" ||
+      overlay.kind === "commandList" ||
       showLspWizard ||
       resumeSessions !== null ||
       checkpointSession !== null ||
-      perm !== null ||
-      limitModal !== null;
+      overlay.kind === "permission" ||
+      overlay.kind === "limitModal";
     if (modalActive && activePicker !== null) {
       setActivePicker(null);
     }
   }, [
     commandWizard,
-    commandPicker,
-    commandToDelete,
-    showCommandList,
+    overlay,
     showLspWizard,
     resumeSessions,
-    perm,
-    limitModal,
+    checkpointSession,
     activePicker,
   ]);
 
@@ -1442,12 +1443,12 @@ function App({
       if (hadPerm) {
         permResolveRef.current!("deny");
         permResolveRef.current = null;
-        setPerm(null);
+        setOverlay({ kind: "none" });
       }
       if (hadLimit) {
         limitResolveRef.current!("stop");
         limitResolveRef.current = null;
-        setLimitModal(null);
+        setOverlay({ kind: "none" });
       }
       if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
@@ -1470,15 +1471,15 @@ function App({
     if (key.escape) {
       const now = Date.now();
       const modalOpen =
-        perm !== null ||
-        limitModal !== null ||
+        overlay.kind === "permission" ||
+        overlay.kind === "limitModal" ||
         showLspWizard ||
-        showCommandList ||
+        overlay.kind === "commandList" ||
         commandWizard !== null ||
-        commandToDelete !== null ||
+        overlay.kind === "commandDelete" ||
         resumeSessions !== null ||
         checkpointSession !== null ||
-        showThemePicker;
+        overlay.kind === "themePicker";
       if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
         isAbortingRef.current = true;
@@ -1486,12 +1487,12 @@ function App({
         if (permResolveRef.current) {
           permResolveRef.current("deny");
           permResolveRef.current = null;
-          setPerm(null);
+          setOverlay({ kind: "none" });
         }
         if (limitResolveRef.current) {
           limitResolveRef.current("stop");
           limitResolveRef.current = null;
-          setLimitModal(null);
+          setOverlay({ kind: "none" });
         }
         activeScopeRef.current.abort("user_stopped");
         setQueue([]);
@@ -1839,7 +1840,7 @@ function App({
                 if (req.tool.name === "bash") {
                   // Non-whitelisted bash in plan mode: ask for temporary permission
                   permResolveRef.current = resolve;
-                  setPerm({ tool: req.tool, args: req.args, resolve });
+                  setOverlay({ kind: "permission", perm: { tool: req.tool, args: req.args, resolve } });
                   return;
                 }
                 setEvents((e) => [
@@ -1854,7 +1855,7 @@ function App({
                 return;
               }
               permResolveRef.current = resolve;
-              setPerm({ tool: req.tool, args: req.args, resolve });
+              setOverlay({ kind: "permission", perm: { tool: req.tool, args: req.args, resolve } });
             }),
           onKimiMdStale: () => {
             if (!kimiMdStaleNudgedRef.current) {
@@ -1967,7 +1968,7 @@ function App({
 
   const handleThemePick = useCallback(
     (picked: Theme | null) => {
-      setShowThemePicker(false);
+      setOverlay({ kind: "none" });
       if (!picked) return;
       setCfg((c) => {
         if (!c) return c;
@@ -2329,7 +2330,7 @@ function App({
       }
       if (c === "/theme") {
         if (!arg) {
-          setShowThemePicker(true);
+          setOverlay({ kind: "themePicker" });
           return true;
         }
         const next = resolveTheme(arg);
@@ -2762,15 +2763,15 @@ function App({
           return true;
         }
         if (sub === "edit") {
-          setCommandPicker({ mode: "edit" });
+          setOverlay({ kind: "commandPicker", mode: "edit" });
           return true;
         }
         if (sub === "delete") {
-          setCommandPicker({ mode: "delete" });
+          setOverlay({ kind: "commandPicker", mode: "delete" });
           return true;
         }
         if (sub === "list") {
-          setShowCommandList(true);
+          setOverlay({ kind: "commandList" });
           return true;
         }
         setEvents((e) => [
@@ -3007,7 +3008,7 @@ function App({
 
   const handleCommandDelete = useCallback(
     async (cmd: CustomCommand) => {
-      setCommandToDelete(null);
+      setOverlay({ kind: "none" });
       try {
         await deleteCustomCommand(cmd);
         await reloadCustomCommands();
@@ -3364,12 +3365,12 @@ function App({
               return;
             }
             permResolveRef.current = resolve;
-            setPerm({ tool: req.tool, args: req.args, resolve });
+            setOverlay({ kind: "permission", perm: { tool: req.tool, args: req.args, resolve } });
           }),
         onToolLimitReached: () =>
           new Promise<LimitDecision>((resolve) => {
             limitResolveRef.current = resolve;
-            setLimitModal({ limit: 50, resolve });
+            setOverlay({ kind: "limitModal", limit: 50, resolve });
           }),
         onKimiMdStale: () => {
           if (!kimiMdStaleNudgedRef.current) {
@@ -3852,48 +3853,48 @@ function App({
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}
-        {perm ? (
+        {overlay.kind === "permission" ? (
           <PermissionModal
-            tool={perm.tool}
-            args={perm.args}
+            tool={overlay.perm.tool}
+            args={overlay.perm.args}
             onDecide={(d) => {
-              perm.resolve(d);
+              overlay.perm.resolve(d);
               permResolveRef.current = null;
-              setPerm(null);
+              setOverlay({ kind: "none" });
             }}
           />
-        ) : limitModal ? (
+        ) : overlay.kind === "limitModal" ? (
           <LimitModal
-            limit={limitModal.limit}
+            limit={overlay.limit}
             onDecide={(d) => {
-              limitModal.resolve(d);
+              overlay.resolve(d);
               limitResolveRef.current = null;
-              setLimitModal(null);
+              setOverlay({ kind: "none" });
             }}
           />
-        ) : showThemePicker ? (
+        ) : overlay.kind === "themePicker" ? (
           <ThemePicker themes={themeList()} onPick={handleThemePick} />
-        ) : commandPicker ? (
+        ) : overlay.kind === "commandPicker" ? (
           <CommandPicker
             commands={customCommandsRef.current}
-            title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
+            title={overlay.mode === "edit" ? "Edit custom command" : "Delete custom command"}
             onPick={(cmd) => {
-              setCommandPicker(null);
+              setOverlay({ kind: "none" });
               if (!cmd) return;
-              if (commandPicker.mode === "edit") {
+              if (overlay.mode === "edit") {
                 setCommandWizard({ mode: "edit", initial: cmd });
               } else {
-                setCommandToDelete(cmd);
+                setOverlay({ kind: "commandDelete", cmd });
               }
             }}
           />
-        ) : commandToDelete ? (
+        ) : overlay.kind === "commandDelete" ? (
           <Frame borderColor={theme.accent} padX={1}>
             <Text color={theme.accent} bold>
-              Delete /{commandToDelete.name}?
+              Delete /{overlay.cmd.name}?
             </Text>
             <Text color={theme.info.color}>
-              {commandToDelete.filepath}
+              {overlay.cmd.filepath}
             </Text>
             <Box marginTop={1}>
               <SelectInput
@@ -3904,18 +3905,18 @@ function App({
                 ]}
                 onSelect={(item) => {
                   if (item.value === "yes") {
-                    void handleCommandDelete(commandToDelete);
+                    void handleCommandDelete(overlay.cmd);
                   } else {
-                    setCommandToDelete(null);
+                    setOverlay({ kind: "none" });
                   }
                 }}
               />
             </Box>
           </Frame>
-        ) : showCommandList ? (
+        ) : overlay.kind === "commandList" ? (
           <CommandList
             commands={customCommandsRef.current}
-            onDone={() => setShowCommandList(false)}
+            onDone={() => setOverlay({ kind: "none" })}
           />
         ) : (
           <Box flexDirection="column" marginTop={1}>
