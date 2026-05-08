@@ -88,12 +88,16 @@ import {
   findSkillFile,
 } from "./skills/manager.js";
 import {
+  ensureSessionId as ensureSessionIdFn,
+  saveSessionSafe as saveSessionSafeFn,
+  doResumeSession as doResumeSessionFn,
+  handleResumePick as handleResumePickFn,
+  handleCheckpointPick as handleCheckpointPickFn,
+} from "./app/session-helpers.js";
+import {
   listSessions,
   loadSession,
-  loadSessionFromCheckpoint,
   addCheckpoint,
-  makeSessionId,
-  saveSession,
   generateSessionTitle,
   type SessionSummary,
   type Checkpoint,
@@ -120,7 +124,7 @@ import {
   BUILTIN_COMMANDS,
   BUILTIN_COMMAND_NAMES,
 } from "./commands/builtins.js";
-import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
+
 import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { CommandWizard } from "./ui/command-wizard.js";
 import { buildInitPrompt } from "./init/context-generator.js";
@@ -178,7 +182,11 @@ import {
   initLsp as initLspFn,
 } from "./app/mcp-lsp-init.js";
 import { onIterationEnd as onIterationEndFn } from "./app/compaction.js";
-import { reloadCustomCommands as reloadCustomCommandsFn } from "./app/commands-init.js";
+import {
+  reloadCustomCommands as reloadCustomCommandsFn,
+  handleCommandSave as handleCommandSaveFn,
+  handleCommandDelete as handleCommandDeleteFn,
+} from "./app/commands-init.js";
 import { createUiUpdaters } from "./app/ui-updates.js";
 import { handleSlash as slashHandleSlash } from "./app/slash-commands.js";
 
@@ -1075,51 +1083,23 @@ function App({
   }, [cfg, initMcp, initLsp]);
 
   const ensureSessionId = useCallback(() => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    const firstUser = messagesRef.current.find((m) => m.role === "user");
-    let firstText = "session";
-    if (typeof firstUser?.content === "string") {
-      firstText = firstUser.content;
-    } else if (Array.isArray(firstUser?.content)) {
-      const textPart = firstUser.content.find((p) => p.type === "text");
-      if (textPart?.text) firstText = textPart.text;
-    }
-    sessionIdRef.current = makeSessionId(firstText);
-    return sessionIdRef.current;
+    return ensureSessionIdFn({ sessionIdRef, messagesRef });
   }, []);
 
   const saveSessionSafe = useCallback(async () => {
-    if (!cfg) return;
-    ensureSessionId();
-    const now = new Date().toISOString();
-    if (!sessionCreatedAtRef.current) {
-      sessionCreatedAtRef.current = now;
-    }
-    try {
-      await saveSession({
-        id: sessionIdRef.current!,
-        cwd: process.cwd(),
-        model: cfg.model,
-        createdAt: sessionCreatedAtRef.current,
-        updatedAt: now,
-        title: sessionTitleRef.current ?? undefined,
-        messages: messagesRef.current,
-        sessionState: compiledContextRef.current
-          ? sessionStateRef.current
-          : undefined,
-        artifactStore: serializeArtifactStore(artifactStoreRef.current),
-      });
-    } catch (e) {
-      setEvents((es) => [
-        ...es,
-        {
-          kind: "error",
-          key: mkKey(),
-          text: `session save failed: ${(e as Error).message}`,
-        },
-      ]);
-    }
-  }, [cfg, ensureSessionId]);
+    await saveSessionSafeFn({
+      cfg,
+      sessionIdRef,
+      sessionCreatedAtRef,
+      sessionTitleRef,
+      sessionStateRef,
+      compiledContextRef,
+      artifactStoreRef,
+      messagesRef,
+      setEvents,
+      mkKey,
+    });
+  }, [cfg]);
 
   /** Mid-turn compaction hook: called between tool-iteration cycles in runAgentTurn.
    *  Prevents context overflow during long exploration sessions. */
@@ -1753,134 +1733,85 @@ function App({
 
   const doResumeSession = useCallback(
     async (filePath: string, checkpointId?: string) => {
-      try {
-        const file = checkpointId
-          ? (await loadSessionFromCheckpoint(filePath, checkpointId)).file
-          : await loadSession(filePath);
-        messagesRef.current = file.messages;
-        sessionIdRef.current = file.id;
-        sessionCreatedAtRef.current = file.createdAt;
-        if (file.sessionState && compiledContextRef.current) {
-          sessionStateRef.current = file.sessionState;
-        }
-        if (file.artifactStore) {
-          artifactStoreRef.current = deserializeArtifactStore(
-            file.artifactStore,
-          );
-        } else {
-          artifactStoreRef.current = new ArtifactStore();
-        }
-        // Recall memories for resumed session so the model has context
-        const manager = memoryManagerRef.current;
-        if (manager) {
-          try {
-            const cwd = process.cwd();
-            const results = await manager.recall({
-              text: cwd,
-              repoPath: cwd,
-              limit: 5,
-            });
-            if (results.length > 0) {
-              const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = messagesRef.current.findLastIndex(
-                (m) => m.role === "system",
-              );
-              const insertIdx =
-                lastSystemIdx >= 0
-                  ? lastSystemIdx + 1
-                  : messagesRef.current.length;
-              messagesRef.current.splice(insertIdx, 0, {
-                role: "system",
-                content: text,
-              });
-            }
-          } catch {
-            // Non-fatal
-          }
-        }
-
-        const msg = checkpointId
-          ? `resumed session ${file.id} from checkpoint`
-          : `resumed session ${file.id} (${file.messages.filter((m) => m.role !== "system").length} msgs)`;
-        setEvents([{ kind: "info", key: mkKey(), text: msg }]);
-        const userMsgs = file.messages
-          .filter((m) => m.role === "user" && m.content)
-          .map((m) => {
-            if (!m.content) return "";
-            if (typeof m.content === "string") return m.content;
-            const textPart = m.content.find((p) => p.type === "text");
-            return textPart?.text ?? "";
-          })
-          .filter((text) => text.length > 0);
-        if (userMsgs.length > 0) setHistory(userMsgs);
-        setUsage(null);
-        setSessionUsage(null);
-        gatewayMetaRef.current = null;
-        setGatewayMeta(null);
-        void getCostReport(file.id).then((report) =>
-          setSessionUsage(report.session),
-        );
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `failed to load session: ${(e as Error).message}`,
-          },
-        ]);
-      }
+      await doResumeSessionFn(
+        {
+          messagesRef,
+          sessionIdRef,
+          sessionCreatedAtRef,
+          sessionStateRef,
+          compiledContextRef,
+          artifactStoreRef,
+          memoryManagerRef,
+          gatewayMetaRef,
+          setEvents,
+          setHistory,
+          setUsage,
+          setSessionUsage,
+          setGatewayMeta,
+          mkKey,
+        },
+        filePath,
+        checkpointId,
+      );
     },
     [],
   );
 
   const handleResumePick = useCallback(
     async (picked: SessionSummary | null) => {
-      setResumeSessions(null);
-      if (!picked) return;
-      if (picked.checkpointCount > 0) {
-        // Load checkpoints and show picker
-        try {
-          const file = await loadSession(picked.filePath);
-          setCheckpointList(file.checkpoints ?? []);
-          setCheckpointSession(picked);
-        } catch (e) {
-          setEvents((es) => [
-            ...es,
-            {
-              kind: "error",
-              key: mkKey(),
-              text: `failed to load checkpoints: ${(e as Error).message}`,
-            },
-          ]);
-          await doResumeSession(picked.filePath);
-        }
-        return;
-      }
-      await doResumeSession(picked.filePath);
+      await handleResumePickFn(
+        {
+          messagesRef,
+          sessionIdRef,
+          sessionCreatedAtRef,
+          sessionStateRef,
+          compiledContextRef,
+          artifactStoreRef,
+          memoryManagerRef,
+          gatewayMetaRef,
+          setEvents,
+          setHistory,
+          setUsage,
+          setSessionUsage,
+          setGatewayMeta,
+          mkKey,
+          setResumeSessions,
+          setCheckpointList,
+          setCheckpointSession,
+        },
+        picked,
+      );
     },
-    [doResumeSession],
+    [],
   );
 
   const handleCheckpointPick = useCallback(
     async (checkpointId: string | null) => {
-      const session = checkpointSession;
-      setCheckpointSession(null);
-      setCheckpointList([]);
-      if (!session || !checkpointId) {
-        // User cancelled or went back — reopen session list
-        if (session) {
-          setResumeSessions(await listSessions(200, process.cwd()));
-        }
-        return;
-      }
-      if (checkpointId === "__start__") {
-        await doResumeSession(session.filePath);
-        return;
-      }
-      await doResumeSession(session.filePath, checkpointId);
+      await handleCheckpointPickFn(
+        {
+          messagesRef,
+          sessionIdRef,
+          sessionCreatedAtRef,
+          sessionStateRef,
+          compiledContextRef,
+          artifactStoreRef,
+          memoryManagerRef,
+          gatewayMetaRef,
+          setEvents,
+          setHistory,
+          setUsage,
+          setSessionUsage,
+          setGatewayMeta,
+          mkKey,
+          setResumeSessions,
+          setCheckpointList,
+          setCheckpointSession,
+        },
+        checkpointSession,
+        checkpointId,
+      );
     },
-    [checkpointSession, doResumeSession],
+    [checkpointSession],
   );
 
   const handleSlash = useCallback(
@@ -1979,64 +1910,26 @@ function App({
 
   const handleCommandSave = useCallback(
     async (opts: SaveCustomCommandOptions) => {
-      setCommandWizard(null);
-      try {
-        // If editing and name changed, delete the old file first
-        if (
-          commandWizard?.mode === "edit" &&
-          commandWizard.initial &&
-          commandWizard.initial.name !== opts.name
-        ) {
-          await deleteCustomCommand(commandWizard.initial);
-        }
-        const result = await saveCustomCommand(opts);
-        await reloadCustomCommands();
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `saved /${opts.name} → ${result.filepath}`,
-          },
-        ]);
-      } catch (err) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `failed to save /${opts.name}: ${(err as Error).message}`,
-          },
-        ]);
-      }
+      await handleCommandSaveFn(
+        {
+          commandWizard,
+          setCommandWizard,
+          setEvents,
+          mkKey,
+          reloadCustomCommands,
+        },
+        opts,
+      );
     },
     [commandWizard, reloadCustomCommands, setEvents],
   );
 
   const handleCommandDelete = useCallback(
     async (cmd: CustomCommand) => {
-      setOverlay({ kind: "none" });
-      try {
-        await deleteCustomCommand(cmd);
-        await reloadCustomCommands();
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `deleted /${cmd.name} (${cmd.filepath})`,
-          },
-        ]);
-      } catch (err) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `failed to delete /${cmd.name}: ${(err as Error).message}`,
-          },
-        ]);
-      }
+      await handleCommandDeleteFn(
+        { setOverlay, setEvents, mkKey, reloadCustomCommands },
+        cmd,
+      );
     },
     [reloadCustomCommands, setEvents],
   );
