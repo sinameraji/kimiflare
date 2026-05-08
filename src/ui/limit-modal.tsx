@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 
 export type LimitDecision = "continue" | "stop";
 
@@ -18,7 +19,7 @@ export function LimitModal({ limit, onDecide }: Props) {
   ];
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.error} paddingX={1}>
+    <Frame borderColor={theme.error} padX={1}>
       <Text color={theme.error} bold>
         Tool-call limit reached ({limit})
       </Text>
@@ -31,6 +32,6 @@ export function LimitModal({ limit, onDecide }: Props) {
           onSelect={(item) => onDecide(item.value)}
         />
       </Box>
-    </Box>
+    </Frame>
   );
 }

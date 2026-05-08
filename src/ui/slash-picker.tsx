@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import type { SlashItem } from "../commands/types.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
@@ -38,7 +39,7 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
   const nameColWidth = Math.max(NAME_COL_MIN_WIDTH, longestLabel + NAME_DESC_GAP);
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         {query ? `Commands matching "/${query}"` : "Slash commands"}
       </Text>
@@ -78,6 +79,6 @@ export function SlashPicker({ items, selectedIndex, query }: Props) {
           </Text>
         )}
       </Box>
-    </Box>
+    </Frame>
   );
 }

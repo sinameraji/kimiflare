@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text, useInput } from "ink";
 import type { CustomCommand } from "../commands/types.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
@@ -18,7 +19,7 @@ export function CommandList({ commands, onDone }: Props) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         Custom commands
       </Text>
@@ -78,6 +79,6 @@ export function CommandList({ commands, onDone }: Props) {
           </Box>
         ))}
       </Box>
-    </Box>
+    </Frame>
   );
 }

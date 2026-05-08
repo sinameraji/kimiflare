@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import type { SessionSummary, Checkpoint } from "../sessions.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 
 interface Props {
   session: SessionSummary;
@@ -33,7 +34,7 @@ export function CheckpointPicker({ session, checkpoints, onPick }: Props) {
   ];
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         {session.firstPrompt.slice(0, 50)}
       </Text>
@@ -60,7 +61,7 @@ export function CheckpointPicker({ session, checkpoints, onPick }: Props) {
       <Box marginTop={1}>
         <Text color={theme.info.color}>q: cancel / go back</Text>
       </Box>
-    </Box>
+    </Frame>
   );
 }
 

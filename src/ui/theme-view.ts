@@ -58,7 +58,7 @@ export function toThemeView(theme: Theme): ThemeView {
         ? theme.muted.color
         : theme.muted ?? palette.secondary,
     primary: theme.user ?? palette.primary,
-    onPrimary: palette.background,
+    onPrimary: palette.foreground,
     secondary: theme.assistant ?? palette.secondary,
     error: theme.error ?? palette.error,
     warn: theme.warn ?? palette.error,

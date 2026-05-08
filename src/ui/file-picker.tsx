@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 export interface FilePickerItem {
@@ -33,7 +34,7 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
   const hasRecentSection = recentInVisible > 0;
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         {query ? `Files matching "${query}"` : "Mention a file"}
       </Text>
@@ -91,6 +92,6 @@ export function FilePicker({ items, selectedIndex, query, recentFiles }: Props) 
           </Box>
         )}
       </Box>
-    </Box>
+    </Frame>
   );
 }

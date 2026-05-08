@@ -4,6 +4,7 @@ import Spinner from "ink-spinner";
 import { DiffView } from "./diff-view.js";
 import { collapsePathsInText } from "../util/paths.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import { humanizeToolTitle, type IntentTier } from "./narrator.js";
 
@@ -82,14 +83,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
         </Box>
       ) : null}
       {evt.result && expand ? (
-        <Box
-          marginLeft={2}
-          marginTop={1}
-          flexDirection="column"
-          borderStyle="single"
-          borderColor={theme.info.color}
-          paddingX={1}
-        >
+        <Frame borderColor={typeof theme.info === "object" ? theme.info.color : theme.info} padX={1}>
           {lines.slice(0, showLimit).map((l, i) => (
             <Text key={i} color={theme.info.color}>
               {l}
@@ -100,7 +94,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
               … ({lines.length - showLimit} more lines)
             </Text>
           )}
-        </Box>
+        </Frame>
       ) : null}
       {evt.result && !expand && evt.status !== "running" ? (
         <Text color={theme.info.color}>

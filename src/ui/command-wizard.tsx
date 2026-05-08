@@ -3,6 +3,7 @@ import { Box, Text, useInput, useWindowSize } from "ink";
 import SelectInput from "ink-select-input";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import type { Mode } from "../mode.js";
 import type { ReasoningEffort } from "../config.js";
@@ -475,8 +476,8 @@ export function CommandWizard({ mode, initial, existingNames, builtinNames, onDo
   };
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       {renderStep()}
-    </Box>
+    </Frame>
   );
 }

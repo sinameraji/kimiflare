@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { spawn } from "node:child_process";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import type { LspServerConfig } from "../config.js";
 import { CustomTextInput } from "./text-input.js";
@@ -267,7 +268,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
 
   if (page === "main") {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           LSP Servers
         </Text>
@@ -286,7 +287,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -307,7 +308,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     ];
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Add LSP Server
         </Text>
@@ -327,7 +328,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -350,7 +351,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
         ];
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Install {selectedPreset.name}
         </Text>
@@ -397,7 +398,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             </Text>
           </Box>
         )}
-      </Box>
+      </Frame>
     );
   }
 
@@ -405,7 +406,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
 
   if (page === "custom-name") {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Custom LSP Server — Name
         </Text>
@@ -431,7 +432,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             onSelect={() => setPage("add")}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -439,7 +440,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
 
   if (page === "custom-command") {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Custom LSP Server — Command
         </Text>
@@ -465,7 +466,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             onSelect={() => setPage("custom-name")}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -488,7 +489,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     ];
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Save LSP Config
         </Text>
@@ -508,7 +509,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -518,7 +519,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     const keys = Object.keys(servers);
     if (keys.length === 0) {
       return (
-        <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Frame borderColor={theme.accent} padX={1}>
           <Text color={theme.accent} bold>
             Edit LSP Server
           </Text>
@@ -529,7 +530,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
               onSelect={() => setPage("main")}
             />
           </Box>
-        </Box>
+        </Frame>
       );
     }
 
@@ -547,7 +548,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     ];
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Edit LSP Server
         </Text>
@@ -566,7 +567,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -576,7 +577,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     const keys = Object.keys(servers);
     if (keys.length === 0) {
       return (
-        <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Frame borderColor={theme.accent} padX={1}>
           <Text color={theme.accent} bold>
             Delete LSP Server
           </Text>
@@ -587,7 +588,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
               onSelect={() => setPage("main")}
             />
           </Box>
-        </Box>
+        </Frame>
       );
     }
 
@@ -601,7 +602,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
     ];
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Delete LSP Server
         </Text>
@@ -620,7 +621,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -629,7 +630,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
   if (page === "list") {
     const keys = Object.keys(servers);
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Configured LSP Servers
         </Text>
@@ -654,7 +655,7 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
             onSelect={() => setPage("main")}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 

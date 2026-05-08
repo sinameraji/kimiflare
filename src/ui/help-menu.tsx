@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 interface CustomCommandSummary {
@@ -200,7 +201,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
     items.push({ label: "(close)", value: "__close__", key: "__close__" });
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Help
         </Text>
@@ -231,7 +232,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
             keys: ctrl-c interrupt/exit · ctrl-r toggle reasoning · ctrl-o verbose · shift+tab cycle mode · ↑/↓ history
           </Text>
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -244,7 +245,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
     items.push({ label: "← Back", value: "__back__", key: "__back__" });
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Custom commands
         </Text>
@@ -265,7 +266,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
             }}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -281,7 +282,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
   items.push({ label: "← Back", value: "__back__", key: "__back__" });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         {category.label}
       </Text>
@@ -309,6 +310,6 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
           ))}
         </Box>
       )}
-    </Box>
+    </Frame>
   );
 }

@@ -5,6 +5,7 @@ import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
@@ -23,7 +24,7 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
   ];
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.permission} paddingX={1}>
+    <Frame borderColor={theme.permission} padX={1}>
       <Text color={theme.permission} bold>
         Permission requested
       </Text>
@@ -41,6 +42,6 @@ export function PermissionModal({ tool, args, onDecide }: Props) {
       <Box marginTop={1}>
         <SelectInput items={items} onSelect={(item) => onDecide(item.value)} />
       </Box>
-    </Box>
+    </Frame>
   );
 }

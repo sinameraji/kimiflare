@@ -45,6 +45,7 @@ import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
+import { Frame } from "./ui/frame.js";
 import {
   configPath,
   DEFAULT_MODEL,
@@ -3860,7 +3861,7 @@ function App({
   if (commandToDelete) {
     return (
       <ThemeProvider theme={theme}>
-        <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Delete /{commandToDelete.name}?
         </Text>
@@ -3882,7 +3883,7 @@ function App({
             }}
           />
         </Box>
-      </Box>
+      </Frame>
       </ThemeProvider>
     );
   }

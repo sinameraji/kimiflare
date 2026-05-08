@@ -5,8 +5,6 @@ import { Box, Text } from "ink";
 import {
   renderToString,
   lineCount,
-  assertContains,
-  assertNotContains,
   assertMaxLineWidth,
   assertLineCount,
   SmokeComponent,
@@ -46,11 +44,6 @@ describe("U1: TDD harness smoke", () => {
 });
 
 describe("R1: rounded borders only", () => {
-  it("welcome uses rounded corners exclusively", () => {
-    const text = renderToString(withTheme(<Welcome accountId="test" cloudMode={false} />));
-    assertRoundedBorders(text);
-  });
-
   it("permission modal uses rounded corners exclusively", () => {
     const tool: ToolSpec = { name: "read_file", description: "", parameters: {} };
     const text = renderToString(
@@ -65,27 +58,11 @@ describe("R2: status bar is exactly one line", () => {
     const text = renderToString(
       withTheme(
         <StatusBar
-          model="kimi-k2.6"
           usage={null}
-          sessionUsage={null}
           thinking={false}
           turnStartedAt={null}
           mode="edit"
-          effort="low"
           contextLimit={128000}
-          hasUpdate={false}
-          latestVersion="0.44.0"
-          gatewayMeta={null}
-          codeMode={false}
-          cloudMode={false}
-          cloudBudget={null}
-          skillsActive={false}
-          memoryRecalled={false}
-          phase="waiting"
-          currentTool={null}
-          lastActivityAt={null}
-          kimiMdStale={false}
-          gitBranch="main"
         />,
       ),
       { columns: 80 },
@@ -97,27 +74,11 @@ describe("R2: status bar is exactly one line", () => {
     const text = renderToString(
       withTheme(
         <StatusBar
-          model="kimi-k2.6"
           usage={null}
-          sessionUsage={null}
           thinking={false}
           turnStartedAt={null}
           mode="edit"
-          effort="low"
           contextLimit={128000}
-          hasUpdate={false}
-          latestVersion="0.44.0"
-          gatewayMeta={null}
-          codeMode={false}
-          cloudMode={false}
-          cloudBudget={null}
-          skillsActive={false}
-          memoryRecalled={false}
-          phase="waiting"
-          currentTool={null}
-          lastActivityAt={null}
-          kimiMdStale={false}
-          gitBranch="main"
         />,
       ),
       { columns: 60 },
@@ -127,24 +88,24 @@ describe("R2: status bar is exactly one line", () => {
 });
 
 describe("R3: overlays are centered, not full-screen", () => {
-  // Overlays like HelpMenu, CommandPicker should not consume the full terminal
-  // when rendered on top of chat. We'll test this by checking line counts
-  // at standard terminal sizes.
   it.todo("help overlay is centered and does not fill the terminal");
   it.todo("command palette is centered and does not fill the terminal");
 });
 
-describe("R4: welcome screen is centered rounded card", () => {
-  it("has rounded frame corners", () => {
-    const text = renderToString(withTheme(<Welcome accountId="test" cloudMode={false} />));
-    assertRoundedBorders(text);
-  });
-
+describe("R4: welcome screen is minimal", () => {
   it("has no ASCII art characters", () => {
-    const text = renderToString(withTheme(<Welcome accountId="test" cloudMode={false} />));
+    const text = renderToString(withTheme(<Welcome />));
     const asciiArtChars = ["█", "▄", "▀", "▌", "▐", "░", "▒", "▓"];
     for (const ch of asciiArtChars) {
       assert.ok(!text.includes(ch), `welcome contained ASCII art char "${ch}"`);
+    }
+  });
+
+  it("has no box-drawing borders", () => {
+    const text = renderToString(withTheme(<Welcome />));
+    const borderChars = ["┌", "┐", "└", "┘", "╭", "╮", "╰", "╯", "─", "│"];
+    for (const ch of borderChars) {
+      assert.ok(!text.includes(ch), `welcome contained border char "${ch}"`);
     }
   });
 });
@@ -158,9 +119,6 @@ describe("R5: chat messages breathe, no borders", () => {
     const text = renderToString(
       withTheme(<ChatView events={events} showReasoning={false} verbose={false} />),
     );
-    const borderChars = ["┌", "┐", "└", "┘", "╭", "╮", "╰", "╯", "│", "─"];
-    // Separators with ─ are allowed, but not around individual messages
-    // For now, we just check there are no full boxes around messages
     assert.ok(text.includes("hello"));
     assert.ok(text.includes("world"));
   });
@@ -170,7 +128,7 @@ describe("R6: graceful widths 60–120", () => {
   for (const cols of [60, 80, 120]) {
     it(`welcome fits at ${cols} cols`, () => {
       const text = renderToString(
-        withTheme(<Welcome accountId="test" cloudMode={false} />),
+        withTheme(<Welcome />),
         { columns: cols },
       );
       assertMaxLineWidth(text, cols);
@@ -180,27 +138,11 @@ describe("R6: graceful widths 60–120", () => {
       const text = renderToString(
         withTheme(
           <StatusBar
-            model="kimi-k2.6"
             usage={null}
-            sessionUsage={null}
             thinking={false}
             turnStartedAt={null}
             mode="edit"
-            effort="low"
             contextLimit={128000}
-            hasUpdate={false}
-            latestVersion="0.44.0"
-            gatewayMeta={null}
-            codeMode={false}
-            cloudMode={false}
-            cloudBudget={null}
-            skillsActive={false}
-            memoryRecalled={false}
-            phase="waiting"
-            currentTool={null}
-            lastActivityAt={null}
-            kimiMdStale={false}
-            gitBranch="main"
           />,
         ),
         { columns: cols },

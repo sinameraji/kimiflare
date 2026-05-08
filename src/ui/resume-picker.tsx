@@ -4,6 +4,7 @@ import SelectInput from "ink-select-input";
 import type { SessionSummary } from "../sessions.js";
 import { fuzzyFilter } from "../util/fuzzy.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 
 interface Props {
@@ -60,7 +61,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
 
   if (sessions.length === 0) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+      <Frame borderColor={theme.accent} padX={1}>
         <Text color={theme.accent} bold>
           Resume a session
         </Text>
@@ -71,7 +72,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
             onSelect={() => onPick(null)}
           />
         </Box>
-      </Box>
+      </Frame>
     );
   }
 
@@ -81,7 +82,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
   }));
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+    <Frame borderColor={theme.accent} padX={1}>
       <Text color={theme.accent} bold>
         Resume a session
       </Text>
@@ -109,7 +110,7 @@ export function ResumePicker({ sessions, onPick }: Props) {
           q: cancel
         </Text>
       </Box>
-    </Box>
+    </Frame>
   );
 }
 

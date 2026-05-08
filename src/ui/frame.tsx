@@ -31,7 +31,7 @@ export function assertRoundedBorders(frame: string): void {
   const lines = frame.split("\n").filter((l) => l.length > 0);
   if (lines.length === 0) return;
 
-  const firstLine = lines[0];
+  const firstLine = lines[0]!;
   if (!firstLine.startsWith(ROUNDED_CORNER)) {
     throw new Error(
       `Frame border integrity failed: expected top-left corner '╭', got '${firstLine[0]}'. ` +
@@ -57,7 +57,7 @@ export function Frame({
   borderColor: explicitBorderColor,
 }: FrameProps): React.ReactElement {
   const theme = useTheme();
-  const borderColor = explicitBorderColor ?? theme.border;
+  const borderColor = explicitBorderColor ?? (typeof theme.info === "object" ? theme.info.color : theme.info);
 
   return (
     <Box

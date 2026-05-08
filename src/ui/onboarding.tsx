@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 import type { Theme } from "./theme.js";
 import {
   generateDeviceCodes,
@@ -394,17 +395,12 @@ export function Onboarding({ onDone, onCancel }: Props) {
         {step === "confirm" && (
           <>
             <Text>Ready to save configuration</Text>
-            <Box
-              flexDirection="column"
-              marginTop={1}
-              marginBottom={1}
-              borderStyle="single"
-              borderColor={theme.info.color}
-              paddingX={1}
-            >
-              <Text color={theme.info.color}>Account ID: {accountId}</Text>
-              <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
-              <Text color={theme.info.color}>Model: {model}</Text>
+            <Box marginTop={1} marginBottom={1}>
+              <Frame borderColor={typeof theme.info === "object" ? theme.info.color : theme.info} padX={1}>
+                <Text color={theme.info.color}>Account ID: {accountId}</Text>
+                <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
+                <Text color={theme.info.color}>Model: {model}</Text>
+              </Frame>
             </Box>
             <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
             <Box marginTop={1}>

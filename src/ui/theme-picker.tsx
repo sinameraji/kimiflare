@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import type { Theme } from "./theme.js";
 import { useTheme } from "./theme-context.js";
+import { Frame } from "./frame.js";
 
 interface Props {
   themes: Theme[];
@@ -35,7 +36,7 @@ export function ThemePicker({ themes, onPick }: Props) {
   ];
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={current.accent} paddingX={1}>
+    <Frame borderColor={current.accent} padX={1}>
       <Text color={current.accent} bold>
         Pick a theme (restart to apply)
       </Text>
@@ -68,6 +69,6 @@ export function ThemePicker({ themes, onPick }: Props) {
           }}
         />
       </Box>
-    </Box>
+    </Frame>
   );
 }
