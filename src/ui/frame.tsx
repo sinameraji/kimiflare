@@ -58,12 +58,15 @@ export function Frame({
 }: FrameProps): React.ReactElement {
   const theme = useTheme();
   const borderColor = explicitBorderColor ?? (typeof theme.info === "object" ? theme.info.color : theme.info);
+  // Use backgroundRaised if the theme provides it (kimiflare themes do)
+  const bg = theme.palette.backgroundRaised;
 
   return (
     <Box
       flexDirection="column"
       borderStyle="round"
       borderColor={borderColor}
+      backgroundColor={bg}
       paddingX={padX}
       paddingY={padY}
       width={width}
