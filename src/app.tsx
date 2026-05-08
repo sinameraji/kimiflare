@@ -97,6 +97,7 @@ import { CommandPicker } from "./ui/command-picker.js";
 import { CommandList } from "./ui/command-list.js";
 import { LspWizard } from "./ui/lsp-wizard.js";
 import { ThemeProvider } from "./ui/theme-context.js";
+import { FilledItem } from "./ui/select-item.js";
 import { ThemePicker } from "./ui/theme-picker.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
@@ -3836,81 +3837,6 @@ function App({
     );
   }
 
-  if (commandPicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <CommandPicker
-            commands={customCommandsRef.current}
-            title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
-            onPick={(cmd) => {
-              setCommandPicker(null);
-              if (!cmd) return;
-              if (commandPicker.mode === "edit") {
-                setCommandWizard({ mode: "edit", initial: cmd });
-              } else {
-                setCommandToDelete(cmd);
-              }
-            }}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (commandToDelete) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Frame borderColor={theme.accent} padX={1}>
-        <Text color={theme.accent} bold>
-          Delete /{commandToDelete.name}?
-        </Text>
-        <Text color={theme.info.color}>
-          {commandToDelete.filepath}
-        </Text>
-        <Box marginTop={1}>
-          <SelectInput
-            items={[
-              { label: "Yes, delete", value: "yes", key: "yes" },
-              { label: "Cancel", value: "cancel", key: "cancel" },
-            ]}
-            onSelect={(item) => {
-              if (item.value === "yes") {
-                void handleCommandDelete(commandToDelete);
-              } else {
-                setCommandToDelete(null);
-              }
-            }}
-          />
-        </Box>
-      </Frame>
-      </ThemeProvider>
-    );
-  }
-
-  if (showCommandList) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <CommandList
-            commands={customCommandsRef.current}
-            onDone={() => setShowCommandList(false)}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showThemePicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <ThemePicker themes={themeList()} onPick={handleThemePick} />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
   const hasConversation = events.some((e) => e.kind === "user" || e.kind === "assistant");
 
   return (
@@ -3939,6 +3865,52 @@ function App({
               limitResolveRef.current = null;
               setLimitModal(null);
             }}
+          />
+        ) : showThemePicker ? (
+          <ThemePicker themes={themeList()} onPick={handleThemePick} />
+        ) : commandPicker ? (
+          <CommandPicker
+            commands={customCommandsRef.current}
+            title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
+            onPick={(cmd) => {
+              setCommandPicker(null);
+              if (!cmd) return;
+              if (commandPicker.mode === "edit") {
+                setCommandWizard({ mode: "edit", initial: cmd });
+              } else {
+                setCommandToDelete(cmd);
+              }
+            }}
+          />
+        ) : commandToDelete ? (
+          <Frame borderColor={theme.accent} padX={1}>
+            <Text color={theme.accent} bold>
+              Delete /{commandToDelete.name}?
+            </Text>
+            <Text color={theme.info.color}>
+              {commandToDelete.filepath}
+            </Text>
+            <Box marginTop={1}>
+              <SelectInput
+                itemComponent={FilledItem}
+                items={[
+                  { label: "Yes, delete", value: "yes", key: "yes" },
+                  { label: "Cancel", value: "cancel", key: "cancel" },
+                ]}
+                onSelect={(item) => {
+                  if (item.value === "yes") {
+                    void handleCommandDelete(commandToDelete);
+                  } else {
+                    setCommandToDelete(null);
+                  }
+                }}
+              />
+            </Box>
+          </Frame>
+        ) : showCommandList ? (
+          <CommandList
+            commands={customCommandsRef.current}
+            onDone={() => setShowCommandList(false)}
           />
         ) : (
           <Box flexDirection="column" marginTop={1}>
