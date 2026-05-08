@@ -115,7 +115,6 @@ import {
 } from "./util/state.js";
 import { getAppVersion } from "./util/version.js";
 
-import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
 import type { CustomCommand, SlashItem } from "./commands/types.js";
 import {
@@ -180,6 +179,7 @@ import {
   initLsp as initLspFn,
 } from "./app/mcp-lsp-init.js";
 import { onIterationEnd as onIterationEndFn } from "./app/compaction.js";
+import { reloadCustomCommands as reloadCustomCommandsFn } from "./app/commands-init.js";
 
 type ActivePicker =
   | { kind: "file"; anchor: number; selected: number }
@@ -883,29 +883,11 @@ function App({
       memoryManagerRef.current = null;
     }
 
-    void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
-      customCommandsRef.current = commands;
-      setCustomCommandsVersion((v) => v + 1);
-      for (const w of warnings) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `commands: ${w}` },
-        ]);
-      }
-      const shadowed = commands.filter((c) =>
-        BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()),
-      );
-      for (const c of shadowed) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `commands: /${c.name} (${c.filepath}) shadowed by built-in — will not run`,
-          },
-        ]);
-      }
-    });
+    void reloadCustomCommandsFn(
+      customCommandsRef,
+      setCustomCommandsVersion,
+      appendEvent,
+    );
   }, [cfg, setEvents]);
 
   // Periodically clear performance marks to prevent perf_hooks buffer overflow
@@ -923,29 +905,12 @@ function App({
   }, []);
 
   const reloadCustomCommands = useCallback(async () => {
-    const { commands, warnings } = await loadCustomCommands(process.cwd());
-    customCommandsRef.current = commands;
-    setCustomCommandsVersion((v) => v + 1);
-    for (const w of warnings) {
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: `commands: ${w}` },
-      ]);
-    }
-    const shadowed = commands.filter((c) =>
-      BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()),
+    await reloadCustomCommandsFn(
+      customCommandsRef,
+      setCustomCommandsVersion,
+      appendEvent,
     );
-    for (const c of shadowed) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `commands: /${c.name} (${c.filepath}) shadowed by built-in — will not run`,
-        },
-      ]);
-    }
-  }, [setEvents]);
+  }, [appendEvent]);
 
   useEffect(() => {
     if (!cfg || updateCheckedRef.current) return;
