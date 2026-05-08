@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.3](https://github.com/sinameraji/kimiflare/compare/v0.48.2...v0.48.3) (2026-05-08)
+
+
+### Bug Fixes
+
+* resolve interrupt hangs from backgrounded bash processes and stuck abort debounce ([#339](https://github.com/sinameraji/kimiflare/issues/339)) ([c63df39](https://github.com/sinameraji/kimiflare/commit/c63df39a609bb5b6dbfef33872262899d6ff2c80))
+
 ## [0.48.2](https://github.com/sinameraji/kimiflare/compare/v0.48.1...v0.48.2) (2026-05-07)
 
 
