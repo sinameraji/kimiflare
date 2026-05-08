@@ -62,7 +62,7 @@ export class McpManager {
     const conn = this.connections.get(name);
     if (!conn) return Promise.resolve();
     this.connections.delete(name);
-    return conn.transport.close().catch(() => {});
+    return conn.transport.close().catch((err) => console.error("[mcp] transport close failed:", err));
   }
 
   async disconnectAll(): Promise<void> {

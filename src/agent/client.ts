@@ -173,7 +173,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
           completion_tokens: lastUsage.completion_tokens,
           cached_tokens: lastUsage.prompt_tokens_details?.cached_tokens ?? 0,
         }),
-      }).catch(() => {}); // Best-effort fire-and-forget
+      }).catch((err) => console.error("[client] usage ping failed:", err)); // Best-effort fire-and-forget
     }
 
     return;

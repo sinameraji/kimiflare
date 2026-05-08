@@ -28,6 +28,7 @@ import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError } from "./util/errors.js";
+import { safeSave as safeSaveRaw } from "./config-utils.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
@@ -542,6 +543,10 @@ function App({
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
+
+  function safeSave(operation: string, promise: Promise<unknown>): void {
+    safeSaveRaw(operation, promise, (event) => setEvents((e) => [...e, event]));
+  }
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
@@ -1741,7 +1746,7 @@ function App({
             void import("node:fs/promises").then(({ readFile }) =>
               readFile(path, "utf8")
                 .then((c) => lspManagerRef.current.notifyChange(path, c))
-                .catch(() => {}),
+                .catch((err) => safeSave("lspNotify", Promise.reject(err))),
             );
           }
         },
@@ -1967,7 +1972,7 @@ function App({
       setCfg((c) => {
         if (!c) return c;
         const updated = { ...c, theme: picked.name };
-        void saveConfig(updated).catch(() => {});
+        safeSave("saveConfig", saveConfig(updated));
         return updated;
       });
       setEvents((e) => [
@@ -2151,14 +2156,14 @@ function App({
         if (arg === "on") {
           const next = { ...cfg, costAttribution: true };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cost attribution enabled" }]);
           return true;
         }
         if (arg === "off") {
           const next = { ...cfg, costAttribution: false };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cost attribution disabled" }]);
           return true;
         }
@@ -2223,7 +2228,7 @@ function App({
         if (sub === "off") {
           const next = { ...cfg, aiGatewayId: undefined };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "gateway disabled — using direct Workers AI" }]);
           return true;
         }
@@ -2236,7 +2241,7 @@ function App({
           }
           const next = { ...cfg, aiGatewayCacheTtl: ttl };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway cache-ttl set to ${ttl}s` }]);
           return true;
         }
@@ -2249,7 +2254,7 @@ function App({
           }
           const next = { ...cfg, aiGatewaySkipCache: val };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway skip-cache set to ${val}` }]);
           return true;
         }
@@ -2262,7 +2267,7 @@ function App({
           }
           const next = { ...cfg, aiGatewayCollectLogPayload: val };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway collect-logs set to ${val}` }]);
           return true;
         }
@@ -2271,7 +2276,7 @@ function App({
           if (subArg === "clear") {
             const next = { ...cfg, aiGatewayMetadata: undefined };
             setCfg(next);
-            void saveConfig(next).catch(() => {});
+            safeSave("saveConfig", saveConfig(next));
             setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "gateway metadata cleared" }]);
             return true;
           }
@@ -2288,7 +2293,7 @@ function App({
           const nextMeta = { ...(cfg.aiGatewayMetadata ?? {}), [key]: value };
           const next = { ...cfg, aiGatewayMetadata: nextMeta };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway metadata: ${key}=${JSON.stringify(value)}` }]);
           return true;
         }
@@ -2296,7 +2301,7 @@ function App({
         // Default: treat sub as a gateway ID to enable
         const next = { ...cfg, aiGatewayId: rest[0] };
         setCfg(next);
-        void saveConfig(next).catch(() => {});
+        safeSave("saveConfig", saveConfig(next));
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `gateway enabled: ${rest[0]}` }]);
         return true;
       }
@@ -2338,7 +2343,7 @@ function App({
         setCfg((prev) => {
           if (!prev) return prev;
           const updated = { ...prev, theme: next.name };
-          void saveConfig(updated).catch(() => {});
+          safeSave("saveConfig", saveConfig(updated));
           return updated;
         });
         setEvents((e) => [
@@ -2486,14 +2491,14 @@ function App({
         if (arg === "on") {
           const next = { ...cfg, memoryEnabled: true };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "memory", key: mkKey(), text: "memory enabled" }]);
           return true;
         }
         if (arg === "off") {
           const next = { ...cfg, memoryEnabled: false };
           setCfg(next);
-          void saveConfig(next).catch(() => {});
+          safeSave("saveConfig", saveConfig(next));
           setEvents((e) => [...e, { kind: "memory", key: mkKey(), text: "memory disabled" }]);
           return true;
         }
@@ -2742,7 +2747,7 @@ function App({
         return true;
       }
       if (c === "/logout") {
-        unlink(configPath()).catch(() => {});
+        safeSave("unlink", unlink(configPath()));
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: `credentials cleared from ${configPath()}` },
@@ -3441,7 +3446,7 @@ function App({
               void import("node:fs/promises").then(({ readFile }) =>
                 readFile(path, "utf8")
                   .then((c) => lspManagerRef.current.notifyChange(path, c))
-                  .catch(() => {}),
+                  .catch((err) => safeSave("lspNotify", Promise.reject(err))),
               );
             }
           },
@@ -3806,7 +3811,7 @@ function App({
                     ]);
                   });
               } else if (cfg) {
-                void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
+                safeSave("saveConfig", saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }));
                 setEvents((e) => [
                   ...e,
                   { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
