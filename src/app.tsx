@@ -7,7 +7,6 @@ import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import {
   buildSystemPrompt,
-  buildSystemMessages,
   buildSessionPrefix,
 } from "./agent/system-prompt.js";
 import { compactMessages } from "./agent/compact.js";
@@ -101,11 +100,7 @@ import {
   type Checkpoint,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
-import {
-  encodeImageFile,
-  isImagePath,
-  type EncodedImage,
-} from "./util/image.js";
+import { encodeImageFile, type EncodedImage } from "./util/image.js";
 import {
   recordUsage,
   getCostReport,
@@ -119,7 +114,6 @@ import {
   markCreatorMessageSeen,
 } from "./util/state.js";
 import { getAppVersion } from "./util/version.js";
-
 
 import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
@@ -153,7 +147,6 @@ import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
 import { fuzzyFilter } from "./util/fuzzy.js";
 
-
 /**
  * Build a comprehensive ignore list for the @ file mention picker.
  * Combines common noise patterns (dependencies, build output, caches, etc.)
@@ -182,6 +175,10 @@ import {
   CONTEXT_LIMIT,
   AUTO_COMPACT_SUGGEST_PCT,
 } from "./util/event-helpers.js";
+import {
+  initMcp as initMcpFn,
+  initLsp as initLspFn,
+} from "./app/mcp-lsp-init.js";
 
 type ActivePicker =
   | { kind: "file"; anchor: number; selected: number }
@@ -328,6 +325,10 @@ function App({
       });
     },
     [],
+  );
+  const appendEvent = useCallback(
+    (event: ChatEvent) => setEvents((e) => [...e, event]),
+    [setEvents],
   );
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1067,190 +1068,36 @@ function App({
   }, [cfg]);
 
   const initMcp = useCallback(async () => {
-    if (!cfg?.mcpServers || mcpInitRef.current) return;
-    mcpInitRef.current = true;
-    const manager = mcpManagerRef.current;
-    let totalTools = 0;
-    for (const [name, server] of Object.entries(cfg.mcpServers)) {
-      if (server.enabled === false) continue;
-      try {
-        if (
-          server.type === "local" &&
-          server.command &&
-          server.command.length > 0
-        ) {
-          await manager.addLocalServer(name, server.command, server.env);
-        } else if (server.type === "remote" && server.url) {
-          await manager.addRemoteServer(name, server.url, server.headers);
-        } else {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "error",
-              key: mkKey(),
-              text: `MCP server "${name}" has invalid config`,
-            },
-          ]);
-          continue;
-        }
-        const tools = manager.getAllTools();
-        const newTools = tools.filter(
-          (t) => !mcpToolsRef.current.some((mt) => mt.name === t.name),
-        );
-        for (const tool of newTools) {
-          executorRef.current.register(tool);
-        }
-        mcpToolsRef.current = tools;
-        totalTools = tools.length;
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `MCP server "${name}" failed: ${(e as Error).message}`,
-          },
-        ]);
-      }
-    }
-    if (totalTools > 0) {
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      }
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available`,
-        },
-      ]);
-    }
-  }, [cfg]);
+    if (!cfg) return;
+    await initMcpFn(
+      cfg,
+      mcpInitRef,
+      mcpManagerRef,
+      executorRef,
+      mcpToolsRef,
+      messagesRef,
+      cacheStableRef,
+      modeRef,
+      lspToolsRef,
+      appendEvent,
+    );
+  }, [cfg, appendEvent]);
 
   const initLsp = useCallback(async () => {
-    if (!cfg?.lspEnabled || !cfg?.lspServers || lspInitRef.current) {
-      if (lspInitRef.current) return;
-      if (!cfg?.lspEnabled) {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "LSP is disabled. Enable it in config to use language servers.",
-          },
-        ]);
-      } else if (!cfg?.lspServers || Object.keys(cfg.lspServers).length === 0) {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "LSP reload complete — no servers configured.",
-          },
-        ]);
-      }
-      return;
-    }
-    lspInitRef.current = true;
-    const manager = lspManagerRef.current;
-    let totalServers = 0;
-    for (const [name, server] of Object.entries(cfg.lspServers)) {
-      if (server.enabled === false) continue;
-      try {
-        await manager.startServer(name, server, process.cwd());
-        totalServers++;
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `LSP server "${name}" failed: ${(e as Error).message}`,
-          },
-        ]);
-      }
-    }
-    if (totalServers > 0) {
-      const tools = makeLspTools(manager);
-      for (const tool of tools) {
-        executorRef.current.register(tool);
-      }
-      lspToolsRef.current = tools;
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      }
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active`,
-        },
-      ]);
-    } else {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: "LSP reload complete — no servers started (check config or enabled status).",
-        },
-      ]);
-    }
-  }, [cfg]);
+    if (!cfg) return;
+    await initLspFn(
+      cfg,
+      lspInitRef,
+      lspManagerRef,
+      executorRef,
+      lspToolsRef,
+      messagesRef,
+      cacheStableRef,
+      modeRef,
+      mcpToolsRef,
+      appendEvent,
+    );
+  }, [cfg, appendEvent]);
 
   useEffect(() => {
     if (cfg && !mcpInitRef.current) {
