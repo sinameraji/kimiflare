@@ -1,0 +1,51 @@
+{
+  "name": "kimiflare-dark",
+  "label": "Kimiflare Dark",
+  "palette": {
+    "foreground": "#e8ddd0",
+    "primary": "#c4a574",
+    "secondary": "#8aaa9e",
+    "success": "#8aaa9e",
+    "error": "#d4827a",
+    "background": "#2b2118",
+    "backgroundRaised": "#362a1e"
+  },
+  "user": "#c4a574",
+  "assistant": null,
+  "reasoning": {
+    "color": "#8aaa9e",
+    "dim": false
+  },
+  "info": {
+    "color": "#9a8e80",
+    "dim": false
+  },
+  "error": "#d4827a",
+  "warn": "#d4b070",
+  "tool": "#8aaa9e",
+  "spinner": "#c4a574",
+  "permission": "#d4827a",
+  "accent": "#c4a574",
+  "modeBadge": {
+    "plan": "#c4a574",
+    "auto": "#8aaa9e",
+    "edit": "#d4827a"
+  },
+  "blockquote": {
+    "color": "#9a8e80",
+    "dim": false
+  },
+  "codeInline": "#7fbbb3",
+  "codeBlock": "#7fbbb3",
+  "link": "#c4a574",
+  "strikethrough": "#9a8e80",
+  "tableBorder": "#4a3f35",
+  "tableHeader": "#e8ddd0",
+  "tableCell": "#e8ddd0",
+  "muted": {
+    "color": "#9a8e80",
+    "dim": false
+  },
+  "prompt": "#c4a574",
+  "type": "dark"
+}

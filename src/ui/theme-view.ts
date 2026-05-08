@@ -37,6 +37,10 @@ export interface ThemeView extends Theme {
   borderSubtle: ColorName;
   /** Muted / disabled text */
   muted: DimColor;
+  /** Terminal background (or transparent if not set) */
+  background?: ColorName;
+  /** Elevated surface for overlays/cards */
+  backgroundRaised?: ColorName;
 }
 
 /**
@@ -70,5 +74,7 @@ export function toThemeView(theme: Theme): ThemeView {
       typeof theme.muted === "object"
         ? theme.muted
         : { color: palette.secondary, dim: true },
+    background: palette.background,
+    backgroundRaised: palette.backgroundRaised,
   };
 }

@@ -3,6 +3,8 @@ import type { ContrastIssue } from "./wcag.js";
 // Built-in themes — imported as JSON so tsup bundles them.
 import everforestDarkJson from "./themes/everforest-dark.json" with { type: "json" };
 import everforestLightJson from "./themes/everforest-light.json" with { type: "json" };
+import kimiflareDarkJson from "./themes/kimiflare-dark.json" with { type: "json" };
+import kimiflareLightJson from "./themes/kimiflare-light.json" with { type: "json" };
 import kanagawaDarkJson from "./themes/kanagawa-dark.json" with { type: "json" };
 import draculaDarkJson from "./themes/dracula-dark.json" with { type: "json" };
 import tokyoNightJson from "./themes/tokyo-night.json" with { type: "json" };
@@ -29,6 +31,10 @@ export interface ColorPalette {
   secondary: string;
   success: string;
   error: string;
+  /** Terminal background color (optional — transparent if not set) */
+  background?: string;
+  /** Elevated surface color for overlays (optional) */
+  backgroundRaised?: string;
 }
 
 /** Full theme shape consumed by components. */
@@ -122,6 +128,8 @@ function normalizeTheme(json: unknown): Theme {
 }
 
 export const BUILT_IN_THEMES: Record<string, Theme> = {
+  "kimiflare-dark": normalizeTheme(kimiflareDarkJson),
+  "kimiflare-light": normalizeTheme(kimiflareLightJson),
   "everforest-dark": normalizeTheme(everforestDarkJson),
   "everforest-light": normalizeTheme(everforestLightJson),
   "kanagawa-dark": normalizeTheme(kanagawaDarkJson),
@@ -140,7 +148,7 @@ export const BUILT_IN_THEMES: Record<string, Theme> = {
 /** Mutable theme registry — built-in themes plus any user/project themes loaded at runtime. */
 export let THEMES: Record<string, Theme> = { ...BUILT_IN_THEMES };
 
-export const DEFAULT_THEME_NAME = "everforest-dark";
+export const DEFAULT_THEME_NAME = "kimiflare-dark";
 
 /** Replace the active theme registry (used after loading user/project themes). */
 export function setThemes(themes: Record<string, Theme>): void {
