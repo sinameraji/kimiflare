@@ -108,7 +108,7 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
 
     const onAbort = () => {
       killedByAbort = true;
-      logger.warn("bash:kill_abort", { command: args.command.slice(0, 200) });
+      logger.warn("bash:kill_abort", { command: args.command.slice(0, 200), pid: child.pid });
       child.kill("SIGKILL");
     };
     ctx.signal?.addEventListener("abort", onAbort, { once: true });
@@ -122,7 +122,7 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     child.on("error", (e) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
-      logger.error("bash:error", { error: e.message });
+      logger.error("bash:error", { error: e.message, pid: child.pid });
       reject(e);
     });
     // If the command backgrounds a process (e.g. `npm run dev &`), the
@@ -130,14 +130,15 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     // for those pipes to close before emitting "close", so the Promise
     // never resolves. Destroying the streams on "exit" forces "close" to
     // fire immediately while preserving all output already buffered.
-    child.on("exit", () => {
+    child.on("exit", (code, signal) => {
+      logger.debug("bash:exit", { code, signal, pid: child.pid, killedByTimeout, killedByAbort });
       child.stdout?.destroy();
       child.stderr?.destroy();
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
-      logger.debug("bash:close", { code, signal, killedByTimeout, killedByAbort });
+      logger.debug("bash:close", { code, signal, pid: child.pid, killedByTimeout, killedByAbort });
       const header = killedByTimeout
         ? `(timed out after ${timeout}ms)`
         : killedByAbort

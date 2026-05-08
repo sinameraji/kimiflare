@@ -610,6 +610,9 @@ function App({
   // called exit() and caused screen flashing by conflicting with useInput.
   useEffect(() => {
     const onSigint = () => {
+      logger.info("sigint:fired", {
+        hasHandler: sigintHandlerRef.current !== null,
+      });
       sigintHandlerRef.current?.();
     };
     process.on("SIGINT", onSigint);
@@ -1447,6 +1450,13 @@ function App({
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
+      logger.info("input:ctrl+c", {
+        busy: busyRef.current,
+        hasActiveScope: activeScopeRef.current !== null,
+        isAborting: isAbortingRef.current,
+        hasPerm: permResolveRef.current !== null,
+        hasLimit: limitResolveRef.current !== null,
+      });
       const hadPerm = permResolveRef.current !== null;
       const hadLimit = limitResolveRef.current !== null;
       if (hadPerm) {
@@ -1473,6 +1483,7 @@ function App({
         setTasksStartTokens(0);
         tasksRef.current = [];
       } else if (!hadPerm && !hadLimit) {
+        logger.info("input:ctrl+c:exiting");
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
@@ -1532,6 +1543,13 @@ function App({
   // the terminal sends a real SIGINT (bypassing Ink raw mode) we can still
   // interrupt the turn or exit gracefully.
   sigintHandlerRef.current = () => {
+    logger.info("sigint:handler", {
+      busy: busyRef.current,
+      hasActiveScope: activeScopeRef.current !== null,
+      isAborting: isAbortingRef.current,
+      hasPerm: permResolveRef.current !== null,
+      hasLimit: limitResolveRef.current !== null,
+    });
     const hadPerm = permResolveRef.current !== null;
     const hadLimit = limitResolveRef.current !== null;
     if (hadPerm) {
@@ -1556,6 +1574,7 @@ function App({
       setTasksStartTokens(0);
       tasksRef.current = [];
     } else if (!hadPerm && !hadLimit) {
+      logger.info("sigint:handler:exiting");
       void lspManagerRef.current.stopAll().finally(() => exit());
     }
   };
@@ -1710,6 +1729,7 @@ function App({
         ]);
       }
     } finally {
+      logger.info("runCompact:finally");
       setBusy(false);
       busyRef.current = false;
       setTurnStartedAt(null);
@@ -1991,6 +2011,7 @@ function App({
         ]);
       }
     } finally {
+      logger.info("runInit:finally");
       setCodeMode(false);
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
@@ -3428,6 +3449,7 @@ function App({
       };
 
       const cleanupTurn = () => {
+        logger.info("cleanupTurn");
         setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
