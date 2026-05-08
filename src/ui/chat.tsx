@@ -4,6 +4,7 @@ import Spinner from "ink-spinner";
 import { ToolView, type ToolEventState } from "./tool-view.js";
 import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
+import { useTerminal } from "./layout.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
 import { CloudQuotaMessage } from "./cloud-quota-message.js";
@@ -63,6 +64,8 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
   for (const [sig, count] of toolCounts) {
     if (count >= 3) repeatedSigs.add(sig);
   }
+  const { cols } = useTerminal();
+  const sepWidth = Math.max(4, cols - 4);
 
   return (
     <Box flexDirection="column">
@@ -75,8 +78,8 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
           <Box key={e.key} flexDirection="column">
             {showSeparator && (
               <Box marginY={1}>
-                <Text color={theme.info.color}>
-                  {"─".repeat(40)}
+                <Text color={theme.borderSubtle}>
+                  {"─".repeat(sepWidth)}
                 </Text>
               </Box>
             )}
