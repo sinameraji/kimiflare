@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+// @rust-exception rationale: Node.js tool executor surface; directly wraps node:fs for AI tool contract
 import { dirname } from "node:path";
 import type { ToolSpec } from "./registry.js";
 import { resolvePath, collapsePath } from "../util/paths.js";
+import { resolveSafePath } from "../path-utils.js";
 
 interface Args {
   path: string;
@@ -27,7 +29,7 @@ export const writeTool: ToolSpec<Args> = {
     diff: { path: args.path, before: "", after: args.content },
   }),
   async run(args, ctx) {
-    const abs = resolvePath(ctx.cwd, args.path);
+    const abs = resolveSafePath(args.path, ctx.cwd);
     let before = "";
     try {
       before = await readFile(abs, "utf8");

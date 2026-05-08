@@ -1,6 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
+// @rust-exception rationale: Node.js tool executor surface; directly wraps node:fs for AI tool contract
 import type { ToolSpec } from "./registry.js";
 import { resolvePath, collapsePath } from "../util/paths.js";
+import { resolveSafePath } from "../path-utils.js";
 
 interface Args {
   path: string;
@@ -30,7 +32,7 @@ export const editTool: ToolSpec<Args> = {
     diff: { path: args.path, before: args.old_string, after: args.new_string },
   }),
   async run(args, ctx) {
-    const abs = resolvePath(ctx.cwd, args.path);
+    const abs = resolveSafePath(args.path, ctx.cwd);
     const orig = await readFile(abs, "utf8");
     const occurrences = countOccurrences(orig, args.old_string);
     if (occurrences === 0) throw new Error(`old_string not found in ${args.path}`);

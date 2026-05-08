@@ -1,6 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
+// @rust-exception rationale: Node.js tool executor surface; directly wraps node:fs for AI tool contract
 import type { ToolSpec } from "./registry.js";
 import { resolvePath, collapsePath } from "../util/paths.js";
+import { resolveSafePath } from "../path-utils.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -27,7 +29,7 @@ export const readTool: ToolSpec<Args> = {
   needsPermission: false,
   render: ({ path }) => ({ title: `read ${collapsePath(path, process.cwd())}` }),
   async run(args, ctx) {
-    const abs = resolvePath(ctx.cwd, args.path);
+    const abs = resolveSafePath(args.path, ctx.cwd);
     const st = await stat(abs);
     if (st.size > MAX_BYTES) throw new Error(`file too large: ${st.size} bytes (max ${MAX_BYTES})`);
     const text = await readFile(abs, "utf8");
