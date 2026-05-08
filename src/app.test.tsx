@@ -9,7 +9,7 @@ import {
   shouldOpenMentionPicker,
   shouldOpenSlashPicker,
   insertSlashCommand,
-} from "./app.js";
+} from "./util/file-picker.js";
 import type { FilePickerItem } from "./ui/file-picker.js";
 
 describe("buildFilePickerIgnoreList", () => {
