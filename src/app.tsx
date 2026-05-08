@@ -1668,6 +1668,7 @@ function App({
       setCurrentToolName(null);
       setLastActivityAt(null);
       activeScopeRef.current = null;
+      isAbortingRef.current = false;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -1952,6 +1953,7 @@ function App({
       setLastActivityAt(null);
       activeAsstIdRef.current = null;
       activeScopeRef.current = null;
+      isAbortingRef.current = false;
       permResolveRef.current = null;
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
