@@ -180,6 +180,7 @@ import {
 } from "./app/mcp-lsp-init.js";
 import { onIterationEnd as onIterationEndFn } from "./app/compaction.js";
 import { reloadCustomCommands as reloadCustomCommandsFn } from "./app/commands-init.js";
+import { createUiUpdaters } from "./app/ui-updates.js";
 
 type ActivePicker =
   | { kind: "file"; anchor: number; selected: number }
@@ -1238,88 +1239,11 @@ function App({
     }
   });
 
-  const flushAssistantUpdates = useCallback(() => {
-    flushTimeoutRef.current = null;
-    const pending = pendingTextRef.current;
-    if (pending.size === 0) return;
-    pendingTextRef.current = new Map();
-    setEvents((evts) =>
-      evts.map((e) => {
-        if (e.kind !== "assistant") return e;
-        const delta = pending.get(e.id);
-        if (!delta) return e;
-        return {
-          ...e,
-          text: e.text + delta.text,
-          reasoning: e.reasoning + delta.reasoning,
-        } as ChatEvent;
-      }),
-    );
-  }, []);
-
-  const updateAssistant = useCallback(
-    (
-      id: number,
-      patch: (
-        e: Extract<ChatEvent, { kind: "assistant" }>,
-      ) => Partial<ChatEvent>,
-    ) => {
-      const result = patch({ text: "", reasoning: "" } as Extract<
-        ChatEvent,
-        { kind: "assistant" }
-      >);
-      const assistantResult = result as Partial<
-        Extract<ChatEvent, { kind: "assistant" }>
-      >;
-      const hasTextDelta =
-        assistantResult.text !== undefined && assistantResult.text.length > 0;
-      const hasReasoningDelta =
-        assistantResult.reasoning !== undefined &&
-        assistantResult.reasoning.length > 0;
-
-      if (hasTextDelta || hasReasoningDelta) {
-        const existing = pendingTextRef.current.get(id) ?? {
-          text: "",
-          reasoning: "",
-        };
-        pendingTextRef.current.set(id, {
-          text: existing.text + (assistantResult.text ?? ""),
-          reasoning: existing.reasoning + (assistantResult.reasoning ?? ""),
-        });
-        if (!flushTimeoutRef.current) {
-          flushTimeoutRef.current = setTimeout(flushAssistantUpdates, 16); // ~60fps
-        }
-        return;
-      }
-
-      // Non-text patches (streaming flag, etc.) apply immediately after flushing
-      if (flushTimeoutRef.current) {
-        clearTimeout(flushTimeoutRef.current);
-        flushAssistantUpdates();
-      }
-      setEvents((evts) =>
-        evts.map((e) =>
-          e.kind === "assistant" && e.id === id
-            ? ({ ...e, ...result } as ChatEvent)
-            : e,
-        ),
-      );
-    },
-    [flushAssistantUpdates],
-  );
-
-  const updateTool = useCallback(
-    (id: string, patch: Partial<Extract<ChatEvent, { kind: "tool" }>>) => {
-      setEvents((evts) =>
-        evts.map((e) =>
-          e.kind === "tool" && e.id === id
-            ? ({ ...e, ...patch } as ChatEvent)
-            : e,
-        ),
-      );
-    },
-    [],
-  );
+  const { updateAssistant, updateTool } = createUiUpdaters({
+    setEvents,
+    pendingTextRef,
+    flushTimeoutRef,
+  });
 
   const updateGatewayMeta = useCallback((meta: GatewayMeta) => {
     gatewayMetaRef.current = meta;
