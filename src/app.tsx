@@ -171,7 +171,6 @@ import { formatTokens } from "./util/token-format.js";
 import { openBrowser } from "./util/browser.js";
 import {
   capEvents,
-  compactEventsVisual,
   mkKey,
   makePrefixMessages,
   CONTEXT_LIMIT,
@@ -187,7 +186,7 @@ import {
   handleCommandSave as handleCommandSaveFn,
   handleCommandDelete as handleCommandDeleteFn,
 } from "./app/commands-init.js";
-import { runCompact as runCompactFn } from "./app/agent-turn.js";
+import { runCompact as runCompactFn, runInitFn } from "./app/agent-turn.js";
 import { createUiUpdaters } from "./app/ui-updates.js";
 import { handleSlash as slashHandleSlash } from "./app/slash-commands.js";
 
@@ -296,7 +295,7 @@ type Overlay =
   | { kind: "commandDelete"; cmd: CustomCommand }
   | { kind: "commandList" };
 
-let nextAssistantId = 1;
+const nextAssistantIdRef = useRef(1);
 const MAX_IMAGES_PER_MESSAGE = 10;
 
 function App({
@@ -1261,375 +1260,67 @@ function App({
   }, []);
 
   const runInit = useCallback(async () => {
-    if (!cfg) return;
-    if (busy) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: "can't /init while model is running",
-        },
-      ]);
-      return;
-    }
-    const cwd = process.cwd();
-    const { prompt, targetFilename, isRefresh } = buildInitPrompt(cwd);
-
-    setEvents((e) => [
-      ...e,
-      {
-        kind: "user",
-        key: mkKey(),
-        text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init",
-      },
-    ]);
-    messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
-    setBusy(true);
-    busyRef.current = true;
-    setTurnStartedAt(Date.now());
-    const turnScope = sessionScopeRef.current.createChild();
-    activeScopeRef.current = turnScope;
-
-    const initClassification = classifyIntent(prompt);
-    const initEffortForTier: Record<string, ReasoningEffort> = {
-      light: "low",
-      medium: "medium",
-      heavy: "high",
-    };
-    const initReasoningEffort =
-      initEffortForTier[initClassification.tier] ?? effortRef.current;
-    const effectiveCodeMode = initClassification.tier === "heavy";
-    setCodeMode(effectiveCodeMode);
-
-    try {
-      await runAgentTurn({
-        accountId: cfg.accountId,
-        apiToken: cfg.apiToken,
-        model: cfg.model,
-        gateway: gatewayFromConfig(cfg),
-        messages: messagesRef.current,
-        tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-        executor: executorRef.current,
-        cwd,
-        signal: turnScope.signal,
-        reasoningEffort: initReasoningEffort,
-        intentClassification: initClassification,
-        coauthor:
-          cfg.coauthor !== false
-            ? {
-                name: cfg.coauthorName || "kimiflare",
-                email: cfg.coauthorEmail || "kimiflare@proton.me",
-              }
-            : undefined,
-        sessionId: ensureSessionId(),
-        memoryManager: memoryManagerRef.current,
-        githubToken: cfg.githubOAuthToken,
-        codeMode: effectiveCodeMode,
-        cloudMode: cfg.cloudMode,
-        cloudToken: cloudToken ?? initialCloudToken,
-        cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-        onIterationEnd,
-        onFileChange: (path, content) => {
-          if (content) {
-            lspManagerRef.current.notifyChange(path, content);
-          } else {
-            // For edit tool, read the file and notify with full content
-            void import("node:fs/promises").then(({ readFile }) =>
-              readFile(path, "utf8")
-                .then((c) => lspManagerRef.current.notifyChange(path, c))
-                .catch((err) => safeSave("lspNotify", Promise.reject(err))),
-            );
-          }
-        },
-        callbacks: {
-          onAssistantStart: () => {
-            const id = nextAssistantId++;
-            activeAsstIdRef.current = id;
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "assistant",
-                key: `asst_${id}`,
-                id,
-                text: "",
-                reasoning: "",
-                streaming: true,
-              },
-            ]);
-          },
-          onReasoningDelta: (d) => {
-            const id = activeAsstIdRef.current;
-            if (id !== null)
-              updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
-          },
-          onTextDelta: (d) => {
-            const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
-          },
-          onAssistantFinal: () => {
-            const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, () => ({ streaming: false }));
-          },
-          onToolCallFinalized: (call) => {
-            pendingToolCallsRef.current.set(call.id, call.function.name);
-            const spec = executorRef.current
-              .list()
-              .find((t) => t.name === call.function.name);
-            let renderMeta: ToolRender | undefined;
-            let args: Record<string, unknown> = {};
-            try {
-              args = call.function.arguments
-                ? JSON.parse(call.function.arguments)
-                : {};
-              renderMeta = spec?.render?.(args);
-            } catch {
-              /* ignore */
-            }
-            // Track file paths from read/edit/write/grep tools for recent-files boost
-            if (typeof args.path === "string") {
-              trackRecentFile(recentFilesRef, args.path, MAX_RECENT_FILES);
-            }
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "tool",
-                key: `tool_${call.id}`,
-                id: call.id,
-                name: call.function.name,
-                args: call.function.arguments,
-                status: "running",
-                render: renderMeta,
-                expanded: false,
-              },
-            ]);
-          },
-          onToolResult: (r) => {
-            pendingToolCallsRef.current.delete(r.tool_call_id);
-            updateTool(r.tool_call_id, {
-              status: r.ok ? "done" : "error",
-              result: r.content,
-            });
-          },
-          onUsage: (u) => {
-            usageRef.current = u;
-            setUsage(u);
-          },
-          onUsageFinal: (u, meta) => {
-            const sid = ensureSessionId();
-            void recordUsage(
-              sid,
-              u,
-              gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current),
-            );
-            void getCostReport(sid).then((report) =>
-              setSessionUsage(report.session),
-            );
-            if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-              const token = cloudToken ?? initialCloudToken!;
-              const did = cloudDeviceId ?? initialCloudDeviceId;
-              void (async () => {
-                const { fetchCloudUsage } = await import("./cloud/auth.js");
-                const usage = await fetchCloudUsage(token, did);
-                if (usage) {
-                  setCloudBudget({
-                    remaining: usage.remaining,
-                    limit: usage.input_token_limit,
-                  });
-                }
-              })();
-            }
-          },
-          onGatewayMeta: updateGatewayMeta,
-          askPermission: (req) =>
-            new Promise<PermissionDecision>((resolve) => {
-              if (modeRef.current === "auto") {
-                resolve("allow");
-                return;
-              }
-              if (
-                modeRef.current === "plan" &&
-                isBlockedInPlanMode(req.tool.name)
-              ) {
-                if (
-                  req.tool.name === "bash" &&
-                  typeof req.args.command === "string" &&
-                  isReadOnlyBash(req.args.command)
-                ) {
-                  resolve("allow");
-                  return;
-                }
-                if (req.tool.name === "bash") {
-                  // Non-whitelisted bash in plan mode: ask for temporary permission
-                  permResolveRef.current = resolve;
-                  setOverlay({
-                    kind: "permission",
-                    perm: { tool: req.tool, args: req.args, resolve },
-                  });
-                  return;
-                }
-                setEvents((e) => [
-                  ...e,
-                  {
-                    kind: "info",
-                    key: mkKey(),
-                    text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
-                  },
-                ]);
-                resolve("deny");
-                return;
-              }
-              permResolveRef.current = resolve;
-              setOverlay({
-                kind: "permission",
-                perm: { tool: req.tool, args: req.args, resolve },
-              });
-            }),
-          onKimiMdStale: () => {
-            if (!kimiMdStaleNudgedRef.current) {
-              kimiMdStaleNudgedRef.current = true;
-              setKimiMdStale(true);
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes.",
-                },
-              ]);
-            }
-          },
-        },
-      });
-
-      if (existsSync(join(cwd, "KIMI.md"))) {
-        if (cacheStableRef.current) {
-          messagesRef.current[1] = {
-            role: "system",
-            content: buildSessionPrefix({
-              cwd,
-              tools: [
-                ...ALL_TOOLS,
-                ...mcpToolsRef.current,
-                ...lspToolsRef.current,
-              ],
-              model: cfg.model,
-              mode: modeRef.current,
-            }),
-          };
-        } else {
-          messagesRef.current[0] = {
-            role: "system",
-            content: buildSystemPrompt({
-              cwd,
-              tools: [
-                ...ALL_TOOLS,
-                ...mcpToolsRef.current,
-                ...lspToolsRef.current,
-              ],
-              model: cfg.model,
-              mode: modeRef.current,
-            }),
-          };
-        }
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "KIMI.md generated; context loaded for future turns",
-          },
-        ]);
-        // Record refresh so drift detection knows this snapshot is current
-        void memoryManagerRef.current?.recordKimiMdRefresh(
-          cwd,
-          ensureSessionId(),
-        );
-        setKimiMdStale(false);
-        kimiMdStaleNudgedRef.current = false;
-      }
-    } catch (e) {
-      if ((e as Error).name === "AbortError") {
-        for (const [tcId, tcName] of pendingToolCallsRef.current) {
-          messagesRef.current.push({
-            role: "tool",
-            tool_call_id: tcId,
-            content: "(stopped)",
-            name: tcName,
-          });
-        }
-        setEvents((evts) =>
-          evts.map((e) =>
-            e.kind === "tool" && e.status === "running"
-              ? { ...e, status: "error" as const, result: "(stopped)" }
-              : e,
-          ),
-        );
-      } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-        const token = cloudToken ?? initialCloudToken;
-        const did = cloudDeviceId ?? initialCloudDeviceId;
-        let used = 0;
-        let limit = 0;
-        let expiresAt = "";
-        if (token) {
-          try {
-            const { fetchCloudUsage } = await import("./cloud/auth.js");
-            const usage = await fetchCloudUsage(token, did);
-            if (usage) {
-              used = usage.input_tokens_used;
-              limit = usage.input_token_limit;
-              expiresAt = usage.expires_at;
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        if (!limit) {
-          const m = (e as KimiApiError).message.match(
-            /Used ([\d,]+)\s*\/\s*([\d,]+)/,
-          );
-          if (m && m[1] && m[2]) {
-            used = parseInt(m[1].replace(/,/g, ""), 10);
-            limit = parseInt(m[2].replace(/,/g, ""), 10);
-          }
-        }
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "cloud_quota_exhausted",
-            key: mkKey(),
-            used,
-            limit,
-            expiresAt,
-          },
-        ]);
-      } else {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `init failed: ${(e as Error).message}`,
-          },
-        ]);
-      }
-    } finally {
-      setCodeMode(false);
-      const asstId = activeAsstIdRef.current;
-      if (asstId !== null)
-        updateAssistant(asstId, () => ({ streaming: false }));
-      setBusy(false);
-      busyRef.current = false;
-      setTurnStartedAt(null);
-      setTurnPhase("waiting");
-      setCurrentToolName(null);
-      setLastActivityAt(null);
-      activeAsstIdRef.current = null;
-      activeScopeRef.current = null;
-      permResolveRef.current = null;
-      limitResolveRef.current = null;
-      pendingToolCallsRef.current.clear();
-    }
+    await runInitFn({
+      cfg,
+      busy,
+      setEvents,
+      mkKey,
+      messagesRef,
+      setBusy,
+      busyRef,
+      setTurnStartedAt,
+      setTurnPhase,
+      setCurrentToolName,
+      setLastActivityAt,
+      sessionScopeRef,
+      activeScopeRef,
+      setCodeMode,
+      effortRef,
+      cloudToken: cloudToken ?? null,
+      initialCloudToken: initialCloudToken ?? null,
+      cloudDeviceId: cloudDeviceId ?? null,
+      initialCloudDeviceId: initialCloudDeviceId ?? null,
+      mcpToolsRef,
+      lspToolsRef,
+      executorRef,
+      memoryManagerRef,
+      lspManagerRef,
+      updateAssistant,
+      updateTool,
+      activeAsstIdRef,
+      pendingToolCallsRef,
+      usageRef,
+      setUsage,
+      setSessionUsage,
+      ensureSessionId,
+      gatewayMetaRef,
+      permResolveRef,
+      limitResolveRef,
+      setOverlay,
+      modeRef,
+      kimiMdStaleNudgedRef,
+      setKimiMdStale,
+      setCloudBudget,
+      tasksRef,
+      setTasks,
+      setTasksStartedAt,
+      setTasksStartTokens,
+      updateGatewayMeta,
+      recordUsage,
+      gatewayUsageLookupFromConfig,
+      getCostReport,
+      isBlockedInPlanMode,
+      isReadOnlyBash,
+      recentFilesRef,
+      maxRecentFiles: MAX_RECENT_FILES,
+      trackRecentFile,
+      cacheStableRef,
+      safeSave,
+      saveConfig,
+      isCloudQuotaExhaustedError,
+      nextAssistantIdRef,
+      onIterationEnd,
+    });
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
   const handleThemePick = useCallback((picked: Theme | null) => {
@@ -2134,7 +1825,7 @@ function App({
 
       const sharedCallbacks = {
         onAssistantStart: () => {
-          const id = nextAssistantId++;
+          const id = nextAssistantIdRef.current++;
           activeAsstIdRef.current = id;
           setTurnPhase("generating");
           setLastActivityAt(Date.now());
