@@ -308,7 +308,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
 export async function saveConfig(cfg: KimiConfig): Promise<string> {
   const p = configPath();
-  await mkdir(join(p, ".."), { recursive: true });
+  const dir = join(p, "..");
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700);
   await writeFile(p, JSON.stringify(cfg, null, 2), "utf8");
   await chmod(p, 0o600);
   return p;
