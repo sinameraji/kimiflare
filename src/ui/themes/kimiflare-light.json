@@ -3,49 +3,49 @@
   "label": "Kimiflare Light",
   "palette": {
     "foreground": "#3a3028",
-    "primary": "#a67c3b",
-    "secondary": "#6b8e6b",
-    "success": "#6b8e6b",
-    "error": "#c06050",
+    "primary": "#8a5e20",
+    "secondary": "#4a6e4a",
+    "success": "#4a6e4a",
+    "error": "#b04030",
     "background": "#f5f0ea",
     "backgroundRaised": "#ebe5dd"
   },
-  "user": "#a67c3b",
+  "user": "#8a5e20",
   "assistant": null,
   "reasoning": {
-    "color": "#6b8e6b",
+    "color": "#4a6e4a",
     "dim": false
   },
   "info": {
     "color": "#7a6e60",
     "dim": false
   },
-  "error": "#c06050",
-  "warn": "#b09040",
-  "tool": "#6b8e6b",
-  "spinner": "#a67c3b",
-  "permission": "#c06050",
-  "accent": "#a67c3b",
+  "error": "#b04030",
+  "warn": "#8a7020",
+  "tool": "#4a6e4a",
+  "spinner": "#8a5e20",
+  "permission": "#b04030",
+  "accent": "#8a5e20",
   "modeBadge": {
-    "plan": "#a67c3b",
-    "auto": "#6b8e6b",
-    "edit": "#c06050"
+    "plan": "#8a5e20",
+    "auto": "#4a6e4a",
+    "edit": "#b04030"
   },
   "blockquote": {
     "color": "#7a6e60",
     "dim": false
   },
-  "codeInline": "#5a8a7a",
-  "codeBlock": "#5a8a7a",
-  "link": "#a67c3b",
+  "codeInline": "#3a6a5a",
+  "codeBlock": "#3a6a5a",
+  "link": "#8a5e20",
   "strikethrough": "#7a6e60",
-  "tableBorder": "#c8b8a8",
+  "tableBorder": "#6a5a4a",
   "tableHeader": "#3a3028",
   "tableCell": "#3a3028",
   "muted": {
     "color": "#7a6e60",
     "dim": false
   },
-  "prompt": "#a67c3b",
+  "prompt": "#8a5e20",
   "type": "light"
 }

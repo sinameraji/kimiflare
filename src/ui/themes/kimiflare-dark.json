@@ -17,7 +17,7 @@
     "dim": false
   },
   "info": {
-    "color": "#9a8e80",
+    "color": "#b0a898",
     "dim": false
   },
   "error": "#d4827a",
@@ -32,18 +32,18 @@
     "edit": "#d4827a"
   },
   "blockquote": {
-    "color": "#9a8e80",
+    "color": "#b0a898",
     "dim": false
   },
   "codeInline": "#7fbbb3",
   "codeBlock": "#7fbbb3",
   "link": "#c4a574",
-  "strikethrough": "#9a8e80",
-  "tableBorder": "#4a3f35",
+  "strikethrough": "#b0a898",
+  "tableBorder": "#b0a090",
   "tableHeader": "#e8ddd0",
   "tableCell": "#e8ddd0",
   "muted": {
-    "color": "#9a8e80",
+    "color": "#b0a898",
     "dim": false
   },
   "prompt": "#c4a574",
