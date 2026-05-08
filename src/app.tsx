@@ -603,6 +603,21 @@ function App({
     );
   }, []);
 
+  // Register a SIGINT handler so Ctrl+C still works when the terminal is not
+  // in raw mode (e.g. after a child process modified terminal state). The
+  // handler delegates to the same logic as the useInput Ctrl+C handler.
+  // This is different from the previous attempt (c6e9c1f) which unconditionally
+  // called exit() and caused screen flashing by conflicting with useInput.
+  useEffect(() => {
+    const onSigint = () => {
+      sigintHandlerRef.current?.();
+    };
+    process.on("SIGINT", onSigint);
+    return () => {
+      process.off("SIGINT", onSigint);
+    };
+  }, []);
+
   // Load user and project themes at startup
   useEffect(() => {
     let cancelled = false;
@@ -659,6 +674,8 @@ function App({
   const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
   const isAbortingRef = useRef(false);
   const lastEscapeAtRef = useRef(0);
+  /** Holds the latest Ctrl+C interrupt logic so the SIGINT handler can delegate to it. */
+  const sigintHandlerRef = useRef<(() => void) | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -1510,6 +1527,38 @@ function App({
       return;
     }
   });
+
+  // Keep the SIGINT handler in sync with the latest state/refs so that when
+  // the terminal sends a real SIGINT (bypassing Ink raw mode) we can still
+  // interrupt the turn or exit gracefully.
+  sigintHandlerRef.current = () => {
+    const hadPerm = permResolveRef.current !== null;
+    const hadLimit = limitResolveRef.current !== null;
+    if (hadPerm) {
+      permResolveRef.current!("deny");
+      permResolveRef.current = null;
+      setPerm(null);
+    }
+    if (hadLimit) {
+      limitResolveRef.current!("stop");
+      limitResolveRef.current = null;
+      setLimitModal(null);
+    }
+    if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
+      isAbortingRef.current = true;
+      supervisorRef.current.killTurn();
+      activeScopeRef.current.abort("user_stopped");
+      setQueue([]);
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+      void saveSessionSafe();
+      setTasks([]);
+      setTasksStartedAt(null);
+      setTasksStartTokens(0);
+      tasksRef.current = [];
+    } else if (!hadPerm && !hadLimit) {
+      void lspManagerRef.current.stopAll().finally(() => exit());
+    }
+  };
 
   const flushAssistantUpdates = useCallback(() => {
     flushTimeoutRef.current = null;
