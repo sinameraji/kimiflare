@@ -187,6 +187,7 @@ import {
   handleCommandSave as handleCommandSaveFn,
   handleCommandDelete as handleCommandDeleteFn,
 } from "./app/commands-init.js";
+import { runCompact as runCompactFn } from "./app/agent-turn.js";
 import { createUiUpdaters } from "./app/ui-updates.js";
 import { handleSlash as slashHandleSlash } from "./app/slash-commands.js";
 
@@ -1230,109 +1231,28 @@ function App({
   }, []);
 
   const runCompact = useCallback(async () => {
-    if (!cfg) return;
-    if (busy) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: "can't compact while model is running",
-        },
-      ]);
-      return;
-    }
-    setBusy(true);
-    busyRef.current = true;
-    setTurnStartedAt(Date.now());
-    const turnScope = sessionScopeRef.current.createChild();
-    activeScopeRef.current = turnScope;
-    try {
-      if (compiledContextRef.current) {
-        const store = artifactStoreRef.current;
-        const result = compactCompiled({
-          messages: messagesRef.current,
-          state: sessionStateRef.current,
-          store,
-        });
-        if (result.metrics.rawTurnsRemoved === 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
-          ]);
-        } else {
-          messagesRef.current = result.newMessages;
-          sessionStateRef.current = result.newState;
-          setEvents((e) =>
-            compactEventsVisual(
-              [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
-                },
-              ],
-              4,
-            ),
-          );
-          await saveSessionSafe();
-        }
-      } else {
-        const result = await compactMessages({
-          accountId: cfg.accountId,
-          apiToken: cfg.apiToken,
-          model: cfg.model,
-          messages: messagesRef.current,
-          signal: turnScope.signal,
-          gateway: gatewayFromConfig(cfg),
-        });
-        if (result.replacedCount === 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
-          ]);
-        } else {
-          messagesRef.current = result.newMessages;
-          setEvents((e) =>
-            compactEventsVisual(
-              [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `compacted ${result.replacedCount} messages into a summary`,
-                },
-              ],
-              4,
-            ),
-          );
-          await saveSessionSafe();
-        }
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        setEvents((es) => [
-          ...es,
-          {
-            kind: "error",
-            key: mkKey(),
-            text: `compact failed: ${(e as Error).message}`,
-          },
-        ]);
-      }
-    } finally {
-      setBusy(false);
-      busyRef.current = false;
-      setTurnStartedAt(null);
-      setTurnPhase("waiting");
-      setCurrentToolName(null);
-      setLastActivityAt(null);
-      activeScopeRef.current = null;
-      permResolveRef.current = null;
-      limitResolveRef.current = null;
-      pendingToolCallsRef.current.clear();
-    }
+    await runCompactFn({
+      cfg,
+      busy,
+      saveSessionSafe,
+      setEvents,
+      mkKey,
+      setBusy,
+      busyRef,
+      setTurnStartedAt,
+      setTurnPhase,
+      setCurrentToolName,
+      setLastActivityAt,
+      sessionScopeRef,
+      activeScopeRef,
+      permResolveRef,
+      limitResolveRef,
+      pendingToolCallsRef,
+      messagesRef,
+      sessionStateRef,
+      compiledContextRef,
+      artifactStoreRef,
+    });
   }, [cfg, busy, saveSessionSafe]);
 
   const openResumePicker = useCallback(async () => {
