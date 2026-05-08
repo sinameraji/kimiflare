@@ -125,6 +125,15 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
       logger.error("bash:error", { error: e.message });
       reject(e);
     });
+    // If the command backgrounds a process (e.g. `npm run dev &`), the
+    // grandchild may inherit our stdout/stderr pipes. Node will then wait
+    // for those pipes to close before emitting "close", so the Promise
+    // never resolves. Destroying the streams on "exit" forces "close" to
+    // fire immediately while preserving all output already buffered.
+    child.on("exit", () => {
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
