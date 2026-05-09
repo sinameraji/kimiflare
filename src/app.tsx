@@ -103,7 +103,7 @@ import {
   type Checkpoint,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
-import { encodeImageFile, type EncodedImage } from "./util/image.js";
+import { encodeImageFile } from "./util/image.js";
 import {
   recordUsage,
   getCostReport,
@@ -187,6 +187,7 @@ import {
   handleCommandDelete as handleCommandDeleteFn,
 } from "./app/commands-init.js";
 import { runCompact as runCompactFn, runInitFn } from "./app/agent-turn.js";
+import { processMessageFn, submitFn } from "./app/process-message.js";
 import { createUiUpdaters } from "./app/ui-updates.js";
 import { handleSlash as slashHandleSlash } from "./app/slash-commands.js";
 
@@ -1342,7 +1343,7 @@ function App({
     ]);
   }, []);
 
-  const doResumeSession = useCallback(
+  const _doResumeSession = useCallback(
     async (filePath: string, checkpointId?: string) => {
       await doResumeSessionFn(
         {
@@ -1551,731 +1552,90 @@ function App({
       displayText?: string,
       opts?: { queuedKey?: string },
     ) => {
-      if (!cfg) return;
-      let trimmed = text.trim();
-      if (!trimmed) return;
-
-      let overrideModel: string | undefined;
-      let overrideEffort: ReasoningEffort | undefined;
-      let display = displayText?.trim() || trimmed;
-
-      if (trimmed.startsWith("/")) {
-        if (handleSlash(trimmed)) return;
-        const head = trimmed.split(/\s+/)[0]!.slice(1);
-        const custom = customCommandsRef.current.find((c) => c.name === head);
-        if (custom) {
-          const info = (text: string) =>
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
-          const { prompt: rendered, warnings } = await renderCommand(
-            custom,
-            trimmed,
-            {
-              cwd: process.cwd(),
-            },
-          );
-          for (const w of warnings) info(`/${custom.name}: ${w}`);
-          if (custom.shell) {
-            info(`/${custom.name}: executing shell code from template`);
-          }
-          if (!rendered.trim()) return;
-          const parts: string[] = [];
-          if (custom.model) {
-            overrideModel = custom.model;
-            parts.push(`model=${custom.model}`);
-          }
-          if (custom.effort) {
-            overrideEffort = custom.effort;
-            parts.push(`effort=${custom.effort}`);
-          }
-          if (parts.length > 0)
-            info(`command '${custom.name}' → ${parts.join(", ")} (this turn)`);
-          if (custom.mode)
-            info(
-              `note: mode override (${custom.mode}) is not yet wired; current mode applies`,
-            );
-          display = trimmed;
-          trimmed = rendered;
-        }
-      }
-
-      // Track @-mentioned files for recent-files picker boost
-      const mentionMatches = trimmed.matchAll(/@(\S+)/g);
-      for (const m of mentionMatches) {
-        const path = m[1];
-        if (path) trackRecentFile(recentFilesRef, path, MAX_RECENT_FILES);
-      }
-
-      const imagePaths = findImagePaths(trimmed).slice(
-        0,
-        MAX_IMAGES_PER_MESSAGE,
-      );
-      let images: string[] = [];
-      let content: string | ContentPart[] = sanitizeString(trimmed);
-
-      if (imagePaths.length > 0) {
-        const encoded = await Promise.all(
-          imagePaths.map(async (path) => {
-            try {
-              const img = await encodeImageFile(path);
-              return { path, img };
-            } catch (e) {
-              setEvents((es) => [
-                ...es,
-                {
-                  kind: "error",
-                  key: mkKey(),
-                  text: `failed to encode image ${path}: ${(e as Error).message}`,
-                },
-              ]);
-              return null;
-            }
-          }),
-        );
-        const valid = encoded.filter(
-          (x): x is { path: string; img: EncodedImage } => x !== null,
-        );
-        if (valid.length > 0) {
-          images = valid.map((v) => v.img.filename);
-          const parts: ContentPart[] = [
-            { type: "text", text: sanitizeString(trimmed) },
-            ...valid.map((v) => ({
-              type: "image_url" as const,
-              image_url: { url: v.img.dataUrl },
-            })),
-          ];
-          content = parts;
-        }
-      }
-
-      // Ensure session-start memory recall has settled before the first turn
-      if (sessionStartRecallRef.current) {
-        await sessionStartRecallRef.current;
-        sessionStartRecallRef.current = null;
-      }
-
-      if (opts?.queuedKey) {
-        setEvents((evts) =>
-          evts.map((e) =>
-            e.kind === "user" && e.key === opts.queuedKey
-              ? {
-                  ...e,
-                  text: display,
-                  images: images.length > 0 ? images : undefined,
-                  queued: false,
-                }
-              : e,
-          ),
-        );
-      } else {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "user",
-            key: mkKey(),
-            text: display,
-            images: images.length > 0 ? images : undefined,
-          },
-        ]);
-      }
-
-      // LSP nudge: if user references code files and LSP is not configured
-      const nudge = maybeLspNudge(
-        display,
-        cfg?.lspEnabled ?? false,
-        cfg?.lspServers ?? {},
-      );
-      if (nudge) {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: nudge }]);
-      }
-
-      messagesRef.current.push({ role: "user", content });
-
-      // Pre-turn save: ensure session exists even if user exits mid-turn
-      await saveSessionSafe();
-
-      // Recall artifacts before sending if compiled context is enabled
-      if (compiledContextRef.current) {
-        const { ids: _ids, recalled } = recallArtifacts(
-          messagesRef.current,
-          artifactStoreRef.current,
-          sessionStateRef.current,
-        );
-        if (recalled.length > 0) {
-          const recalledText = formatRecalledArtifacts(recalled);
-          messagesRef.current.push({ role: "system", content: recalledText });
-          sessionStateRef.current = {
-            ...sessionStateRef.current,
-            artifact_index: { ...sessionStateRef.current.artifact_index },
-          };
-        }
-      }
-
-      // Occasional gentle nudge about /init (educational, not a warning)
-      turnCounterRef.current += 1;
-      if (
-        turnCounterRef.current % 15 === 0 &&
-        existsSync(join(process.cwd(), "KIMI.md")) &&
-        !kimiMdStale
-      ) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "Tip: Rerunning /init occasionally helps KimiFlare stay accurate as your project evolves.",
-          },
-        ]);
-      }
-
-      setBusy(true);
-      busyRef.current = true;
-      gatewayMetaRef.current = null;
-      setGatewayMeta(null);
-      setTurnStartedAt(Date.now());
-
-      const classification = classifyIntent(trimmed);
-      setIntentTier(classification.tier);
-
-      // Generate a human-readable title on first turn
-      if (!sessionTitleRef.current) {
-        sessionTitleRef.current = generateSessionTitle(
-          trimmed,
-          classification.intent,
-        );
-      }
-
-      // Route skills based on intent tier
-      let skillResult: SkillRoutingResult | undefined;
-      try {
-        skillResult = await routeSkills(skillsDirRef.current, {
-          cwd: process.cwd(),
-          prompt: trimmed,
-          memorySnippets: [], // TODO: wire memory snippets when available
-          tier: classification.tier,
-          maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
-        });
-        setSkillsActive(skillResult.selectedSkills.length);
-      } catch {
-        setSkillsActive(0);
-      }
-
-      const effortForTier: Record<string, ReasoningEffort> = {
-        light: "low",
-        medium: "medium",
-        heavy: "high",
-      };
-      const turnReasoningEffort =
-        overrideEffort ??
-        effortForTier[classification.tier] ??
-        effortRef.current;
-      const effectiveCodeMode = classification.tier === "heavy";
-      setCodeMode(effectiveCodeMode);
-
-      // Inject selected skills into system prompt
-      const selectedSkills = skillResult?.selectedSkills.map((s) => ({
-        name: s.name,
-        body: s.body,
-      }));
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model,
-            mode: modeRef.current,
-            selectedSkills,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [
-              ...ALL_TOOLS,
-              ...mcpToolsRef.current,
-              ...lspToolsRef.current,
-            ],
-            model: cfg.model,
-            mode: modeRef.current,
-            selectedSkills,
-          }),
-        };
-      }
-
-      // Emit metadata banner
-      setEvents((e) => [
-        ...e,
+      await processMessageFn(
         {
-          kind: "meta",
-          key: mkKey(),
-          intentTier: classification.tier,
-          skillsActive: skillResult?.selectedSkills.length ?? 0,
-          memoryRecalled: false,
-        },
-      ]);
-
-      const turnScope = sessionScopeRef.current.createChild();
-      activeScopeRef.current = turnScope;
-
-      const sharedCallbacks = {
-        onAssistantStart: () => {
-          const id = nextAssistantIdRef.current++;
-          activeAsstIdRef.current = id;
-          setTurnPhase("generating");
-          setLastActivityAt(Date.now());
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "assistant",
-              key: `asst_${id}`,
-              id,
-              text: "",
-              reasoning: "",
-              streaming: true,
-            },
-          ]);
-        },
-        onReasoningDelta: (d: string) => {
-          const id = activeAsstIdRef.current;
-          if (id !== null)
-            updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
-          setLastActivityAt(Date.now());
-        },
-        onTextDelta: (d: string) => {
-          const id = activeAsstIdRef.current;
-          if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
-          setLastActivityAt(Date.now());
-        },
-        onAssistantFinal: () => {
-          const id = activeAsstIdRef.current;
-          if (id !== null) updateAssistant(id, () => ({ streaming: false }));
-          setTurnPhase("waiting");
-        },
-        onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
-          pendingToolCallsRef.current.set(call.id, call.function.name);
-          setTurnPhase("executing");
-          setCurrentToolName(call.function.name);
-          setLastActivityAt(Date.now());
-          const spec = executorRef.current
-            .list()
-            .find((t) => t.name === call.function.name);
-          let renderMeta: ToolRender | undefined;
-          try {
-            const args = call.function.arguments
-              ? JSON.parse(call.function.arguments)
-              : {};
-            renderMeta = spec?.render?.(args);
-          } catch {
-            /* ignore render failure */
-          }
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "tool",
-              key: `tool_${call.id}`,
-              id: call.id,
-              name: call.function.name,
-              args: call.function.arguments,
-              status: "running",
-              render: renderMeta,
-              expanded: false,
-              startedAt: Date.now(),
-            },
-          ]);
-        },
-        onToolResult: (r: import("./tools/executor.js").ToolResult) => {
-          pendingToolCallsRef.current.delete(r.tool_call_id);
-          setLastActivityAt(Date.now());
-          if (pendingToolCallsRef.current.size === 0) {
-            setTurnPhase("waiting");
-            setCurrentToolName(null);
-          }
-          updateTool(r.tool_call_id, {
-            status: r.ok ? "done" : "error",
-            result: r.content,
-          });
-        },
-        onUsage: (u: Usage) => {
-          usageRef.current = u;
-          setUsage(u);
-        },
-        onUsageFinal: (u: Usage, meta?: GatewayMeta) => {
-          const sid = ensureSessionId();
-          void recordUsage(
-            sid,
-            u,
-            gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current),
-          );
-          void getCostReport(sid).then((report) =>
-            setSessionUsage(report.session),
-          );
-          // Refresh cloud budget so remaining tokens update in real time
-          if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-            const token = cloudToken ?? initialCloudToken!;
-            const did = cloudDeviceId ?? initialCloudDeviceId;
-            void (async () => {
-              const { fetchCloudUsage } = await import("./cloud/auth.js");
-              const usage = await fetchCloudUsage(token, did);
-              if (usage) {
-                setCloudBudget({
-                  remaining: usage.remaining,
-                  limit: usage.input_token_limit,
-                });
-              }
-            })();
-          }
-        },
-        onGatewayMeta: updateGatewayMeta,
-        onTasks: (nextTasks: Task[]) => {
-          const prevEmpty = tasksRef.current.length === 0;
-          const prevAllDone =
-            tasksRef.current.length > 0 &&
-            tasksRef.current.every((t) => t.status === "completed");
-          tasksRef.current = nextTasks;
-          setTasks(nextTasks);
-          if ((prevEmpty || prevAllDone) && nextTasks.length > 0) {
-            setTasksStartedAt(Date.now());
-            setTasksStartTokens(usageRef.current?.prompt_tokens ?? 0);
-          }
-          if (nextTasks.length === 0) {
-            setTasksStartedAt(null);
-            setTasksStartTokens(0);
-          }
-        },
-        askPermission: (req: import("./tools/executor.js").PermissionRequest) =>
-          new Promise<PermissionDecision>((resolve) => {
-            if (modeRef.current === "auto") {
-              resolve("allow");
-              return;
-            }
-            if (
-              modeRef.current === "plan" &&
-              isBlockedInPlanMode(req.tool.name)
-            ) {
-              if (
-                req.tool.name === "bash" &&
-                typeof req.args.command === "string" &&
-                isReadOnlyBash(req.args.command)
-              ) {
-                resolve("allow");
-                return;
-              }
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
-                },
-              ]);
-              resolve("deny");
-              return;
-            }
-            permResolveRef.current = resolve;
-            setOverlay({
-              kind: "permission",
-              perm: { tool: req.tool, args: req.args, resolve },
-            });
-          }),
-        onToolLimitReached: () =>
-          new Promise<LimitDecision>((resolve) => {
-            limitResolveRef.current = resolve;
-            setOverlay({ kind: "limitModal", limit: 50, resolve });
-          }),
-        onKimiMdStale: () => {
-          if (!kimiMdStaleNudgedRef.current) {
-            kimiMdStaleNudgedRef.current = true;
-            setKimiMdStale(true);
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "info",
-                key: mkKey(),
-                text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes.",
-              },
-            ]);
-          }
-        },
-      };
-
-      const cleanupTurn = () => {
-        setCodeMode(false);
-        const asstId = activeAsstIdRef.current;
-        if (asstId !== null)
-          updateAssistant(asstId, () => ({ streaming: false }));
-        setBusy(false);
-        busyRef.current = false;
-        setTurnStartedAt(null);
-        setTurnPhase("waiting");
-        setCurrentToolName(null);
-        setLastActivityAt(null);
-        activeAsstIdRef.current = null;
-        activeScopeRef.current = null;
-        isAbortingRef.current = false;
-        permResolveRef.current = null;
-        limitResolveRef.current = null;
-        pendingToolCallsRef.current.clear();
-
-        // Clear task list so it doesn't linger into the next turn
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
-
-        // Mark any still-running tools as interrupted
-        setEvents((evts) =>
-          evts.map((e) =>
-            e.kind === "tool" && e.status === "running"
-              ? { ...e, status: "error" as const, result: "(stopped)" }
-              : e,
-          ),
-        );
-      };
-
-      supervisorRef.current.startTurn(
-        {
-          accountId: cfg.accountId,
-          apiToken: cfg.apiToken,
-          model: overrideModel ?? cfg.model,
-          gateway: gatewayFromConfig(cfg),
-          messages: messagesRef.current,
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-          executor: executorRef.current,
-          cwd: process.cwd(),
-          signal: turnScope.signal,
-          reasoningEffort: turnReasoningEffort,
-          coauthor:
-            cfg.coauthor !== false
-              ? {
-                  name: cfg.coauthorName || "kimiflare",
-                  email: cfg.coauthorEmail || "kimiflare@proton.me",
-                }
-              : undefined,
-          sessionId: ensureSessionId(),
-          memoryManager: memoryManagerRef.current,
-          githubToken: cfg.githubOAuthToken,
-          keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
-          codeMode: effectiveCodeMode,
-          cloudMode: cfg.cloudMode,
-          cloudToken: cloudToken ?? initialCloudToken,
-          cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+          cfg,
+          handleSlash,
+          customCommandsRef,
+          setEvents,
+          mkKey,
+          trackRecentFile,
+          recentFilesRef,
+          maxRecentFiles: MAX_RECENT_FILES,
+          maxImagesPerMessage: MAX_IMAGES_PER_MESSAGE,
+          findImagePaths,
+          encodeImageFile,
+          sessionStartRecallRef,
+          maybeLspNudge,
+          messagesRef,
+          saveSessionSafe,
+          compiledContextRef,
+          artifactStoreRef,
+          sessionStateRef,
+          turnCounterRef,
+          busyRef,
+          gatewayMetaRef,
+          setGatewayMeta,
+          setTurnStartedAt,
+          setIntentTier,
+          sessionTitleRef,
+          skillsDirRef,
+          contextLimit: CONTEXT_LIMIT,
+          setSkillsActive,
+          effortRef,
+          setCodeMode,
+          cacheStableRef,
+          mcpToolsRef,
+          lspToolsRef,
+          modeRef,
+          nextAssistantIdRef,
+          activeAsstIdRef,
+          updateAssistant,
+          updateTool,
+          setTurnPhase,
+          setLastActivityAt,
+          setCurrentToolName,
+          pendingToolCallsRef,
+          executorRef,
+          usageRef,
+          setUsage,
+          ensureSessionId,
+          recordUsage,
+          gatewayUsageLookupFromConfig,
+          getCostReport,
+          setSessionUsage,
+          cloudToken: cloudToken ?? null,
+          initialCloudToken: initialCloudToken ?? null,
+          cloudDeviceId: cloudDeviceId ?? null,
+          initialCloudDeviceId: initialCloudDeviceId ?? null,
+          setCloudBudget,
+          isBlockedInPlanMode,
+          isReadOnlyBash,
+          permResolveRef,
+          setOverlay,
+          limitResolveRef,
+          kimiMdStaleNudgedRef,
+          setKimiMdStale,
+          tasksRef,
+          setTasks,
+          setTasksStartedAt,
+          setTasksStartTokens,
+          sessionScopeRef,
+          activeScopeRef,
+          isAbortingRef,
+          supervisorRef,
+          memoryManagerRef,
+          lspManagerRef,
+          safeSave,
           onIterationEnd,
-          intentClassification: classification,
-          selectedSkills,
-          onFileChange: (path, content) => {
-            if (content) {
-              lspManagerRef.current.notifyChange(path, content);
-            } else {
-              void import("node:fs/promises").then(({ readFile }) =>
-                readFile(path, "utf8")
-                  .then((c) => lspManagerRef.current.notifyChange(path, c))
-                  .catch((err) => safeSave("lspNotify", Promise.reject(err))),
-              );
-            }
-          },
-          callbacks: sharedCallbacks,
+          isCloudQuotaExhaustedError,
+          setBusy,
+          updateGatewayMeta,
+          kimiMdStale,
         },
-        {
-          onDone: async () => {
-            await saveSessionSafe();
-
-            // If the turn was killed (preempted or aborted), skip expensive
-            // post-turn work so the next turn can start immediately.
-            if (turnScope.signal.aborted) {
-              cleanupTurn();
-              return;
-            }
-
-            // Auto-compact after turn when thresholds are met. With compiled
-            // context on, use the heuristic compactor; otherwise fall back to the
-            // LLM summarizer so users have a safety net regardless of the flag.
-            if (shouldCompact({ messages: messagesRef.current })) {
-              if (compiledContextRef.current) {
-                const store = artifactStoreRef.current;
-                const result = compactCompiled({
-                  messages: messagesRef.current,
-                  state: sessionStateRef.current,
-                  store,
-                });
-                if (result.metrics.rawTurnsRemoved > 0) {
-                  messagesRef.current = result.newMessages;
-                  sessionStateRef.current = result.newState;
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "info",
-                      key: mkKey(),
-                      text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-                    },
-                  ]);
-                  await saveSessionSafe();
-                }
-              } else {
-                try {
-                  const result = await compactMessages({
-                    accountId: cfg.accountId,
-                    apiToken: cfg.apiToken,
-                    model: cfg.model,
-                    messages: messagesRef.current,
-                    signal: turnScope.signal,
-                    gateway: gatewayFromConfig(cfg),
-                  });
-                  if (result.replacedCount > 0) {
-                    messagesRef.current = result.newMessages;
-                    setEvents((e) => [
-                      ...e,
-                      {
-                        kind: "info",
-                        key: mkKey(),
-                        text: `auto-compacted: ${result.replacedCount} messages summarized`,
-                      },
-                    ]);
-                    await saveSessionSafe();
-                  }
-                } catch (compactErr) {
-                  if ((compactErr as Error).name !== "AbortError") {
-                    setEvents((es) => [
-                      ...es,
-                      {
-                        kind: "info",
-                        key: mkKey(),
-                        text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
-                      },
-                    ]);
-                  }
-                }
-              }
-            }
-
-            // After compaction, recall memories so the model retains durable anchors
-            const manager = memoryManagerRef.current;
-            if (manager) {
-              try {
-                const cwd = process.cwd();
-                const queryText = sessionStateRef.current.task || cwd;
-                const results = await manager.recall({
-                  text: queryText,
-                  repoPath: cwd,
-                  limit: 5,
-                });
-                if (results.length > 0) {
-                  const text = await manager.synthesizeRecalled(results);
-                  const lastSystemIdx = messagesRef.current.findLastIndex(
-                    (m) => m.role === "system",
-                  );
-                  const insertIdx =
-                    lastSystemIdx >= 0
-                      ? lastSystemIdx + 1
-                      : messagesRef.current.length;
-                  messagesRef.current.splice(insertIdx, 0, {
-                    role: "system",
-                    content: text,
-                  });
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "memory",
-                      key: mkKey(),
-                      text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                    },
-                  ]);
-                  await saveSessionSafe();
-                }
-              } catch {
-                // Non-fatal
-              }
-            }
-
-            cleanupTurn();
-          },
-          onError: async (e) => {
-            if (e.name === "AbortError") {
-              // Inject synthetic tool results for any pending tool calls so message
-              // history remains valid (assistant msg with tool_calls needs 1:1 results).
-              for (const [tcId, tcName] of pendingToolCallsRef.current) {
-                messagesRef.current.push({
-                  role: "tool",
-                  tool_call_id: tcId,
-                  content: "(stopped)",
-                  name: tcName,
-                });
-              }
-              setEvents((evts) =>
-                evts.map((e) =>
-                  e.kind === "tool" && e.status === "running"
-                    ? { ...e, status: "error" as const, result: "(stopped)" }
-                    : e,
-                ),
-              );
-            } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-              const token = cloudToken ?? initialCloudToken;
-              const did = cloudDeviceId ?? initialCloudDeviceId;
-              let used = 0;
-              let limit = 0;
-              let expiresAt = "";
-              if (token) {
-                try {
-                  const { fetchCloudUsage } = await import("./cloud/auth.js");
-                  const usage = await fetchCloudUsage(token, did);
-                  if (usage) {
-                    used = usage.input_tokens_used;
-                    limit = usage.input_token_limit;
-                    expiresAt = usage.expires_at;
-                  }
-                } catch {
-                  /* ignore */
-                }
-              }
-              if (!limit) {
-                const m = (e as KimiApiError).message.match(
-                  /Used ([\d,]+)\s*\/\s*([\d,]+)/,
-                );
-                if (m && m[1] && m[2]) {
-                  used = parseInt(m[1].replace(/,/g, ""), 10);
-                  limit = parseInt(m[2].replace(/,/g, ""), 10);
-                }
-              }
-              setEvents((es) => [
-                ...es,
-                {
-                  kind: "cloud_quota_exhausted",
-                  key: mkKey(),
-                  used,
-                  limit,
-                  expiresAt,
-                },
-              ]);
-            } else {
-              const isInvalidJson400 =
-                e instanceof KimiApiError &&
-                e.httpStatus === 400 &&
-                e.message.includes("invalid escaped character");
-              if (isInvalidJson400) {
-                messagesRef.current.pop();
-                setEvents((es) => [
-                  ...es,
-                  {
-                    kind: "error",
-                    key: mkKey(),
-                    text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
-                  },
-                ]);
-              } else {
-                setEvents((es) => [
-                  ...es,
-                  { kind: "error", key: mkKey(), text: e.message ?? String(e) },
-                ]);
-              }
-            }
-            cleanupTurn();
-          },
-        },
+        text,
+        displayText,
+        opts,
       );
     },
     [
@@ -2298,60 +1658,31 @@ function App({
 
   const submit = useCallback(
     (full: string, display?: string) => {
-      const trimmedFull = full.trim();
-      if (!trimmedFull) return;
-      const trimmedDisplay = (display ?? full).trim() || trimmedFull;
-
-      const historyEntry = trimmedDisplay;
-
-      if (busyRef.current) {
-        // Preempt current turn so user input is not blocked indefinitely
-        if (activeScopeRef.current && !isAbortingRef.current) {
-          isAbortingRef.current = true;
-          supervisorRef.current.killTurn();
-          activeScopeRef.current.abort("new_message");
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "(preempted)" },
-          ]);
-          // Clear task list immediately so it doesn't keep spinning
-          setTasks([]);
-          setTasksStartedAt(null);
-          setTasksStartTokens(0);
-          tasksRef.current = [];
-        }
-        const key = mkKey();
-        setEvents((e) => [
-          ...e,
-          { kind: "user", key, text: trimmedDisplay, queued: true },
-        ]);
-        setQueue((q) => [
-          ...q,
-          { full: trimmedFull, display: trimmedDisplay, key },
-        ]);
-        setHistory((h) =>
-          h.length > 0 && h[h.length - 1] === historyEntry
-            ? h
-            : [...h, historyEntry],
-        );
-        setInput("");
-        setHistoryIndex(-1);
-        return;
-      }
-
-      setHistory((h) =>
-        h.length > 0 && h[h.length - 1] === historyEntry
-          ? h
-          : [...h, historyEntry],
-      );
-      setInput("");
-      setHistoryIndex(-1);
-      processMessage(
-        trimmedFull,
-        trimmedDisplay !== trimmedFull ? trimmedDisplay : undefined,
+      submitFn(
+        {
+          busyRef,
+          activeScopeRef,
+          isAbortingRef,
+          supervisorRef,
+          setEvents,
+          mkKey,
+          setTasks,
+          setTasksStartedAt,
+          setTasksStartTokens,
+          tasksRef,
+          setQueue,
+          setHistory,
+          setInput,
+          setHistoryIndex,
+          history,
+          draftInput,
+          processMessage,
+        },
+        full,
+        display,
       );
     },
-    [processMessage],
+    [processMessage, history, draftInput],
   );
   submitRef.current = submit;
 

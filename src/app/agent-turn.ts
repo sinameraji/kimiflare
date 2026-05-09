@@ -281,6 +281,244 @@ export interface RunInitCtx {
   ) => Promise<ChatMessage[]>;
 }
 
+export interface AgentCallbacksCtx {
+  nextAssistantIdRef: React.MutableRefObject<number>;
+  activeAsstIdRef: React.MutableRefObject<number | null>;
+  setEvents: React.Dispatch<React.SetStateAction<ChatEvent[]>>;
+  updateAssistant: (
+    id: number,
+    fn: (e: Extract<ChatEvent, { kind: "assistant" }>) => Partial<ChatEvent>,
+  ) => void;
+  updateTool: (
+    id: string,
+    patch: Partial<Extract<ChatEvent, { kind: "tool" }>>,
+  ) => void;
+  setTurnPhase: React.Dispatch<React.SetStateAction<TurnPhase>>;
+  setLastActivityAt: React.Dispatch<React.SetStateAction<number | null>>;
+  setCurrentToolName: React.Dispatch<React.SetStateAction<string | null>>;
+  pendingToolCallsRef: React.MutableRefObject<Map<string, string>>;
+  executorRef: React.MutableRefObject<
+    import("../tools/executor.js").ToolExecutor
+  >;
+  recentFilesRef: React.MutableRefObject<Map<string, number>>;
+  maxRecentFiles: number;
+  trackRecentFile: (
+    ref: React.MutableRefObject<Map<string, number>>,
+    path: string,
+    max: number,
+  ) => void;
+  usageRef: React.MutableRefObject<Usage | null>;
+  setUsage: React.Dispatch<React.SetStateAction<Usage | null>>;
+  ensureSessionId: () => string;
+  recordUsage: (
+    sessionId: string,
+    usage: Usage,
+    lookup?: import("../usage-tracker.js").GatewayUsageLookup,
+  ) => Promise<void>;
+  gatewayUsageLookupFromConfig: (
+    cfg: Cfg,
+    meta: GatewayMeta | null,
+  ) => import("../usage-tracker.js").GatewayUsageLookup | undefined;
+  getCostReport: (sessionId?: string) => Promise<CostReport>;
+  cfg: Cfg | null;
+  gatewayMetaRef: React.MutableRefObject<GatewayMeta | null>;
+  updateGatewayMeta: (meta: GatewayMeta) => void;
+  setSessionUsage: React.Dispatch<React.SetStateAction<DailyUsage | null>>;
+  cloudToken: string | null;
+  initialCloudToken: string | null;
+  cloudDeviceId: string | null;
+  initialCloudDeviceId: string | null;
+  setCloudBudget: React.Dispatch<
+    React.SetStateAction<{ remaining: number; limit: number } | null>
+  >;
+  modeRef: React.MutableRefObject<Mode>;
+  isBlockedInPlanMode: (name: string) => boolean;
+  isReadOnlyBash: (cmd: string) => boolean;
+  permResolveRef: React.MutableRefObject<
+    ((d: PermissionDecision) => void) | null
+  >;
+  setOverlay: React.Dispatch<React.SetStateAction<any>>;
+  mkKey: () => string;
+  limitResolveRef: React.MutableRefObject<((d: LimitDecision) => void) | null>;
+  kimiMdStaleNudgedRef: React.MutableRefObject<boolean>;
+  setKimiMdStale: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+export function buildAgentCallbacks(
+  ctx: AgentCallbacksCtx,
+): Omit<
+  import("../agent/loop.js").AgentCallbacks,
+  "onTasks" | "onToolLimitReached"
+> {
+  return {
+    onAssistantStart: () => {
+      const id = ctx.nextAssistantIdRef.current++;
+      ctx.activeAsstIdRef.current = id;
+      ctx.setTurnPhase("generating");
+      ctx.setLastActivityAt(Date.now());
+      ctx.setEvents((e) => [
+        ...e,
+        {
+          kind: "assistant",
+          key: `asst_${id}`,
+          id,
+          text: "",
+          reasoning: "",
+          streaming: true,
+        },
+      ]);
+    },
+    onReasoningDelta: (d) => {
+      const id = ctx.activeAsstIdRef.current;
+      if (id !== null)
+        ctx.updateAssistant(id, (e) => ({
+          reasoning: e.reasoning + d,
+        }));
+      ctx.setLastActivityAt(Date.now());
+    },
+    onTextDelta: (d) => {
+      const id = ctx.activeAsstIdRef.current;
+      if (id !== null) ctx.updateAssistant(id, (e) => ({ text: e.text + d }));
+      ctx.setLastActivityAt(Date.now());
+    },
+    onAssistantFinal: () => {
+      const id = ctx.activeAsstIdRef.current;
+      if (id !== null) ctx.updateAssistant(id, () => ({ streaming: false }));
+      ctx.setTurnPhase("waiting");
+    },
+    onToolCallFinalized: (call) => {
+      ctx.pendingToolCallsRef.current.set(call.id, call.function.name);
+      ctx.setTurnPhase("executing");
+      ctx.setCurrentToolName(call.function.name);
+      ctx.setLastActivityAt(Date.now());
+      const spec = ctx.executorRef.current
+        .list()
+        .find((t) => t.name === call.function.name);
+      let renderMeta: ToolRender | undefined;
+      let args: Record<string, unknown> = {};
+      try {
+        args = call.function.arguments
+          ? JSON.parse(call.function.arguments)
+          : {};
+        renderMeta = spec?.render?.(args);
+      } catch {
+        /* ignore render failure */
+      }
+      if (typeof args.path === "string") {
+        ctx.trackRecentFile(ctx.recentFilesRef, args.path, ctx.maxRecentFiles);
+      }
+      ctx.setEvents((e) => [
+        ...e,
+        {
+          kind: "tool",
+          key: `tool_${call.id}`,
+          id: call.id,
+          name: call.function.name,
+          args: call.function.arguments,
+          status: "running",
+          render: renderMeta,
+          expanded: false,
+          startedAt: Date.now(),
+        },
+      ]);
+    },
+    onToolResult: (r) => {
+      ctx.pendingToolCallsRef.current.delete(r.tool_call_id);
+      ctx.setLastActivityAt(Date.now());
+      if (ctx.pendingToolCallsRef.current.size === 0) {
+        ctx.setTurnPhase("waiting");
+        ctx.setCurrentToolName(null);
+      }
+      ctx.updateTool(r.tool_call_id, {
+        status: r.ok ? "done" : "error",
+        result: r.content,
+      });
+    },
+    onUsage: (u) => {
+      ctx.usageRef.current = u;
+      ctx.setUsage(u);
+    },
+    onUsageFinal: (u, meta) => {
+      const sid = ctx.ensureSessionId();
+      void ctx.recordUsage(
+        sid,
+        u,
+        ctx.gatewayUsageLookupFromConfig(
+          ctx.cfg!,
+          meta ?? ctx.gatewayMetaRef.current,
+        ),
+      );
+      void ctx
+        .getCostReport(sid)
+        .then((report) => ctx.setSessionUsage(report.session));
+      if (ctx.cfg?.cloudMode && (ctx.cloudToken ?? ctx.initialCloudToken)) {
+        const token = ctx.cloudToken ?? ctx.initialCloudToken!;
+        const did = ctx.cloudDeviceId ?? ctx.initialCloudDeviceId ?? undefined;
+        void (async () => {
+          const { fetchCloudUsage } = await import("../cloud/auth.js");
+          const usage = await fetchCloudUsage(token, did);
+          if (usage) {
+            ctx.setCloudBudget({
+              remaining: usage.remaining,
+              limit: usage.input_token_limit,
+            });
+          }
+        })();
+      }
+    },
+    onGatewayMeta: ctx.updateGatewayMeta,
+    askPermission: (req) =>
+      new Promise<PermissionDecision>((resolve) => {
+        if (ctx.modeRef.current === "auto") {
+          resolve("allow");
+          return;
+        }
+        if (
+          ctx.modeRef.current === "plan" &&
+          ctx.isBlockedInPlanMode(req.tool.name)
+        ) {
+          if (
+            req.tool.name === "bash" &&
+            typeof req.args.command === "string" &&
+            ctx.isReadOnlyBash(req.args.command)
+          ) {
+            resolve("allow");
+            return;
+          }
+          ctx.setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: ctx.mkKey(),
+              text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
+            },
+          ]);
+          resolve("deny");
+          return;
+        }
+        ctx.permResolveRef.current = resolve;
+        ctx.setOverlay({
+          kind: "permission",
+          perm: { tool: req.tool, args: req.args, resolve },
+        });
+      }),
+    onKimiMdStale: () => {
+      if (!ctx.kimiMdStaleNudgedRef.current) {
+        ctx.kimiMdStaleNudgedRef.current = true;
+        ctx.setKimiMdStale(true);
+        ctx.setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: ctx.mkKey(),
+            text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes.",
+          },
+        ]);
+      }
+    },
+  };
+}
+
 export async function runInitFn(ctx: RunInitCtx): Promise<void> {
   if (!ctx.cfg) return;
   if (ctx.busy) {
@@ -371,114 +609,7 @@ export async function runInitFn(ctx: RunInitCtx): Promise<void> {
         }
       },
       callbacks: {
-        onAssistantStart: () => {
-          const id = ctx.nextAssistantIdRef.current++;
-          ctx.activeAsstIdRef.current = id;
-          ctx.setEvents((e) => [
-            ...e,
-            {
-              kind: "assistant",
-              key: `asst_${id}`,
-              id,
-              text: "",
-              reasoning: "",
-              streaming: true,
-            },
-          ]);
-        },
-        onReasoningDelta: (d) => {
-          const id = ctx.activeAsstIdRef.current;
-          if (id !== null)
-            ctx.updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
-        },
-        onTextDelta: (d) => {
-          const id = ctx.activeAsstIdRef.current;
-          if (id !== null)
-            ctx.updateAssistant(id, (e) => ({ text: e.text + d }));
-        },
-        onAssistantFinal: () => {
-          const id = ctx.activeAsstIdRef.current;
-          if (id !== null)
-            ctx.updateAssistant(id, () => ({ streaming: false }));
-        },
-        onToolCallFinalized: (call) => {
-          ctx.pendingToolCallsRef.current.set(call.id, call.function.name);
-          const spec = ctx.executorRef.current
-            .list()
-            .find((t) => t.name === call.function.name);
-          let renderMeta: ToolRender | undefined;
-          let args: Record<string, unknown> = {};
-          try {
-            args = call.function.arguments
-              ? JSON.parse(call.function.arguments)
-              : {};
-            renderMeta = spec?.render?.(args);
-          } catch {
-            /* ignore */
-          }
-          // Track file paths from read/edit/write/grep tools for recent-files boost
-          if (typeof args.path === "string") {
-            ctx.trackRecentFile(
-              ctx.recentFilesRef,
-              args.path,
-              ctx.maxRecentFiles,
-            );
-          }
-          ctx.setEvents((e) => [
-            ...e,
-            {
-              kind: "tool",
-              key: `tool_${call.id}`,
-              id: call.id,
-              name: call.function.name,
-              args: call.function.arguments,
-              status: "running",
-              render: renderMeta,
-              expanded: false,
-            },
-          ]);
-        },
-        onToolResult: (r) => {
-          ctx.pendingToolCallsRef.current.delete(r.tool_call_id);
-          ctx.updateTool(r.tool_call_id, {
-            status: r.ok ? "done" : "error",
-            result: r.content,
-          });
-        },
-        onUsage: (u) => {
-          ctx.usageRef.current = u;
-          ctx.setUsage(u);
-        },
-        onUsageFinal: (u, meta) => {
-          const sid = ctx.ensureSessionId();
-          void ctx.recordUsage(
-            sid,
-            u,
-            ctx.gatewayUsageLookupFromConfig(
-              ctx.cfg!,
-              meta ?? ctx.gatewayMetaRef.current,
-            ),
-          );
-          void ctx
-            .getCostReport(sid)
-            .then((report) => ctx.setSessionUsage(report.session));
-          if (ctx.cfg?.cloudMode && (ctx.cloudToken ?? ctx.initialCloudToken)) {
-            const token = ctx.cloudToken ?? ctx.initialCloudToken!;
-            const did =
-              ctx.cloudDeviceId ?? ctx.initialCloudDeviceId ?? undefined;
-            void (async () => {
-              const { fetchCloudUsage } = await import("../cloud/auth.js");
-              const usage = await fetchCloudUsage(token, did);
-              if (usage) {
-                ctx.setCloudBudget({
-                  remaining: usage.remaining,
-                  limit: usage.input_token_limit,
-                });
-              }
-            })();
-          }
-        },
-        onGatewayMeta: ctx.updateGatewayMeta,
+        ...buildAgentCallbacks(ctx),
         askPermission: (req) =>
           new Promise<PermissionDecision>((resolve) => {
             if (ctx.modeRef.current === "auto") {
@@ -498,7 +629,6 @@ export async function runInitFn(ctx: RunInitCtx): Promise<void> {
                 return;
               }
               if (req.tool.name === "bash") {
-                // Non-whitelisted bash in plan mode: ask for temporary permission
                 ctx.permResolveRef.current = resolve;
                 ctx.setOverlay({
                   kind: "permission",
@@ -523,20 +653,6 @@ export async function runInitFn(ctx: RunInitCtx): Promise<void> {
               perm: { tool: req.tool, args: req.args, resolve },
             });
           }),
-        onKimiMdStale: () => {
-          if (!ctx.kimiMdStaleNudgedRef.current) {
-            ctx.kimiMdStaleNudgedRef.current = true;
-            ctx.setKimiMdStale(true);
-            ctx.setEvents((e) => [
-              ...e,
-              {
-                kind: "info",
-                key: ctx.mkKey(),
-                text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes.",
-              },
-            ]);
-          }
-        },
       },
     });
 
