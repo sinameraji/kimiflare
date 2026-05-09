@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/sinameraji/kimiflare/compare/v0.48.5...v0.49.0) (2026-05-09)
+
+
+### Features
+
+* **sdk:** add headless SDK for KimiFlare Studio ([#347](https://github.com/sinameraji/kimiflare/issues/347)) ([01993b5](https://github.com/sinameraji/kimiflare/commit/01993b56f5dabf58567d7afb1fb5d13ae5de128a))
+
 ## [0.48.5](https://github.com/sinameraji/kimiflare/compare/v0.48.4...v0.48.5) (2026-05-09)
 
 
