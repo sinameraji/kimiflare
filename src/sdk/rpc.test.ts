@@ -1,14 +1,30 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
 import { Readable, Writable } from "node:stream";
 import { startRpcServer } from "./rpc.js";
 
 describe("SDK RPC", () => {
+  let originalAccount: string | undefined;
+  let originalToken: string | undefined;
+
+  before(() => {
+    originalAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+    originalToken = process.env.CLOUDFLARE_API_TOKEN;
+    process.env.CLOUDFLARE_ACCOUNT_ID = "test_account";
+    process.env.CLOUDFLARE_API_TOKEN = "test_token";
+  });
+
+  after(() => {
+    process.env.CLOUDFLARE_ACCOUNT_ID = originalAccount;
+    process.env.CLOUDFLARE_API_TOKEN = originalToken;
+  });
+
   async function withRpcServer(
     commands: string[],
     handler: (lines: string[]) => void,
   ): Promise<void> {
-    const input = Readable.from(commands.map((c) => c + "\n"));
+    const allCommands = [...commands, JSON.stringify({ type: "dispose" })];
+    const input = Readable.from(allCommands.map((c) => c + "\n"));
     const outputLines: string[] = [];
     const output = new Writable({
       write(chunk, _encoding, callback) {
@@ -17,34 +33,21 @@ describe("SDK RPC", () => {
       },
     });
 
-    // Start RPC server in background; it will read from our mocked stdin
-    const serverPromise = startRpcServer(input, output);
+    // Start RPC server; it will process all commands and exit on dispose
+    await startRpcServer(input, output);
 
-    // Wait for input to be consumed
-    await new Promise<void>((resolve) => {
-      input.on("end", resolve);
-      input.on("close", resolve);
+    // Filter out the dispose ok response
+    const filtered = outputLines.filter((l) => {
+      try {
+        const parsed = JSON.parse(l);
+        // Remove only the dispose ok response (no id, type ok)
+        return !(parsed.type === "ok" && parsed.id === undefined);
+      } catch {
+        return true;
+      }
     });
 
-    // Give server a tick to process
-    await new Promise((r) => setTimeout(r, 50));
-
-    handler(outputLines);
-
-    // Clean up: send dispose to shut down server
-    try {
-      const disposeInput = Readable.from([JSON.stringify({ type: "dispose" }) + "\n"]);
-      await startRpcServer(disposeInput, output);
-    } catch {
-      // ignore
-    }
-
-    // Ensure the original server promise resolves
-    try {
-      await serverPromise;
-    } catch {
-      // ignore
-    }
+    handler(filtered);
   }
 
   it("responds to new_session command", async () => {
