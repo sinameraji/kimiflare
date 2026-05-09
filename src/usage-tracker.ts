@@ -76,6 +76,10 @@ function usagePath(): string {
   return join(usageDir(), "usage.json");
 }
 
+function historyPath(): string {
+  return join(usageDir(), "history.jsonl");
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -99,6 +103,44 @@ async function loadLog(): Promise<UsageLog> {
 async function saveLog(log: UsageLog): Promise<void> {
   await mkdir(usageDir(), { recursive: true });
   await writeFile(usagePath(), JSON.stringify(log, null, 2), "utf8");
+}
+
+/** Load the append-only history JSONL file. Never pruned. */
+async function loadHistory(): Promise<DailyUsage[]> {
+  try {
+    const raw = await readFile(historyPath(), "utf8");
+    const lines = raw.split("\n").filter((l) => l.trim());
+    const entries: DailyUsage[] = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as DailyUsage;
+        if (parsed.date) entries.push(parsed);
+      } catch {
+        /* skip malformed line */
+      }
+    }
+    return entries;
+  } catch {
+    /* no file or unreadable */
+  }
+  return [];
+}
+
+/** Append or update a day's entry in the history JSONL file.
+ *  Reads the whole file (it's tiny), updates the matching day or appends,
+ *  then writes back. This keeps the file compact and deduplicated by date.
+ */
+async function upsertHistoryDay(day: DailyUsage): Promise<void> {
+  const entries = await loadHistory();
+  const idx = entries.findIndex((e) => e.date === day.date);
+  if (idx >= 0) {
+    entries[idx] = day;
+  } else {
+    entries.push(day);
+  }
+  const lines = entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  await mkdir(usageDir(), { recursive: true });
+  await writeFile(historyPath(), lines, "utf8");
 }
 
 function getOrCreateDay(log: UsageLog, date: string): DailyUsage {
@@ -227,6 +269,9 @@ export async function recordUsage(
   }
 
   await saveLog(log);
+
+  // Also persist to the append-only history log (never pruned)
+  await upsertHistoryDay(day);
 }
 
 export interface CostReport {
@@ -236,8 +281,18 @@ export interface CostReport {
   allTime: DailyUsage;
 }
 
+/** Merge usage.json days with history.jsonl days. usage.json takes precedence for overlapping dates. */
+function mergeDays(usageDays: DailyUsage[], historyDays: DailyUsage[]): DailyUsage[] {
+  const map = new Map<string, DailyUsage>();
+  for (const d of historyDays) map.set(d.date, d);
+  for (const d of usageDays) map.set(d.date, d); // overwrite with fresher usage.json data
+  return Array.from(map.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 export async function getCostReport(sessionId?: string): Promise<CostReport> {
   const log = pruneUsageLog(await loadLog());
+  const history = await loadHistory();
+  const allDays = mergeDays(log.days, history);
   const date = today();
   const currentMonth = date.slice(0, 7); // YYYY-MM
 
@@ -257,7 +312,7 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
     cachedTokens: 0,
     cost: 0,
   };
-  for (const d of log.days) {
+  for (const d of allDays) {
     if (d.date.startsWith(currentMonth)) {
       monthUsage.promptTokens += d.promptTokens;
       monthUsage.completionTokens += d.completionTokens;
@@ -277,7 +332,7 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
     cachedTokens: 0,
     cost: 0,
   };
-  for (const d of log.days) {
+  for (const d of allDays) {
     allTime.promptTokens += d.promptTokens;
     allTime.completionTokens += d.completionTokens;
     allTime.cachedTokens += d.cachedTokens;
