@@ -27,7 +27,7 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { KimiApiError, isCloudQuotaExhaustedError } from "./util/errors.js";
+import { KimiApiError, isCloudQuotaExhaustedError, humanizeCloudflareError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
@@ -2006,9 +2006,13 @@ function App({
           { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
         ]);
       } else {
+        const displayText =
+          e instanceof KimiApiError
+            ? humanizeCloudflareError(e)
+            : `init failed: ${(e as Error).message}`;
         setEvents((es) => [
           ...es,
-          { kind: "error", key: mkKey(), text: `init failed: ${(e as Error).message}` },
+          { kind: "error", key: mkKey(), text: displayText },
         ]);
       }
     } finally {
@@ -3664,26 +3668,14 @@ function App({
                 { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
               ]);
             } else {
-              const isInvalidJson400 =
-                e instanceof KimiApiError &&
-                e.httpStatus === 400 &&
-                e.message.includes("invalid escaped character");
-              if (isInvalidJson400) {
-                messagesRef.current.pop();
-                setEvents((es) => [
-                  ...es,
-                  {
-                    kind: "error",
-                    key: mkKey(),
-                    text: "API rejected request (invalid JSON in conversation history). Retrying may work; run /clear to reset if it persists.",
-                  },
-                ]);
-              } else {
-                setEvents((es) => [
-                  ...es,
-                  { kind: "error", key: mkKey(), text: e.message ?? String(e) },
-                ]);
-              }
+              const displayText =
+                e instanceof KimiApiError
+                  ? humanizeCloudflareError(e)
+                  : e.message ?? String(e);
+              setEvents((es) => [
+                ...es,
+                { kind: "error", key: mkKey(), text: displayText },
+              ]);
             }
             cleanupTurn();
           },

@@ -130,7 +130,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       } catch {
         /* ignore */
       }
-      const err = extractCloudflareError(parsed);
+      const err = extractCloudflareError(parsed, text);
       const rawMsg = err?.message ?? `HTTP ${res.status}: ${text.slice(0, 300)}`;
       const msg = cleanErrorMessage(rawMsg);
       const apiErr = new KimiApiError(`kimiflare: ${msg}`, err?.code, res.status);
@@ -394,20 +394,31 @@ function validateJsonArguments(raw: string): string {
   }
 }
 
-function extractCloudflareError(parsed: unknown): { code?: number; message?: string } | null {
-  if (!parsed || typeof parsed !== "object") return null;
+function extractCloudflareError(
+  parsed: unknown,
+  rawText?: string,
+): { code?: number; message?: string } | null {
+  if (parsed && typeof parsed === "object") {
+    // Cloudflare native format: { success: false, errors: [...] }
+    const cf = parsed as { success?: boolean; errors?: Array<{ code?: number; message?: string }> };
+    if (cf.success === false && Array.isArray(cf.errors) && cf.errors.length > 0) {
+      return { code: cf.errors[0]?.code, message: cf.errors[0]?.message };
+    }
 
-  // Cloudflare native format: { success: false, errors: [...] }
-  const cf = parsed as { success?: boolean; errors?: Array<{ code?: number; message?: string }> };
-  if (cf.success === false && Array.isArray(cf.errors) && cf.errors.length > 0) {
-    return { code: cf.errors[0]?.code, message: cf.errors[0]?.message };
+    // OpenAI-compatible format: { object: "error", message, code }
+    const oai = parsed as { object?: string; message?: string; code?: string | number };
+    if (oai.object === "error" && typeof oai.message === "string") {
+      const codeNum = typeof oai.code === "number" ? oai.code : undefined;
+      return { code: codeNum, message: oai.message };
+    }
   }
 
-  // OpenAI-compatible format: { object: "error", message, code }
-  const oai = parsed as { object?: string; message?: string; code?: string | number };
-  if (oai.object === "error" && typeof oai.message === "string") {
-    const codeNum = typeof oai.code === "number" ? oai.code : undefined;
-    return { code: codeNum, message: oai.message };
+  // Fallback: try to grab any "message" field from raw JSON text with a regex
+  if (rawText) {
+    const msgMatch = rawText.match(/"message"\s*:\s*"([^"]+)"/);
+    if (msgMatch?.[1]) {
+      return { message: msgMatch[1] };
+    }
   }
 
   return null;
