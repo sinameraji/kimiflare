@@ -77,6 +77,107 @@ kimiflare -p "..." --dangerously-allow-all          # auto-approve mutating tool
 kimiflare -p "..." --reasoning                      # include chain-of-thought in stderr
 ```
 
+### Headless SDK
+
+Use KimiFlare programmatically from your own application — no TUI required.
+
+```ts
+import { createAgentSession } from "kimiflare/sdk";
+
+const { session } = await createAgentSession({
+  cwd: "/path/to/project",
+  config: {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+    apiToken: process.env.CLOUDFLARE_API_TOKEN,
+    model: "@cf/moonshotai/kimi-k2.6",
+  },
+});
+
+// Stream every event: text deltas, tool calls, tasks, usage
+session.subscribe((event) => {
+  console.log(event.type, event);
+});
+
+// Send a prompt
+await session.prompt("Refactor auth to JWT + Redis");
+
+// Mid-flight correction while the agent is still running
+await session.steer("Use Redis instead of in-memory store");
+
+// After the turn finishes
+await session.followUp("Also add unit tests");
+
+// Clean up
+session.dispose();
+```
+
+**Key features:**
+- `subscribe()` — receive typed events (`text_delta`, `tool_call`, `tool_result`, `task_update`, `usage`, `error`, `done`, etc.)
+- `prompt()` / `steer()` / `followUp()` — full conversation lifecycle
+- `pause()` / `resume()` — graceful preemption
+- `getStatus()` / `getUsage()` — inspect session state
+- Custom `permissionHandler` — decide programmatically whether to allow mutating tools
+- Optional `memoryEnabled`, `lspEnabled`, `costAttribution` flags
+
+#### SDK Authentication
+
+The SDK needs a Cloudflare **Account ID** and **API Token** to call Workers AI directly. Credentials are resolved in this priority order:
+
+1. **Explicit `config` object** (recommended for apps)
+2. **Environment variables**: `CLOUDFLARE_ACCOUNT_ID` / `CF_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` / `CF_API_TOKEN`
+3. **Config file**: `~/.config/kimiflare/config.json`
+
+**For Electron / desktop apps**, we recommend storing credentials in the OS keychain (e.g. Electron `safeStorage` or `keytar`) and passing them explicitly:
+
+```ts
+import { createAgentSession } from "kimiflare/sdk";
+
+const accountId = await keytar.getPassword("kimiflare", "accountId");
+const apiToken = await keytar.getPassword("kimiflare", "apiToken");
+
+const { session } = await createAgentSession({
+  cwd: projectPath,
+  config: { accountId, apiToken },
+});
+```
+
+**For zero-credential onboarding**, use KimiFlare Cloud mode. The user authenticates via GitHub device flow and a Cloudflare Worker proxies AI requests. Your app never sees raw Cloudflare credentials — only a GitHub token and `remoteWorkerUrl`.
+
+#### RPC mode (subprocess)
+
+If you need process isolation or a non-Node consumer, run KimiFlare in JSONL-over-stdio RPC mode:
+
+```sh
+node bin/kimiflare.mjs --mode rpc
+```
+
+```ts
+import { spawn } from "node:child_process";
+
+const proc = spawn("npx", ["kimiflare", "--mode", "rpc"], {
+  cwd: projectPath,
+  stdio: ["pipe", "pipe", "pipe"],
+});
+
+// Read events
+proc.stdout.on("data", (chunk) => {
+  for (const line of chunk.toString().split("\n")) {
+    if (!line.trim()) continue;
+    const event = JSON.parse(line);
+    console.log(event.type, event);
+  }
+});
+
+// Send commands
+proc.stdin.write(JSON.stringify({ type: "new_session" }) + "\n");
+proc.stdin.write(JSON.stringify({ type: "prompt", message: "Hello" }) + "\n");
+
+// Resolve a permission request
+proc.stdin.write(
+  JSON.stringify({ type: "resolve_permission", requestId: "req_0", decision: "allow" }) + "\n"
+);
+```
+
 ### Image understanding
 
 ```sh
