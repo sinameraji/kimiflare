@@ -422,14 +422,13 @@ class InternalSession implements KimiFlareSession {
           type: "usage",
           inputTokens: usage.prompt_tokens,
           outputTokens: usage.completion_tokens,
-          reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
         });
       },
       onUsageFinal: (usage, gatewayMeta) => {
         this.usage.totalInputTokens += usage.prompt_tokens;
         this.usage.totalOutputTokens += usage.completion_tokens;
         this.usage.turnCount += 1;
-        void recordUsage(this.sessionId, usage, gatewayMeta ? gatewayUsageLookup(gatewayMeta) : undefined);
+        void recordUsage(this.sessionId, usage, gatewayMeta ? gatewayUsageLookup(this.config, gatewayMeta) : undefined);
       },
       onTasks: (tasks) => {
         this.emit({ type: "tasks.update", tasks });
@@ -539,6 +538,15 @@ class InternalSession implements KimiFlareSession {
   }
 }
 
-function gatewayUsageLookup(meta: GatewayMeta): { meta: GatewayMeta } | undefined {
-  return { meta };
+function gatewayUsageLookup(
+  config: InternalSessionOpts["config"],
+  meta: import("../agent/client.js").GatewayMeta,
+): import("../usage-tracker.js").GatewayUsageLookup | undefined {
+  if (!config.aiGatewayId) return undefined;
+  return {
+    accountId: config.accountId,
+    apiToken: config.apiToken,
+    gatewayId: config.aiGatewayId,
+    meta,
+  };
 }

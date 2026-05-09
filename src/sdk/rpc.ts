@@ -26,7 +26,7 @@ export async function startRpcServer(): Promise<void> {
   }
 
   function sendEvent(event: SessionEvent): void {
-    send({ type: event.type, ...event });
+    send({ ...event });
   }
 
   const rl = createInterface({
