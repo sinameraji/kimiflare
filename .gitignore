@@ -13,3 +13,6 @@ dist/
 sessions/
 coverage/
 .kimiflare/
+.arrow-js/
+.evlog/
+
