@@ -30,6 +30,16 @@
   "bin": {
     "kimiflare": "bin/kimiflare.mjs"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sdk": {
+      "types": "./dist/sdk/index.d.ts",
+      "import": "./dist/sdk/index.js"
+    }
+  },
   "files": [
     "bin",
     "dist",
