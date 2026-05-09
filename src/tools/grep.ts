@@ -48,7 +48,7 @@ export const grepTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `grep ${args.pattern}${args.glob ? ` (${args.glob})` : ""}` }),
+  render: (args) => ({ title: `grep ${args.pattern ?? ""}${args.glob ? ` (${args.glob})` : ""}` }),
   async run(args, ctx) {
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
     const mode = args.output_mode ?? "content";

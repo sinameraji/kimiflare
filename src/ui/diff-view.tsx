@@ -13,7 +13,9 @@ interface Props {
 
 export function DiffView({ path, before, after, maxLines = 40 }: Props) {
   const theme = useTheme();
-  const patch = createTwoFilesPatch(path, path, before, after, "", "", { context: 2 });
+  const safeBefore = before ?? "";
+  const safeAfter = after ?? "";
+  const patch = createTwoFilesPatch(path, path, safeBefore, safeAfter, "", "", { context: 2 });
   const raw = patch.split("\n").slice(4);
   const lines = raw.filter((l) => {
     if (l.startsWith("--- ") || l.startsWith("+++ ")) return false;

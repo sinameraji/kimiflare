@@ -22,7 +22,7 @@ export const webFetchTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `GET ${args.url}` }),
+  render: (args) => ({ title: `GET ${args.url ?? ""}` }),
   async run(args): Promise<ToolOutput> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);

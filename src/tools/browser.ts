@@ -42,7 +42,7 @@ export const browserFetchTool: ToolSpec<Args> = {
   },
   needsPermission: false,
   render: (args) => ({
-    title: `browser ${args.url}${args.screenshot ? " (screenshot)" : ""}`,
+    title: `browser ${args.url ?? ""}${args.screenshot ? " (screenshot)" : ""}`,
   }),
   async run(args, ctx): Promise<ToolOutput> {
     let playwright: typeof import("playwright") | undefined;

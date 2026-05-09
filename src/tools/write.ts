@@ -23,8 +23,8 @@ export const writeTool: ToolSpec<Args> = {
   },
   needsPermission: true,
   render: (args) => ({
-    title: `write ${collapsePath(args.path, process.cwd())} (${args.content.length} chars)`,
-    diff: { path: args.path, before: "", after: args.content },
+    title: `write ${collapsePath(String(args.path ?? ""), process.cwd())} (${String(args.content ?? "").length} chars)`,
+    diff: { path: String(args.path ?? ""), before: "", after: String(args.content ?? "") },
   }),
   async run(args, ctx) {
     const abs = resolvePath(ctx.cwd, args.path);

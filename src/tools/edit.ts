@@ -26,8 +26,8 @@ export const editTool: ToolSpec<Args> = {
   },
   needsPermission: true,
   render: (args) => ({
-    title: `edit ${collapsePath(args.path, process.cwd())}${args.replace_all ? " (replace_all)" : ""}`,
-    diff: { path: args.path, before: args.old_string, after: args.new_string },
+    title: `edit ${collapsePath(String(args.path ?? ""), process.cwd())}${args.replace_all ? " (replace_all)" : ""}`,
+    diff: { path: String(args.path ?? ""), before: String(args.old_string ?? ""), after: String(args.new_string ?? "") },
   }),
   async run(args, ctx) {
     const abs = resolvePath(ctx.cwd, args.path);

@@ -68,7 +68,7 @@ export const githubReadPrTool: ToolSpec<ReadPrArgs> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `GitHub PR ${args.owner}/${args.repo}#${args.number}` }),
+  render: (args) => ({ title: `GitHub PR ${args.owner ?? ""}/${args.repo ?? ""}#${args.number ?? ""}` }),
   async run(args, ctx): Promise<ToolOutput> {
     const token = getToken(ctx);
     const pr = await githubFetch(`/repos/${args.owner}/${args.repo}/pulls/${args.number}`, token) as {
@@ -140,7 +140,7 @@ export const githubReadIssueTool: ToolSpec<ReadIssueArgs> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `GitHub issue ${args.owner}/${args.repo}#${args.number}` }),
+  render: (args) => ({ title: `GitHub issue ${args.owner ?? ""}/${args.repo ?? ""}#${args.number ?? ""}` }),
   async run(args, ctx): Promise<ToolOutput> {
     const token = getToken(ctx);
     const issue = await githubFetch(`/repos/${args.owner}/${args.repo}/issues/${args.number}`, token) as {
@@ -218,7 +218,7 @@ export const githubReadCodeTool: ToolSpec<ReadCodeArgs> = {
   },
   needsPermission: false,
   render: (args) => ({
-    title: `GitHub code ${args.owner}/${args.repo}/${args.path}${args.ref ? `@${args.ref}` : ""}`,
+    title: `GitHub code ${args.owner ?? ""}/${args.repo ?? ""}/${args.path ?? ""}${args.ref ? `@${args.ref}` : ""}`,
   }),
   async run(args, ctx): Promise<ToolOutput> {
     const token = getToken(ctx);

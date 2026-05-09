@@ -40,7 +40,7 @@ export const searchWebTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `search web: ${args.query}` }),
+  render: (args) => ({ title: `search web: ${args.query ?? ""}` }),
   async run(args): Promise<ToolOutput> {
     const count = Math.min(Math.max(args.count ?? DEFAULT_RESULTS, 1), MAX_RESULTS);
     try {

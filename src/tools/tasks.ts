@@ -40,12 +40,15 @@ export const tasksSetTool: ToolSpec<TasksSetArgs> = {
     required: ["tasks"],
   },
   needsPermission: false,
-  render: (args) => ({
-    title: `tasks (${args.tasks.length} items)`,
-    body: args.tasks
-      .map((t) => `${t.status === "completed" ? "✓" : t.status === "in_progress" ? "▸" : "·"} ${t.title}`)
-      .join("\n"),
-  }),
+  render: (args) => {
+    const tasks = Array.isArray(args.tasks) ? args.tasks : [];
+    return {
+      title: `tasks (${tasks.length} items)`,
+      body: tasks
+        .map((t) => `${t.status === "completed" ? "✓" : t.status === "in_progress" ? "▸" : "·"} ${t.title}`)
+        .join("\n"),
+    };
+  },
   run: async (args, ctx) => {
     let tasks: Task[];
     try {

@@ -41,7 +41,7 @@ export const memoryRememberTool: ToolSpec = {
   needsPermission: false,
   render: (args: { content: string; category: string; importance: number }) => ({
     title: "memory_remember",
-    body: `[${args.category}] ${args.content} (importance: ${args.importance})`,
+    body: `[${args.category ?? "unknown"}] ${args.content ?? ""} (importance: ${args.importance ?? 1})`,
   }),
   run: async (args: { content: string; category: string; importance: number }, ctx: ToolContext): Promise<ToolOutput> => {
     if (!isMemoryCtx(ctx) || !ctx.memoryManager) {
@@ -101,7 +101,7 @@ export const memoryRecallTool: ToolSpec = {
   needsPermission: false,
   render: (args: { query: string; limit?: number }) => ({
     title: "memory_recall",
-    body: `Query: "${args.query}"`,
+    body: `Query: "${args.query ?? ""}"`,
   }),
   run: async (args: { query: string; limit?: number }, ctx: ToolContext): Promise<ToolOutput> => {
     if (!isMemoryCtx(ctx) || !ctx.memoryManager) {
@@ -150,7 +150,7 @@ export const memoryForgetTool: ToolSpec = {
   needsPermission: false,
   render: (args: { memory_id: string }) => ({
     title: "memory_forget",
-    body: `Forgetting memory ${args.memory_id}`,
+    body: `Forgetting memory ${args.memory_id ?? ""}`,
   }),
   run: async (args: { memory_id: string }, ctx: ToolContext): Promise<ToolOutput> => {
     if (!isMemoryCtx(ctx) || !ctx.memoryManager) {

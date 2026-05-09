@@ -21,7 +21,7 @@ export const globTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: false,
-  render: (args) => ({ title: `glob ${args.pattern}${args.path ? ` in ${collapsePath(args.path, process.cwd())}` : ""}` }),
+  render: (args) => ({ title: `glob ${args.pattern ?? ""}${args.path ? ` in ${collapsePath(String(args.path), process.cwd())}` : ""}` }),
   async run(args, ctx) {
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
     const entries = (await fg(args.pattern, {

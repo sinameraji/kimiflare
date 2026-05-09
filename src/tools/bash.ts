@@ -31,7 +31,7 @@ export const bashTool: ToolSpec<Args> = {
     additionalProperties: false,
   },
   needsPermission: true,
-  render: (args) => ({ title: formatBashTitle(args.command) }),
+  render: (args) => ({ title: formatBashTitle(String(args.command ?? "")) }),
   run: (args, ctx) => runBash(args, ctx),
 };
 

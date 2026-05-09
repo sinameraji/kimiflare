@@ -15,7 +15,13 @@ interface Props {
 
 export function PermissionModal({ tool, args, onDecide }: Props) {
   const theme = useTheme();
-  const render = tool.render?.(args);
+  let render: { title?: string; body?: string; diff?: { path: string; before: string; after: string } } | undefined;
+  try {
+    render = tool.render?.(args);
+  } catch {
+    // Malformed args from the model can crash typed render functions.
+    // Fall back to raw JSON display below.
+  }
   const items = [
     { label: "Allow once", value: "allow" as const },
     { label: "Allow for this session", value: "allow_session" as const },
