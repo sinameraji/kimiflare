@@ -1,0 +1,113 @@
+import type { ChatMessage, Usage } from "../agent/messages.js";
+import type { ToolSpec } from "../tools/registry.js";
+import type { Task } from "../tasks-state.js";
+import type { KimiConfig } from "../config.js";
+import type { AiGatewayOptions } from "../agent/client.js";
+import type { PermissionRequest, PermissionDecision } from "../tools/executor.js";
+
+export type { ChatMessage, ToolSpec, Task, KimiConfig, PermissionRequest, PermissionDecision };
+
+export interface CreateSessionOptions {
+  /** Working directory for the agent. Defaults to process.cwd(). */
+  cwd?: string;
+  /** Override config. If omitted, loads from ~/.config/kimiflare/config.json */
+  config?: Partial<KimiConfig>;
+  /** Session ID for persistence. If omitted, creates a new session. */
+  sessionId?: string;
+  /** Which tools to enable. Defaults to ALL_TOOLS. */
+  tools?: ToolSpec[];
+  /** Enable local structured memory. Defaults to config value. */
+  memoryEnabled?: boolean;
+  /** Enable LSP integration. Defaults to config value. */
+  lspEnabled?: boolean;
+  /** Enable cost attribution. Defaults to config value. */
+  costAttribution?: boolean;
+  /** Cloudflare AI Gateway options. */
+  gateway?: AiGatewayOptions;
+  /** Custom permission handler. Defaults to auto-deny in plan mode, ask callback in edit mode. */
+  permissionHandler?: PermissionHandler;
+  /** Called when the agent detects KIMI.md drift. */
+  onKimiMdStale?: () => void;
+}
+
+export interface PromptOptions {
+  /** Attach images to the prompt. */
+  images?: Array<{ path: string } | { data: string; mimeType: string }>;
+  /** Override mode for this prompt only. */
+  mode?: "plan" | "edit" | "auto";
+  /** Override max tool iterations for this prompt only. */
+  maxToolIterations?: number;
+}
+
+export type SessionEvent =
+  // Connection / lifecycle
+  | { type: "session.start"; sessionId: string; cwd: string }
+  | { type: "session.end"; reason: "complete" | "aborted" | "error"; error?: string }
+
+  // Message streaming
+  | { type: "message.start"; messageId: string; role: "user" | "assistant" }
+  | { type: "message.delta"; messageId: string; text: string }
+  | { type: "message.reasoning"; messageId: string; text: string }
+  | { type: "message.end"; messageId: string }
+
+  // Tool execution
+  | { type: "tool.start"; toolCallId: string; toolName: string; args: unknown }
+  | { type: "tool.result"; toolCallId: string; toolName: string; result: string; isError: boolean }
+
+  // Usage / cost
+  | { type: "usage"; inputTokens: number; outputTokens: number; reasoningTokens?: number; cost?: number }
+
+  // Permission
+  | { type: "permission.request"; requestId: string; toolName: string; args: unknown }
+  | { type: "permission.resolved"; requestId: string; decision: "allow" | "allow_session" | "deny" }
+
+  // Tasks
+  | { type: "tasks.update"; tasks: Task[] }
+
+  // Status
+  | { type: "status"; status: "idle" | "streaming" | "tool_executing" | "compacting" | "error" };
+
+export interface SessionUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  turnCount: number;
+}
+
+export interface SessionStatus {
+  isStreaming: boolean;
+  isCompacting: boolean;
+  pendingSteer: string[];
+  pendingFollowUp: string[];
+  currentMode: "plan" | "edit" | "auto";
+}
+
+export type PermissionHandler = (req: PermissionRequest) => Promise<PermissionDecision>;
+
+export interface KimiFlareSession {
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly isStreaming: boolean;
+  readonly messages: ChatMessage[];
+
+  // Prompting
+  prompt(text: string, options?: PromptOptions): Promise<void>;
+  steer(text: string): Promise<void>;
+  followUp(text: string): Promise<void>;
+
+  // Control
+  abort(): Promise<void>;
+  setModel(modelId: string): void;
+  setMode(mode: "plan" | "edit" | "auto"): void;
+  setReasoningEffort(level: "low" | "medium" | "high"): void;
+  resolvePermission(requestId: string, decision: PermissionDecision): void;
+
+  // Events
+  subscribe(listener: (event: SessionEvent) => void): () => void;
+
+  // State
+  getUsage(): SessionUsage;
+  getStatus(): SessionStatus;
+  save(): Promise<void>;
+  dispose(): void;
+}
