@@ -281,7 +281,6 @@ type Overlay =
   | { kind: "commandDelete"; cmd: CustomCommand }
   | { kind: "commandList" };
 
-const nextAssistantIdRef = useRef(1);
 const MAX_IMAGES_PER_MESSAGE = 10;
 
 function App({
@@ -481,6 +480,7 @@ function App({
   );
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
+  const nextAssistantIdRef = useRef(1);
   const sessionScopeRef = useRef<AbortScope>(new AbortScope());
   const activeScopeRef = useRef<AbortScope | null>(null);
   const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
