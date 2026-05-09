@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.5](https://github.com/sinameraji/kimiflare/compare/v0.48.4...v0.48.5) (2026-05-09)
+
+
+### Bug Fixes
+
+* **ui:** correct notify domain from kimiflare.dev to kimiflare.com ([#343](https://github.com/sinameraji/kimiflare/issues/343)) ([613d53e](https://github.com/sinameraji/kimiflare/commit/613d53e41f3f08fd827b2eef3257e4ab741a48d0))
+
 ## [0.48.4](https://github.com/sinameraji/kimiflare/compare/v0.48.3...v0.48.4) (2026-05-08)
 
 
