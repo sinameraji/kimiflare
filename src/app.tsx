@@ -2470,12 +2470,20 @@ function App({
         }
 
         if (sub === "add") {
-          const name = subRest.trim();
+          const parts = subRest.trim().split(/\s+/);
+          const name = parts.find((p) => !p.startsWith("--")) ?? "";
+          const flags = parts.filter((p) => p.startsWith("--"));
           if (!name) {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills add <name>" }]);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "usage: /skills add <name> [--agents] [--global]" },
+            ]);
             return true;
           }
-          void createSkill({ name, scope: "project", cwd: process.cwd() }).then((result) => {
+          let location: "kimiflare" | "agents" | "global" = "kimiflare";
+          if (flags.includes("--agents")) location = "agents";
+          else if (flags.includes("--global")) location = "global";
+          void createSkill({ name, location, cwd: process.cwd() }).then((result) => {
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: `created skill '${name}' → ${result.filepath}` },
@@ -2510,16 +2518,43 @@ function App({
         }
 
         if (sub === "delete") {
-          const name = subRest.trim();
+          const parts = subRest.trim().split(/\s+/);
+          const name = parts.find((p) => !p.startsWith("--")) ?? "";
+          const flags = parts.filter((p) => p.startsWith("--"));
+          const deleteAll = flags.includes("--all");
           if (!name) {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /skills delete <name>" }]);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "usage: /skills delete <name> [--all]" },
+            ]);
             return true;
           }
-          void deleteSkill(name, process.cwd()).then((result) => {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `deleted skill '${name}' (${result.filepath})` }]);
-          }).catch((err) => {
-            setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to delete skill: ${(err as Error).message}` }]);
-          });
+          if (deleteAll) {
+            void (async () => {
+              try {
+                const result = await listAllSkills(process.cwd());
+                const targets = result.all.filter((s) => s.name === name);
+                if (targets.length === 0) throw new Error(`skill "${name}" not found`);
+                const { unlink } = await import("node:fs/promises");
+                await Promise.all(targets.map((s) => unlink(s.filePath)));
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: `deleted ${targets.length} copy/copies of skill '${name}'` },
+                ]);
+              } catch (err) {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "error", key: mkKey(), text: `failed to delete skill: ${(err as Error).message}` },
+                ]);
+              }
+            })();
+          } else {
+            void deleteSkill(name, process.cwd()).then((result) => {
+              setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `deleted skill '${name}' (${result.filepath})` }]);
+            }).catch((err) => {
+              setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `failed to delete skill: ${(err as Error).message}` }]);
+            });
+          }
           return true;
         }
 

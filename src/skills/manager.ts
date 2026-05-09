@@ -83,14 +83,27 @@ export async function listLegacySkills(cwd: string): Promise<{
 export interface CreateSkillOptions {
   name: string;
   description?: string;
-  match?: string[];
-  scope: "project" | "global";
+  /** Target location: "kimiflare" (.kimiflare/skills/), "agents" (.agents/skills/), or "global" (~/.config/kimiflare/skills/) */
+  location?: "kimiflare" | "agents" | "global";
+  /** Legacy scope field — kept for backward compat */
+  scope?: "project" | "global";
   cwd: string;
 }
 
 export async function createSkill(opts: CreateSkillOptions): Promise<{ filepath: string }> {
-  const dirs = getSkillDirs(opts.cwd);
-  const dir = opts.scope === "project" ? dirs.projectDir : dirs.globalDir;
+  const loc = opts.location ?? (opts.scope === "global" ? "global" : "kimiflare");
+  let dir: string;
+  switch (loc) {
+    case "kimiflare":
+      dir = join(opts.cwd, ".kimiflare", "skills");
+      break;
+    case "agents":
+      dir = join(opts.cwd, ".agents", "skills");
+      break;
+    case "global":
+      dir = join(process.env.HOME ?? "", ".config", "kimiflare", "skills");
+      break;
+  }
   const skillDir = join(dir, opts.name);
   const filepath = join(skillDir, "SKILL.md");
 
@@ -115,9 +128,8 @@ export async function createSkill(opts: CreateSkillOptions): Promise<{ filepath:
 }
 
 export async function deleteSkill(name: string, cwd: string): Promise<{ filepath: string }> {
-  const all = await listLegacySkills(cwd);
-  const skill =
-    all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
+  const all = await listAllSkills(cwd);
+  const skill = all.all.find((s) => s.name === name);
   if (!skill) throw new Error(`skill "${name}" not found`);
   await unlink(skill.filePath);
   return { filepath: skill.filePath };
@@ -128,9 +140,8 @@ export async function setSkillEnabled(
   enabled: boolean,
   cwd: string,
 ): Promise<{ filepath: string }> {
-  const all = await listLegacySkills(cwd);
-  const skill =
-    all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
+  const all = await listAllSkills(cwd);
+  const skill = all.all.find((s) => s.name === name);
   if (!skill) throw new Error(`skill "${name}" not found`);
 
   const raw = await readFile(skill.filePath, "utf-8");
@@ -151,8 +162,7 @@ export async function setSkillEnabled(
 }
 
 export async function findSkillFile(name: string, cwd: string): Promise<string | null> {
-  const all = await listLegacySkills(cwd);
-  const skill =
-    all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
+  const all = await listAllSkills(cwd);
+  const skill = all.all.find((s) => s.name === name);
   return skill?.filePath ?? null;
 }
