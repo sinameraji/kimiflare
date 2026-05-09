@@ -65,7 +65,7 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
           Or wait for hosted plans — drop your email at
         </Text>
         <Text color={theme.info.color}>
-          kimiflare.dev/notify and I'll ping you when they're live.
+          kimiflare.com and I'll ping you when they're live.
         </Text>
       </Box>
 
