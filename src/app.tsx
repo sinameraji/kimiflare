@@ -119,11 +119,8 @@ import {
 import { getAppVersion } from "./util/version.js";
 
 import { renderCommand } from "./commands/renderer.js";
+import { BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import type { CustomCommand, SlashItem } from "./commands/types.js";
-import {
-  BUILTIN_COMMANDS,
-  BUILTIN_COMMAND_NAMES,
-} from "./commands/builtins.js";
 
 import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { CommandWizard } from "./ui/command-wizard.js";
@@ -142,12 +139,10 @@ import {
 } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
-import { saveProjectLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
-import fg from "fast-glob";
-import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
+import { saveProjectLspConfig } from "./util/lsp-config.js";
+import { FilePicker } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
-import { fuzzyFilter } from "./util/fuzzy.js";
 
 /**
  * Build a comprehensive ignore list for the @ file mention picker.
@@ -157,14 +152,7 @@ import { fuzzyFilter } from "./util/fuzzy.js";
  * All hardcoded patterns use the `** /` prefix so they match at any depth
  * (e.g. `** /node_modules/ *` catches both root and nested node_modules).
  */
-import {
-  buildFilePickerIgnoreList,
-  filterPickerItems,
-  shouldOpenMentionPicker,
-  shouldOpenSlashPicker,
-  insertSlashCommand,
-  trackRecentFile,
-} from "./util/file-picker.js";
+import { trackRecentFile } from "./util/file-picker.js";
 import { detectGitHubRepo, detectGitBranch } from "./util/git-detect.js";
 import { findImagePaths } from "./util/image-paths.js";
 import { formatTokens } from "./util/token-format.js";
@@ -188,12 +176,9 @@ import {
 } from "./app/commands-init.js";
 import { runCompact as runCompactFn, runInitFn } from "./app/agent-turn.js";
 import { processMessageFn, submitFn } from "./app/process-message.js";
+import { useInputCoordinator } from "./app/input-coordinator.js";
 import { createUiUpdaters } from "./app/ui-updates.js";
 import { handleSlash as slashHandleSlash } from "./app/slash-commands.js";
-
-type ActivePicker =
-  | { kind: "file"; anchor: number; selected: number }
-  | { kind: "slash"; anchor: number; selected: number };
 
 export interface Cfg {
   accountId: string;
@@ -482,11 +467,7 @@ function App({
     };
   }, [cfg?.cloudMode, initialCloudToken]);
 
-  // Picker state — single popup at a time (file mention or slash command).
   const [cursorOffset, setCursorOffset] = useState(0);
-  const [activePicker, setActivePicker] = useState<ActivePicker | null>(null);
-  const [filePickerItems, setFilePickerItems] = useState<FilePickerItem[]>([]);
-  const filePickerLoadedRef = useRef(false);
   const [customCommandsVersion, setCustomCommandsVersion] = useState(0);
 
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
@@ -541,221 +522,8 @@ function App({
   >(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customCommandsRef = useRef<CustomCommand[]>([]);
-  const pickerCancelRef = useRef<number | null>(null);
   const recentFilesRef = useRef<Map<string, number>>(new Map());
   const MAX_RECENT_FILES = 10;
-
-  // ── Picker logic (file mention `@` and slash command `/`) ──────────────
-  // Depend on stable fields (kind, anchor) — not the activePicker reference,
-  // which churns on every arrow-key press.
-  const pickerAnchor = activePicker?.anchor ?? null;
-  const pickerKind = activePicker?.kind ?? null;
-  const pickerQuery = React.useMemo(() => {
-    if (pickerAnchor === null) return null;
-    return input.slice(pickerAnchor + 1, cursorOffset);
-  }, [input, cursorOffset, pickerAnchor]);
-
-  const filteredFileItems = React.useMemo(() => {
-    if (pickerKind !== "file" || pickerQuery === null) return [];
-    const items = filterPickerItems(filePickerItems, pickerQuery).slice();
-    return items.sort((a, b) => {
-      const aRecent = recentFilesRef.current.get(a.name) ?? 0;
-      const bRecent = recentFilesRef.current.get(b.name) ?? 0;
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) return bRecent - aRecent;
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [pickerKind, filePickerItems, pickerQuery]);
-
-  // Custom commands that shadow built-ins are warned about and won't run, so
-  // don't surface them in the picker either. customCommandsVersion is bumped
-  // by every customCommandsRef mutation — keep that invariant intact.
-  const allSlashCommands = React.useMemo<SlashItem[]>(() => {
-    const customs: SlashItem[] = customCommandsRef.current
-      .filter((c) => !BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()))
-      .map((c) => ({
-        name: c.name,
-        description: c.description ?? "",
-        source: c.source,
-      }));
-    return [...BUILTIN_COMMANDS, ...customs];
-  }, [customCommandsVersion]);
-
-  const filteredSlashItems = React.useMemo(() => {
-    if (pickerKind !== "slash" || pickerQuery === null) return [];
-    return fuzzyFilter(allSlashCommands, pickerQuery, (c) => c.name).slice(
-      0,
-      50,
-    );
-  }, [pickerKind, allSlashCommands, pickerQuery]);
-
-  useEffect(() => {
-    if (activePicker !== null) {
-      const trigger = activePicker.kind === "file" ? "@" : "/";
-      if (cursorOffset < activePicker.anchor) {
-        setActivePicker(null);
-        return;
-      }
-      if (input[activePicker.anchor] !== trigger) {
-        setActivePicker(null);
-        return;
-      }
-      // Whitespace ends the token (start of args for slash, end of mention for @).
-      const query = input.slice(activePicker.anchor + 1, cursorOffset);
-      if (/\s/.test(query)) {
-        setActivePicker(null);
-        return;
-      }
-      return;
-    }
-
-    // Drop sticky-cancel once the cursor moves away from the cancel offset.
-    if (pickerCancelRef.current === cursorOffset) {
-      pickerCancelRef.current = null;
-      return;
-    }
-
-    if (
-      filePickerEnabled &&
-      shouldOpenMentionPicker(input, cursorOffset, pickerCancelRef.current)
-    ) {
-      setActivePicker({ kind: "file", anchor: cursorOffset - 1, selected: 0 });
-      if (!filePickerLoadedRef.current) {
-        filePickerLoadedRef.current = true;
-        const cwd = process.cwd();
-        void fg("**/*", {
-          cwd,
-          ignore: buildFilePickerIgnoreList(cwd),
-          dot: false,
-          absolute: false,
-          onlyFiles: false,
-          markDirectories: true,
-        } as fg.Options)
-          .then((entries) => {
-            const strings = (entries as string[]).slice(0, 300);
-            const items: FilePickerItem[] = strings.map((e) => ({
-              name: e.endsWith("/") ? e.slice(0, -1) : e,
-              isDirectory: e.endsWith("/"),
-            }));
-            items.sort((a, b) => {
-              if (a.isDirectory && !b.isDirectory) return -1;
-              if (!a.isDirectory && b.isDirectory) return 1;
-              return a.name.localeCompare(b.name);
-            });
-            setFilePickerItems(items);
-          })
-          .catch(() => {
-            setFilePickerItems([]);
-          });
-      }
-      return;
-    }
-
-    if (shouldOpenSlashPicker(input, cursorOffset, pickerCancelRef.current)) {
-      setActivePicker({ kind: "slash", anchor: cursorOffset - 1, selected: 0 });
-      return;
-    }
-  }, [input, cursorOffset, activePicker, filePickerEnabled]);
-
-  // Clamp selected index when filtered list shrinks below the current selection.
-  useEffect(() => {
-    if (activePicker?.kind !== "file") return;
-    const max = Math.max(0, filteredFileItems.length - 1);
-    if (activePicker.selected > max) {
-      setActivePicker({ ...activePicker, selected: max });
-    }
-  }, [filteredFileItems.length, activePicker]);
-
-  useEffect(() => {
-    if (activePicker?.kind !== "slash") return;
-    const max = Math.max(0, filteredSlashItems.length - 1);
-    if (activePicker.selected > max) {
-      setActivePicker({ ...activePicker, selected: max });
-    }
-  }, [filteredSlashItems.length, activePicker]);
-
-  const handlePickerUp = useCallback(() => {
-    setActivePicker((p) => {
-      if (!p) return null;
-      const next = Math.max(0, p.selected - 1);
-      return next === p.selected ? p : { ...p, selected: next };
-    });
-  }, []);
-
-  const handlePickerDown = useCallback(() => {
-    setActivePicker((p) => {
-      if (!p) return null;
-      const max =
-        p.kind === "file"
-          ? Math.max(0, filteredFileItems.length - 1)
-          : Math.max(0, filteredSlashItems.length - 1);
-      const next = Math.min(max, p.selected + 1);
-      return next === p.selected ? p : { ...p, selected: next };
-    });
-  }, [filteredFileItems.length, filteredSlashItems.length]);
-
-  const handlePickerSelect = useCallback(() => {
-    if (!activePicker) return;
-    if (activePicker.kind === "file") {
-      const item = filteredFileItems[activePicker.selected];
-      if (!item) return;
-      trackRecentFile(recentFilesRef, item.name, MAX_RECENT_FILES);
-      const insert = item.name + (item.isDirectory ? "/" : " ");
-      const newInput =
-        input.slice(0, activePicker.anchor) +
-        insert +
-        input.slice(cursorOffset);
-      setInput(newInput);
-      setCursorOffset(activePicker.anchor + insert.length);
-      setActivePicker(null);
-      return;
-    }
-    // slash
-    const item = filteredSlashItems[activePicker.selected];
-    if (!item) return;
-    const { value } = insertSlashCommand(input, activePicker.anchor, item.name);
-    setActivePicker(null);
-    submitRef.current(value);
-  }, [
-    activePicker,
-    filteredFileItems,
-    filteredSlashItems,
-    input,
-    cursorOffset,
-  ]);
-
-  const handlePickerCancel = useCallback(() => {
-    pickerCancelRef.current = cursorOffset;
-    setActivePicker(null);
-  }, [cursorOffset]);
-
-  // Close any open picker when a modal takes over the input. Without this,
-  // picker state would survive the modal and re-render on close.
-  useEffect(() => {
-    const modalActive =
-      commandWizard !== null ||
-      overlay.kind === "commandPicker" ||
-      overlay.kind === "commandDelete" ||
-      overlay.kind === "commandList" ||
-      showLspWizard ||
-      resumeSessions !== null ||
-      checkpointSession !== null ||
-      overlay.kind === "permission" ||
-      overlay.kind === "limitModal";
-    if (modalActive && activePicker !== null) {
-      setActivePicker(null);
-    }
-  }, [
-    commandWizard,
-    overlay,
-    showLspWizard,
-    resumeSessions,
-    checkpointSession,
-    activePicker,
-  ]);
 
   useEffect(() => {
     if (!cfg) return;
@@ -1124,100 +892,57 @@ function App({
     [cfg, saveSessionSafe, appendEvent],
   );
 
-  useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === "c") {
-      const hadPerm = permResolveRef.current !== null;
-      const hadLimit = limitResolveRef.current !== null;
-      if (hadPerm) {
-        permResolveRef.current!("deny");
-        permResolveRef.current = null;
-        setOverlay({ kind: "none" });
-      }
-      if (hadLimit) {
-        limitResolveRef.current!("stop");
-        limitResolveRef.current = null;
-        setOverlay({ kind: "none" });
-      }
-      if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
-        isAbortingRef.current = true;
-        supervisorRef.current.killTurn();
-        activeScopeRef.current.abort("user_stopped");
-        setQueue([]);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "(interrupted)" },
-        ]);
-        // Save session so interrupted turn is not lost
-        void saveSessionSafe();
-        // Clear task list immediately so it doesn't keep spinning
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
-      } else if (!hadPerm && !hadLimit) {
-        void lspManagerRef.current.stopAll().finally(() => exit());
-      }
-      return;
-    }
-    if (key.escape) {
-      const now = Date.now();
-      const modalOpen =
-        overlay.kind === "permission" ||
-        overlay.kind === "limitModal" ||
-        showLspWizard ||
-        overlay.kind === "commandList" ||
-        commandWizard !== null ||
-        overlay.kind === "commandDelete" ||
-        resumeSessions !== null ||
-        checkpointSession !== null ||
-        overlay.kind === "themePicker";
-      if (
-        !modalOpen &&
-        busyRef.current &&
-        activeScopeRef.current &&
-        !isAbortingRef.current &&
-        now - lastEscapeAtRef.current > 500
-      ) {
-        lastEscapeAtRef.current = now;
-        isAbortingRef.current = true;
-        supervisorRef.current.killTurn();
-        if (permResolveRef.current) {
-          permResolveRef.current("deny");
-          permResolveRef.current = null;
-          setOverlay({ kind: "none" });
-        }
-        if (limitResolveRef.current) {
-          limitResolveRef.current("stop");
-          limitResolveRef.current = null;
-          setOverlay({ kind: "none" });
-        }
-        activeScopeRef.current.abort("user_stopped");
-        setQueue([]);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "(interrupted)" },
-        ]);
-        // Clear task list immediately so it doesn't keep spinning
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
-        return;
-      }
-    }
-    if (key.ctrl && inputChar === "r") {
-      setShowReasoning((s) => !s);
-      return;
-    }
-    if (key.shift && key.tab) {
-      setMode((m) => nextMode(m));
-      return;
-    }
-    if (key.ctrl && inputChar === "o") {
-      setVerbose((v) => !v);
-      return;
-    }
+  const {
+    activePicker,
+    filteredFileItems,
+    filteredSlashItems,
+    pickerQuery,
+    handlePickerUp,
+    handlePickerDown,
+    handlePickerSelect,
+    handlePickerCancel,
+    handleKeyPress,
+  } = useInputCoordinator({
+    input,
+    setInput,
+    cursorOffset,
+    setCursorOffset,
+    filePickerEnabled,
+    recentFilesRef,
+    maxRecentFiles: MAX_RECENT_FILES,
+    customCommandsRef,
+    customCommandsVersion,
+    submitRef,
+    setEvents,
+    mkKey,
+    permResolveRef,
+    limitResolveRef,
+    busyRef,
+    activeScopeRef,
+    isAbortingRef,
+    supervisorRef,
+    setQueue,
+    saveSessionSafe,
+    setTasks,
+    setTasksStartedAt,
+    setTasksStartTokens,
+    tasksRef,
+    lspManagerRef,
+    overlay,
+    showLspWizard,
+    commandWizard,
+    resumeSessions,
+    checkpointSession,
+    lastEscapeAtRef,
+    setShowReasoning,
+    setMode,
+    nextMode,
+    setVerbose,
+    exit,
+    setOverlay,
   });
+
+  useInput(handleKeyPress);
 
   const { updateAssistant, updateTool } = createUiUpdaters({
     setEvents,
