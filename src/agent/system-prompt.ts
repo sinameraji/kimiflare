@@ -19,8 +19,6 @@ export interface SystemPromptOpts {
   model: string;
   now?: Date;
   mode?: Mode;
-  /** Skills to inject into the system prompt for this turn (legacy router-based) */
-  selectedSkills?: { name: string; body: string }[];
   /** Full skill catalog for <available_skills> XML block */
   skillCatalog?: SkillCatalogEntry[];
 }
@@ -196,16 +194,9 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
       : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
-  const skillsBlock =
-    opts.selectedSkills && opts.selectedSkills.length > 0
-      ? `\n\nActive skills for this turn:\n${opts.selectedSkills
-          .map((s) => `--- ${s.name} ---\n${s.body}`)
-          .join("\n\n")}`
-      : "";
-
   const catalogBlock = formatSkillCatalog(opts.skillCatalog);
 
-  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock + catalogBlock;
+  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + catalogBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */

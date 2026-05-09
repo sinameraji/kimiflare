@@ -91,26 +91,24 @@ export interface CreateSkillOptions {
 export async function createSkill(opts: CreateSkillOptions): Promise<{ filepath: string }> {
   const dirs = getSkillDirs(opts.cwd);
   const dir = opts.scope === "project" ? dirs.projectDir : dirs.globalDir;
-  const filepath = join(dir, `${opts.name}.md`);
+  const skillDir = join(dir, opts.name);
+  const filepath = join(skillDir, "SKILL.md");
+
+  const description = opts.description || "";
 
   const frontmatter: Record<string, unknown> = {
     name: opts.name,
     enabled: true,
-    priority: 0,
   };
   if (opts.description) frontmatter.description = opts.description;
-  if (opts.match && opts.match.length > 0) frontmatter.match = opts.match;
 
   const yaml = Object.entries(frontmatter)
-    .map(([k, v]) => {
-      if (Array.isArray(v)) return `${k}:\n${v.map((item) => `  - ${item}`).join("\n")}`;
-      return `${k}: ${v}`;
-    })
+    .map(([k, v]) => `${k}: ${v}`)
     .join("\n");
 
   const content = `---\n${yaml}\n---\n\n# ${opts.name}\n\nAdd your instructions here.\n`;
 
-  await mkdir(dir, { recursive: true });
+  await mkdir(skillDir, { recursive: true });
   await writeFile(filepath, content, "utf8");
 
   return { filepath };

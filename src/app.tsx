@@ -61,8 +61,8 @@ import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
-import { routeSkills, type SkillRoutingResult } from "./skills/index.js";
 import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
+
 import {
   listSessions,
   loadSession,
@@ -583,7 +583,6 @@ function App({
   const [skillsActive, setSkillsActive] = useState(0);
   const [memoryRecalled, setMemoryRecalled] = useState(false);
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
-  const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
@@ -3242,21 +3241,6 @@ function App({
         sessionTitleRef.current = generateSessionTitle(trimmed, classification.intent);
       }
 
-      // Route skills based on intent tier (legacy, will be removed in U3)
-      let skillResult: SkillRoutingResult | undefined;
-      try {
-        skillResult = await routeSkills(skillsDirRef.current, {
-          cwd: process.cwd(),
-          prompt: trimmed,
-          memorySnippets: [], // TODO: wire memory snippets when available
-          tier: classification.tier,
-          maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
-        });
-        setSkillsActive(skillResult.selectedSkills.length);
-      } catch {
-        setSkillsActive(0);
-      }
-
       // Fetch full skill catalog for <available_skills> XML block
       let skillCatalog: { name: string; description: string; location: string }[] | undefined;
       try {
@@ -3279,8 +3263,7 @@ function App({
       const effectiveCodeMode = classification.tier === "heavy";
       setCodeMode(effectiveCodeMode);
 
-      // Inject selected skills into system prompt
-      const selectedSkills = skillResult?.selectedSkills.map((s) => ({ name: s.name, body: s.body }));
+      // Build system prompt with skill catalog
       if (cacheStableRef.current) {
         messagesRef.current[1] = {
           role: "system",
@@ -3289,7 +3272,6 @@ function App({
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model,
             mode: modeRef.current,
-            selectedSkills,
             skillCatalog,
           }),
         };
@@ -3301,20 +3283,21 @@ function App({
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model,
             mode: modeRef.current,
-            selectedSkills,
             skillCatalog,
           }),
         };
       }
 
       // Emit metadata banner
+      const catalogCount = skillCatalog?.length ?? 0;
+      setSkillsActive(catalogCount);
       setEvents((e) => [
         ...e,
         {
           kind: "meta",
           key: mkKey(),
           intentTier: classification.tier,
-          skillsActive: skillResult?.selectedSkills.length ?? 0,
+          skillsActive: catalogCount,
           memoryRecalled: false,
         },
       ]);
@@ -3524,7 +3507,6 @@ function App({
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
-          selectedSkills,
           onFileChange: (path, content) => {
             if (content) {
               lspManagerRef.current.notifyChange(path, content);
