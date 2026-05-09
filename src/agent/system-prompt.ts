@@ -1,6 +1,6 @@
 import { platform, release, homedir } from "node:os";
-import { basename, join } from "node:path";
-import { readFileSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { ToolSpec } from "../tools/registry.js";
 import { systemPromptForMode, type Mode } from "../mode.js";
 import type { ChatMessage } from "./messages.js";
@@ -15,7 +15,7 @@ export interface SystemPromptOpts {
   selectedSkills?: { name: string; body: string }[];
 }
 
-const CONTEXT_FILENAMES = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"];
+const KIMI_FILENAMES = ["KIMI.md", "KIMIFLARE.md"];
 const MAX_CONTEXT_BYTES = 20 * 1024;
 
 export interface ContextFile {
@@ -25,8 +25,22 @@ export interface ContextFile {
   lineCount: number;
 }
 
-export function loadContextFile(cwd: string): ContextFile | null {
-  for (const name of CONTEXT_FILENAMES) {
+/** Find the nearest git repository root by walking up from startDir. */
+export function findGitRepoRoot(startDir: string): string | null {
+  let dir = resolve(startDir);
+  while (true) {
+    if (existsSync(join(dir, ".git"))) {
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null; // reached filesystem root
+    dir = parent;
+  }
+}
+
+/** Load KIMI.md or KIMIFLARE.md from cwd. Returns the first match. */
+export function loadKimiContextFile(cwd: string): ContextFile | null {
+  for (const name of KIMI_FILENAMES) {
     const path = join(cwd, name);
     try {
       const s = statSync(path);
@@ -38,6 +52,65 @@ export function loadContextFile(cwd: string): ContextFile | null {
     }
   }
   return null;
+}
+
+/** Try to load a single AGENTS.md file at the given path. */
+function tryLoadAgentsFile(filePath: string): ContextFile | null {
+  try {
+    const s = statSync(filePath);
+    if (!s.isFile() || s.size > MAX_CONTEXT_BYTES) return null;
+    const content = readFileSync(filePath, "utf8");
+    return { name: "AGENTS.md", path: filePath, content, lineCount: content.split("\n").length };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load AGENTS.md files from:
+ * 1. ~/.agents/AGENTS.md (global)
+ * 2. Walk-up from cwd to git root (bare AGENTS.md in each ancestor)
+ * 3. cwd/AGENTS.md
+ *
+ * Returns files in order: global, then farthest ancestor -> nearest -> cwd.
+ */
+export function loadAgentsContextFiles(cwd: string): ContextFile[] {
+  const results: ContextFile[] = [];
+  const seen = new Set<string>();
+
+  // 1. Global ~/.agents/AGENTS.md
+  const globalPath = join(homedir(), ".agents", "AGENTS.md");
+  const globalFile = tryLoadAgentsFile(globalPath);
+  if (globalFile) {
+    results.push(globalFile);
+    seen.add(globalFile.path);
+  }
+
+  // 2. Walk-up from cwd to git root
+  const gitRoot = findGitRepoRoot(cwd);
+  const walkStart = resolve(cwd);
+  const walkEnd = gitRoot ?? resolve("/");
+  const ancestors: ContextFile[] = [];
+  let dir = walkStart;
+  while (true) {
+    const filePath = join(dir, "AGENTS.md");
+    if (!seen.has(filePath)) {
+      const file = tryLoadAgentsFile(filePath);
+      if (file) {
+        ancestors.push(file);
+        seen.add(file.path);
+      }
+    }
+    const parent = dirname(dir);
+    if (dir === walkEnd) break;
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Reverse so farthest ancestor comes first
+  ancestors.reverse();
+  results.push(...ancestors);
+
+  return results;
 }
 
 /** Build the truly static prefix that should remain byte-for-byte identical
@@ -94,10 +167,23 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
 
   const tools = `Tools available:\n${toolsBlock}`;
 
-  const ctx = loadContextFile(opts.cwd);
-  const contextBlock = ctx
-    ? `\n\nProject context from ${ctx.name} (${ctx.lineCount} lines, treat as authoritative):\n${ctx.content.trim()}`
-    : "";
+  const kimiCtx = loadKimiContextFile(opts.cwd);
+  const agentsFiles = loadAgentsContextFiles(opts.cwd);
+  const contextBlocks: string[] = [];
+  if (kimiCtx) {
+    contextBlocks.push(
+      `Project context from ${kimiCtx.name} (${kimiCtx.lineCount} lines, treat as authoritative):\n${kimiCtx.content.trim()}`,
+    );
+  }
+  for (const file of agentsFiles) {
+    contextBlocks.push(
+      `Context from ${file.path} (${file.lineCount} lines):\n${file.content.trim()}`,
+    );
+  }
+  const contextBlock =
+    contextBlocks.length > 0
+      ? `\n\n${contextBlocks.join("\n\n")}`
+      : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
   const skillsBlock =
