@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.50.0](https://github.com/sinameraji/kimiflare/compare/v0.49.0...v0.50.0) (2026-05-09)
+
+
+### Features
+
+* **errors:** humanize Cloudflare API errors in TUI and print mode ([#350](https://github.com/sinameraji/kimiflare/issues/350)) ([fc56b44](https://github.com/sinameraji/kimiflare/commit/fc56b44b5e538ed9def3230f303140c1fe2cc5a7))
+* **usage:** persistent history.jsonl for never-pruned daily usage ([#352](https://github.com/sinameraji/kimiflare/issues/352)) ([4b66610](https://github.com/sinameraji/kimiflare/commit/4b6661027e7595fe4849210f815e58a478258fe2))
+
 ## [0.49.0](https://github.com/sinameraji/kimiflare/compare/v0.48.5...v0.49.0) (2026-05-09)
 
 
