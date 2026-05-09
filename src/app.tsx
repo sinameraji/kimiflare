@@ -62,6 +62,7 @@ import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
 import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
+import { ContextInjector } from "./agent/context-injector.js";
 
 import {
   listSessions,
@@ -697,6 +698,7 @@ function App({
   const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
   const mcpManagerRef = useRef(new McpManager());
+  const contextInjectorRef = useRef<ContextInjector | null>(null);
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
   const submitRef = useRef<(full: string, display?: string) => void>(() => {});
@@ -3370,6 +3372,24 @@ function App({
             status: r.ok ? "done" : "error",
             result: r.content,
           });
+
+          // Dynamic AGENTS.md injection: detect cwd changes
+          try {
+            if (!contextInjectorRef.current) {
+              contextInjectorRef.current = new ContextInjector(process.cwd());
+            }
+            const blocks = contextInjectorRef.current.checkCwdChange(process.cwd());
+            if (blocks.length > 0 && cacheStableRef.current) {
+              // Append new AGENTS.md blocks to the session prefix
+              const existing = messagesRef.current[1]?.content ?? "";
+              messagesRef.current[1] = {
+                role: "system",
+                content: existing + "\n\n" + blocks.join("\n\n"),
+              };
+            }
+          } catch {
+            // Non-fatal — context injection is best-effort
+          }
         },
         onUsage: (u: Usage) => {
           usageRef.current = u;
