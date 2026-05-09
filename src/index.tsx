@@ -22,7 +22,8 @@ program
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
-  .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10));
+  .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
+  .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
 program
   .command("cost")
@@ -136,6 +137,7 @@ const opts = program.opts<{
   reasoning?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
+  mode?: string;
 }>();
 
 async function main() {
@@ -174,6 +176,12 @@ async function main() {
       ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL }),
       cloudMode: true,
     };
+  }
+
+  if (opts.mode === "rpc") {
+    const { startRpcServer } = await import("./sdk/rpc.js");
+    await startRpcServer();
+    return;
   }
 
   if (opts.print !== undefined) {
