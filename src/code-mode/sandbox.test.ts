@@ -1,21 +1,22 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { stripTypescript, runInSandbox } from "./sandbox.js";
+import { ToolExecutor } from "../tools/executor.js";
 import type { ToolSpec } from "../tools/registry.js";
 
 const mockTools: ToolSpec[] = [];
 
-const mockExecutor = {
-  run: async () => ({ content: "ok", ok: true }),
-};
+const mockExecutor = new ToolExecutor(mockTools);
 
-const mockAskPermission = async () => true;
+const mockAskPermission = async () => "allow" as const;
 
 const mockCtx = {
   cwd: process.cwd(),
   signal: undefined as AbortSignal | undefined,
-  onTasks: undefined as ((tasks: { id: string; title: string; status: string }[]) => void) | undefined,
-  coauthor: false,
+  onTasks: undefined as
+    | ((tasks: { id: string; title: string; status: string }[]) => void)
+    | undefined,
+  coauthor: undefined as { name: string; email: string } | undefined,
   memoryManager: undefined,
   sessionId: "test",
 };
@@ -25,7 +26,7 @@ describe("stripTypescript", () => {
     const ts = `const x: string = "hello";`;
     const js = stripTypescript(ts);
     assert.ok(!js.includes(": string"));
-    assert.ok(js.includes('const x'));
+    assert.ok(js.includes("const x"));
     assert.ok(js.includes('"hello"'));
   });
 
@@ -73,14 +74,9 @@ describe("runInSandbox", () => {
       ctx: mockCtx,
     });
 
-    // If typescript is installed in the project, this should work
-    // If not, it falls back to stripTypescript and may emit a warning
-    if (result.warnings && result.warnings.length > 0) {
-      assert.ok(result.warnings[0].includes("fallback parser"));
-    } else {
-      assert.strictEqual(result.output, "42");
-      assert.strictEqual(result.error, undefined);
-    }
+    // TypeScript is a project dependency, so transpilation should succeed
+    assert.strictEqual(result.output, "42");
+    assert.strictEqual(result.error, undefined);
   });
 
   it("finds typescript even with a non-existent cwd", async () => {
@@ -94,9 +90,9 @@ describe("runInSandbox", () => {
       ctx: { ...mockCtx, cwd: "/nonexistent/path" },
     });
 
-    // Should execute successfully with no fallback warning
+    // Should execute successfully — TypeScript is resolved via import.meta.resolve
+    // regardless of cwd, so transpilation works
     assert.strictEqual(result.output, "1");
     assert.strictEqual(result.error, undefined);
-    assert.ok(!result.warnings || result.warnings.length === 0);
   });
 });

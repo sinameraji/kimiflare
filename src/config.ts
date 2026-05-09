@@ -2,7 +2,6 @@ import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
-import { validateModelId } from "./agent/client.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
@@ -103,7 +102,9 @@ function readReasoningEffortEnv(): ReasoningEffort | undefined {
     : undefined;
 }
 
-function readCoauthorEnv(): { enabled: boolean; name: string; email: string } | undefined {
+function readCoauthorEnv():
+  | { enabled: boolean; name: string; email: string }
+  | undefined {
   const enabled = process.env.KIMIFLARE_COAUTHOR;
   if (enabled === "0" || enabled === "false") return undefined;
   const name = process.env.KIMIFLARE_COAUTHOR_NAME || "kimiflare";
@@ -127,12 +128,15 @@ function readNumberEnv(name: string): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function readGatewayMetadataEnv(): Record<string, string | number | boolean> | undefined {
+function readGatewayMetadataEnv():
+  | Record<string, string | number | boolean>
+  | undefined {
   const raw = process.env.KIMIFLARE_AI_GATEWAY_METADATA;
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return undefined;
     const out: Record<string, string | number | boolean> = {};
     for (const [key, value] of Object.entries(parsed)) {
       if (
@@ -150,27 +154,34 @@ function readGatewayMetadataEnv(): Record<string, string | number | boolean> | u
 }
 
 export async function loadConfig(): Promise<KimiConfig | null> {
-  const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
+  const envAccount =
+    process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
   const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
   const envEffort = readReasoningEffortEnv();
   const envCoauthor = readCoauthorEnv();
   const envAiGatewayId = process.env.KIMIFLARE_AI_GATEWAY_ID;
   const envAiGatewayCacheTtl = readNumberEnv("KIMIFLARE_AI_GATEWAY_CACHE_TTL");
-  const envAiGatewaySkipCache = readBooleanEnv("KIMIFLARE_AI_GATEWAY_SKIP_CACHE");
+  const envAiGatewaySkipCache = readBooleanEnv(
+    "KIMIFLARE_AI_GATEWAY_SKIP_CACHE",
+  );
   const envAiGatewayCollectLogPayload = readBooleanEnv(
     "KIMIFLARE_AI_GATEWAY_COLLECT_LOG_PAYLOAD",
   );
   const envAiGatewayMetadata = readGatewayMetadataEnv();
 
   const envCacheStable = process.env.KIMIFLARE_CACHE_STABLE_PROMPTS;
-  const cacheStablePrompts = envCacheStable === "0" || envCacheStable === "false" ? false : true;
+  const cacheStablePrompts =
+    envCacheStable === "0" || envCacheStable === "false" ? false : true;
 
   const envCompiled = process.env.KIMIFLARE_COMPILED_CONTEXT;
-  const compiledContext = envCompiled === "0" || envCompiled === "false" ? false : true;
+  const compiledContext =
+    envCompiled === "0" || envCompiled === "false" ? false : true;
 
   const envImageTurns = process.env.KIMIFLARE_IMAGE_HISTORY_TURNS;
-  const imageHistoryTurns = envImageTurns ? parseInt(envImageTurns, 10) : undefined;
+  const imageHistoryTurns = envImageTurns
+    ? parseInt(envImageTurns, 10)
+    : undefined;
 
   const envMemoryEnabled = readBooleanEnv("KIMIFLARE_MEMORY_ENABLED");
   const envMemoryDbPath = process.env.KIMIFLARE_MEMORY_DB_PATH;
@@ -178,7 +189,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envMemoryMaxEntries = readNumberEnv("KIMIFLARE_MEMORY_MAX_ENTRIES");
   const envMemoryEmbeddingModel = process.env.KIMIFLARE_MEMORY_EMBEDDING_MODEL;
   const envPlumbingModel = process.env.KIMIFLARE_PLUMBING_MODEL;
-  const envMemoryExtractionModel = process.env.KIMIFLARE_MEMORY_EXTRACTION_MODEL;
+  const envMemoryExtractionModel =
+    process.env.KIMIFLARE_MEMORY_EXTRACTION_MODEL;
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
@@ -196,7 +208,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       coauthorEmail: envCoauthor?.email,
       cacheStablePrompts,
       compiledContext,
-      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
+      imageHistoryTurns: Number.isNaN(imageHistoryTurns)
+        ? undefined
+        : imageHistoryTurns,
       memoryEnabled: envMemoryEnabled,
       memoryDbPath: envMemoryDbPath,
       memoryMaxAgeDays: envMemoryMaxAgeDays,
@@ -225,7 +239,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       coauthorEmail: envCoauthor?.email,
       cacheStablePrompts,
       compiledContext,
-      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
+      imageHistoryTurns: Number.isNaN(imageHistoryTurns)
+        ? undefined
+        : imageHistoryTurns,
       memoryEnabled: envMemoryEnabled ?? true,
       memoryDbPath: envMemoryDbPath,
       memoryMaxAgeDays: envMemoryMaxAgeDays,
@@ -255,12 +271,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         mcpServers: parsed.mcpServers,
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
-        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
+        imageHistoryTurns: Number.isNaN(imageHistoryTurns)
+          ? parsed.imageHistoryTurns
+          : imageHistoryTurns,
         memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled,
         memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
         memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
         memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
-        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
+        memoryEmbeddingModel:
+          envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
         codeMode: envCodeMode ?? parsed.codeMode,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
@@ -286,14 +305,18 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         mcpServers: parsed.mcpServers,
         cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
         compiledContext: parsed.compiledContext ?? compiledContext,
-        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
+        imageHistoryTurns: Number.isNaN(imageHistoryTurns)
+          ? parsed.imageHistoryTurns
+          : imageHistoryTurns,
         memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? true,
         memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
         memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
         memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
-        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
+        memoryEmbeddingModel:
+          envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
         plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
-        memoryExtractionModel: envMemoryExtractionModel ?? parsed.memoryExtractionModel,
+        memoryExtractionModel:
+          envMemoryExtractionModel ?? parsed.memoryExtractionModel,
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
@@ -312,7 +335,9 @@ export async function saveConfig(cfg: KimiConfig): Promise<string> {
   const dir = join(p, "..");
   await mkdir(dir, { recursive: true, mode: 0o700 });
   await chmod(dir, 0o700);
-  const release = await lockfile.lock(p, { retries: { retries: 10, factor: 2, minTimeout: 50 }, update: false });
+  const release = await lockfile.lock(p, {
+    retries: { retries: 10, factor: 2, minTimeout: 50 },
+  });
   try {
     await writeFile(p, JSON.stringify(cfg, null, 2), "utf8");
     await chmod(p, 0o600);

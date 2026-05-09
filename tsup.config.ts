@@ -23,5 +23,8 @@ export default defineConfig({
     "fast-glob",
     "diff",
     "turndown",
+    // native/optional deps that must not be bundled
+    "playwright-core",
+    "isolated-vm",
   ],
 });
