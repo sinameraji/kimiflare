@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/sinameraji/kimiflare/compare/v0.50.0...v0.50.1) (2026-05-09)
+
+
+### Bug Fixes
+
+* **ui:** defensive tool renders and diff view to prevent crashes on malformed args ([#353](https://github.com/sinameraji/kimiflare/issues/353)) ([0d2cdc4](https://github.com/sinameraji/kimiflare/commit/0d2cdc4dfefbd2c434d5ab4b36568d03ebc5ce8f))
+
 ## [0.50.0](https://github.com/sinameraji/kimiflare/compare/v0.49.0...v0.50.0) (2026-05-09)
 
 
