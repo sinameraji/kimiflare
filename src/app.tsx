@@ -2442,20 +2442,20 @@ function App({
         const subRest = rest.slice(1).join(" ").trim();
 
         if (sub === "list" || sub === "") {
-          void listAllSkills(process.cwd()).then((all) => {
+          void listAllSkills(process.cwd()).then((result) => {
             const lines: string[] = [];
-            if (all.project.length > 0) {
-              lines.push("project skills:");
-              for (const s of all.project) {
-                const status = s.enabled ? "✓" : "✗";
-                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
-              }
+            // Group by source label
+            const bySource = new Map<string, typeof result.all>();
+            for (const s of result.all) {
+              const label = s.sourceLabel || "unknown";
+              if (!bySource.has(label)) bySource.set(label, []);
+              bySource.get(label)!.push(s);
             }
-            if (all.global.length > 0) {
-              lines.push("global skills:");
-              for (const s of all.global) {
+            for (const [label, skills] of bySource) {
+              lines.push(`${label}:`);
+              for (const s of skills) {
                 const status = s.enabled ? "✓" : "✗";
-                lines.push(`  ${status} ${s.name} — ${s.description || "no description"} (${s.estimatedTokens} tokens)`);
+                lines.push(`  ${status} ${s.name} — ${s.description || "no description"}`);
               }
             }
             if (lines.length === 0) {
@@ -3242,7 +3242,7 @@ function App({
         sessionTitleRef.current = generateSessionTitle(trimmed, classification.intent);
       }
 
-      // Route skills based on intent tier
+      // Route skills based on intent tier (legacy, will be removed in U3)
       let skillResult: SkillRoutingResult | undefined;
       try {
         skillResult = await routeSkills(skillsDirRef.current, {
@@ -3255,6 +3255,19 @@ function App({
         setSkillsActive(skillResult.selectedSkills.length);
       } catch {
         setSkillsActive(0);
+      }
+
+      // Fetch full skill catalog for <available_skills> XML block
+      let skillCatalog: { name: string; description: string; location: string }[] | undefined;
+      try {
+        const allSkills = await listAllSkills(process.cwd());
+        skillCatalog = allSkills.all.map((s) => ({
+          name: s.name,
+          description: s.description,
+          location: s.filePath,
+        }));
+      } catch {
+        skillCatalog = undefined;
       }
 
       const effortForTier: Record<string, ReasoningEffort> = {
@@ -3277,6 +3290,7 @@ function App({
             model: cfg.model,
             mode: modeRef.current,
             selectedSkills,
+            skillCatalog,
           }),
         };
       } else {
@@ -3288,6 +3302,7 @@ function App({
             model: cfg.model,
             mode: modeRef.current,
             selectedSkills,
+            skillCatalog,
           }),
         };
       }

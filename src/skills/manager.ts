@@ -2,7 +2,14 @@ import { mkdir, writeFile, unlink, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import matter from "gray-matter";
 import type { Skill } from "./types.js";
-import { loadSkillsFromDir } from "./loader.js";
+import { loadSkillFromSkillMd, loadSkillsFromDir } from "./loader.js";
+import { enumerateAllSkillDirs, enumerateAgentsSkillDirs, scanSkillDir } from "./discovery.js";
+import type { SkillSource } from "./discovery.js";
+
+export interface SkillWithSource extends Skill {
+  sourceLabel: string;
+  sourceDir: string;
+}
 
 export interface SkillDirInfo {
   projectDir: string;
@@ -16,7 +23,52 @@ export function getSkillDirs(cwd: string): SkillDirInfo {
   };
 }
 
+/**
+ * List ALL skills from ALL locations, merged with dedup by name
+ * (higher priority wins). Returns a flat array with source metadata.
+ */
 export async function listAllSkills(cwd: string): Promise<{
+  all: SkillWithSource[];
+  warnings: string[];
+}> {
+  const sources = enumerateAllSkillDirs(cwd);
+  const seen = new Map<string, SkillWithSource>();
+  const warnings: string[] = [];
+
+  for (const source of sources) {
+    // .kimiflare/skills/ uses flat .md format (for now)
+    // .agents/skills/ uses SKILL.md-inside-subdir format
+    const isKimiflareNative = source.dir.includes(".kimiflare");
+
+    if (isKimiflareNative) {
+      const skills = await loadSkillsFromDir(source.dir).catch(() => [] as Skill[]);
+      for (const skill of skills) {
+        if (seen.has(skill.name)) {
+          warnings.push(`"${skill.name}" shadowed by higher-priority source`);
+        } else {
+          seen.set(skill.name, { ...skill, sourceLabel: source.label, sourceDir: source.dir });
+        }
+      }
+    } else {
+      // .agents/ format: SKILL.md inside subdirs
+      const skillMdPaths = scanSkillDir(source.dir);
+      for (const path of skillMdPaths) {
+        const skill = loadSkillFromSkillMd(path);
+        if (!skill) continue;
+        if (seen.has(skill.name)) {
+          warnings.push(`"${skill.name}" in ${source.label} shadowed by higher-priority source`);
+        } else {
+          seen.set(skill.name, { ...skill, sourceLabel: source.label, sourceDir: source.dir });
+        }
+      }
+    }
+  }
+
+  return { all: Array.from(seen.values()), warnings };
+}
+
+/** Legacy signature for backward compat — only .kimiflare/skills/ project + global. */
+export async function listLegacySkills(cwd: string): Promise<{
   project: Skill[];
   global: Skill[];
 }> {
@@ -65,7 +117,7 @@ export async function createSkill(opts: CreateSkillOptions): Promise<{ filepath:
 }
 
 export async function deleteSkill(name: string, cwd: string): Promise<{ filepath: string }> {
-  const all = await listAllSkills(cwd);
+  const all = await listLegacySkills(cwd);
   const skill =
     all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
   if (!skill) throw new Error(`skill "${name}" not found`);
@@ -78,7 +130,7 @@ export async function setSkillEnabled(
   enabled: boolean,
   cwd: string,
 ): Promise<{ filepath: string }> {
-  const all = await listAllSkills(cwd);
+  const all = await listLegacySkills(cwd);
   const skill =
     all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
   if (!skill) throw new Error(`skill "${name}" not found`);
@@ -101,7 +153,7 @@ export async function setSkillEnabled(
 }
 
 export async function findSkillFile(name: string, cwd: string): Promise<string | null> {
-  const all = await listAllSkills(cwd);
+  const all = await listLegacySkills(cwd);
   const skill =
     all.project.find((s) => s.name === name) ?? all.global.find((s) => s.name === name);
   return skill?.filePath ?? null;

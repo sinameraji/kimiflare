@@ -1,9 +1,19 @@
-import { loadSkillsFromDir } from "./loader.js";
+import { loadSkillFromSkillMd, loadSkillsFromDir } from "./loader.js";
 import { selectSkills } from "./router.js";
 import type { Skill, SkillRoutingResult } from "./types.js";
+import { enumerateAllSkillDirs, enumerateAgentsSkillDirs, scanSkillDir } from "./discovery.js";
+import type { SkillSource } from "./discovery.js";
 
 export type { Skill, SkillRoutingResult, SkillManifest, SkillScope, SkillConflict } from "./types.js";
-export { loadSkillsFromDir, selectSkills };
+export type { SkillSource } from "./discovery.js";
+export {
+  loadSkillsFromDir,
+  loadSkillFromSkillMd,
+  selectSkills,
+  enumerateAllSkillDirs,
+  enumerateAgentsSkillDirs,
+  scanSkillDir,
+};
 
 /** Convenience: load + route in one call */
 export async function routeSkills(

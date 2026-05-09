@@ -5,14 +5,24 @@ import type { ToolSpec } from "../tools/registry.js";
 import { systemPromptForMode, type Mode } from "../mode.js";
 import type { ChatMessage } from "./messages.js";
 
+/** A skill entry for the catalog XML block. */
+export interface SkillCatalogEntry {
+  name: string;
+  description: string;
+  /** Absolute path to the SKILL.md file */
+  location: string;
+}
+
 export interface SystemPromptOpts {
   cwd: string;
   tools: ToolSpec[];
   model: string;
   now?: Date;
   mode?: Mode;
-  /** Skills to inject into the system prompt for this turn */
+  /** Skills to inject into the system prompt for this turn (legacy router-based) */
   selectedSkills?: { name: string; body: string }[];
+  /** Full skill catalog for <available_skills> XML block */
+  skillCatalog?: SkillCatalogEntry[];
 }
 
 const KIMI_FILENAMES = ["KIMI.md", "KIMIFLARE.md"];
@@ -193,7 +203,9 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
           .join("\n\n")}`
       : "";
 
-  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock;
+  const catalogBlock = formatSkillCatalog(opts.skillCatalog);
+
+  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock + catalogBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */
@@ -204,6 +216,42 @@ export function buildSystemPrompt(opts: SystemPromptOpts): string {
 /** Build dual system messages for cache-stable prompt assembly.
  *  Index 0 = static prefix (immutable within a session).
  *  Index 1 = session prefix (mutable when mode/tools/context change). */
+/**
+ * Format a list of skills into the Agent Skills standard <available_skills> XML block.
+ */
+export function formatSkillCatalog(
+  skills?: SkillCatalogEntry[],
+): string {
+  if (!skills || skills.length === 0) return "";
+
+  const lines = [
+    "",
+    "The following skills provide specialized instructions for specific tasks.",
+    "Use the read tool to load a skill's SKILL.md file when the task matches its description.",
+    "When a skill references relative paths, resolve them against the skill's directory (parent of SKILL.md) and use absolute paths in tool calls.",
+    "",
+    "<available_skills>",
+  ];
+  for (const skill of skills) {
+    lines.push("  <skill>");
+    lines.push(`    <name>${escapeXml(skill.name)}</name>`);
+    lines.push(`    <description>${escapeXml(skill.description)}</description>`);
+    lines.push(`    <location>${escapeXml(skill.location)}</location>`);
+    lines.push("  </skill>");
+  }
+  lines.push("</available_skills>");
+  return "\n\n" + lines.join("\n");
+}
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export function buildSystemMessages(opts: SystemPromptOpts): ChatMessage[] {
   return [
     { role: "system", content: buildStaticPrefix(opts) },

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
 import matter from "gray-matter";
@@ -48,6 +49,10 @@ export async function loadSkillFile(filePath: string): Promise<Skill> {
   };
 }
 
+/**
+ * Load skills from flat .md files in a directory (kimiflare native format).
+ * Used for .kimiflare/skills/ until format migration (U3).
+ */
 export async function loadSkillsFromDir(dirPath: string): Promise<Skill[]> {
   try {
     const entries = await readdir(dirPath);
@@ -67,5 +72,36 @@ export async function loadSkillsFromDir(dirPath: string): Promise<Skill[]> {
     return skills;
   } catch {
     return [];
+  }
+}
+
+/**
+ * Load skills from SKILL.md-inside-subdir format (Agent Skills standard).
+ * Used for .agents/skills/ directories.
+ * Reads frontmatter and body, no routing fields.
+ */
+export function loadSkillFromSkillMd(skillMdPath: string): Skill | null {
+  try {
+    if (!existsSync(skillMdPath)) return null;
+    const raw = readFileSync(skillMdPath, "utf-8");
+    const parsed = matter(raw);
+    const data = parsed.data as Record<string, unknown>;
+    const name = typeof data.name === "string" ? data.name : "";
+    const description = typeof data.description === "string" ? data.description : "";
+    if (!name) return null;
+    const body = parsed.content.trim();
+    return {
+      name,
+      description,
+      match: [] as string[],
+      scope: "project" as const,
+      priority: 0,
+      enabled: typeof data.enabled === "boolean" ? data.enabled : true,
+      body,
+      filePath: skillMdPath,
+      estimatedTokens: Math.ceil(body.length / 4),
+    };
+  } catch {
+    return null;
   }
 }
