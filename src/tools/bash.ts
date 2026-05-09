@@ -44,7 +44,10 @@ function formatBashTitle(raw: string): string {
   return `$ ${cmd}`.slice(0, 120);
 }
 
-function injectCoauthor(command: string, coauthor?: { name: string; email: string }): string {
+function injectCoauthor(
+  command: string,
+  coauthor?: { name: string; email: string },
+): string {
   if (!coauthor) return command;
   const trailer = `Co-authored-by: ${coauthor.name} <${coauthor.email}>`;
 
@@ -52,15 +55,21 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
   if (command.includes(trailer)) return command;
 
   // Detect git commands that create commits
-  const createsCommit = /\bgit\s+(commit|merge|revert|cherry-pick)\b/.test(trimmed);
-  const isRebaseContinue = /\bgit\s+rebase\b/.test(trimmed) && !/\b--abort\b|\b--skip\b/.test(trimmed);
+  const createsCommit = /\bgit\s+(commit|merge|revert|cherry-pick)\b/.test(
+    trimmed,
+  );
+  const isRebaseContinue =
+    /\bgit\s+rebase\b/.test(trimmed) && !/\b--abort\b|\b--skip\b/.test(trimmed);
   const movesHeadOnly = /\bgit\s+(reset|checkout|switch)\b/.test(trimmed);
   const mentionsGit = /\bgit\b/.test(trimmed);
 
   if (!createsCommit && !isRebaseContinue && !mentionsGit) return command;
   if (movesHeadOnly) return command;
 
-  const tmpFile = join(tmpdir(), `kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const tmpFile = join(
+    tmpdir(),
+    `kf-coauthor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
   const amendBlock = `
     if ! git log -1 --pretty=%B 2>/dev/null | grep -qF "${trailer}"; then
       git log -1 --pretty=%B | git interpret-trailers --trailer "${trailer}" > "${tmpFile}" && git commit --amend -F "${tmpFile}" --no-edit && rm -f "${tmpFile}"
@@ -86,10 +95,16 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
 }
 
 function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
-  const timeout = Math.min(Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT), MAX_TIMEOUT);
+  const timeout = Math.min(
+    Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT),
+    MAX_TIMEOUT,
+  );
   const command = injectCoauthor(args.command, ctx.coauthor);
   return new Promise<ToolOutput>((resolve, reject) => {
-    logger.debug("bash:spawn", { command: args.command.slice(0, 200), cwd: ctx.cwd });
+    logger.debug("bash:spawn", {
+      command: args.command.slice(0, 200),
+      cwd: ctx.cwd,
+    });
     const child = spawn("bash", ["-lc", command], {
       cwd: ctx.cwd,
       env: {
@@ -110,7 +125,10 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
 
     const onAbort = () => {
       killedByAbort = true;
-      logger.warn("bash:kill_abort", { command: args.command.slice(0, 200) });
+      logger.warn("bash:kill_abort", {
+        command: args.command.slice(0, 200),
+        pid: child.pid,
+      });
       child.kill("SIGKILL");
     };
     ctx.signal?.addEventListener("abort", onAbort, { once: true });
@@ -124,13 +142,35 @@ function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
     child.on("error", (e) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
-      logger.error("bash:error", { error: e.message });
+      logger.error("bash:error", { error: e.message, pid: child.pid });
       reject(e);
+    });
+    // If the command backgrounds a process (e.g. `npm run dev &`), the
+    // grandchild may inherit our stdout/stderr pipes. Node will then wait
+    // for those pipes to close before emitting "close", so the Promise
+    // never resolves. Destroying the streams on "exit" forces "close" to
+    // fire immediately while preserving all output already buffered.
+    child.on("exit", (code, signal) => {
+      logger.debug("bash:exit", {
+        code,
+        signal,
+        pid: child.pid,
+        killedByTimeout,
+        killedByAbort,
+      });
+      child.stdout?.destroy();
+      child.stderr?.destroy();
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       ctx.signal?.removeEventListener("abort", onAbort);
-      logger.debug("bash:close", { code, signal, killedByTimeout, killedByAbort });
+      logger.debug("bash:close", {
+        code,
+        signal,
+        pid: child.pid,
+        killedByTimeout,
+        killedByAbort,
+      });
       const header = killedByTimeout
         ? `(timed out after ${timeout}ms)`
         : killedByAbort

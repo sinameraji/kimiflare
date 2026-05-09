@@ -36,6 +36,7 @@ import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError } from "./util/errors.js";
 import { safeSave as safeSaveRaw } from "./config-utils.js";
 import { AbortScope } from "./util/abort-scope.js";
+import { logger } from "./util/logger.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -398,6 +399,24 @@ function App({
     setGitBranch(detectGitBranch());
   }, []);
 
+  // Register a SIGINT handler so Ctrl+C still works when the terminal is not
+  // in raw mode (e.g. after a child process modified terminal state). The
+  // handler delegates to the same logic as the useInput Ctrl+C handler.
+  // This is different from the previous attempt (c6e9c1f) which unconditionally
+  // called exit() and caused screen flashing by conflicting with useInput.
+  useEffect(() => {
+    const onSigint = () => {
+      logger.info("sigint:fired", {
+        hasHandler: sigintHandlerRef.current !== null,
+      });
+      sigintHandlerRef.current?.();
+    };
+    process.on("SIGINT", onSigint);
+    return () => {
+      process.off("SIGINT", onSigint);
+    };
+  }, []);
+
   // Fetch last session topic for smart welcome greetings
   useEffect(() => {
     void import("./sessions.js").then(({ listSessions }) =>
@@ -486,6 +505,8 @@ function App({
   const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
   const isAbortingRef = useRef(false);
   const lastEscapeAtRef = useRef(0);
+  /** Holds the latest Ctrl+C interrupt logic so the SIGINT handler can delegate to it. */
+  const sigintHandlerRef = useRef<(() => void) | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -943,6 +964,49 @@ function App({
   });
 
   useInput(handleKeyPress);
+
+  // Keep the SIGINT handler in sync with the latest state/refs so that when
+  // the terminal sends a real SIGINT (bypassing Ink raw mode) we can still
+  // interrupt the turn or exit gracefully.
+  sigintHandlerRef.current = () => {
+    logger.info("sigint:handler", {
+      busy: busyRef.current,
+      hasActiveScope: activeScopeRef.current !== null,
+      isAborting: isAbortingRef.current,
+      hasPerm: permResolveRef.current !== null,
+      hasLimit: limitResolveRef.current !== null,
+    });
+    const hadPerm = permResolveRef.current !== null;
+    const hadLimit = limitResolveRef.current !== null;
+    if (hadPerm) {
+      permResolveRef.current!("deny");
+      permResolveRef.current = null;
+      setOverlay({ kind: "none" });
+    }
+    if (hadLimit) {
+      limitResolveRef.current!("stop");
+      limitResolveRef.current = null;
+      setOverlay({ kind: "none" });
+    }
+    if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
+      isAbortingRef.current = true;
+      supervisorRef.current.killTurn();
+      activeScopeRef.current.abort("user_stopped");
+      setQueue([]);
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "(interrupted)" },
+      ]);
+      void saveSessionSafe();
+      setTasks([]);
+      setTasksStartedAt(null);
+      setTasksStartTokens(0);
+      tasksRef.current = [];
+    } else if (!hadPerm && !hadLimit) {
+      logger.info("sigint:handler:exiting");
+      void lspManagerRef.current.stopAll().finally(() => exit());
+    }
+  };
 
   const { updateAssistant, updateTool } = createUiUpdaters({
     setEvents,

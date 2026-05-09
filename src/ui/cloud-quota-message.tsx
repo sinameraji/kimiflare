@@ -25,7 +25,8 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
   const fmt = (d: Date) =>
     d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-  const dateRange = start && expires ? `${fmt(start)} → ${fmt(expires)}` : "this week";
+  const dateRange =
+    start && expires ? `${fmt(start)} → ${fmt(expires)}` : "this week";
 
   return (
     <Box flexDirection="column" marginY={1}>
@@ -52,9 +53,13 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
             → Get one: https://dash.cloudflare.com/profile/api-tokens
           </Text>
           <Text color={theme.info.color}>
-            → Pricing: https://developers.cloudflare.com/workers-ai/platform/pricing/
+            → Pricing:
+            https://developers.cloudflare.com/workers-ai/platform/pricing/
           </Text>
-          <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+          <Text
+            color={theme.muted?.color ?? theme.info.color}
+            dimColor={theme.muted?.dim ?? true}
+          >
             (~$0.95/M input tokens, ~$4.00/M output tokens)
           </Text>
         </Box>
@@ -65,7 +70,7 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
           Or wait for hosted plans — drop your email at
         </Text>
         <Text color={theme.info.color}>
-          kimiflare.dev/notify and I'll ping you when they're live.
+          kimiflare.com/notify and I'll ping you when they're live.
         </Text>
       </Box>
 
@@ -79,7 +84,10 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
       </Box>
 
       <Box marginTop={1}>
-        <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+        <Text
+          color={theme.muted?.color ?? theme.info.color}
+          dimColor={theme.muted?.dim ?? true}
+        >
           Used: {formatTokens(used)} / {formatTokens(limit)} tokens this week.
         </Text>
       </Box>
