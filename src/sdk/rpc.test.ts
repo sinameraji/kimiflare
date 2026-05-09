@@ -1,22 +1,9 @@
-import { describe, it, before, after } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert";
 import { Readable, Writable } from "node:stream";
 import { startRpcServer } from "./rpc.js";
 
 describe("SDK RPC", () => {
-  let originalStdin: NodeJS.ReadableStream;
-  let originalStdout: NodeJS.WritableStream;
-
-  before(() => {
-    originalStdin = process.stdin;
-    originalStdout = process.stdout;
-  });
-
-  after(() => {
-    process.stdin = originalStdin as NodeJS.ReadStream;
-    process.stdout = originalStdout as NodeJS.WriteStream;
-  });
-
   async function withRpcServer(
     commands: string[],
     handler: (lines: string[]) => void,
@@ -30,11 +17,8 @@ describe("SDK RPC", () => {
       },
     });
 
-    process.stdin = input as unknown as NodeJS.ReadStream;
-    process.stdout = output as unknown as NodeJS.WriteStream;
-
     // Start RPC server in background; it will read from our mocked stdin
-    const serverPromise = startRpcServer();
+    const serverPromise = startRpcServer(input, output);
 
     // Wait for input to be consumed
     await new Promise<void>((resolve) => {
@@ -49,7 +33,14 @@ describe("SDK RPC", () => {
 
     // Clean up: send dispose to shut down server
     try {
-      process.stdin = Readable.from([JSON.stringify({ type: "dispose" }) + "\n"]) as unknown as NodeJS.ReadStream;
+      const disposeInput = Readable.from([JSON.stringify({ type: "dispose" }) + "\n"]);
+      await startRpcServer(disposeInput, output);
+    } catch {
+      // ignore
+    }
+
+    // Ensure the original server promise resolves
+    try {
       await serverPromise;
     } catch {
       // ignore

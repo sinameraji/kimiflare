@@ -127,12 +127,12 @@ describe("SDK Session", () => {
     session = null;
   });
 
-  it("steer queues when not streaming", async () => {
+  it("steer does not queue when not streaming", async () => {
     const { session: s } = await createAgentSession({ cwd: testCwd });
     session = s;
     await s.steer("use TypeScript");
     const status = s.getStatus();
-    assert.deepStrictEqual(status.pendingSteer, ["use TypeScript"]);
+    assert.deepStrictEqual(status.pendingSteer, []);
   });
 
   it("followUp queues messages", async () => {

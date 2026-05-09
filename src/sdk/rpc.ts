@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import { createAgentSession } from "./session.js";
 import type { KimiFlareSession, SessionEvent, PermissionDecision } from "./types.js";
 import { logger } from "../util/logger.js";
@@ -17,12 +18,15 @@ interface RpcResponse {
   [key: string]: any;
 }
 
-export async function startRpcServer(): Promise<void> {
+export async function startRpcServer(
+  input: Readable = process.stdin,
+  output: Writable = process.stdout,
+): Promise<void> {
   let session: KimiFlareSession | null = null;
   let unsubscribe: (() => void) | null = null;
 
   function send(response: RpcResponse): void {
-    process.stdout.write(JSON.stringify(response) + "\n");
+    output.write(JSON.stringify(response) + "\n");
   }
 
   function sendEvent(event: SessionEvent): void {
@@ -30,7 +34,7 @@ export async function startRpcServer(): Promise<void> {
   }
 
   const rl = createInterface({
-    input: process.stdin,
+    input,
     crlfDelay: Infinity,
   });
 
