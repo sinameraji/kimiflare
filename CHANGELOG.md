@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.51.0](https://github.com/sinameraji/kimiflare/compare/v0.50.1...v0.51.0) (2026-05-10)
+
+
+### Features
+
+* **agent:** hard-stop loop guardrail following BudgetExhaustedError pattern ([#367](https://github.com/sinameraji/kimiflare/issues/367)) ([ffdc272](https://github.com/sinameraji/kimiflare/commit/ffdc272dd6c122eb9d14aa346615cc3f19b8ac64))
+
+
+### Bug Fixes
+
+* **auth:** harden device ID to prevent multi-account abuse ([#372](https://github.com/sinameraji/kimiflare/issues/372)) ([0438bf7](https://github.com/sinameraji/kimiflare/commit/0438bf7b1711e3c5732ee276113814905654bac6))
+
 ## [0.50.1](https://github.com/sinameraji/kimiflare/compare/v0.50.0...v0.50.1) (2026-05-09)
 
 
