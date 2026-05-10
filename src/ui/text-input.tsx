@@ -19,6 +19,7 @@ interface Props {
   onPickerDown?: () => void;
   onPickerSelect?: () => void;
   onPickerCancel?: () => void;
+  onCancel?: () => void;
 }
 
 const PASTE_CHAR_THRESHOLD = 200;
@@ -67,6 +68,7 @@ export function CustomTextInput({
   onPickerDown,
   onPickerSelect,
   onPickerCancel,
+  onCancel,
 }: Props) {
   const [internalCursor, setInternalCursor] = useState(value.length);
   const cursorOffset = controlledCursor ?? internalCursor;
@@ -110,6 +112,12 @@ export function CustomTextInput({
           onPickerCancel?.();
           return;
         }
+      }
+
+      if (key.escape) {
+        onCancel?.();
+        setCursorOffset(0);
+        return;
       }
 
       if (key.return) {

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
+import { platform } from "node:os";
 import type { ToolSpec } from "../tools/registry.js";
 import type { PermissionDecision } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
@@ -20,8 +21,10 @@ const OPTIONS: { value: PermissionDecision; label: string; key: number }[] = [
   { value: "deny", label: "Deny", key: 3 },
 ];
 
+const MOD_KEY = platform() === "darwin" ? "\u2325" : "Alt";
+
 function formatSelection(label: string, shortcut: number): string {
-  return `${label}  [Alt+${shortcut}]`;
+  return `${label}  [${MOD_KEY}+${shortcut}]`;
 }
 
 export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
@@ -140,7 +143,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
           Permission modal — keyboard shortcuts
         </Text>
         <Text color={theme.info.color}>↑ / ↓ or j / k — navigate options</Text>
-        <Text color={theme.info.color}>Alt+1 / Alt+2 / Alt+3 — select option directly</Text>
+        <Text color={theme.info.color}>{MOD_KEY}+1 / {MOD_KEY}+2 / {MOD_KEY}+3 — select option directly</Text>
         <Text color={theme.info.color}>Enter — confirm selection</Text>
         <Text color={theme.info.color}>Esc — deny and close</Text>
         <Text color={theme.info.color}>? — toggle this help</Text>
@@ -196,6 +199,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
             value={feedbackValue}
             onChange={setFeedbackValue}
             onSubmit={handleFeedbackSubmit}
+            onCancel={handleFeedbackCancel}
             focus
           />
         </Box>
