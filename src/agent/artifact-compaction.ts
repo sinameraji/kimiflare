@@ -269,7 +269,10 @@ export function shouldCompact(opts: {
 }
 
 /** Run compaction: collapse older turns into SessionState, keep recent raw turns. */
-export function compactMessages(opts: CompactionOpts): CompactionResult {
+/**
+ * Use when you want to extract structured artifacts and state deltas from turns instead of raw text.
+ */
+export function compactMessagesViaArtifacts(opts: CompactionOpts): CompactionResult {
   const keepLastTurns = opts.keepLastTurns ?? 4;
   const { prefix, turns } = groupIntoTurns(opts.messages);
 

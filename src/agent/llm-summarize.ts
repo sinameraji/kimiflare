@@ -38,7 +38,10 @@ function indexOfNthUserFromEnd(messages: ChatMessage[], n: number): number {
   return -1;
 }
 
-export async function compactMessages(opts: CompactOpts): Promise<CompactResult> {
+/**
+ * Use when context is full and you want the LLM to condense old turns into a summary.
+ */
+export async function summarizeMessagesViaLlm(opts: CompactOpts): Promise<CompactResult> {
   const keep = opts.keepLastTurns ?? 4;
   const messages = opts.messages;
 

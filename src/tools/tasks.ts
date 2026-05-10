@@ -1,5 +1,5 @@
 import type { ToolSpec } from "./registry.js";
-import { validateTasks, type Task } from "../tasks-state.js";
+import { validateTasks, type Task } from "./registry.js";
 
 interface TasksSetArgs {
   tasks: Task[];
