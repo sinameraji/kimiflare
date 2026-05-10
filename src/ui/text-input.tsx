@@ -31,8 +31,12 @@ function shouldTreatAsPaste(input: string): boolean {
   return newlines >= PASTE_NEWLINE_THRESHOLD;
 }
 
-function newPasteId(): string {
-  return Math.random().toString(36).slice(2, 7);
+function makePastePreview(input: string, lines: number, id: number): string {
+  const firstLine = input.split("\n")[0] ?? "";
+  const cleaned = firstLine.trim().replace(/\s+/g, " ");
+  const preview = cleaned.length > 20 ? cleaned.slice(0, 20) + "…" : cleaned;
+  const text = preview || "(empty)";
+  return `⦗"${text}" (${lines} line${lines === 1 ? "" : "s"}) #${id}⦘`;
 }
 
 function countLines(s: string): number {
@@ -77,6 +81,7 @@ export function CustomTextInput({
     onCursorChange?.(offset);
   };
   const pastesRef = useRef<Map<string, string>>(new Map());
+  const pasteCounterRef = useRef(0);
 
   useEffect(() => {
     if (!focus) return;
@@ -223,8 +228,8 @@ export function CustomTextInput({
         let toInsert = input;
         if (enablePaste && shouldTreatAsPaste(input)) {
           const lines = countLines(input);
-          const id = newPasteId();
-          const placeholder = `[pasted ${lines} line${lines === 1 ? "" : "s"} #${id}]`;
+          const id = ++pasteCounterRef.current;
+          const placeholder = makePastePreview(input, lines, id);
           pastesRef.current.set(placeholder, input);
           toInsert = placeholder;
         }
@@ -271,7 +276,7 @@ function findPasteTokenEndingAt(
   pos: number,
   pastes: Map<string, string>,
 ): number {
-  if (pos <= 0 || value[pos - 1] !== "]") return -1;
+  if (pos <= 0 || value[pos - 1] !== "⦘") return -1;
   for (const placeholder of pastes.keys()) {
     if (placeholder.length > pos) continue;
     const start = pos - placeholder.length;
