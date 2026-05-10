@@ -19,18 +19,24 @@ function pick<T>(arr: T[]): T {
 function greeting(hour: number, day: number): string {
   const isWeekend = WEEKEND_DAYS.includes(day);
   if (MORNING_HOURS.includes(hour)) {
-    return isWeekend ? pick(["Good morning!", "Morning!"]) : pick(["Good morning!", "Morning!"]);
+    return isWeekend
+      ? pick(["☀️ Good morning!", "🌅 Morning!", "🐦 Morning!"])
+      : pick(["☀️ Good morning!", "🌅 Morning!", "🐦 Morning!"]);
   }
   if (AFTERNOON_HOURS.includes(hour)) {
-    return isWeekend ? pick(["Good afternoon!", "Afternoon!"]) : pick(["Good afternoon!", "Afternoon!"]);
+    return isWeekend
+      ? pick(["🌤️ Good afternoon!", "☀️ Afternoon!", "🌿 Afternoon!"])
+      : pick(["🌤️ Good afternoon!", "☀️ Afternoon!", "🌿 Afternoon!"]);
   }
   if (hour >= 18 && hour <= 22) {
-    return isWeekend ? pick(["Good evening!", "Evening!"]) : pick(["Good evening!", "Evening!"]);
+    return isWeekend
+      ? pick(["🌇 Good evening!", "🌆 Evening!", "✨ Evening!"])
+      : pick(["🌇 Good evening!", "🌆 Evening!", "✨ Evening!"]);
   }
   if (hour >= 23 || hour <= 5) {
-    return pick(["Up late?", "Night owl mode!"]);
+    return pick(["🌙 Up late?", "🦉 Night owl mode!", "🌌 Still awake?"]);
   }
-  return "Hello!";
+  return "👋 Hello!";
 }
 
 export function buildWelcome({

@@ -583,6 +583,7 @@ function App({
   const [skillsActive, setSkillsActive] = useState(0);
   const [memoryRecalled, setMemoryRecalled] = useState(false);
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
+  const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false);
   const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
@@ -937,14 +938,7 @@ function App({
     // Show creator welcome message once per version
     void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
       if (shouldShow) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "Hey, how do you like this version? I'd love to hear from you — type /hello to send me a voice note. Only I see it, and I may DM you back.",
-          },
-        ]);
+        setShowFeedbackPrompt(true);
         void markCreatorMessageSeen(getAppVersion());
       }
     });
@@ -3987,7 +3981,7 @@ function App({
     <ThemeProvider theme={theme}>
       <Box flexDirection="column">
         {!hasConversation && events.length === 0 ? (
-          <Welcome />
+          <Welcome showFeedbackPrompt={showFeedbackPrompt} />
         ) : (
           <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
         )}

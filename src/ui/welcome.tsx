@@ -1,10 +1,13 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { useTheme } from "./theme-context.js";
-import type { Theme } from "./theme.js";
 import { buildWelcome } from "./greetings.js";
 
-export function Welcome() {
+interface WelcomeProps {
+  showFeedbackPrompt?: boolean;
+}
+
+export function Welcome({ showFeedbackPrompt }: WelcomeProps) {
   const theme = useTheme();
   const now = new Date();
   const { headline } = buildWelcome({
@@ -20,12 +23,19 @@ export function Welcome() {
         </Text>
       </Box>
 
-      <Box flexDirection="column">
+      <Box marginBottom={1}>
         <Text color={theme.info.color} dimColor>
           Type / for commands
         </Text>
       </Box>
 
+      {showFeedbackPrompt && (
+        <Box>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+            �� How do you like the new version? You can send me a small feedback using /hello.
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }
