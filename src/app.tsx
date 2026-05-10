@@ -3995,6 +3995,9 @@ function App({
               permResolveRef.current = null;
               setPerm(null);
             }}
+            onFeedback={(text) => {
+              submitRef.current(text);
+            }}
           />
         ) : limitModal ? (
           <LimitModal
