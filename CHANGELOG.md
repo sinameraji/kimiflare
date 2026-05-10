@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.52.0](https://github.com/sinameraji/kimiflare/compare/v0.51.0...v0.52.0) (2026-05-10)
+
+
+### Features
+
+* **ui:** show content preview in paste placeholders ([#376](https://github.com/sinameraji/kimiflare/issues/376)) ([5c58b4c](https://github.com/sinameraji/kimiflare/commit/5c58b4c2030c8aff6a3d6b578e9069be934e15f8))
+* **ui:** smart permission modal with inline feedback and keyboard shortcuts ([#369](https://github.com/sinameraji/kimiflare/issues/369)) ([3e2370e](https://github.com/sinameraji/kimiflare/commit/3e2370edbb83b08fa60bcd48197db34fff7f4388))
+
 ## [0.51.0](https://github.com/sinameraji/kimiflare/compare/v0.50.1...v0.51.0) (2026-05-10)
 
 
