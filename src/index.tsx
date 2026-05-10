@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { loadConfig, DEFAULT_MODEL } from "./config.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
-import { runAgentTurn, BudgetExhaustedError } from "./agent/loop.js";
+import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
@@ -347,6 +347,11 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     if (err instanceof BudgetExhaustedError) {
       process.stderr.write("\n\x1b[33m[Budget exhausted — exiting with code 42]\x1b[0m\n");
       process.exitCode = 42;
+      return;
+    }
+    if (err instanceof AgentLoopError) {
+      process.stderr.write("\n\x1b[33m[Agent loop detected — exiting with code 43]\x1b[0m\n");
+      process.exitCode = 43;
       return;
     }
     if (err instanceof KimiApiError) {

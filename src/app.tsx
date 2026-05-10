@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 import SelectInput from "ink-select-input";
 
-import { runAgentTurn } from "./agent/loop.js";
+import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
@@ -2004,6 +2004,11 @@ function App({
         setEvents((es) => [
           ...es,
           { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+        ]);
+      } else if (e instanceof AgentLoopError) {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: "The agent got stuck repeating the same actions. Here's what we know so far." },
         ]);
       } else {
         const displayText =

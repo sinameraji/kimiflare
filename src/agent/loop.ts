@@ -82,6 +82,13 @@ export class BudgetExhaustedError extends Error {
   }
 }
 
+export class AgentLoopError extends Error {
+  constructor(message = "Agent got stuck repeating the same tool calls") {
+    super(message);
+    this.name = "AgentLoopError";
+  }
+}
+
 const codeModeApiCache = new Map<string, string>();
 
 /** Per-session accumulator for high-signal memories that may indicate KIMI.md drift. */
@@ -176,6 +183,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let cumulativePromptTokens = 0;
   let iter = 0;
   let budgetExhausted = false;
+  let loopExhausted = false;
 
   while (true) {
     // Budget enforcement: before starting a new turn, if we've already hit the
@@ -186,6 +194,15 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         content:
           "You have reached the cumulative input token budget for this session. " +
           "Please synthesize your findings and provide a final summary of what was accomplished.",
+      });
+    }
+
+    if (loopExhausted) {
+      opts.messages.push({
+        role: "system",
+        content:
+          "You have repeatedly called the same tools with identical arguments and are stuck in a loop. " +
+          "Please synthesize what you know from the conversation history and provide a final answer.",
       });
     }
 
@@ -397,6 +414,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       return;
     }
 
+    let blockedCount = 0;
     for (const tc of toolCalls) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
 
@@ -421,6 +439,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.onToolResult?.(loopResult);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+        blockedCount++;
         continue;
       }
 
@@ -451,6 +470,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             opts.callbacks.onToolResult?.(budgetResult);
             recentToolCalls.push(loopSignature);
             if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+            blockedCount++;
             continue;
           }
 
@@ -472,6 +492,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             opts.callbacks.onToolResult?.(loopResult);
             recentToolCalls.push(loopSignature);
             if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+            blockedCount++;
             continue;
           }
 
@@ -626,6 +647,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       }
     }
 
+    if (blockedCount === toolCalls.length && toolCalls.length > 0) {
+      loopExhausted = true;
+    }
+
     // Decay drift accumulator at end of turn (clustered changes = drift,
     // spread-out changes = incremental and not worth nagging)
     if (opts.sessionId) {
@@ -659,6 +684,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
     if (budgetExhausted) {
       throw new BudgetExhaustedError();
+    }
+    if (loopExhausted) {
+      throw new AgentLoopError();
     }
   }
 }

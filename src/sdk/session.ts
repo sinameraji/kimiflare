@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { runAgentTurn, BudgetExhaustedError } from "../agent/loop.js";
+import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "../agent/loop.js";
 import type { AgentCallbacks } from "../agent/loop.js";
 import type { ChatMessage, ContentPart, Usage } from "../agent/messages.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "../agent/system-prompt.js";
@@ -277,7 +277,7 @@ class InternalSession implements KimiFlareSession {
       if ((err as Error).name === "AbortError") {
         this.emit({ type: "session.end", reason: "aborted" });
         this.emit({ type: "status", status: "idle" });
-      } else if (err instanceof BudgetExhaustedError) {
+      } else if (err instanceof BudgetExhaustedError || err instanceof AgentLoopError) {
         this.emit({ type: "session.end", reason: "error", error: (err as Error).message });
         this.emit({ type: "status", status: "error" });
         throw err;
