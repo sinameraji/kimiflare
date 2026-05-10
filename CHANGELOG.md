@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.53.0](https://github.com/sinameraji/kimiflare/compare/v0.52.0...v0.53.0) (2026-05-10)
+
+
+### Features
+
+* **ui:** restore true message queuing — Enter queues, Esc interrupts ([#378](https://github.com/sinameraji/kimiflare/issues/378)) ([9b62196](https://github.com/sinameraji/kimiflare/commit/9b621969c3a59f38c6a8004b63500a432df30bc1))
+* **ui:** tool states show queued, rejected, cancelled ([#374](https://github.com/sinameraji/kimiflare/issues/374)) ([cdf34eb](https://github.com/sinameraji/kimiflare/commit/cdf34eb5492d0e5a703b6de2119f6db918fda38e))
+
 ## [0.52.0](https://github.com/sinameraji/kimiflare/compare/v0.51.0...v0.52.0) (2026-05-10)
 
 
