@@ -116,6 +116,13 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
           ) : null}
         </Box>
       )}
+      {!thinking && (
+        <Box>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim}>
+            tip: shift+tab cycles mode
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }
