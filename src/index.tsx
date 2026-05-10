@@ -334,6 +334,9 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
             result.content.length > 400 ? result.content.slice(0, 400) + "..." : result.content;
           process.stderr.write(`\x1b[2m[result: ${snippet.replace(/\n/g, " ⏎ ")}]\x1b[0m\n`);
         },
+        onWarning: (msg) => {
+          process.stderr.write(`\x1b[33mkimiflare: ${msg}\x1b[0m\n`);
+        },
         askPermission: async ({ tool, args }) => {
           if (opts.allowAll) return "allow";
           process.stderr.write(

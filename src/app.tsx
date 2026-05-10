@@ -1868,6 +1868,16 @@ function App({
             pendingToolCallsRef.current.delete(r.tool_call_id);
             updateTool(r.tool_call_id, { status: r.ok ? "done" : "error", result: r.content });
           },
+          onWarning: (msg) => {
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "info",
+                key: mkKey(),
+                text: msg,
+              },
+            ]);
+          },
           onUsage: (u) => {
             usageRef.current = u;
             setUsage(u);

@@ -26,6 +26,8 @@ export interface AgentCallbacks {
   onAssistantFinal?: (msg: ChatMessage) => void;
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
+  /** Called once per session when the sandbox falls back to node:vm. */
+  onWarning?: (message: string) => void;
   askPermission: PermissionAsker;
   /** Called when the tool-call iteration limit is reached. Return "continue" to
    *  reset the counter and keep going, or "stop" to end the turn immediately. */
@@ -528,12 +530,16 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           opts.callbacks.onToolResult?.(toolResult);
         }
 
-        const warningPrefix = sandboxResult.warnings?.length
-          ? `Warning: ${sandboxResult.warnings.join(" ")}\n\n`
-          : "";
+        // Surface sandbox warnings (e.g. isolated-vm fallback) as a separate UI notice
+        if (sandboxResult.warnings && sandboxResult.warnings.length > 0) {
+          for (const w of sandboxResult.warnings) {
+            opts.callbacks.onWarning?.(w);
+          }
+        }
+
         let resultContent = sandboxResult.error
-          ? `${warningPrefix}Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
-          : `${warningPrefix}${sandboxResult.output}`;
+          ? `Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
+          : sandboxResult.output;
         if (resultContent.length > MAX_TOOL_CONTENT_CHARS) {
           resultContent =
             resultContent.slice(0, MAX_TOOL_CONTENT_CHARS) +

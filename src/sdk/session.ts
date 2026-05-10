@@ -433,6 +433,9 @@ class InternalSession implements KimiFlareSession {
       onTasks: (tasks) => {
         this.emit({ type: "tasks.update", tasks });
       },
+      onWarning: (_msg) => {
+        // SDK consumers can observe warnings via future event types if desired
+      },
       askPermission: async (req) => {
         if (mode === "auto") return "allow";
         if (mode === "plan") {

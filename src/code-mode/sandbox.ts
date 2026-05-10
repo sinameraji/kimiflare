@@ -287,23 +287,40 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
   return { output: logs.join("\n"), logs, toolCalls, warnings };
 }
 
-const ISOLATED_VM_FALLBACK_WARNING =
-  "⚠️  Code sandbox is running without memory limits or true process isolation " +
-  "(isolated-vm unavailable or failed to load). " +
-  "For a secure sandbox, install with Node 22 LTS: nvm install 22 && nvm use 22 && npm install -g kimiflare";
+let fallbackWarningShown = false;
+
+function buildFallbackWarning(errMessage: string): string {
+  let reason: string;
+  let fix: string;
+
+  if (errMessage.includes("Cannot find module") || errMessage.includes("isolated-vm")) {
+    reason = "The optional dependency `isolated-vm` is not installed.";
+    fix = "Run `npm install isolated-vm` in your project (or `npm install -g isolated-vm` if KimiFlare is installed globally).";
+  } else if (errMessage.includes("bindings") || errMessage.includes(".node")) {
+    reason = "The `isolated-vm` native bindings are incompatible with this Node version or architecture.";
+    fix = "Try `npm rebuild isolated-vm`, or switch to Node 22 LTS if you're on Apple Silicon.";
+  } else {
+    reason = "The secure sandbox (`isolated-vm`) could not be loaded.";
+    fix = "Ensure build tools are installed, then run `npm install isolated-vm`.";
+  }
+
+  return `Code Mode is using the built-in Node.js sandbox. Tool execution works normally, but without memory limits or full process isolation. ${reason} ${fix}`;
+}
 
 export async function runInSandbox(opts: SandboxOptions): Promise<SandboxResult> {
   try {
     return await runWithIsolatedVm(opts);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // If isolated-vm fails (e.g., not compiled), fall back to node:vm
-    if (message.includes("isolated-vm") || message.includes("Cannot find module") || message.includes("bindings")) {
-      const result = await runWithNodeVm(opts);
-      return { ...result, warnings: [ISOLATED_VM_FALLBACK_WARNING, ...(result.warnings ?? [])] };
-    }
-    // For other errors, also try fallback
     const result = await runWithNodeVm(opts);
-    return { ...result, warnings: [ISOLATED_VM_FALLBACK_WARNING, ...(result.warnings ?? [])] };
+
+    // Only emit the fallback warning once per process
+    if (!fallbackWarningShown) {
+      fallbackWarningShown = true;
+      const warning = buildFallbackWarning(message);
+      return { ...result, warnings: [warning, ...(result.warnings ?? [])] };
+    }
+
+    return result;
   }
 }
