@@ -58,7 +58,7 @@ interface TurnGroup {
   reasoning: string;
 }
 
-function groupByTurn(events: ChatEvent[]): TurnGroup[] {
+export function groupByTurn(events: ChatEvent[]): TurnGroup[] {
   const map = new Map<number, ChatEvent[]>();
   const reasoningMap = new Map<number, string>();
   let ungroupedCounter = 0;
@@ -102,7 +102,7 @@ interface DiffSummary {
   removed: number;
 }
 
-function aggregateDiffs(events: ChatEvent[]): DiffSummary | null {
+export function aggregateDiffs(events: ChatEvent[]): DiffSummary | null {
   const files = new Set<string>();
   let added = 0;
   let removed = 0;
