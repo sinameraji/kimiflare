@@ -50,7 +50,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
 
   const statusIcon =
     evt.status === "queued" ? (
-      <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+      <Text color={theme.muted?.color ?? theme.info.color}>
         [ ]
       </Text>
     ) : evt.status === "running" ? (
@@ -81,7 +81,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
       <Text color={theme.info.color}> cancelled</Text>
     ) : null;
 
-  const showDim = evt.status === "queued" || evt.status === "cancelled" || evt.status === "rejected";
+  const showItalic = evt.status === "queued" || evt.status === "cancelled" || evt.status === "rejected";
 
   const expand = Boolean(evt.expanded || verbose);
   const lines = evt.result ? evt.result.split("\n") : [];
@@ -91,7 +91,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
     <Box flexDirection="column" marginLeft={2}>
       <Text>
         {statusIcon}{" "}
-        <Text color={theme.info.color} dimColor={showDim}>{title}</Text>
+        <Text color={theme.info.color} italic={showItalic}>{title}</Text>
         {statusLabel}
         {isRepeated ? (
           <Text color={theme.warn}> [warn] repeated</Text>
