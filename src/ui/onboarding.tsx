@@ -130,7 +130,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
   // ─── Handlers ──────────────────────────────────────────────────────────────
   const startCloudAuth = useCallback(async () => {
     try {
-      const codes = generateDeviceCodes();
+      const codes = await generateDeviceCodes();
       await registerDevice(codes);
       setCloudAuth({ phase: "ready", codes });
       setStep("cloudAuth");
