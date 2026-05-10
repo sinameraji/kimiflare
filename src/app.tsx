@@ -1474,7 +1474,6 @@ function App({
         isAbortingRef.current = true;
         supervisorRef.current.killTurn();
         activeScopeRef.current.abort("user_stopped");
-        setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         // Save session so interrupted turn is not lost
         void saveSessionSafe();
@@ -1516,7 +1515,6 @@ function App({
           setLimitModal(null);
         }
         activeScopeRef.current.abort("user_stopped");
-        setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
         // Clear task list immediately so it doesn't keep spinning
         setTasks([]);
@@ -1567,7 +1565,6 @@ function App({
       isAbortingRef.current = true;
       supervisorRef.current.killTurn();
       activeScopeRef.current.abort("user_stopped");
-      setQueue([]);
       setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       void saveSessionSafe();
       setTasks([]);
@@ -3707,18 +3704,6 @@ function App({
       const historyEntry = trimmedDisplay;
 
       if (busyRef.current) {
-        // Preempt current turn so user input is not blocked indefinitely
-        if (activeScopeRef.current && !isAbortingRef.current) {
-          isAbortingRef.current = true;
-          supervisorRef.current.killTurn();
-          activeScopeRef.current.abort("new_message");
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(preempted)" }]);
-          // Clear task list immediately so it doesn't keep spinning
-          setTasks([]);
-          setTasksStartedAt(null);
-          setTasksStartTokens(0);
-          tasksRef.current = [];
-        }
         const key = mkKey();
         setEvents((e) => [...e, { kind: "user", key, text: trimmedDisplay, queued: true }]);
         setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay, key }]);
