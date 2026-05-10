@@ -3196,7 +3196,7 @@ function App({
           ),
         );
       } else {
-        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined, turnId: thisTurnId }]);
+        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined, turnId: currentTurnIdRef.current }]);
       }
 
       // LSP nudge: if user references code files and LSP is not configured
@@ -3226,7 +3226,6 @@ function App({
       // Increment turn counter and assign a turnId for this turn
       turnCounterRef.current += 1;
       currentTurnIdRef.current += 1;
-      const thisTurnId = currentTurnIdRef.current;
       if (
         turnCounterRef.current % 15 === 0 &&
         existsSync(join(process.cwd(), "KIMI.md")) &&

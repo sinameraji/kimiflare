@@ -34,12 +34,31 @@ function toolEvent(name: string, turnId?: number): ChatEvent {
   };
 }
 
+function diffEvent(path: string, before: string, after: string, turnId?: number): ChatEvent {
+  return {
+    kind: "tool",
+    key: mkKey(),
+    id: `t_${Math.random().toString(36).slice(2, 8)}`,
+    name: "edit",
+    args: "{}",
+    status: "done",
+    turnId,
+    render: { title: "edit", diff: { path, before, after } },
+  };
+}
+
 function infoEvent(text: string): ChatEvent {
   return { kind: "info", key: mkKey(), text };
 }
 
 function errorEvent(text: string): ChatEvent {
   return { kind: "error", key: mkKey(), text };
+}
+
+function findTurn(groups: ReturnType<typeof groupByTurn>, turnId: number) {
+  const g = groups.find((g) => g.turnId === turnId);
+  assert.ok(g, `expected turn ${turnId} to exist`);
+  return g!;
 }
 
 describe("groupByTurn", () => {
@@ -55,23 +74,20 @@ describe("groupByTurn", () => {
     ];
 
     const groups = groupByTurn(events);
-    // 3 groups: turn 1, turn 2, and ungrouped (info event)
     assert.strictEqual(groups.length, 3);
 
-    const turn1 = groups.find((g) => g.turnId === 1)!;
-    assert.ok(turn1);
+    const turn1 = findTurn(groups, 1);
     assert.strictEqual(turn1.events.length, 3);
-    assert.strictEqual(turn1.events[0].kind, "user");
-    assert.strictEqual(turn1.events[2].kind, "tool");
+    assert.strictEqual(turn1.events[0]!.kind, "user");
+    assert.strictEqual(turn1.events[2]!.kind, "tool");
 
-    const turn2 = groups.find((g) => g.turnId === 2)!;
-    assert.ok(turn2);
+    const turn2 = findTurn(groups, 2);
     assert.strictEqual(turn2.events.length, 3);
 
-    const ungrouped = groups.find((g) => g.turnId === -1)!;
+    const ungrouped = groups.find((g) => g.turnId === -1);
     assert.ok(ungrouped);
     assert.strictEqual(ungrouped.events.length, 1);
-    assert.strictEqual(ungrouped.events[0].kind, "info");
+    assert.strictEqual(ungrouped.events[0]!.kind, "info");
   });
 
   it("preserves event order within each turn", () => {
@@ -84,16 +100,16 @@ describe("groupByTurn", () => {
     ];
 
     const groups = groupByTurn(events);
-    const turn1 = groups.find((g) => g.turnId === 1)!;
+    const turn1 = findTurn(groups, 1);
     assert.strictEqual(turn1.events.length, 5);
-    assert.strictEqual(turn1.events[0].kind, "user");
-    assert.strictEqual(turn1.events[1].kind, "assistant");
-    assert.strictEqual(turn1.events[2].kind, "tool");
-    assert.strictEqual((turn1.events[2] as Extract<ChatEvent, { kind: "tool" }>).name, "read");
-    assert.strictEqual(turn1.events[3].kind, "tool");
-    assert.strictEqual((turn1.events[3] as Extract<ChatEvent, { kind: "tool" }>).name, "bash");
-    assert.strictEqual(turn1.events[4].kind, "tool");
-    assert.strictEqual((turn1.events[4] as Extract<ChatEvent, { kind: "tool" }>).name, "edit");
+    assert.strictEqual(turn1.events[0]!.kind, "user");
+    assert.strictEqual(turn1.events[1]!.kind, "assistant");
+    assert.strictEqual(turn1.events[2]!.kind, "tool");
+    assert.strictEqual((turn1.events[2]! as Extract<ChatEvent, { kind: "tool" }>).name, "read");
+    assert.strictEqual(turn1.events[3]!.kind, "tool");
+    assert.strictEqual((turn1.events[3]! as Extract<ChatEvent, { kind: "tool" }>).name, "bash");
+    assert.strictEqual(turn1.events[4]!.kind, "tool");
+    assert.strictEqual((turn1.events[4]! as Extract<ChatEvent, { kind: "tool" }>).name, "edit");
   });
 
   it("marks hasActive when any assistant event is streaming", () => {
@@ -119,10 +135,10 @@ describe("groupByTurn", () => {
     const events = [userEvent("q1", 1), active, userEvent("q2", 2), done];
     const groups = groupByTurn(events);
 
-    const turn1 = groups.find((g) => g.turnId === 1)!;
+    const turn1 = findTurn(groups, 1);
     assert.strictEqual(turn1.hasActive, true);
 
-    const turn2 = groups.find((g) => g.turnId === 2)!;
+    const turn2 = findTurn(groups, 2);
     assert.strictEqual(turn2.hasActive, false);
   });
 
@@ -135,7 +151,7 @@ describe("groupByTurn", () => {
     ];
 
     const groups = groupByTurn(events);
-    const turn1 = groups.find((g) => g.turnId === 1)!;
+    const turn1 = findTurn(groups, 1);
     assert.strictEqual(turn1.reasoning, "step 1 reasoning step 2 reasoning ");
   });
 
@@ -143,7 +159,7 @@ describe("groupByTurn", () => {
     const events = [userEvent("no turn id"), assistantEvent("reply"), infoEvent("info")];
     const groups = groupByTurn(events);
 
-    const ungrouped = groups.find((g) => g.turnId === -1)!;
+    const ungrouped = groups.find((g) => g.turnId === -1);
     assert.ok(ungrouped);
     assert.strictEqual(ungrouped.events.length, 3);
   });
@@ -172,10 +188,9 @@ describe("groupByTurn", () => {
 
     const groups = groupByTurn(events);
     const lastGroup = groups[groups.length - 1];
-    // ungrouped events should come last
     assert.ok(lastGroup);
     assert.strictEqual(lastGroup.turnId, -1);
-    assert.strictEqual(lastGroup.events[0].kind, "info");
+    assert.strictEqual(lastGroup.events[0]!.kind, "info");
   });
 
   it("handles empty events array", () => {
@@ -194,8 +209,8 @@ describe("groupByTurn", () => {
     ];
 
     const groups = groupByTurn(events);
-    assert.ok(groups.length >= 2); // turn 1 + ungrouped events
-    const turn1 = groups.find((g) => g.turnId === 1)!;
+    assert.ok(groups.length >= 2);
+    const turn1 = findTurn(groups, 1);
     assert.strictEqual(turn1.events.length, 2);
   });
 });
@@ -213,109 +228,49 @@ describe("aggregateDiffs", () => {
   it("counts added and removed lines from diff events", () => {
     const events: ChatEvent[] = [
       toolEvent("edit", 1),
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t1",
-        name: "edit",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: {
-          diff: {
-            path: "src/app.tsx",
-            before: "line1\nline2\nline3",
-            after: "line1\nline2_changed\nline3\nline4",
-          },
-        },
-      },
-    ];
-
-    const summary = aggregateDiffs(events);
-    assert.ok(summary);
-    assert.strictEqual(summary.files, 1);
-    assert.strictEqual(summary.added, 2); // line2_changed + line4
-    assert.strictEqual(summary.removed, 1); // line2
-  });
-
-  it("counts changes across multiple files", () => {
-    const events: ChatEvent[] = [
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t1",
-        name: "edit",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: { diff: { path: "a.ts", before: "old", after: "new" } },
-      },
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t2",
-        name: "edit",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: { diff: { path: "b.ts", before: "x\ny", after: "x\nz\nw" } },
-      },
-    ];
-
-    const summary = aggregateDiffs(events);
-    assert.ok(summary);
-    assert.strictEqual(summary.files, 2);
-    assert.strictEqual(summary.added, 3); // "new" + "z" + "w"
-    assert.strictEqual(summary.removed, 2); // "old" + "y"
-  });
-
-  it("deduplicates the same file across multiple edits", () => {
-    const events: ChatEvent[] = [
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t1",
-        name: "edit",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: { diff: { path: "same.ts", before: "a", after: "b" } },
-      },
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t2",
-        name: "edit",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: { diff: { path: "same.ts", before: "c", after: "d" } },
-      },
-    ];
-
-    const summary = aggregateDiffs(events);
-    assert.ok(summary);
-    assert.strictEqual(summary.files, 1); // same file, counted once
-  });
-
-  it("handles empty before/after gracefully", () => {
-    const events: ChatEvent[] = [
-      {
-        kind: "tool",
-        key: mkKey(),
-        id: "t1",
-        name: "create",
-        args: "{}",
-        status: "done",
-        turnId: 1,
-        render: { diff: { path: "new.ts", before: "", after: "hello\nworld" } },
-      },
+      diffEvent("src/app.tsx", "line1\nline2\nline3", "line1\nline2_changed\nline3\nline4", 1),
     ];
 
     const summary = aggregateDiffs(events);
     assert.ok(summary);
     assert.strictEqual(summary.files, 1);
     assert.strictEqual(summary.added, 2);
-    assert.strictEqual(summary.removed, 1); // empty before becomes 1 line
+    assert.strictEqual(summary.removed, 1);
+  });
+
+  it("counts changes across multiple files", () => {
+    const events: ChatEvent[] = [
+      diffEvent("a.ts", "old", "new", 1),
+      diffEvent("b.ts", "x\ny", "x\nz\nw", 1),
+    ];
+
+    const summary = aggregateDiffs(events);
+    assert.ok(summary);
+    assert.strictEqual(summary.files, 2);
+    assert.strictEqual(summary.added, 3);
+    assert.strictEqual(summary.removed, 2);
+  });
+
+  it("deduplicates the same file across multiple edits", () => {
+    const events: ChatEvent[] = [
+      diffEvent("same.ts", "a", "b", 1),
+      diffEvent("same.ts", "c", "d", 1),
+    ];
+
+    const summary = aggregateDiffs(events);
+    assert.ok(summary);
+    assert.strictEqual(summary.files, 1);
+  });
+
+  it("handles empty before/after gracefully", () => {
+    const events: ChatEvent[] = [
+      diffEvent("new.ts", "", "hello\nworld", 1),
+    ];
+
+    const summary = aggregateDiffs(events);
+    assert.ok(summary);
+    assert.strictEqual(summary.files, 1);
+    assert.strictEqual(summary.added, 2);
+    assert.strictEqual(summary.removed, 1);
   });
 });
