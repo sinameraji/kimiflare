@@ -9,8 +9,9 @@
  * 5. Store JWT in config
  */
 
-import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
 
 export const CLOUD_API_URL = "https://api.kimiflare.com";
@@ -35,6 +36,12 @@ function cloudCredPath(): string {
   return join(xdg, "kimiflare", "cloud.json");
 }
 
+/** Secondary persistence path for the device ID (harder to find/delete). */
+function deviceIdPath(): string {
+  const xdg = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+  return join(xdg, "kimiflare", "device_id");
+}
+
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
@@ -44,17 +51,72 @@ function generateCode(): string {
   return out;
 }
 
-function generateDeviceId(): string {
+/**
+ * Derive a stable device identifier from machine characteristics.
+ * The same user on the same machine will always produce the same ID,
+ * making it harder to evade server-side anti-abuse checks by simply
+ * deleting the credential file.
+ */
+function deriveStableDeviceId(): string {
+  const seed = `${hostname()}:${userInfo().username}:${homedir()}`;
+  const hash = createHash("sha256").update(seed).digest();
+  // Take first 16 bytes (32 hex chars) — same length as before
+  return hash.subarray(0, 16).toString("hex");
+}
+
+/** Generate a new random device ID (fallback for environments where stable derivation fails). */
+function generateRandomDeviceId(): string {
   const arr = new Uint8Array(16);
   crypto.getRandomValues(arr);
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function generateDeviceCodes(): DeviceCodes {
+async function getOrCreateDeviceId(): Promise<string> {
+  // 1. Try secondary persistence first (harder to tamper with)
+  try {
+    const raw = await readFile(deviceIdPath(), "utf8");
+    const id = raw.trim();
+    if (/^[0-9a-f]{32}$/i.test(id)) return id;
+  } catch {
+    /* no secondary file yet */
+  }
+
+  // 2. Try primary credential file
+  try {
+    const raw = await readFile(cloudCredPath(), "utf8");
+    const parsed = JSON.parse(raw) as CloudCredentials;
+    if (parsed.deviceId && /^[0-9a-f]{32}$/i.test(parsed.deviceId)) {
+      // Migrate to secondary storage
+      await persistDeviceId(parsed.deviceId);
+      return parsed.deviceId;
+    }
+  } catch {
+    /* no primary creds */
+  }
+
+  // 3. Derive a stable ID from machine characteristics
+  let deviceId: string;
+  try {
+    deviceId = deriveStableDeviceId();
+  } catch {
+    deviceId = generateRandomDeviceId();
+  }
+
+  await persistDeviceId(deviceId);
+  return deviceId;
+}
+
+async function persistDeviceId(deviceId: string): Promise<void> {
+  const p = deviceIdPath();
+  await mkdir(join(p, ".."), { recursive: true });
+  await writeFile(p, deviceId, { mode: 0o600 });
+}
+
+export async function generateDeviceCodes(): Promise<DeviceCodes> {
   const deviceCode = `device-${generateCode()}-${Date.now()}`;
   const userCode = `${generateCode()}-${generateCode()}`;
   const authUrl = `${CLOUD_API_URL}/auth?code=${encodeURIComponent(userCode)}`;
-  const deviceId = generateDeviceId();
+  const deviceId = await getOrCreateDeviceId();
   return { deviceCode, userCode, authUrl, deviceId };
 }
 
@@ -125,6 +187,10 @@ export async function loadCloudCredentials(): Promise<CloudCredentials | null> {
     const raw = await readFile(cloudCredPath(), "utf8");
     const parsed = JSON.parse(raw) as CloudCredentials;
     if (parsed.expiresAt && parsed.expiresAt > Date.now() / 1000 && parsed.accessToken) {
+      // Ensure the device ID is also persisted in the secondary location
+      if (parsed.deviceId) {
+        await persistDeviceId(parsed.deviceId).catch(() => { /* ignore */ });
+      }
       return parsed;
     }
   } catch {
@@ -136,6 +202,9 @@ export async function loadCloudCredentials(): Promise<CloudCredentials | null> {
 export async function saveCloudCredentials(creds: CloudCredentials): Promise<void> {
   const p = cloudCredPath();
   await writeFile(p, JSON.stringify(creds, null, 2), "utf8");
+  if (creds.deviceId) {
+    await persistDeviceId(creds.deviceId).catch(() => { /* ignore */ });
+  }
 }
 
 export async function clearCloudCredentials(): Promise<void> {
@@ -145,13 +214,19 @@ export async function clearCloudCredentials(): Promise<void> {
   } catch {
     /* ignore */
   }
+  try {
+    const { unlink } = await import("node:fs/promises");
+    await unlink(deviceIdPath());
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Legacy CLI-only flow (used by `kimiflare auth cloud`). */
 export async function authenticateDevice(
   onStatus: (status: { url: string; userCode: string; polling: boolean }) => void,
 ): Promise<CloudCredentials> {
-  const codes = generateDeviceCodes();
+  const codes = await generateDeviceCodes();
   await registerDevice(codes);
   onStatus({ url: codes.authUrl, userCode: codes.userCode, polling: false });
 
