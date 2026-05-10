@@ -9,7 +9,7 @@ import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./n
 import { CloudQuotaMessage } from "./cloud-quota-message.js";
 
 export type ChatEvent =
-  | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
+  | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean; turnId?: number }
   | {
       kind: "assistant";
       key: string;
@@ -17,8 +17,9 @@ export type ChatEvent =
       text: string;
       reasoning: string;
       streaming: boolean;
+      turnId?: number;
     }
-  | ({ kind: "tool"; key: string } & ToolEventState)
+  | ({ kind: "tool"; key: string; turnId?: number } & ToolEventState)
   | { kind: "info"; key: string; text: string }
   | { kind: "error"; key: string; text: string }
   | { kind: "memory"; key: string; text: string }
@@ -48,10 +49,199 @@ function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
+// ── Turn grouping ────────────────────────────────────────────────────────────
+
+interface TurnGroup {
+  turnId: number;
+  events: ChatEvent[];
+  hasActive: boolean;
+  reasoning: string;
+}
+
+function groupByTurn(events: ChatEvent[]): TurnGroup[] {
+  const map = new Map<number, ChatEvent[]>();
+  const reasoningMap = new Map<number, string>();
+
+  for (const e of events) {
+    const tid = e.kind === "user" || e.kind === "assistant" || e.kind === "tool" ? (e.turnId ?? -1) : -2;
+    // Ungrouped events (-2) each get their own key using negated index
+    const key = tid === -2 ? -(events.indexOf(e) + 1) : tid;
+    const arr = map.get(key) ?? [];
+    arr.push(e);
+    map.set(key, arr);
+
+    // Accumulate reasoning from assistant events
+    if (e.kind === "assistant" && e.reasoning && tid >= 0) {
+      reasoningMap.set(tid, (reasoningMap.get(tid) ?? "") + e.reasoning);
+    }
+  }
+
+  const sorted = [...map.entries()].sort((a, b) => {
+    const aKey = a[0];
+    const bKey = b[0];
+    if (aKey < 0 && bKey < 0) return bKey - aKey;
+    if (aKey < 0) return 1;
+    if (bKey < 0) return -1;
+    return aKey - bKey;
+  });
+
+  return sorted.map(([turnId, evts]) => ({
+    turnId: turnId < 0 && turnId !== -1 ? -1 : turnId,
+    events: evts,
+    hasActive: evts.some((e) => e.kind === "assistant" && e.streaming),
+    reasoning: turnId >= 0 ? (reasoningMap.get(turnId) ?? "") : "",
+  }));
+}
+
+// ── Diff aggregation ─────────────────────────────────────────────────────────
+
+interface DiffSummary {
+  files: number;
+  added: number;
+  removed: number;
+}
+
+function aggregateDiffs(events: ChatEvent[]): DiffSummary | null {
+  const files = new Set<string>();
+  let added = 0;
+  let removed = 0;
+
+  for (const e of events) {
+    if (e.kind !== "tool" || !e.render?.diff) continue;
+    const { path, before, after } = e.render.diff;
+    files.add(path);
+
+    const bLines = (before ?? "").split("\n");
+    const aLines = (after ?? "").split("\n");
+    const bCounts = new Map<string, number>();
+    const aCounts = new Map<string, number>();
+
+    for (const l of bLines) bCounts.set(l, (bCounts.get(l) ?? 0) + 1);
+    for (const l of aLines) aCounts.set(l, (aCounts.get(l) ?? 0) + 1);
+
+    for (const [line, bCount] of bCounts) {
+      const aCount = aCounts.get(line) ?? 0;
+      if (bCount > aCount) removed += bCount - aCount;
+    }
+    for (const [line, aCount] of aCounts) {
+      const bCount = bCounts.get(line) ?? 0;
+      if (aCount > bCount) added += aCount - bCount;
+    }
+  }
+
+  if (files.size === 0) return null;
+  return { files: files.size, added, removed };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  if (total < 1) return "<1s";
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m === 0) return `${s}s`;
+  return `${m}m ${s}s`;
+}
+
+function findTurnStartedAt(events: ChatEvent[]): number {
+  for (const e of events) {
+    if (e.kind === "tool" && e.startedAt !== undefined) return e.startedAt;
+  }
+  return Date.now();
+}
+
+// ── Reasoning block (per turn) ───────────────────────────────────────────────
+
+function ReasoningBlock({
+  reasoning,
+  expanded,
+}: {
+  reasoning: string;
+  expanded: boolean;
+}) {
+  const theme = useTheme();
+  if (!expanded) return null;
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text color={theme.reasoning.color}>
+        thinking...{" "}
+        {reasoning.length > 8000 ? reasoning.slice(0, 8000) + "..." : reasoning}
+      </Text>
+    </Box>
+  );
+}
+
+// ── Turn header ──────────────────────────────────────────────────────────────
+
+function TurnHeader({
+  turnId,
+  hasActive,
+  events,
+}: {
+  turnId: number;
+  hasActive: boolean;
+  events: ChatEvent[];
+}) {
+  const theme = useTheme();
+  const [now, setNow] = React.useState(Date.now());
+
+  React.useEffect(() => {
+    if (!hasActive) {
+      setNow(Date.now());
+      return;
+    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasActive]);
+
+  const started = findTurnStartedAt(events);
+  const elapsed = formatElapsed(now - started);
+  const statusText = hasActive ? "active" : "done";
+  const statusColor = hasActive ? theme.accent : theme.info.color;
+
+  return (
+    <Box marginY={1}>
+      <Text color={theme.info.color}>
+        {"--- "}
+        <Text bold color={statusColor}>
+          Turn {turnId}
+        </Text>
+        {" "}
+        <Text color={statusColor}>
+          {statusText}
+        </Text>
+        {" . "}
+        <Text color={theme.info.color}>
+          {elapsed}
+        </Text>
+      </Text>
+    </Box>
+  );
+}
+
+// ── File change summary line ─────────────────────────────────────────────────
+
+function DiffSummaryLine({ summary }: { summary: DiffSummary }) {
+  const theme = useTheme();
+  return (
+    <Box marginLeft={2} marginTop={1}>
+      <Text color={theme.info.color}>
+        {summary.files} {summary.files === 1 ? "file" : "files"} changed:{" "}
+        <Text color={theme.palette.success}>+{summary.added}</Text>{" "}
+        <Text color={theme.palette.error}>-{summary.removed}</Text>
+      </Text>
+    </Box>
+  );
+}
+
+// ── Main ChatView ────────────────────────────────────────────────────────────
+
 export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier }: Props) {
   const theme = useTheme();
+  const groups = React.useMemo(() => groupByTurn(events), [events]);
 
-  // Detect repetitive tool calls in this turn (≥3 identical signatures)
+  // Detect repetitive tool calls (>= 3 identical signatures)
   const toolCounts = new Map<string, number>();
   for (const e of events) {
     if (e.kind === "tool") {
@@ -66,17 +256,71 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
 
   return (
     <Box flexDirection="column">
+      {groups.map((group, gi) => (
+        <TurnGroupView
+          key={`turn_${group.turnId}_${gi}`}
+          group={group}
+          showReasoning={showReasoning}
+          repeatedSigs={repeatedSigs}
+          verbose={verbose}
+          intentTier={intentTier}
+        />
+      ))}
+    </Box>
+  );
+});
+
+// ── TurnGroupView ────────────────────────────────────────────────────────────
+
+const TurnGroupView = React.memo(function TurnGroupView({
+  group,
+  showReasoning,
+  repeatedSigs,
+  verbose,
+  intentTier,
+}: {
+  group: TurnGroup;
+  showReasoning: boolean;
+  repeatedSigs: Set<string>;
+  verbose?: boolean;
+  intentTier?: IntentTier;
+}) {
+  const theme = useTheme();
+  const { turnId, events, hasActive, reasoning } = group;
+  const isGrouped = turnId > 0;
+  const [reasoningExpanded, setReasoningExpanded] = React.useState(false);
+  const diffSummary = React.useMemo(() => aggregateDiffs(events), [events]);
+
+  // Auto-expand reasoning for the active turn when global showReasoning is on
+  React.useEffect(() => {
+    if (showReasoning && hasActive) {
+      setReasoningExpanded(true);
+    }
+  }, [showReasoning, hasActive]);
+
+  // Sync with global showReasoning toggle
+  React.useEffect(() => {
+    if (!showReasoning) {
+      setReasoningExpanded(false);
+    }
+  }, [showReasoning]);
+
+  return (
+    <Box flexDirection="column">
+      {isGrouped && (
+        <TurnHeader turnId={turnId} hasActive={hasActive} events={events} />
+      )}
       {events.map((e, i) => {
         const prev = events[i - 1];
         const showSeparator = !!(
-          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
+          !isGrouped && e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
         );
         return (
           <Box key={e.key} flexDirection="column">
             {showSeparator && (
               <Box marginY={1}>
                 <Text color={theme.info.color}>
-                  {"─".repeat(40)}
+                  {"-".repeat(40)}
                 </Text>
               </Box>
             )}
@@ -84,9 +328,22 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
           </Box>
         );
       })}
+      {isGrouped && diffSummary && (
+        <DiffSummaryLine summary={diffSummary} />
+      )}
+      {isGrouped && reasoning && (
+        <Box marginLeft={2} marginTop={1}>
+          <ReasoningBlock
+            reasoning={reasoning}
+            expanded={reasoningExpanded || showReasoning}
+          />
+        </Box>
+      )}
     </Box>
   );
 });
+
+// ── EventView ────────────────────────────────────────────────────────────────
 
 const EventView = React.memo(function EventView({
   evt,
@@ -109,7 +366,7 @@ const EventView = React.memo(function EventView({
         <Box flexDirection="column">
           <Box>
             <Text italic color={mutedColor}>
-              ···{" "}
+              ...{" "}
             </Text>
             <Text italic color={mutedColor}>
               {evt.text}
@@ -125,14 +382,14 @@ const EventView = React.memo(function EventView({
       <Box flexDirection="column">
         <Box>
           <Text bold color={theme.user}>
-            ›{" "}
+            &gt;{" "}
           </Text>
           <Text bold>{evt.text}</Text>
         </Box>
         {evt.images && evt.images.length > 0 && (
           <Box paddingLeft={2}>
             <Text color={theme.info.color}>
-              🖼️ {evt.images.join(", ")}
+              [img] {evt.images.join(", ")}
             </Text>
           </Box>
         )}
@@ -142,14 +399,6 @@ const EventView = React.memo(function EventView({
   if (evt.kind === "assistant") {
     return (
       <Box flexDirection="column" paddingLeft={2}>
-        {showReasoning && evt.reasoning ? (
-          <Box flexDirection="column" marginBottom={1}>
-            <Text color={theme.reasoning.color}>
-              thinking…{" "}
-              {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
-            </Text>
-          </Box>
-        ) : null}
         {evt.text ? <MD text={evt.text} /> : null}
         {evt.streaming && (
           <Text color={theme.spinner}>
@@ -166,14 +415,14 @@ const EventView = React.memo(function EventView({
   if (evt.kind === "info") {
     return (
       <Text color={theme.info.color}>
-        · {humanizeInfo(evt.text, intentTier)}
+        . {humanizeInfo(evt.text, intentTier)}
       </Text>
     );
   }
   if (evt.kind === "memory") {
     return (
       <Text color={theme.info.color}>
-        ◈ {humanizeMemory(evt.text, intentTier)}
+        {humanizeMemory(evt.text, intentTier)}
       </Text>
     );
   }

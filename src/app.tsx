@@ -709,6 +709,7 @@ function App({
   const sessionStartRecallRef = useRef<Promise<void> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
   const turnCounterRef = useRef(0);
+  const currentTurnIdRef = useRef(0);
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -1820,7 +1821,7 @@ function App({
             activeAsstIdRef.current = id;
             setEvents((e) => [
               ...e,
-              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, turnId: currentTurnIdRef.current },
             ]);
           },
           onReasoningDelta: (d) => {
@@ -1861,6 +1862,7 @@ function App({
                 status: "running",
                 render: renderMeta,
                 expanded: false,
+                turnId: currentTurnIdRef.current,
               },
             ]);
           },
@@ -2203,6 +2205,7 @@ function App({
         pendingToolCallsRef.current.clear();
         usageRef.current = null;
         turnCounterRef.current = 0;
+        currentTurnIdRef.current = 0;
         setEvents([]);
         setUsage(null);
         setSessionUsage(null);
@@ -3193,7 +3196,7 @@ function App({
           ),
         );
       } else {
-        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined }]);
+        setEvents((e) => [...e, { kind: "user", key: mkKey(), text: display, images: images.length > 0 ? images : undefined, turnId: thisTurnId }]);
       }
 
       // LSP nudge: if user references code files and LSP is not configured
@@ -3220,8 +3223,10 @@ function App({
         }
       }
 
-      // Occasional gentle nudge about /init (educational, not a warning)
+      // Increment turn counter and assign a turnId for this turn
       turnCounterRef.current += 1;
+      currentTurnIdRef.current += 1;
+      const thisTurnId = currentTurnIdRef.current;
       if (
         turnCounterRef.current % 15 === 0 &&
         existsSync(join(process.cwd(), "KIMI.md")) &&
@@ -3320,7 +3325,7 @@ function App({
           setLastActivityAt(Date.now());
           setEvents((e) => [
             ...e,
-            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
+            { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true, turnId: currentTurnIdRef.current },
           ]);
         },
         onReasoningDelta: (d: string) => {
@@ -3363,6 +3368,7 @@ function App({
               render: renderMeta,
               expanded: false,
               startedAt: Date.now(),
+              turnId: currentTurnIdRef.current,
             },
           ]);
         },
