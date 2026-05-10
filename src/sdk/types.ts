@@ -1,6 +1,6 @@
 import type { ChatMessage, Usage } from "../agent/messages.js";
 import type { ToolSpec } from "../tools/registry.js";
-import type { Task } from "../tasks-state.js";
+import type { Task } from "../tools/registry.js";
 import type { KimiConfig } from "../config.js";
 import type { AiGatewayOptions } from "../agent/client.js";
 import type { PermissionRequest, PermissionDecision } from "../tools/executor.js";

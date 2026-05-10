@@ -4,13 +4,13 @@ import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
 import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
-import type { Task } from "../tasks-state.js";
+import type { Task } from "../tools/registry.js";
 import type { MemoryManager } from "../memory/manager.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
-import { estimatePromptTokens } from "./compaction.js";
+import { estimatePromptTokens } from "./artifact-compaction.js";
 import { logger } from "../util/logger.js";
 
 export interface AgentCallbacks {

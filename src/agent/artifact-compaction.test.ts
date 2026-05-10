@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
-  compactMessages,
+  compactMessagesViaArtifacts,
   shouldCompact,
   recallArtifacts,
-} from "./compaction.js";
+} from "./artifact-compaction.js";
 import { emptySessionState, ArtifactStore } from "./session-state.js";
 import type { ChatMessage } from "./messages.js";
 
@@ -44,7 +44,7 @@ describe("shouldCompact", () => {
   });
 });
 
-describe("compactMessages", () => {
+describe("compactMessagesViaArtifacts", () => {
   it("returns same messages when below keep threshold", () => {
     const messages: ChatMessage[] = [
       { role: "system", content: "sys" },
@@ -53,7 +53,7 @@ describe("compactMessages", () => {
     ];
     const state = emptySessionState();
     const store = new ArtifactStore();
-    const result = compactMessages({ messages, state, store, keepLastTurns: 4 });
+    const result = compactMessagesViaArtifacts({ messages, state, store, keepLastTurns: 4 });
     assert.strictEqual(result.metrics.rawTurnsRemoved, 0);
     assert.strictEqual(result.metrics.rawTurnsKept, 2);
     assert.strictEqual(result.newMessages.length, messages.length);
@@ -70,7 +70,7 @@ describe("compactMessages", () => {
     }
     const state = emptySessionState();
     const store = new ArtifactStore();
-    const result = compactMessages({ messages, state, store, keepLastTurns: 2 });
+    const result = compactMessagesViaArtifacts({ messages, state, store, keepLastTurns: 2 });
 
     assert.strictEqual(result.metrics.rawTurnsRemoved, 4);
     assert.strictEqual(result.metrics.rawTurnsKept, 2);
@@ -98,7 +98,7 @@ describe("compactMessages", () => {
     ];
     const state = emptySessionState();
     const store = new ArtifactStore();
-    const result = compactMessages({ messages, state, store, keepLastTurns: 1 });
+    const result = compactMessagesViaArtifacts({ messages, state, store, keepLastTurns: 1 });
     assert.strictEqual(result.newMessages[0]!.role, "system");
     assert.strictEqual(result.newMessages[1]!.role, "system");
     assert.ok(result.newMessages[2]!.content?.toString().includes("compiled session state"));
@@ -112,7 +112,7 @@ describe("compactMessages", () => {
     ];
     const state = emptySessionState();
     const store = new ArtifactStore();
-    const result = compactMessages({ messages, state, store, keepLastTurns: 1 });
+    const result = compactMessagesViaArtifacts({ messages, state, store, keepLastTurns: 1 });
     assert.ok(result.newState.decisions.some((d) => d.includes("refactor")));
   });
 
@@ -126,7 +126,7 @@ describe("compactMessages", () => {
     ];
     const state = emptySessionState();
     const store = new ArtifactStore();
-    const result = compactMessages({ messages, state, store, keepLastTurns: 1 });
+    const result = compactMessagesViaArtifacts({ messages, state, store, keepLastTurns: 1 });
     assert.ok(result.newState.recent_failures.length > 0);
   });
 });

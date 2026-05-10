@@ -6,12 +6,12 @@ import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
-import { compactMessages } from "./agent/compact.js";
+import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import {
-  compactMessages as compactCompiled,
+  compactMessagesViaArtifacts,
   shouldCompact,
   recallArtifacts,
-} from "./agent/compaction.js";
+} from "./agent/artifact-compaction.js";
 import {
   emptySessionState,
   ArtifactStore,
@@ -37,7 +37,7 @@ import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
-import type { Task } from "./tasks-state.js";
+import type { Task } from "./tools/registry.js";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolRender } from "./tools/registry.js";
@@ -56,7 +56,7 @@ import {
 } from "./config.js";
 import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client.js";
 import { saveRemoteSession, type RemoteSession } from "./remote/session-store.js";
-import { deployForTui } from "./remote/tui-deploy.js";
+import { deployForTui } from "./remote/deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
@@ -1371,7 +1371,7 @@ function App({
 
       if (compiledContextRef.current) {
         const store = artifactStoreRef.current;
-        const result = compactCompiled({
+        const result = compactMessagesViaArtifacts({
           messages,
           state: sessionStateRef.current,
           store,
@@ -1420,7 +1420,7 @@ function App({
       // Non-compiled context: fall back to LLM summarizer
       if (cfg && !signal.aborted) {
         try {
-          const result = await compactMessages({
+          const result = await summarizeMessagesViaLlm({
             accountId: cfg.accountId,
             apiToken: cfg.apiToken,
             model: cfg.model,
@@ -1662,7 +1662,7 @@ function App({
     try {
       if (compiledContextRef.current) {
         const store = artifactStoreRef.current;
-        const result = compactCompiled({
+        const result = compactMessagesViaArtifacts({
           messages: messagesRef.current,
           state: sessionStateRef.current,
           store,
@@ -1691,7 +1691,7 @@ function App({
           await saveSessionSafe();
         }
       } else {
-        const result = await compactMessages({
+        const result = await summarizeMessagesViaLlm({
           accountId: cfg.accountId,
           apiToken: cfg.apiToken,
           model: cfg.model,
@@ -3545,7 +3545,7 @@ function App({
             if (shouldCompact({ messages: messagesRef.current })) {
               if (compiledContextRef.current) {
                 const store = artifactStoreRef.current;
-                const result = compactCompiled({
+                const result = compactMessagesViaArtifacts({
                   messages: messagesRef.current,
                   state: sessionStateRef.current,
                   store,
@@ -3565,7 +3565,7 @@ function App({
                 }
               } else {
                 try {
-                  const result = await compactMessages({
+                  const result = await summarizeMessagesViaLlm({
                     accountId: cfg.accountId,
                     apiToken: cfg.apiToken,
                     model: cfg.model,
