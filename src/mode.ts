@@ -29,11 +29,10 @@ export function isBlockedInPlanMode(toolName: string): boolean {
   return false;
 }
 
-// Dangerous shell patterns that disqualify any command from read-only status
-// Pipes (|) and AND chains (&&) are allowed — each segment is validated independently.
+// Bash safety for plan mode ---------------------------------------------------
+
 const DANGEROUS_PATTERNS = /[<>;`$]|\$\(|\$\{|\|\||\b&\s*$/;
 
-// Git subcommands that are read-only (value = true means always safe, false means needs arg check)
 const GIT_READONLY_SUBCOMMANDS: Record<string, boolean> = {
   log: true,
   diff: true,
@@ -54,7 +53,6 @@ const GIT_READONLY_SUBCOMMANDS: Record<string, boolean> = {
   config: false, // needs check: only allow --list/--get
 };
 
-// Whitelisted non-git commands (must be exact first token)
 const READONLY_COMMANDS = new Set([
   // File system
   "cd", "ls", "cat", "head", "tail", "pwd", "echo",
@@ -75,150 +73,56 @@ const READONLY_COMMANDS = new Set([
   "ping", "netstat", "ss", "lsof",
 ]);
 
-// Commands that need argument validation
-const COMMANDS_NEEDING_ARG_CHECK: Record<string, (args: string[]) => boolean> = {
-  find: (args) => !args.some((a) => a === "-delete" || a === "-exec"),
-  sed: (args) => !args.some((a) => a === "-i" || a.startsWith("-i")),
-  tar: (args) => args[0] === "-tf" || args[0] === "--list",
-  unzip: (args) => args[0] === "-l",
-  curl: (args) =>
-    !args.some((a) => a === "-o" || a === "-O" || a === "-d" || a === "--data" || a.startsWith("-X")),
-  wget: (args) =>
-    !args.some((a) => a === "-O" || a === "--output-document" || a.startsWith("--post")),
-  npm: (args) =>
-    ["list", "view", "config"].includes(args[0] ?? "") &&
-    !(args[0] === "config" && args[1] && !args[1].startsWith("get") && args[1] !== "list"),
-  tsc: (args) =>
-    args.every((a) =>
-      ["--noEmit", "--version", "--showConfig", "--help", "-h", "--init"].includes(a),
-    ),
-  eslint: (args) =>
-    args.every((a) =>
-      ["--version", "--print-config", "--help", "-h"].includes(a) || !a.startsWith("-"),
-    ),
-  prettier: (args) =>
-    args.every((a) =>
-      ["--version", "--check", "--help", "-h"].includes(a) || !a.startsWith("-"),
-    ),
-  jest: (args) =>
-    args.every((a) =>
-      ["--version", "--listTests", "--showConfig", "--help", "-h"].includes(a) || !a.startsWith("-"),
-    ),
-  vitest: (args) =>
-    args.every((a) =>
-      ["--version", "--help", "-h"].includes(a) || !a.startsWith("-"),
-    ),
-  go: (args) =>
-    ["version", "env", "list", "mod"].includes(args[0] ?? "") &&
-    !(args[0] === "mod" && args[1] && !["graph", "download", "why", "verify"].includes(args[1])),
-  cargo: (args) =>
-    ["--version", "-V", "check", "test", "metadata"].includes(args[0] ?? "") &&
-    !(args[0] === "test" && args.includes("--no-run") === false),
-};
-
-function tokenizeCommand(command: string): string[] {
-  const tokens: string[] = [];
-  let current = "";
-  let inQuote: string | null = null;
-  for (const ch of command) {
-    if (inQuote) {
-      if (ch === inQuote) {
-        inQuote = null;
-      } else {
-        current += ch;
-      }
+function getTokens(s: string): string[] {
+  const toks: string[] = [];
+  let cur = "";
+  let q: string | null = null;
+  for (const ch of s) {
+    if (q) {
+      if (ch === q) q = null;
+      else cur += ch;
     } else if (ch === '"' || ch === "'") {
-      inQuote = ch;
+      q = ch;
     } else if (/\s/.test(ch)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
+      if (cur) {
+        toks.push(cur);
+        cur = "";
       }
     } else {
-      current += ch;
+      cur += ch;
     }
   }
-  if (current) tokens.push(current);
-  return tokens;
+  if (cur) toks.push(cur);
+  return toks;
 }
 
-function splitByOperators(command: string, operators: string[]): string[] {
-  const segments: string[] = [];
-  let current = "";
-  let inQuote: string | null = null;
+function isReadOnlySegment(seg: string): boolean {
+  const toks = getTokens(seg.trim());
+  if (toks.length === 0) return false;
 
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i];
-
-    if (inQuote) {
-      if (ch === inQuote) {
-        inQuote = null;
-      }
-      current += ch;
-      continue;
-    }
-
-    if (ch === '"' || ch === "'") {
-      inQuote = ch;
-      current += ch;
-      continue;
-    }
-
-    let matchedOp = false;
-    for (const op of operators) {
-      if (command.slice(i, i + op.length) === op) {
-        segments.push(current.trim());
-        current = "";
-        i += op.length - 1;
-        matchedOp = true;
-        break;
-      }
-    }
-    if (matchedOp) continue;
-
-    current += ch;
-  }
-
-  if (current.trim()) segments.push(current.trim());
-  return segments;
-}
-
-function isReadOnlyBashSegment(command: string): boolean {
-  const trimmed = command.trim();
-  if (!trimmed) return false;
-
-  const tokens = tokenizeCommand(trimmed);
-  if (tokens.length === 0) return false;
-
-  const cmd = tokens[0]!;
-  const args = tokens.slice(1);
-
-  // Git commands
+  const [cmd, sub, ...rest] = toks;
   if (cmd === "git") {
-    const sub = args[0] ?? "";
-    const allowed = GIT_READONLY_SUBCOMMANDS[sub];
+    const allowed = GIT_READONLY_SUBCOMMANDS[sub ?? ""];
     if (allowed === undefined) return false;
     if (allowed === true) return true;
 
-    // Needs extra validation
     switch (sub) {
       case "branch":
-        return !args.some((a) => /^-[dDmMcC]/.test(a));
+        return !rest.some((a) => /^-[dDmMcC]/.test(a));
       case "stash":
-        return args[1] === "list";
+        return rest[0] === "list";
       case "remote":
-        return args[1] === "-v" || args[1] === "--verbose" || args.length === 1;
+        return rest[0] === "-v" || rest[0] === "--verbose" || rest.length === 0;
       case "tag":
-        return args[1] === "-l" || args[1] === "--list" || args.length === 1;
+        return rest[0] === "-l" || rest[0] === "--list" || rest.length === 0;
       case "config":
-        return args[1] === "--list" || args[1]?.startsWith("--get") === true || args.length === 1;
+        return rest[0] === "--list" || rest[0]?.startsWith("--get") === true || rest.length === 0;
       default:
         return false;
     }
   }
 
-  // Simple whitelist only — no arg-checked commands in plan mode
-  return READONLY_COMMANDS.has(cmd);
+  return READONLY_COMMANDS.has(cmd!);
 }
 
 export function isReadOnlyBash(command: string): boolean {
@@ -229,11 +133,33 @@ export function isReadOnlyBash(command: string): boolean {
   if (DANGEROUS_PATTERNS.test(trimmed)) return false;
 
   // Split by pipes and && chains, validating each segment independently
-  const segments = splitByOperators(trimmed, ["|", "&&"]);
-  if (segments.length === 0) return false;
+  const segs: string[] = [];
+  let cur = "";
+  let q: string | null = null;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (q) {
+      if (ch === q) q = null;
+      cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      q = ch;
+      cur += ch;
+    } else if (trimmed.slice(i, i + 2) === "&&") {
+      segs.push(cur);
+      cur = "";
+      i++;
+    } else if (ch === "|") {
+      segs.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) segs.push(cur);
+  if (segs.length === 0) return false;
 
-  for (const segment of segments) {
-    if (!isReadOnlyBashSegment(segment.trim())) return false;
+  for (const seg of segs) {
+    if (!isReadOnlySegment(seg.trim())) return false;
   }
   return true;
 }

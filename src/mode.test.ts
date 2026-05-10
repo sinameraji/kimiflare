@@ -1,0 +1,114 @@
+import { describe, it } from "node:test";
+import assert from "node:assert";
+import {
+  isReadOnlyBash,
+  isBlockedInPlanMode,
+  nextMode,
+  modeDescription,
+  MODES,
+} from "./mode.js";
+
+describe("isReadOnlyBash", () => {
+  it("allows simple read commands", () => {
+    assert.strictEqual(isReadOnlyBash("ls"), true);
+    assert.strictEqual(isReadOnlyBash("cat file.txt"), true);
+    assert.strictEqual(isReadOnlyBash("pwd"), true);
+    assert.strictEqual(isReadOnlyBash("git log"), true);
+    assert.strictEqual(isReadOnlyBash("git diff HEAD~1"), true);
+  });
+
+  it("allows piped read commands", () => {
+    assert.strictEqual(isReadOnlyBash("cat file.txt | grep foo"), true);
+    assert.strictEqual(isReadOnlyBash("ps | grep node"), true);
+    assert.strictEqual(isReadOnlyBash("git log | head -n 5"), true);
+  });
+
+  it("allows chained read commands with &&", () => {
+    assert.strictEqual(isReadOnlyBash("git status && git diff"), true);
+    assert.strictEqual(isReadOnlyBash("ls && cat file.txt"), true);
+  });
+
+  it("blocks chained commands with a mutating one", () => {
+    assert.strictEqual(isReadOnlyBash("git status && rm file.txt"), false);
+    assert.strictEqual(isReadOnlyBash("cat file.txt | rm -"), false);
+  });
+
+  it("blocks commands with dangerous patterns", () => {
+    assert.strictEqual(isReadOnlyBash("echo hello > file.txt"), false);
+    assert.strictEqual(isReadOnlyBash("cat file < input.txt"), false);
+    assert.strictEqual(isReadOnlyBash("echo $(rm -rf /)"), false);
+    assert.strictEqual(isReadOnlyBash("echo `rm -rf /`"), false);
+    assert.strictEqual(isReadOnlyBash("echo $HOME"), false);
+    assert.strictEqual(isReadOnlyBash("git status || echo fail"), false);
+    assert.strictEqual(isReadOnlyBash("git status ; echo done"), false);
+  });
+
+  it("handles quoted strings correctly", () => {
+    assert.strictEqual(isReadOnlyBash('echo "hello world"'), true);
+    assert.strictEqual(isReadOnlyBash("echo 'hello world'"), true);
+    assert.strictEqual(isReadOnlyBash('git log --format="foo | bar"'), true);
+    assert.strictEqual(isReadOnlyBash('echo "a && b"'), true);
+    // pipe inside quotes should not split
+    assert.strictEqual(isReadOnlyBash('echo "a | b"'), true);
+  });
+
+  it("blocks mutating commands", () => {
+    assert.strictEqual(isReadOnlyBash("rm file.txt"), false);
+    assert.strictEqual(isReadOnlyBash("mv a b"), false);
+    assert.strictEqual(isReadOnlyBash("cp a b"), false);
+    assert.strictEqual(isReadOnlyBash("touch file.txt"), false);
+    assert.strictEqual(isReadOnlyBash("mkdir dir"), false);
+  });
+
+  it("blocks empty commands", () => {
+    assert.strictEqual(isReadOnlyBash(""), false);
+    assert.strictEqual(isReadOnlyBash("   "), false);
+  });
+
+  it("validates git subcommands", () => {
+    assert.strictEqual(isReadOnlyBash("git branch"), true);
+    assert.strictEqual(isReadOnlyBash("git branch -d foo"), false);
+    assert.strictEqual(isReadOnlyBash("git stash list"), true);
+    assert.strictEqual(isReadOnlyBash("git stash push"), false);
+    assert.strictEqual(isReadOnlyBash("git remote -v"), true);
+    assert.strictEqual(isReadOnlyBash("git remote add origin foo"), false);
+    assert.strictEqual(isReadOnlyBash("git tag -l"), true);
+    assert.strictEqual(isReadOnlyBash("git tag v1.0"), false);
+    assert.strictEqual(isReadOnlyBash("git config --list"), true);
+    assert.strictEqual(isReadOnlyBash("git config user.name foo"), false);
+  });
+});
+
+describe("isBlockedInPlanMode", () => {
+  it("blocks mutating tools", () => {
+    assert.strictEqual(isBlockedInPlanMode("write"), true);
+    assert.strictEqual(isBlockedInPlanMode("edit"), true);
+    assert.strictEqual(isBlockedInPlanMode("bash"), true);
+    assert.strictEqual(isBlockedInPlanMode("mcp_fs"), true);
+    assert.strictEqual(isBlockedInPlanMode("lsp_rename"), true);
+    assert.strictEqual(isBlockedInPlanMode("browser_fetch"), true);
+  });
+
+  it("allows read-only tools", () => {
+    assert.strictEqual(isBlockedInPlanMode("read"), false);
+    assert.strictEqual(isBlockedInPlanMode("grep"), false);
+    assert.strictEqual(isBlockedInPlanMode("glob"), false);
+    assert.strictEqual(isBlockedInPlanMode("web_fetch"), false);
+  });
+});
+
+describe("nextMode", () => {
+  it("cycles through modes", () => {
+    assert.strictEqual(nextMode("edit"), "plan");
+    assert.strictEqual(nextMode("plan"), "auto");
+    assert.strictEqual(nextMode("auto"), "edit");
+  });
+});
+
+describe("modeDescription", () => {
+  it("returns descriptions for all modes", () => {
+    for (const mode of MODES) {
+      assert.ok(modeDescription(mode).length > 0);
+    }
+  });
+});
