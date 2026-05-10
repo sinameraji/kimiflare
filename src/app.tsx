@@ -4034,6 +4034,7 @@ function App({
               </Box>
             )}
             <StatusBar
+              key={turnStartedAt ?? 'idle'}
               usage={usage}
               sessionUsage={sessionUsage}
               thinking={busy}
