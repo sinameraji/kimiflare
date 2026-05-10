@@ -289,7 +289,12 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
 
 let fallbackWarningShown = false;
 
-function buildFallbackWarning(errMessage: string): string {
+/** @internal Reset the fallback warning flag for testing. */
+export function resetFallbackWarningFlag(): void {
+  fallbackWarningShown = false;
+}
+
+export function buildFallbackWarning(errMessage: string): string {
   let reason: string;
   let fix: string;
 

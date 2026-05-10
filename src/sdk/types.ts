@@ -64,6 +64,9 @@ export type SessionEvent =
   // Tasks
   | { type: "tasks.update"; tasks: Task[] }
 
+  // Warnings
+  | { type: "warning"; message: string }
+
   // Status
   | { type: "status"; status: "idle" | "streaming" | "tool_executing" | "compacting" | "error" };
 

@@ -1,21 +1,24 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { stripTypescript, runInSandbox } from "./sandbox.js";
+import { stripTypescript, runInSandbox, buildFallbackWarning, resetFallbackWarningFlag } from "./sandbox.js";
 import type { ToolSpec } from "../tools/registry.js";
+import type { ToolExecutor, PermissionAsker } from "../tools/executor.js";
+import type { ToolContext } from "../tools/registry.js";
 
 const mockTools: ToolSpec[] = [];
 
 const mockExecutor = {
+  list: () => [],
   run: async () => ({ content: "ok", ok: true }),
-};
+} as unknown as ToolExecutor;
 
-const mockAskPermission = async () => true;
+const mockAskPermission: PermissionAsker = async () => "allow";
 
-const mockCtx = {
+const mockCtx: ToolContext = {
   cwd: process.cwd(),
-  signal: undefined as AbortSignal | undefined,
-  onTasks: undefined as ((tasks: { id: string; title: string; status: string }[]) => void) | undefined,
-  coauthor: false,
+  signal: undefined,
+  onTasks: undefined,
+  coauthor: undefined,
   memoryManager: undefined,
   sessionId: "test",
 };
@@ -25,7 +28,7 @@ describe("stripTypescript", () => {
     const ts = `const x: string = "hello";`;
     const js = stripTypescript(ts);
     assert.ok(!js.includes(": string"));
-    assert.ok(js.includes('const x'));
+    assert.ok(js.includes("const x"));
     assert.ok(js.includes('"hello"'));
   });
 
@@ -76,7 +79,7 @@ describe("runInSandbox", () => {
     // If typescript is installed in the project, this should work
     // If not, it falls back to stripTypescript and may emit a warning
     if (result.warnings && result.warnings.length > 0) {
-      assert.ok(result.warnings[0].includes("fallback parser"));
+      assert.ok(result.warnings[0]!.includes("fallback parser"));
     } else {
       assert.strictEqual(result.output, "42");
       assert.strictEqual(result.error, undefined);
@@ -98,5 +101,66 @@ describe("runInSandbox", () => {
     assert.strictEqual(result.output, "1");
     assert.strictEqual(result.error, undefined);
     assert.ok(!result.warnings || result.warnings.length === 0);
+  });
+});
+
+describe("buildFallbackWarning", () => {
+  it("suggests installing isolated-vm for missing module errors", () => {
+    const msg = buildFallbackWarning("Cannot find module 'isolated-vm'");
+    assert.ok(msg.includes("is not installed"));
+    assert.ok(msg.includes("npm install isolated-vm"));
+  });
+
+  it("suggests rebuild for native binding errors", () => {
+    const msg = buildFallbackWarning("bindings failed to load .node file");
+    assert.ok(msg.includes("native bindings are incompatible"));
+    assert.ok(msg.includes("npm rebuild isolated-vm"));
+  });
+
+  it("provides a generic message for unknown errors", () => {
+    const msg = buildFallbackWarning("something completely unexpected");
+    assert.ok(msg.includes("could not be loaded"));
+    assert.ok(msg.includes("Ensure build tools are installed"));
+  });
+});
+
+describe("fallback warning deduplication", () => {
+  it("only emits the fallback warning once per process", async () => {
+    resetFallbackWarningFlag();
+
+    // Force a fallback by passing code that will cause isolated-vm to fail
+    // We simulate this by using a code that works in node:vm but we need to
+    // trigger the fallback path. Since we can't easily make isolated-vm fail
+    // in a controlled way, we verify the deduplication by checking that
+    // after the first fallback, subsequent calls don't add warnings.
+    //
+    // We test this indirectly: the first call to runInSandbox when isolated-vm
+    // is unavailable will set fallbackWarningShown = true. The second call
+    // should not add a warning even if it also falls back.
+    //
+    // In test environments isolated-vm is usually not installed, so both calls
+    // will fall back. We just verify at most one warning is ever present.
+    const result1 = await runInSandbox({
+      code: `console.log("first");`,
+      tools: mockTools,
+      executor: mockExecutor,
+      askPermission: mockAskPermission,
+      ctx: mockCtx,
+    });
+
+    const result2 = await runInSandbox({
+      code: `console.log("second");`,
+      tools: mockTools,
+      executor: mockExecutor,
+      askPermission: mockAskPermission,
+      ctx: mockCtx,
+    });
+
+    // At most one of the results should have a fallback warning
+    const warningCount =
+      (result1.warnings?.filter((w) => w.includes("Code Mode is using")).length ?? 0) +
+      (result2.warnings?.filter((w) => w.includes("Code Mode is using")).length ?? 0);
+
+    assert.strictEqual(warningCount, 1);
   });
 });
