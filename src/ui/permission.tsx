@@ -18,7 +18,7 @@ interface Props {
 const OPTIONS: { value: PermissionDecision; label: string; key: number }[] = [
   { value: "allow", label: "Allow once", key: 1 },
   { value: "allow_session", label: "Allow for this session", key: 2 },
-  { value: "deny", label: "Deny", key: 3 },
+  { value: "deny", label: "Something else", key: 3 },
 ];
 
 const MOD_KEY = platform() === "darwin" ? "\u2325" : "Alt";
@@ -33,7 +33,6 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
   const [showHelp, setShowHelp] = useState(false);
   const [feedbackActive, setFeedbackActive] = useState(false);
   const [feedbackValue, setFeedbackValue] = useState("");
-  const [justDenied, setJustDenied] = useState(false);
 
   let render: { title?: string; body?: string; diff?: { path: string; before: string; after: string } } | undefined;
   try {
@@ -49,7 +48,6 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
       if (!opt) return;
       if (opt.value === "deny") {
         if (onFeedback) {
-          setJustDenied(true);
           setFeedbackActive(true);
         } else {
           onDecide("deny");
@@ -68,7 +66,6 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
         onFeedback?.(text);
       }
       setFeedbackActive(false);
-      setJustDenied(false);
       setFeedbackValue("");
     },
     [onDecide, onFeedback],
@@ -77,20 +74,15 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
   const handleFeedbackCancel = useCallback(() => {
     onDecide("deny");
     setFeedbackActive(false);
-    setJustDenied(false);
     setFeedbackValue("");
   }, [onDecide]);
 
   useInput(
     (inputChar, key) => {
       if (showHelp) {
-        if (key.escape || inputChar === "?" || key.return) {
-          setShowHelp(false);
-        }
+        setShowHelp(false);
         return;
       }
-
-      if (feedbackActive) return; // CustomTextInput handles its own input
 
       // Direct selection via Alt+1-4
       if (key.meta && inputChar === "1") {
@@ -190,7 +182,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
       {feedbackActive && (
         <Box marginTop={1} flexDirection="column">
           <Text color={theme.palette.error}>
-            ✗ Denied — tell me what to do instead
+            Tell me what to do instead
           </Text>
           <Text color={theme.info.color} dimColor>
             Press Esc to deny without feedback
