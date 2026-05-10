@@ -11,7 +11,7 @@ export interface ToolEventState {
   id: string;
   name: string;
   args: string;
-  status: "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error" | "cancelled" | "rejected";
   result?: string;
   render?: { title: string; body?: string; diff?: { path: string; before: string; after: string } };
   expanded?: boolean;
@@ -49,20 +49,40 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
   }, [evt.status, evt.startedAt]);
 
   const statusIcon =
-    evt.status === "running" ? (
-      <Text color={theme.info.color} >
+    evt.status === "queued" ? (
+      <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+        [ ]
+      </Text>
+    ) : evt.status === "running" ? (
+      <Text color={theme.info.color}>
         <Spinner type="dots" />
       </Text>
     ) : evt.status === "error" ? (
-      <Text color={theme.palette.error}>✗</Text>
+      <Text color={theme.palette.error}>[err]</Text>
+    ) : evt.status === "cancelled" ? (
+      <Text color={theme.info.color}>
+        [x]
+      </Text>
+    ) : evt.status === "rejected" ? (
+      <Text color={theme.palette.error}>[!]</Text>
     ) : (
-      <Text color={theme.palette.success}>✓</Text>
+      <Text color={theme.palette.success}>[ok]</Text>
     );
   const rawTitle = evt.render?.title ?? `${evt.name}(${compactArgs(evt.args)})`;
   let title = humanizeToolTitle(evt.name, rawTitle, intentTier);
-  if (evt.startedAt !== undefined) {
-    title += ` · ${formatElapsed(now - evt.startedAt)}`;
+  if (evt.startedAt !== undefined && (evt.status === "running" || evt.status === "done" || evt.status === "error")) {
+    title += ` \u00b7 ${formatElapsed(now - evt.startedAt)}`;
   }
+
+  const statusLabel =
+    evt.status === "rejected" ? (
+      <Text color={theme.palette.error}> rejected</Text>
+    ) : evt.status === "cancelled" ? (
+      <Text color={theme.info.color}> cancelled</Text>
+    ) : null;
+
+  const showDim = evt.status === "queued" || evt.status === "cancelled" || evt.status === "rejected";
+
   const expand = Boolean(evt.expanded || verbose);
   const lines = evt.result ? evt.result.split("\n") : [];
   const showLimit = verbose ? 200 : 20;
@@ -71,9 +91,10 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
     <Box flexDirection="column" marginLeft={2}>
       <Text>
         {statusIcon}{" "}
-        <Text color={theme.info.color}>{title}</Text>
+        <Text color={theme.info.color} dimColor={showDim}>{title}</Text>
+        {statusLabel}
         {isRepeated ? (
-          <Text color={theme.warn}> ⚠ repeated</Text>
+          <Text color={theme.warn}> [warn] repeated</Text>
         ) : null}
       </Text>
       {evt.render?.diff ? (
@@ -102,7 +123,7 @@ export const ToolView = React.memo(function ToolView({ evt, verbose, isRepeated,
           )}
         </Box>
       ) : null}
-      {evt.result && !expand && evt.status !== "running" ? (
+      {evt.result && !expand && evt.status !== "running" && evt.status !== "queued" && evt.status !== "cancelled" && evt.status !== "rejected" ? (
         <Text color={theme.info.color}>
           {"  "}{firstLine(evt.result)}
         </Text>

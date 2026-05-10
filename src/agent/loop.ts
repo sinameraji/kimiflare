@@ -20,6 +20,9 @@ export interface AgentCallbacks {
   onToolCallStart?: (index: number, id: string, name: string) => void;
   onToolCallArgs?: (index: number, delta: string) => void;
   onToolCallFinalized?: (call: ToolCall) => void;
+  /** Called right before a tool call is handed to the executor for actual execution.
+   *  Fires after onToolCallFinalized, one at a time, as tools are dequeued. */
+  onToolWillExecute?: (toolCallId: string, name: string) => void;
   onUsage?: (usage: Usage) => void;
   onUsageFinal?: (usage: Usage, gatewayMeta?: GatewayMeta) => void;
   onGatewayMeta?: (meta: GatewayMeta) => void;
@@ -557,6 +560,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
       } else {
+        opts.callbacks.onToolWillExecute?.(tc.id, tc.function.name);
         logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },

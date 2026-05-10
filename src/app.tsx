@@ -1476,6 +1476,11 @@ function App({
         activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Mark all in-flight tool events as cancelled
+        for (const [toolId] of pendingToolCallsRef.current) {
+          updateTool(toolId, { status: "cancelled" });
+        }
+        pendingToolCallsRef.current.clear();
         // Save session so interrupted turn is not lost
         void saveSessionSafe();
         // Clear task list immediately so it doesn't keep spinning
@@ -1518,6 +1523,11 @@ function App({
         activeScopeRef.current.abort("user_stopped");
         setQueue([]);
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
+        // Mark all in-flight tool events as cancelled
+        for (const [toolId] of pendingToolCallsRef.current) {
+          updateTool(toolId, { status: "cancelled" });
+        }
+        pendingToolCallsRef.current.clear();
         // Clear task list immediately so it doesn't keep spinning
         setTasks([]);
         setTasksStartedAt(null);
@@ -1858,15 +1868,27 @@ function App({
                 id: call.id,
                 name: call.function.name,
                 args: call.function.arguments,
-                status: "running",
+                status: "queued",
                 render: renderMeta,
                 expanded: false,
               },
             ]);
           },
+          onToolWillExecute: (id: string) => {
+            setTurnPhase("executing");
+            setCurrentToolName(pendingToolCallsRef.current.get(id) ?? null);
+            setLastActivityAt(Date.now());
+            updateTool(id, { status: "running", startedAt: Date.now() });
+          },
           onToolResult: (r) => {
             pendingToolCallsRef.current.delete(r.tool_call_id);
-            updateTool(r.tool_call_id, { status: r.ok ? "done" : "error", result: r.content });
+            setLastActivityAt(Date.now());
+            if (pendingToolCallsRef.current.size === 0) {
+              setTurnPhase("waiting");
+              setCurrentToolName(null);
+            }
+            const isDenied = typeof r.content === "string" && r.content.startsWith("Permission denied");
+            updateTool(r.tool_call_id, { status: isDenied ? "rejected" : r.ok ? "done" : "error", result: r.content });
           },
           onUsage: (u) => {
             usageRef.current = u;
@@ -3359,12 +3381,17 @@ function App({
               id: call.id,
               name: call.function.name,
               args: call.function.arguments,
-              status: "running",
+              status: "queued",
               render: renderMeta,
               expanded: false,
-              startedAt: Date.now(),
             },
           ]);
+        },
+        onToolWillExecute: (id: string, name: string) => {
+          setTurnPhase("executing");
+          setCurrentToolName(name);
+          setLastActivityAt(Date.now());
+          updateTool(id, { status: "running", startedAt: Date.now() });
         },
         onToolResult: (r: import("./tools/executor.js").ToolResult) => {
           pendingToolCallsRef.current.delete(r.tool_call_id);
@@ -3374,7 +3401,7 @@ function App({
             setCurrentToolName(null);
           }
           updateTool(r.tool_call_id, {
-            status: r.ok ? "done" : "error",
+            status: !r.ok && typeof r.content === "string" && r.content.startsWith("Permission denied") ? "rejected" : r.ok ? "done" : "error",
             result: r.content,
           });
         },
