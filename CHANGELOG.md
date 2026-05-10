@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.54.0](https://github.com/sinameraji/kimiflare/compare/v0.53.0...v0.54.0) (2026-05-10)
+
+
+### Features
+
+* **sandbox:** improve fallback warning UX and SDK integration ([#382](https://github.com/sinameraji/kimiflare/issues/382)) ([eb0816a](https://github.com/sinameraji/kimiflare/commit/eb0816a98e7ae5ccaa386b2b8257be82cb4272c4))
+* **ui:** restore shift+tab mode-cycle hint in status bar ([#380](https://github.com/sinameraji/kimiflare/issues/380)) ([c5c5856](https://github.com/sinameraji/kimiflare/commit/c5c5856a80114e83a9b5927aa40cd6b2baa37058))
+
 ## [0.53.0](https://github.com/sinameraji/kimiflare/compare/v0.52.0...v0.53.0) (2026-05-10)
 
 
