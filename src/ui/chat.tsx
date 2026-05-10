@@ -61,11 +61,12 @@ interface TurnGroup {
 function groupByTurn(events: ChatEvent[]): TurnGroup[] {
   const map = new Map<number, ChatEvent[]>();
   const reasoningMap = new Map<number, string>();
+  let ungroupedCounter = 0;
 
   for (const e of events) {
     const tid = e.kind === "user" || e.kind === "assistant" || e.kind === "tool" ? (e.turnId ?? -1) : -2;
-    // Ungrouped events (-2) each get their own key using negated index
-    const key = tid === -2 ? -(events.indexOf(e) + 1) : tid;
+    // Ungrouped events (-2) each get their own unique negative key to preserve order
+    const key = tid === -2 ? --ungroupedCounter : tid;
     const arr = map.get(key) ?? [];
     arr.push(e);
     map.set(key, arr);
