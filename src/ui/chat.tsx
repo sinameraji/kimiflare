@@ -65,13 +65,11 @@ export function groupByTurn(events: ChatEvent[]): TurnGroup[] {
 
   for (const e of events) {
     const tid = e.kind === "user" || e.kind === "assistant" || e.kind === "tool" ? (e.turnId ?? -1) : -2;
-    // Ungrouped events (-2) each get their own unique negative key to preserve order
     const key = tid === -2 ? --ungroupedCounter : tid;
     const arr = map.get(key) ?? [];
     arr.push(e);
     map.set(key, arr);
 
-    // Accumulate reasoning from assistant events
     if (e.kind === "assistant" && e.reasoning && tid >= 0) {
       reasoningMap.set(tid, (reasoningMap.get(tid) ?? "") + e.reasoning);
     }
@@ -134,27 +132,9 @@ export function aggregateDiffs(events: ChatEvent[]): DiffSummary | null {
   return { files: files.size, added, removed };
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Reason block ─────────────────────────────────────────────────────────────
 
-function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  if (total < 1) return "<1s";
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  if (m === 0) return `${s}s`;
-  return `${m}m ${s}s`;
-}
-
-function findTurnStartedAt(events: ChatEvent[]): number {
-  for (const e of events) {
-    if (e.kind === "tool" && e.startedAt !== undefined) return e.startedAt;
-  }
-  return Date.now();
-}
-
-// ── Reasoning block (per turn) ───────────────────────────────────────────────
-
-function ReasoningBlock({
+function ReasonBlock({
   reasoning,
   expanded,
 }: {
@@ -173,55 +153,7 @@ function ReasoningBlock({
   );
 }
 
-// ── Turn header ──────────────────────────────────────────────────────────────
-
-function TurnHeader({
-  turnId,
-  hasActive,
-  events,
-}: {
-  turnId: number;
-  hasActive: boolean;
-  events: ChatEvent[];
-}) {
-  const theme = useTheme();
-  const [now, setNow] = React.useState(Date.now());
-
-  React.useEffect(() => {
-    if (!hasActive) {
-      setNow(Date.now());
-      return;
-    }
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [hasActive]);
-
-  const started = findTurnStartedAt(events);
-  const elapsed = formatElapsed(now - started);
-  const statusText = hasActive ? "active" : "done";
-  const statusColor = hasActive ? theme.accent : theme.info.color;
-
-  return (
-    <Box marginY={1}>
-      <Text color={theme.info.color}>
-        {"--- "}
-        <Text bold color={statusColor}>
-          Turn {turnId}
-        </Text>
-        {" "}
-        <Text color={statusColor}>
-          {statusText}
-        </Text>
-        {" . "}
-        <Text color={theme.info.color}>
-          {elapsed}
-        </Text>
-      </Text>
-    </Box>
-  );
-}
-
-// ── File change summary line ─────────────────────────────────────────────────
+// ── Diff summary ─────────────────────────────────────────────────────────────
 
 function DiffSummaryLine({ summary }: { summary: DiffSummary }) {
   const theme = useTheme();
@@ -257,23 +189,35 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
 
   return (
     <Box flexDirection="column">
-      {groups.map((group, gi) => (
-        <TurnGroupView
-          key={`turn_${group.turnId}_${gi}`}
-          group={group}
-          showReasoning={showReasoning}
-          repeatedSigs={repeatedSigs}
-          verbose={verbose}
-          intentTier={intentTier}
-        />
-      ))}
+      {groups.map((group, gi) => {
+        const isGrouped = group.turnId > 0;
+        const isSecondGroupOnward = isGrouped && gi > 0;
+        return (
+          <Box key={`turn_${group.turnId}_${gi}`} flexDirection="column">
+            {isSecondGroupOnward && (
+              <Box marginY={1}>
+                <Text color={theme.info.color}>
+                  {"-".repeat(40)}
+                </Text>
+              </Box>
+            )}
+            <TurnGroupContent
+              group={group}
+              showReasoning={showReasoning}
+              repeatedSigs={repeatedSigs}
+              verbose={verbose}
+              intentTier={intentTier}
+            />
+          </Box>
+        );
+      })}
     </Box>
   );
 });
 
-// ── TurnGroupView ────────────────────────────────────────────────────────────
+// ── TurnGroupContent ─────────────────────────────────────────────────────────
 
-const TurnGroupView = React.memo(function TurnGroupView({
+const TurnGroupContent = React.memo(function TurnGroupContent({
   group,
   showReasoning,
   repeatedSigs,
@@ -292,25 +236,16 @@ const TurnGroupView = React.memo(function TurnGroupView({
   const [reasoningExpanded, setReasoningExpanded] = React.useState(false);
   const diffSummary = React.useMemo(() => aggregateDiffs(events), [events]);
 
-  // Auto-expand reasoning for the active turn when global showReasoning is on
   React.useEffect(() => {
-    if (showReasoning && hasActive) {
-      setReasoningExpanded(true);
-    }
+    if (showReasoning && hasActive) setReasoningExpanded(true);
   }, [showReasoning, hasActive]);
 
-  // Sync with global showReasoning toggle
   React.useEffect(() => {
-    if (!showReasoning) {
-      setReasoningExpanded(false);
-    }
+    if (!showReasoning) setReasoningExpanded(false);
   }, [showReasoning]);
 
   return (
     <Box flexDirection="column">
-      {isGrouped && (
-        <TurnHeader turnId={turnId} hasActive={hasActive} events={events} />
-      )}
       {events.map((e, i) => {
         const prev = events[i - 1];
         const showSeparator = !!(
@@ -334,7 +269,7 @@ const TurnGroupView = React.memo(function TurnGroupView({
       )}
       {isGrouped && reasoning && (
         <Box marginLeft={2} marginTop={1}>
-          <ReasoningBlock
+          <ReasonBlock
             reasoning={reasoning}
             expanded={reasoningExpanded || showReasoning}
           />
