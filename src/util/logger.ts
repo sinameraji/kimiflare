@@ -30,6 +30,20 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   off: 4,
 };
 
+/** In-memory circular buffer of recent log entries for error reporting.
+ *  Captures all entries regardless of KIMIFLARE_LOG_LEVEL so that
+ *  diagnostic context is available even when stderr logging is off. */
+const RECENT_LOGS_MAX = 100;
+const recentLogs: LogEntry[] = [];
+
+export function getRecentLogs(limit = 50): LogEntry[] {
+  return recentLogs.slice(-limit);
+}
+
+export function clearRecentLogs(): void {
+  recentLogs.length = 0;
+}
+
 export function setLogLevel(level: LogLevel): void {
   globalMinLevel = level;
 }
@@ -43,8 +57,6 @@ export function log(
   event: string,
   data?: Record<string, unknown>,
 ): void {
-  if (LEVEL_ORDER[level] < LEVEL_ORDER[globalMinLevel]) return;
-
   const entry: LogEntry = {
     ts: new Date().toISOString(),
     level,
@@ -52,8 +64,16 @@ export function log(
     data,
   };
 
+  // Always buffer for diagnostic reporting
+  recentLogs.push(entry);
+  if (recentLogs.length > RECENT_LOGS_MAX) {
+    recentLogs.shift();
+  }
+
   // Write to stderr so stdout remains clean for TUI rendering
-  console.error(JSON.stringify(entry));
+  if (LEVEL_ORDER[level] >= LEVEL_ORDER[globalMinLevel]) {
+    console.error(JSON.stringify(entry));
+  }
 }
 
 /** Convenience wrappers */

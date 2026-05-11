@@ -30,6 +30,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "remote", argHint: "<prompt>", description: "Run a remote session on Cloudflare", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
+  { name: "report", argHint: "[send] [note]", description: "Report the last API error with diagnostic logs", source: "builtin" },
   { name: "logout", description: "Clear stored credentials", source: "builtin" },
   { name: "exit", description: "Exit kimiflare", source: "builtin" },
   { name: "quit", description: "Alias for /exit", source: "builtin" },

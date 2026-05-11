@@ -30,6 +30,7 @@ import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError, humanizeCloudflareError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
+import { buildReport, sendReport } from "./cloud/report.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -691,6 +692,7 @@ function App({
   const tasksRef = useRef<Task[]>([]);
   const usageRef = useRef<Usage | null>(null);
   const gatewayMetaRef = useRef<GatewayMeta | null>(null);
+  const lastApiErrorRef = useRef<{ httpStatus?: number; code?: number; message: string } | null>(null);
   const updateCheckedRef = useRef(false);
   const sessionStateRef = useRef<SessionState>(emptySessionState());
   const artifactStoreRef = useRef<ArtifactStore>(new ArtifactStore());
@@ -2043,15 +2045,11 @@ function App({
         e instanceof KimiApiError &&
         (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
       ) {
+        const err = { httpStatus: e.httpStatus, code: e.code, message: humanizeCloudflareError(e) };
+        lastApiErrorRef.current = err;
         setEvents((es) => [
           ...es,
-          {
-            kind: "api_error",
-            key: mkKey(),
-            httpStatus: e.httpStatus,
-            code: e.code,
-            message: humanizeCloudflareError(e),
-          },
+          { kind: "api_error", key: mkKey(), ...err },
         ]);
       } else {
         const displayText =
@@ -2861,6 +2859,53 @@ function App({
         setEvents((e) => [
           ...e,
           { kind: "info", key: mkKey(), text: "Opened voice note page in your browser. Record your message there and hit Send when you're done." },
+        ]);
+        return true;
+      }
+      if (c === "/report") {
+        const err = lastApiErrorRef.current;
+        if (!err) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "No recent API error to report." },
+          ]);
+          return true;
+        }
+        const note = rest.join(" ").trim();
+        const isSend = note.toLowerCase() === "send" || note.toLowerCase().startsWith("send ");
+        if (!isSend) {
+          const preview = [
+            "Report preview:",
+            `  Error: ${err.message}`,
+            err.httpStatus !== undefined ? `  HTTP ${err.httpStatus}` : "",
+            err.code !== undefined ? `  Code: ${err.code}` : "",
+            note ? `  Note: ${note}` : "",
+            "",
+            "Type `/report send` to submit or `/report send <note>` to add context.",
+          ].filter(Boolean).join("\n");
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: preview }]);
+          return true;
+        }
+        const userNote = note.slice(4).trim() || undefined;
+        const payload = buildReport({
+          errorMessage: err.message,
+          httpStatus: err.httpStatus,
+          errorCode: err.code,
+          sessionId: sessionIdRef.current ?? undefined,
+          userNote,
+        });
+        void sendReport(payload).then((result) => {
+          setEvents((e) => [
+            ...e,
+            { kind: result.ok ? "info" : "error", key: mkKey(), text: result.message },
+          ]);
+          if (result.ok) {
+            lastApiErrorRef.current = null;
+          }
+        });
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Sending report…" },
         ]);
         return true;
       }
@@ -3724,15 +3769,11 @@ function App({
               e instanceof KimiApiError &&
               (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
             ) {
+              const err = { httpStatus: e.httpStatus, code: e.code, message: humanizeCloudflareError(e) };
+              lastApiErrorRef.current = err;
               setEvents((es) => [
                 ...es,
-                {
-                  kind: "api_error",
-                  key: mkKey(),
-                  httpStatus: e.httpStatus,
-                  code: e.code,
-                  message: humanizeCloudflareError(e),
-                },
+                { kind: "api_error", key: mkKey(), ...err },
               ]);
             } else {
               const displayText =
