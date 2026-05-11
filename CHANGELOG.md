@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.1](https://github.com/sinameraji/kimiflare/compare/v0.54.0...v0.54.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **agent:** retry 429 rate limits and surface Cloudflare error codes ([#383](https://github.com/sinameraji/kimiflare/issues/383)) ([b3194f0](https://github.com/sinameraji/kimiflare/commit/b3194f0cec0bfa2d9ed374f63c161679996c5002))
+
 ## [0.54.0](https://github.com/sinameraji/kimiflare/compare/v0.53.0...v0.54.0) (2026-05-10)
 
 
