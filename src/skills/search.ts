@@ -1,0 +1,45 @@
+import type Database from "better-sqlite3";
+import type { AiGatewayOptions } from "../agent/client.js";
+import { fetchEmbeddings, cosineSimilarity } from "../memory/embeddings.js";
+import { listAllSectionRows, rowToSectionResult } from "./db.js";
+import type { SectionResult } from "./types.js";
+
+export interface SearchOpts {
+  accountId: string;
+  apiToken: string;
+  model?: string;
+  gateway?: AiGatewayOptions;
+}
+
+/**
+ * Embed the query and rank all skill sections by cosine similarity.
+ * Returns topN results sorted by similarity descending.
+ */
+export async function searchSections(
+  query: string,
+  db: Database.Database,
+  opts: SearchOpts
+): Promise<SectionResult[]> {
+  const [queryEmbedding] = await fetchEmbeddings({
+    accountId: opts.accountId,
+    apiToken: opts.apiToken,
+    model: opts.model,
+    texts: [query],
+    gateway: opts.gateway,
+  });
+
+  const rows = listAllSectionRows(db);
+  const scored: SectionResult[] = [];
+
+  for (const row of rows) {
+    const sectionEmbedding = new Float32Array(row.embedding);
+    const similarity = cosineSimilarity(queryEmbedding, sectionEmbedding);
+    scored.push({
+      ...rowToSectionResult(row),
+      similarity,
+    });
+  }
+
+  scored.sort((a, b) => b.similarity - a.similarity);
+  return scored;
+}

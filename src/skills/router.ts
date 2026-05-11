@@ -1,94 +1,50 @@
-import { minimatch } from "minimatch";
-import type { Skill, SkillRoutingResult, SkillConflict } from "./types.js";
+import type Database from "better-sqlite3";
+import type { AiGatewayOptions } from "../agent/client.js";
+import type { SemanticSkillRoutingResult, SectionResult } from "./types.js";
+import { searchSections } from "./search.js";
+import { buildSkillContext } from "./format.js";
 
 export interface RouterOptions {
-  /** Current working directory */
-  cwd: string;
   /** User's raw prompt */
   prompt: string;
-  /** Retrieved memory snippets */
-  memorySnippets: string[];
   /** Budget tier: light = 2k, medium = 8k, heavy = 24k */
   tier: "light" | "medium" | "heavy";
   /** Hard ceiling for this turn */
-  maxSkillTokens: number;
+  maxSkillTokens?: number;
 }
 
-const TIER_BUDGETS: Record<RouterOptions["tier"], number> = {
-  light: 2000,
-  medium: 8000,
-  heavy: 24000,
-};
-
-function matchSkill(skill: Skill, prompt: string, cwd: string): boolean {
-  if (!skill.enabled) return false;
-  if (skill.match.length === 0) return true; // no filters = always active
-
-  for (const pattern of skill.match) {
-    // If pattern looks like a file glob, match against cwd
-    if (pattern.includes("/") || pattern.includes("*")) {
-      if (minimatch(cwd, pattern) || minimatch(cwd, `**/${pattern}`)) {
-        return true;
-      }
-    }
-    // Otherwise treat as keyword
-    if (prompt.toLowerCase().includes(pattern.toLowerCase())) {
-      return true;
-    }
-  }
-  return false;
+export interface RouterDeps {
+  db: Database.Database;
+  accountId: string;
+  apiToken: string;
+  embeddingModel?: string;
+  gateway?: AiGatewayOptions;
 }
 
-function findConflicts(skill: Skill, memorySnippets: string[]): SkillConflict[] {
-  const conflicts: SkillConflict[] = [];
-  for (const mem of memorySnippets) {
-    // Simple heuristic: if memory contains the skill name or vice versa, flag it
-    const memLower = mem.toLowerCase();
-    const skillLower = skill.name.toLowerCase();
-    if (memLower.includes(skillLower) || skillLower.includes(memLower)) {
-      conflicts.push({
-        skillName: skill.name,
-        memoryContent: mem.slice(0, 200),
-        memoryId: "", // populated by caller if available
-      });
-    }
-  }
-  return conflicts;
+/**
+ * Select relevant skill sections using semantic search and pack them
+ * into the token budget.
+ */
+export async function selectSkills(
+  opts: RouterOptions,
+  deps: RouterDeps
+): Promise<SemanticSkillRoutingResult> {
+  const sections = await searchSections(opts.prompt, deps.db, {
+    accountId: deps.accountId,
+    apiToken: deps.apiToken,
+    model: deps.embeddingModel,
+    gateway: deps.gateway,
+  });
+
+  return buildSkillContext(sections, opts.tier, opts.maxSkillTokens);
 }
 
-export function selectSkills(
-  skills: Skill[],
-  options: RouterOptions,
-): SkillRoutingResult {
-  const tierBudget = TIER_BUDGETS[options.tier];
-  const effectiveBudget = Math.min(tierBudget, options.maxSkillTokens);
-
-  const matched = skills.filter((s) => matchSkill(s, options.prompt, options.cwd));
-
-  const selected: Skill[] = [];
-  const dropped: Skill[] = [];
-  const allConflicts: SkillConflict[] = [];
-  let runningTotal = 0;
-
-  for (const skill of matched) {
-    const conflicts = findConflicts(skill, options.memorySnippets);
-    allConflicts.push(...conflicts);
-
-    if (runningTotal + skill.estimatedTokens <= effectiveBudget) {
-      selected.push(skill);
-      runningTotal += skill.estimatedTokens;
-    } else {
-      dropped.push(skill);
-    }
-  }
-
-  const budgetUsed = effectiveBudget > 0 ? Math.round((runningTotal / effectiveBudget) * 100) : 0;
-
-  return {
-    selectedSkills: selected,
-    droppedSkills: dropped,
-    totalSkillTokens: runningTotal,
-    budgetUsed,
-    memoryConflicts: allConflicts,
-  };
+/**
+ * Synchronous version for testing packing logic without embeddings.
+ */
+export function selectSkillsFromSections(
+  sections: SectionResult[],
+  opts: Pick<RouterOptions, "tier" | "maxSkillTokens">
+): SemanticSkillRoutingResult {
+  return buildSkillContext(sections, opts.tier, opts.maxSkillTokens);
 }
