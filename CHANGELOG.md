@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.55.1](https://github.com/sinameraji/kimiflare/compare/v0.55.0...v0.55.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **config:** default memoryEnabled to true for all users ([#388](https://github.com/sinameraji/kimiflare/issues/388)) ([177826f](https://github.com/sinameraji/kimiflare/commit/177826f14a8997e0f43f2b3ff9051995c0123603))
+
+## [0.55.0](https://github.com/sinameraji/kimiflare/compare/v0.54.1...v0.55.0) (2026-05-11)
+
+
+### Features
+
+* **tools:** OS-aware shell selection for bash tool ([#385](https://github.com/sinameraji/kimiflare/issues/385)) ([a0ae6f7](https://github.com/sinameraji/kimiflare/commit/a0ae6f799c3a29a31d4ac9bd17f07f68735caaf2))
+
 ## [0.54.1](https://github.com/sinameraji/kimiflare/compare/v0.54.0...v0.54.1) (2026-05-11)
 
 

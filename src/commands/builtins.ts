@@ -31,6 +31,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "update", description: "Check for updates", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
   { name: "report", argHint: "[send] [note]", description: "Report the last API error with diagnostic logs", source: "builtin" },
+  { name: "shell", argHint: "[auto|bash|cmd|powershell|<path>]", description: "Show or set shell for bash tool", source: "builtin" },
   { name: "logout", description: "Clear stored credentials", source: "builtin" },
   { name: "exit", description: "Exit kimiflare", source: "builtin" },
   { name: "quit", description: "Alias for /exit", source: "builtin" },

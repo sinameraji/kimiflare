@@ -8,6 +8,8 @@ export interface ToolContext {
   memoryManager?: import("../memory/manager.js").MemoryManager | null;
   sessionId?: string;
   githubToken?: string;
+  /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
+  shell?: string;
 }
 
 export interface ToolRender {

@@ -155,6 +155,11 @@ const CATEGORIES: Category[] = [
     commands: [
       { command: "/init", description: "scan this repo and write a KIMI.md" },
       { command: "/logout", description: "clear credentials" },
+      { command: "/shell", description: "show current shell" },
+      { command: "/shell auto", description: "auto-detect shell (default)" },
+      { command: "/shell bash", description: "force bash" },
+      { command: "/shell cmd", description: "force cmd.exe (Windows)" },
+      { command: "/shell powershell", description: "force PowerShell" },
       { command: "filePicker", description: "enabled by default; disable with KIMIFLARE_FILE_PICKER=0 or filePicker: false in config", selectable: false },
     ],
   },
