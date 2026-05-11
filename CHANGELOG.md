@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.57.0](https://github.com/sinameraji/kimiflare/compare/v0.56.0...v0.57.0) (2026-05-11)
+
+
+### Features
+
+* **skills:** AGENTS.md + semantic skill search ([#394](https://github.com/sinameraji/kimiflare/issues/394)) ([c8edb8b](https://github.com/sinameraji/kimiflare/commit/c8edb8b1d015274f96969ba4e3c0b3a5936c4c1e))
+
+
+### Bug Fixes
+
+* **cloud:** catch network errors in fetchCloudUsage to prevent crashes ([#392](https://github.com/sinameraji/kimiflare/issues/392)) ([daabba0](https://github.com/sinameraji/kimiflare/commit/daabba06074b4753430a15ab3d8c5a55feed1ab0))
+
 ## [0.56.0](https://github.com/sinameraji/kimiflare/compare/v0.55.1...v0.56.0) (2026-05-11)
 
 
