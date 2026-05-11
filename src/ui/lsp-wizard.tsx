@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import type { LspServerConfig } from "../config.js";
+import { getShellCommand } from "../tools/bash.js";
 import { CustomTextInput } from "./text-input.js";
 
 interface Preset {
@@ -151,7 +152,8 @@ export function LspWizard({ servers, currentScope, hasProjectDir, onDone, onSave
   const runInstall = (command: string) => {
     setInstallState({ status: "running", output: "Installing..." });
 
-    const child = spawn("bash", ["-lc", command], {
+    const { shell, args } = getShellCommand();
+    const child = spawn(shell, [...args, command], {
       env: process.env,
     });
 

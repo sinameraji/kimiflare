@@ -78,6 +78,8 @@ export interface AgentTurnOpts {
   cloudMode?: boolean;
   cloudToken?: string;
   cloudDeviceId?: string;
+  /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
+  shell?: string;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -571,7 +573,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell },
           opts.onFileChange,
         );
         let content = result.content;

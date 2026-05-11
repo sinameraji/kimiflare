@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { logger } from "../util/logger.js";
@@ -12,10 +12,68 @@ interface Args {
 const DEFAULT_TIMEOUT = 120_000;
 const MAX_TIMEOUT = 600_000;
 
+export interface ShellCommand {
+  shell: string;
+  args: string[];
+  isPosix: boolean;
+}
+
+/**
+ * Resolve the shell to use for executing commands.
+ *
+ * Priority:
+ * 1. Explicit `override` (from config or ToolContext)
+ * 2. Platform auto-detection when override is "auto" or undefined
+ *
+ * Supported named values:
+ * - "bash"        → bash -lc
+ * - "cmd"         → cmd /c
+ * - "powershell"  → powershell -Command
+ * - "auto"        → platform detection
+ *
+ * Any absolute path is treated as a custom shell. The flag is guessed from
+ * the basename: bash/sh/zsh/fish → -lc, cmd → /c, powershell/pwsh → -Command.
+ */
+export function getShellCommand(override?: string): ShellCommand {
+  const raw = override?.trim();
+
+  if (raw && raw !== "auto") {
+    const lower = raw.toLowerCase();
+
+    if (lower === "bash") {
+      return { shell: "bash", args: ["-lc"], isPosix: true };
+    }
+    if (lower === "cmd") {
+      return { shell: process.env.COMSPEC || "cmd.exe", args: ["/c"], isPosix: false };
+    }
+    if (lower === "powershell") {
+      return { shell: "powershell", args: ["-Command"], isPosix: false };
+    }
+
+    // Absolute path to a custom shell
+    const base = lower.replace(/\\/g, "/").split("/").pop() || "";
+    if (base.includes("cmd")) {
+      return { shell: raw, args: ["/c"], isPosix: false };
+    }
+    if (base.includes("powershell") || base.includes("pwsh")) {
+      return { shell: raw, args: ["-Command"], isPosix: false };
+    }
+    // Default to POSIX-style for unknown custom shells
+    return { shell: raw, args: ["-lc"], isPosix: true };
+  }
+
+  // Auto-detect based on platform
+  const isWindows = platform() === "win32";
+  if (isWindows) {
+    return { shell: process.env.COMSPEC || "cmd.exe", args: ["/c"], isPosix: false };
+  }
+  return { shell: "bash", args: ["-lc"], isPosix: true };
+}
+
 export const bashTool: ToolSpec<Args> = {
   name: "bash",
   description:
-    "Run a shell command via `bash -lc`. Prompts the user for permission before executing. stdout and stderr are captured and combined. Large outputs are reduced to a compact summary by default; use expand_artifact to retrieve the full log.",
+    "Run a shell command. On Unix the default shell is bash; on Windows it falls back to cmd.exe. Prompts the user for permission before executing. stdout and stderr are captured and combined. Large outputs are reduced to a compact summary by default; use expand_artifact to retrieve the full log.",
   parameters: {
     type: "object",
     properties: {
@@ -85,10 +143,12 @@ function injectCoauthor(command: string, coauthor?: { name: string; email: strin
 
 function runBash(args: Args, ctx: ToolContext): Promise<ToolOutput> {
   const timeout = Math.min(Math.max(1000, args.timeout_ms ?? DEFAULT_TIMEOUT), MAX_TIMEOUT);
-  const command = injectCoauthor(args.command, ctx.coauthor);
+  const { shell, args: shellArgs, isPosix } = getShellCommand(ctx.shell);
+  const command = isPosix ? injectCoauthor(args.command, ctx.coauthor) : args.command;
+
   return new Promise<ToolOutput>((resolve, reject) => {
-    logger.debug("bash:spawn", { command: args.command.slice(0, 200), cwd: ctx.cwd });
-    const child = spawn("bash", ["-lc", command], {
+    logger.debug("bash:spawn", { command: args.command.slice(0, 200), cwd: ctx.cwd, shell });
+    const child = spawn(shell, [...shellArgs, command], {
       cwd: ctx.cwd,
       env: {
         ...process.env,
