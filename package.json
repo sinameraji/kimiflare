@@ -1,6 +1,6 @@
 {
   "name": "kimiflare",
-  "version": "0.55.1",
+  "version": "0.56.0",
   "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. BYOK or Cloud mode. Web search, GitHub, headless browser, LSP, MCP, local memory, 262k context.",
   "keywords": [
     "ai",

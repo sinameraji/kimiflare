@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.0](https://github.com/sinameraji/kimiflare/compare/v0.55.1...v0.56.0) (2026-05-11)
+
+
+### Features
+
+* **report:** add /report slash command for diagnostic error reporting ([#387](https://github.com/sinameraji/kimiflare/issues/387)) ([8793e5a](https://github.com/sinameraji/kimiflare/commit/8793e5a85fecae900e94eb13d5ea3506367cbd9e))
+
 ## [0.55.1](https://github.com/sinameraji/kimiflare/compare/v0.55.0...v0.55.1) (2026-05-11)
 
 
