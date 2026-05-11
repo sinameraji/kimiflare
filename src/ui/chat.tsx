@@ -7,6 +7,7 @@ import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
 import { CloudQuotaMessage } from "./cloud-quota-message.js";
+import { ApiErrorMessage } from "./api-error-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -35,6 +36,13 @@ export type ChatEvent =
       used: number;
       limit: number;
       expiresAt: string;
+    }
+  | {
+      kind: "api_error";
+      key: string;
+      httpStatus?: number;
+      code?: number;
+      message: string;
     };
 
 interface Props {
@@ -200,6 +208,15 @@ const EventView = React.memo(function EventView({
       <Text color={theme.info.color} dimColor>
         {metaText}
       </Text>
+    );
+  }
+  if (evt.kind === "api_error") {
+    return (
+      <ApiErrorMessage
+        httpStatus={evt.httpStatus}
+        code={evt.code}
+        message={evt.message}
+      />
     );
   }
   return (

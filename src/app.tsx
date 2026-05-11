@@ -2039,6 +2039,20 @@ function App({
           ...es,
           { kind: "error", key: mkKey(), text: "The agent got stuck repeating the same actions. Here's what we know so far." },
         ]);
+      } else if (
+        e instanceof KimiApiError &&
+        (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
+      ) {
+        setEvents((es) => [
+          ...es,
+          {
+            kind: "api_error",
+            key: mkKey(),
+            httpStatus: e.httpStatus,
+            code: e.code,
+            message: humanizeCloudflareError(e),
+          },
+        ]);
       } else {
         const displayText =
           e instanceof KimiApiError
@@ -3705,6 +3719,20 @@ function App({
               setEvents((es) => [
                 ...es,
                 { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+              ]);
+            } else if (
+              e instanceof KimiApiError &&
+              (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
+            ) {
+              setEvents((es) => [
+                ...es,
+                {
+                  kind: "api_error",
+                  key: mkKey(),
+                  httpStatus: e.httpStatus,
+                  code: e.code,
+                  message: humanizeCloudflareError(e),
+                },
               ]);
             } else {
               const displayText =

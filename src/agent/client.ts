@@ -61,6 +61,7 @@ function cleanErrorMessage(msg: string): string {
 function isRetryable(err: KimiApiError, attempt: number): boolean {
   if (attempt >= MAX_ATTEMPTS - 1) return false;
   if (err.code !== undefined && RETRYABLE_CODES.has(err.code)) return true;
+  if (err.httpStatus === 429) return true;
   if (err.httpStatus !== undefined && err.httpStatus >= 500 && err.httpStatus < 600) return true;
   if (err.message.includes("Internal server error")) return true;
   return false;
@@ -135,7 +136,10 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       const msg = cleanErrorMessage(rawMsg);
       const apiErr = new KimiApiError(`kimiflare: ${msg}`, err?.code, res.status);
       if (isRetryable(apiErr, attempt)) {
-        const delay = 500 * 2 ** attempt + Math.random() * 250;
+        const isRateLimit = apiErr.httpStatus === 429;
+        const baseDelay = isRateLimit ? 2000 : 500;
+        const delay = baseDelay * 2 ** attempt + Math.random() * 250;
+        logger.warn("runKimi:retrying", { requestId, attempt, code: apiErr.code, httpStatus: apiErr.httpStatus, delay });
         await sleep(delay, opts.signal);
         continue;
       }

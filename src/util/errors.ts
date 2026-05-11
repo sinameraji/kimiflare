@@ -31,39 +31,44 @@ export function humanizeCloudflareError(err: KimiApiError): string {
 
   // Cloudflare-specific error codes
   if (code === 3040) {
-    return "Cloudflare Workers AI is at capacity. Retrying automatically…";
+    return "Cloudflare Workers AI is at capacity (code: 3040). Please wait a moment and try again.";
   }
 
   // HTTP-status-based buckets
   if (httpStatus === 429) {
-    return "Rate limit hit. Please wait a moment and try again.";
+    const codeStr = code !== undefined ? ` (code: ${code})` : "";
+    return `Rate limit hit${codeStr}. Please wait a moment and try again.`;
   }
 
   if (httpStatus === 403 || code === 10000) {
+    const codeStr = code !== undefined ? ` (code: ${code})` : "";
     return (
-      "Authentication failed. Check that your Cloudflare API token has the 'Workers AI' permission.\n" +
+      `Authentication failed${codeStr}. Check that your Cloudflare API token has the 'Workers AI' permission.\n` +
       "Get a new token: https://dash.cloudflare.com/profile/api-tokens"
     );
   }
 
   if (httpStatus === 401) {
+    const codeStr = code !== undefined ? ` (code: ${code})` : "";
     return (
-      "Authentication required. Please check your API token or run `kimiflare auth cloud` if using cloud mode."
+      `Authentication required${codeStr}. Please check your API token or run \`kimiflare auth cloud\` if using cloud mode.`
     );
   }
 
   if (httpStatus === 400) {
+    const codeStr = code !== undefined ? ` (code: ${code})` : "";
     if (message.includes("invalid escaped character")) {
-      return "API rejected request (invalid JSON in conversation history). Run /clear to reset if it persists.";
+      return `API rejected request${codeStr} (invalid JSON in conversation history). Run /clear to reset if it persists.`;
     }
     if (message.includes("Invalid model ID")) {
       return message; // already human-friendly
     }
-    return "Bad request. The conversation may be too long or contain invalid characters. Run /compact or /clear.";
+    return `Bad request${codeStr}. The conversation may be too long or contain invalid characters. Run /compact or /clear.`;
   }
 
   if (httpStatus && httpStatus >= 500) {
-    return "Cloudflare servers are experiencing issues. Retrying automatically…";
+    const codeStr = code !== undefined ? ` (code: ${code})` : "";
+    return `Cloudflare servers are experiencing issues${codeStr}. Please wait a moment and try again.`;
   }
 
   // Fallback: strip any embedded JSON so we don't dump raw objects to the user
