@@ -48,3 +48,42 @@ export interface SkillRoutingResult {
   /** Skills that contradict retrieved memory */
   memoryConflicts: SkillConflict[];
 }
+
+// ---------------------------------------------------------------------------
+// Semantic skill search types (v2)
+// ---------------------------------------------------------------------------
+
+export interface ParsedSkillSection {
+  heading: string;
+  body: string;
+}
+
+export interface ParsedSkill {
+  name: string;
+  description: string;
+  filePath: string;
+  contentHash: string;
+  parserVersion: number;
+  sections: ParsedSkillSection[];
+}
+
+export interface SectionResult {
+  id: number;
+  heading: string;
+  body: string;
+  name: string;
+  description: string;
+  filePath: string;
+  similarity: number;
+}
+
+export interface SemanticSkillRoutingResult {
+  /** Formatted skill context string for system prompt injection */
+  skillContext: string;
+  /** Number of sections packed */
+  sectionCount: number;
+  /** Total tokens consumed */
+  totalTokens: number;
+  /** Percentage of budget used */
+  budgetUsed: number;
+}
