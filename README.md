@@ -33,7 +33,12 @@
 
 - **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
 - **Image understanding** — Drop image paths (PNG, JPG, WebP, GIF, BMP up to 5 MB) into any prompt. Great for UI reviews, diagrams, and screenshots.
-- **Plan / Edit / Auto modes** — `plan` blocks mutating tools for safe research. `edit` (default) prompts per mutating call. `auto` approves everything for trusted tasks.
+- **Plan / Edit / Auto modes** — `plan` is a whitelist-only research mode: only read-only tools (read, glob, grep, web search, GitHub read-only, browser fetch) are allowed. Writes, edits, mutating bash, MCP tools, and LSP renames are all blocked. `edit` (default) prompts per mutating call. `auto` approves everything for trusted tasks.
+- **Windows support** — OS-aware shell auto-detects `cmd.exe` / PowerShell on Windows, `bash` on Unix. The `bash` tool works out of the box on all platforms.
+- **Message queuing** — Submit multiple messages while the agent is busy; they queue and auto-drain. Escape interrupts the current turn but preserves the queue.
+- **Smart permission modal** — Denying a tool opens inline feedback so you can tell the agent what to do instead. Keyboard-native navigation (`↑/↓`, `j/k`, `Alt+1/2/3`).
+- **Loop guardrails** — Agent hard-stops when all tools in a turn are blocked, preventing infinite token-burning cycles.
+- **Persistent all-time cost history** — Append-only `history.jsonl` tracks daily usage forever, so `/cost` shows true all-time and monthly totals that survive across sessions and version updates.
 - **Live cost tracking** — Status bar shows real-time spend based on Cloudflare pricing. Know exactly what each turn costs.
 - **LSP + MCP** — Semantic code intelligence (hover, go-to-definition, references, diagnostics) via Language Server Protocol. Extend with external tools via Model Context Protocol.
 - **Local structured memory** — SQLite + embeddings cross-session memory. The agent recalls facts, instructions, and preferences across sessions via `remember`, `recall`, and `forget` tools.
@@ -41,14 +46,16 @@
 
 ## Recently shipped
 
-- **Turn supervisor architecture** — graceful preemption, visual cleanup, and better multi-step task management.
-- **Web search, GitHub read-only, and headless browser tools** — research without leaving the terminal.
-- **Tiered skill routing** — the agent picks the right skill depth for the task, with visible TUI indicators.
-- **Extensible JSON themes** — WCAG contrast-validated, fully customizable color palettes.
-- **KIMI.md drift detection** — memory-based staleness indicators warn when your project context file is out of date.
-- **Fuzzy @ file picker** — type `@` to mention files with fuzzy matching and inline filtering.
-- **Kimiflare Cloud mode** — device auth, no API key needed, with real-time token budget tracking.
-- **Context-window guardrails** — prevents runs that would exceed the model's limit before they start.
+- **OS-aware shell with Windows support** — Auto-detects `cmd.exe`, PowerShell, or bash based on platform. Override with `KIMIFLARE_SHELL` or `/shell`.
+- **Smart permission modal with inline feedback** — Deny a tool and immediately tell the agent what to do instead. Keyboard-native navigation with `↑/↓`, `j/k`, `Alt+1/2/3`.
+- **True message queuing** — Enter queues messages while the agent is busy; Escape interrupts and auto-drains the queue.
+- **Hard-stop loop guardrail** — Stops token-burning cycles when all tools in a turn are blocked.
+- **Persistent all-time usage history** — `history.jsonl` tracks daily usage forever; `/cost` shows true all-time and monthly totals.
+- **Humanized Cloudflare API errors** — Actionable error codes and structured error display instead of raw JSON dumps.
+- **429 rate limit retry** — Automatic backoff and retry when Cloudflare rate-limits requests.
+- **Tool state visualization** — Queued, rejected, and cancelled tools are clearly labeled in the TUI.
+- **Paste preview placeholders** — Pasted content shows a snippet preview with sequential IDs instead of random hashes.
+- **Headless SDK** — Programmatic `createAgentSession` API and JSONL-over-stdio RPC mode for building on top of KimiFlare.
 
 See the full changelog at [github.com/sinameraji/kimiflare/releases](https://github.com/sinameraji/kimiflare/releases).
 
@@ -112,7 +119,7 @@ session.dispose();
 ```
 
 **Key features:**
-- `subscribe()` — receive typed events (`text_delta`, `tool_call`, `tool_result`, `task_update`, `usage`, `error`, `done`, etc.)
+- `subscribe()` — receive typed events (`text_delta`, `tool_call`, `tool_result`, `task_update`, `usage`, `warning`, `error`, `done`, etc.)
 - `prompt()` / `steer()` / `followUp()` — full conversation lifecycle
 - `pause()` / `resume()` — graceful preemption
 - `getStatus()` / `getUsage()` — inspect session state
@@ -191,6 +198,7 @@ kimiflare
 | Command | Effect |
 |---------|--------|
 | `/mode edit\|plan\|auto` | Switch permission mode |
+| `/shell auto\|bash\|cmd\|powershell` | Show or set the shell for the bash tool |
 | `/thinking low\|medium\|high` | Reasoning effort (persists) |
 | `/theme` | Interactive theme picker (`Ctrl+T`) |
 | `/resume` | Pick a past conversation to restore |
