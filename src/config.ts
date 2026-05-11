@@ -85,6 +85,8 @@ export interface KimiConfig {
   githubRepo?: string;
   /** Enable cloud mode: use api.kimiflare.com instead of direct Workers AI. */
   cloudMode?: boolean;
+  /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
+  shell?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -182,6 +184,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
   const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
+  const envShell = process.env.KIMIFLARE_SHELL;
 
   if (envCloudMode) {
     return {
@@ -205,6 +208,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode,
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
+      shell: envShell,
     };
   }
 
@@ -235,6 +239,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode ?? true,
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
+      shell: envShell,
     };
   }
 
@@ -265,6 +270,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         theme: parsed.theme,
+        shell: envShell ?? parsed.shell,
       };
     }
     if (parsed.accountId && parsed.apiToken) {
@@ -298,6 +304,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
+        shell: envShell ?? parsed.shell,
       };
     }
   } catch {

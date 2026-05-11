@@ -22,6 +22,7 @@ import {
 } from "./agent/session-state.js";
 import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
+import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
 import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
@@ -332,6 +333,7 @@ interface Cfg {
   githubRepo?: string;
   cloudMode?: boolean;
   cloudToken?: string;
+  shell?: string;
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
@@ -1808,6 +1810,7 @@ function App({
         cloudMode: cfg.cloudMode,
         cloudToken: cloudToken ?? initialCloudToken,
         cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+        shell: cfg.shell,
         onIterationEnd,
         onFileChange: (path, content) => {
           if (content) {
@@ -2292,6 +2295,35 @@ function App({
               { kind: "error", key: mkKey(), text: `cost report failed: ${(err as Error).message}` },
             ]);
           });
+        return true;
+      }
+      if (c === "/shell") {
+        if (!cfg) return true;
+        const valid = ["auto", "bash", "cmd", "powershell"];
+        if (arg === "auto" || arg === "bash" || arg === "cmd" || arg === "powershell") {
+          const next = { ...cfg, shell: arg === "auto" ? undefined : arg };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `shell set to ${arg}` }]);
+          return true;
+        }
+        if (arg) {
+          // Allow absolute paths as custom shells
+          const next = { ...cfg, shell: arg };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `shell set to ${arg}` }]);
+          return true;
+        }
+        const detected = getShellCommand(cfg.shell);
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `shell: ${cfg.shell ?? "auto"} (${detected.shell} ${detected.args.join(" ")})`,
+          },
+        ]);
         return true;
       }
       if (c === "/model") {
