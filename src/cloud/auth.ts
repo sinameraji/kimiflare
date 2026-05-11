@@ -163,7 +163,12 @@ export async function fetchCloudUsage(token: string, deviceId?: string): Promise
 } | null> {
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
   if (deviceId) headers["X-Device-ID"] = deviceId;
-  const res = await fetch(`${CLOUD_API_URL}/v1/usage`, { headers });
+  let res: Response;
+  try {
+    res = await fetch(`${CLOUD_API_URL}/v1/usage`, { headers });
+  } catch {
+    return null;
+  }
   if (!res.ok) return null;
   const data = (await res.json()) as Record<string, unknown>;
   if (
