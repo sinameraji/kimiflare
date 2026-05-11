@@ -1042,6 +1042,9 @@ function App({
       apiToken: cfg.apiToken,
       gateway: gatewayFromConfig(cfg),
       embeddingModel: cfg.memoryEmbeddingModel,
+      cloudMode: cfg.cloudMode,
+      cloudToken: cloudToken ?? initialCloudToken,
+      cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
     }).then((result) => {
       if (result.indexed > 0) {
         setEvents((e) => [
@@ -3416,6 +3419,9 @@ function App({
               apiToken: cfg.apiToken,
               embeddingModel: cfg.memoryEmbeddingModel,
               gateway: gatewayFromConfig(cfg),
+              cloudMode: cfg.cloudMode,
+              cloudToken: cloudToken ?? initialCloudToken,
+              cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
             },
           );
           setSkillsActive(skillResult.sectionCount);
