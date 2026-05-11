@@ -21,9 +21,9 @@ Use \`npm run test:integration\`.
     assert.strictEqual(skill.name, "testing");
     assert.strictEqual(skill.description, "How to run tests");
     assert.strictEqual(skill.sections.length, 2);
-    assert.strictEqual(skill.sections[0].heading, "Unit Tests");
-    assert.ok(skill.sections[0].body.includes("npm test"));
-    assert.strictEqual(skill.sections[1].heading, "Integration Tests");
+    assert.strictEqual(skill.sections[0]!.heading, "Unit Tests");
+    assert.ok(skill.sections[0]!.body.includes("npm test"));
+    assert.strictEqual(skill.sections[1]!.heading, "Integration Tests");
   });
 
   it("treats content before first ## as a section named after the skill", () => {
@@ -39,8 +39,8 @@ This is the intro body.
 More info.
 `;
     const skill = parseSkillFile("/tmp/intro.md", raw);
-    assert.strictEqual(skill.sections[0].heading, "intro");
-    assert.ok(skill.sections[0].body.includes("This is the intro body."));
+    assert.strictEqual(skill.sections[0]!.heading, "intro");
+    assert.ok(skill.sections[0]!.body.includes("This is the intro body."));
   });
 
   it("creates a single section when no ## headers exist", () => {
@@ -53,8 +53,8 @@ Just some body text.
 `;
     const skill = parseSkillFile("/tmp/simple.md", raw);
     assert.strictEqual(skill.sections.length, 1);
-    assert.strictEqual(skill.sections[0].heading, "simple");
-    assert.ok(skill.sections[0].body.includes("Just some body text."));
+    assert.strictEqual(skill.sections[0]!.heading, "simple");
+    assert.ok(skill.sections[0]!.body.includes("Just some body text."));
   });
 
   it("throws when name is missing", () => {
@@ -95,11 +95,11 @@ Use TypeScript strict mode.
 `;
     const skills = parseAgentsMd("/tmp/AGENTS.md", raw);
     assert.strictEqual(skills.length, 2);
-    assert.strictEqual(skills[0].name, "Setup commands");
-    assert.strictEqual(skills[0].description, "Run `npm install` first.");
-    assert.strictEqual(skills[0].sections.length, 1);
-    assert.strictEqual(skills[1].name, "Code style");
-    assert.strictEqual(skills[1].description, "Use TypeScript strict mode.");
+    assert.strictEqual(skills[0]!.name, "Setup commands");
+    assert.strictEqual(skills[0]!.description, "Run `npm install` first.");
+    assert.strictEqual(skills[0]!.sections.length, 1);
+    assert.strictEqual(skills[1]!.name, "Code style");
+    assert.strictEqual(skills[1]!.description, "Use TypeScript strict mode.");
   });
 
   it("falls back to heading for description when body starts with code block", () => {
@@ -112,7 +112,7 @@ npm test
 Run all tests.
 `;
     const skills = parseAgentsMd("/tmp/AGENTS.md", raw);
-    assert.strictEqual(skills[0].description, "Testing");
+    assert.strictEqual(skills[0]!.description, "Testing");
   });
 
   it("falls back to heading for description when body starts with a list", () => {
@@ -122,7 +122,7 @@ Run all tests.
 - Production
 `;
     const skills = parseAgentsMd("/tmp/AGENTS.md", raw);
-    assert.strictEqual(skills[0].description, "Deployment");
+    assert.strictEqual(skills[0]!.description, "Deployment");
   });
 
   it("returns empty array when no ## sections", () => {

@@ -76,8 +76,8 @@ export function insertSections(
      VALUES (?, ?, ?, ?)`
   );
   for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    const embedding = embeddings[i];
+    const section = sections[i]!;
+    const embedding = embeddings[i]!;
     insert.run(skillId, section.heading, section.body, Buffer.from(embedding.buffer));
   }
 }

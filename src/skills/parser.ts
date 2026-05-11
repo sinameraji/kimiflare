@@ -21,7 +21,7 @@ function extractDescription(body: string, heading: string): string {
   const lines = body.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length === 0) return heading;
 
-  const first = lines[0];
+  const first = lines[0]!;
   // If it starts with a code fence, list marker, or is very short, use heading
   if (
     first.startsWith("```") ||
@@ -37,7 +37,7 @@ function extractDescription(body: string, heading: string): string {
   // Take first sentence (up to first period followed by space or end of line)
   const sentenceMatch = first.match(/^(.+?[.!?])(?:\s|$)/);
   if (sentenceMatch) {
-    return sentenceMatch[1];
+    return sentenceMatch[1]!;
   }
 
   return first.length <= 120 ? first : heading;
@@ -64,7 +64,7 @@ function splitIntoSections(markdown: string): ParsedSkillSection[] {
           body,
         });
       }
-      currentHeading = h2Match[1].trim();
+      currentHeading = h2Match[1]!.trim();
       currentBody = [];
     } else {
       currentBody.push(line);
@@ -105,8 +105,9 @@ export function parseSkillFile(filePath: string, rawText: string): ParsedSkill {
 
   // If the first section has an empty heading (content before first ##),
   // use the skill name as its heading
-  if (sections[0].heading === "") {
-    sections[0].heading = name;
+  const firstSection = sections[0];
+  if (firstSection && firstSection.heading === "") {
+    firstSection.heading = name;
   }
 
   return {

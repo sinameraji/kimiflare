@@ -20,13 +20,17 @@ export async function searchSections(
   db: Database.Database,
   opts: SearchOpts
 ): Promise<SectionResult[]> {
-  const [queryEmbedding] = await fetchEmbeddings({
+  const embeddings = await fetchEmbeddings({
     accountId: opts.accountId,
     apiToken: opts.apiToken,
     model: opts.model,
     texts: [query],
     gateway: opts.gateway,
   });
+  const queryEmbedding = embeddings[0];
+  if (!queryEmbedding) {
+    throw new Error("Failed to embed query: no embedding returned");
+  }
 
   const rows = listAllSectionRows(db);
   const scored: SectionResult[] = [];

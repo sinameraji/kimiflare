@@ -11,8 +11,10 @@ export interface SystemPromptOpts {
   model: string;
   now?: Date;
   mode?: Mode;
-  /** Skills to inject into the system prompt for this turn */
+  /** Skills to inject into the system prompt for this turn (legacy) */
   selectedSkills?: { name: string; body: string }[];
+  /** Pre-formatted skill context from semantic search (preferred) */
+  skillContext?: string;
 }
 
 const CONTEXT_FILENAMES = ["KIMI.md", "KIMIFLARE.md", "AGENT.md"];
@@ -100,8 +102,9 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
     : "";
   const modeBlock = opts.mode ? systemPromptForMode(opts.mode) : "";
 
-  const skillsBlock =
-    opts.selectedSkills && opts.selectedSkills.length > 0
+  const skillsBlock = opts.skillContext
+    ? `\n\n## Relevant Skills\n\n${opts.skillContext}`
+    : opts.selectedSkills && opts.selectedSkills.length > 0
       ? `\n\nActive skills for this turn:\n${opts.selectedSkills
           .map((s) => `--- ${s.name} ---\n${s.body}`)
           .join("\n\n")}`

@@ -86,9 +86,9 @@ describe("insertSections", () => {
 
     const rows = listAllSectionRows(db);
     assert.strictEqual(rows.length, 2);
-    assert.strictEqual(rows[0].heading, "Section 1");
-    assert.strictEqual(rows[1].heading, "Section 2");
-    assert.strictEqual(rows[0].embedding.length, 768 * 4); // float32 = 4 bytes
+    assert.strictEqual(rows[0]!.heading, "Section 1");
+    assert.strictEqual(rows[1]!.heading, "Section 2");
+    assert.strictEqual(rows[0]!.embedding.length, 768 * 4); // float32 = 4 bytes
     db.close();
   });
 });
@@ -107,7 +107,7 @@ describe("deleteOrphanedSkills", () => {
 
     const rows = db.prepare("SELECT file_path FROM skill_index").all() as Array<{ file_path: string }>;
     assert.strictEqual(rows.length, 1);
-    assert.strictEqual(rows[0].file_path, "/tmp/a.md");
+    assert.strictEqual(rows[0]!.file_path, "/tmp/a.md");
     db.close();
   });
 

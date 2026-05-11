@@ -63,7 +63,13 @@ import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
-import { routeSkills, type SkillRoutingResult } from "./skills/index.js";
+import {
+  selectSkills,
+  indexSkills,
+  initSkillsSchema,
+  type SemanticSkillRoutingResult,
+} from "./skills/index.js";
+import { openMemoryDb, getMemoryDb } from "./memory/db.js";
 import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
 import {
   listSessions,
@@ -586,7 +592,6 @@ function App({
   const [skillsActive, setSkillsActive] = useState(0);
   const [memoryRecalled, setMemoryRecalled] = useState(false);
   const [intentTier, setIntentTier] = useState<"light" | "medium" | "heavy" | null>(null);
-  const skillsDirRef = useRef(join(process.cwd(), ".kimiflare", "skills"));
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
@@ -1025,6 +1030,31 @@ function App({
       memoryManagerRef.current?.close();
       memoryManagerRef.current = null;
     }
+
+    // Initialize skills index (independent of memory feature flag)
+    const skillDbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+    const skillDb = getMemoryDb() ?? openMemoryDb(skillDbPath);
+    initSkillsSchema(skillDb);
+    void indexSkills({
+      cwd: process.cwd(),
+      db: skillDb,
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      gateway: gatewayFromConfig(cfg),
+      embeddingModel: cfg.memoryEmbeddingModel,
+    }).then((result) => {
+      if (result.indexed > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `indexed ${result.indexed} skill${result.indexed === 1 ? "" : "s"}` },
+        ]);
+      }
+      if (result.errors.length > 0) {
+        for (const err of result.errors) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `skill index error: ${err}` }]);
+        }
+      }
+    });
 
     void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
       customCommandsRef.current = commands;
@@ -3369,17 +3399,27 @@ function App({
         sessionTitleRef.current = generateSessionTitle(trimmed, classification.intent);
       }
 
-      // Route skills based on intent tier
-      let skillResult: SkillRoutingResult | undefined;
+      // Route skills based on intent tier (semantic search)
+      let skillResult: SemanticSkillRoutingResult | undefined;
       try {
-        skillResult = await routeSkills(skillsDirRef.current, {
-          cwd: process.cwd(),
-          prompt: trimmed,
-          memorySnippets: [], // TODO: wire memory snippets when available
-          tier: classification.tier,
-          maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
-        });
-        setSkillsActive(skillResult.selectedSkills.length);
+        const db = getMemoryDb();
+        if (db) {
+          skillResult = await selectSkills(
+            {
+              prompt: trimmed,
+              tier: classification.tier,
+              maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
+            },
+            {
+              db,
+              accountId: cfg.accountId,
+              apiToken: cfg.apiToken,
+              embeddingModel: cfg.memoryEmbeddingModel,
+              gateway: gatewayFromConfig(cfg),
+            },
+          );
+          setSkillsActive(skillResult.sectionCount);
+        }
       } catch {
         setSkillsActive(0);
       }
@@ -3394,7 +3434,6 @@ function App({
       setCodeMode(effectiveCodeMode);
 
       // Inject selected skills into system prompt
-      const selectedSkills = skillResult?.selectedSkills.map((s) => ({ name: s.name, body: s.body }));
       if (cacheStableRef.current) {
         messagesRef.current[1] = {
           role: "system",
@@ -3403,7 +3442,7 @@ function App({
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model,
             mode: modeRef.current,
-            selectedSkills,
+            skillContext: skillResult?.skillContext,
           }),
         };
       } else {
@@ -3414,7 +3453,7 @@ function App({
             tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
             model: cfg.model,
             mode: modeRef.current,
-            selectedSkills,
+            skillContext: skillResult?.skillContext,
           }),
         };
       }
@@ -3426,7 +3465,7 @@ function App({
           kind: "meta",
           key: mkKey(),
           intentTier: classification.tier,
-          skillsActive: skillResult?.selectedSkills.length ?? 0,
+          skillsActive: skillResult?.sectionCount ?? 0,
           memoryRecalled: false,
         },
       ]);
@@ -3641,7 +3680,6 @@ function App({
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
-          selectedSkills,
           onFileChange: (path, content) => {
             if (content) {
               lspManagerRef.current.notifyChange(path, content);
