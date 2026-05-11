@@ -2925,8 +2925,10 @@ function App({
           errorCode: err.code,
           sessionId: sessionIdRef.current ?? undefined,
           userNote,
+          model: cfg?.model,
+          cloudMode: cfg?.cloudMode,
         });
-        void sendReport(payload).then((result) => {
+        void sendReport(payload, cfg?.cloudToken).then((result) => {
           setEvents((e) => [
             ...e,
             { kind: result.ok ? "info" : "error", key: mkKey(), text: result.message },

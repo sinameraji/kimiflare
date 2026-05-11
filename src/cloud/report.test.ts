@@ -19,18 +19,20 @@ describe("buildReport", () => {
       errorCode: 3040,
       sessionId: "test-session-123",
       userNote: "happened during a long conversation",
+      model: "@cf/moonshotai/kimi-k2.6",
+      cloudMode: true,
     });
 
-    assert.strictEqual(payload.errorMessage, "Rate limit exceeded (HTTP 429)");
-    assert.strictEqual(payload.httpStatus, 429);
-    assert.strictEqual(payload.errorCode, 3040);
-    assert.strictEqual(payload.sessionId, "test-session-123");
-    assert.strictEqual(payload.userNote, "happened during a long conversation");
-    assert.ok(payload.reportId);
-    assert.ok(payload.version);
-    assert.ok(payload.platform);
-    assert.ok(payload.nodeVersion);
-    assert.ok(Array.isArray(payload.recentLogs));
+    assert.strictEqual(payload.error.message, "Rate limit exceeded (HTTP 429)");
+    assert.strictEqual(payload.error.http_status, 429);
+    assert.strictEqual(payload.error.code, 3040);
+    assert.strictEqual(payload.context.session_id, "test-session-123");
+    assert.strictEqual(payload.user_message, "happened during a long conversation");
+    assert.strictEqual(payload.context.model, "@cf/moonshotai/kimi-k2.6");
+    assert.strictEqual(payload.metadata.cloud_mode, true);
+    assert.ok(payload.metadata.version);
+    assert.ok(payload.metadata.platform);
+    assert.ok(payload.metadata.node_version);
   });
 
   it("builds a payload without optional fields", () => {
@@ -38,11 +40,12 @@ describe("buildReport", () => {
       errorMessage: "Something went wrong",
     });
 
-    assert.strictEqual(payload.errorMessage, "Something went wrong");
-    assert.strictEqual(payload.httpStatus, undefined);
-    assert.strictEqual(payload.errorCode, undefined);
-    assert.strictEqual(payload.sessionId, undefined);
-    assert.strictEqual(payload.userNote, undefined);
+    assert.strictEqual(payload.error.message, "Something went wrong");
+    assert.strictEqual(payload.error.http_status, undefined);
+    assert.strictEqual(payload.error.code, undefined);
+    assert.strictEqual(payload.context.session_id, undefined);
+    assert.strictEqual(payload.user_message, undefined);
+    assert.strictEqual(payload.metadata.cloud_mode, false);
   });
 });
 
@@ -83,5 +86,16 @@ describe("sendReport", () => {
     const result = await sendReport({} as ReportPayload);
     assert.strictEqual(result.ok, false);
     assert.match(result.message, /network error/);
+  });
+
+  it("sends Authorization header when token is provided", async () => {
+    let capturedHeaders: Record<string, string> = {};
+    globalThis.fetch = async (_input, init) => {
+      capturedHeaders = init?.headers as Record<string, string>;
+      return new Response("OK", { status: 200 }) as unknown as ReturnType<typeof fetch>;
+    };
+
+    await sendReport({} as ReportPayload, "my-cloud-token");
+    assert.strictEqual(capturedHeaders["Authorization"], "Bearer my-cloud-token");
   });
 });

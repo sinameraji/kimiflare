@@ -1,34 +1,33 @@
 /**
  * Error report sender — posts diagnostic reports to the KimiFlare Cloud
- * feedback endpoint so they can be forwarded to Discord for triage.
+ * API so they can be forwarded to Discord for triage.
  */
 
 import { getRecentLogs, type LogEntry } from "../util/logger.js";
 import { getAppVersion } from "../util/version.js";
 
-const FEEDBACK_REPORT_URL = "https://hello.kimiflare.com/report";
+const REPORT_URL = "https://api.kimiflare.com/v1/report";
 
 export interface ReportPayload {
-  /** Random report ID */
-  reportId: string;
-  /** KimiFlare version */
-  version: string;
-  /** Platform info */
-  platform: string;
-  /** Node.js version */
-  nodeVersion: string;
-  /** Session ID if available */
-  sessionId?: string;
-  /** The error message shown to the user */
-  errorMessage: string;
-  /** HTTP status if applicable */
-  httpStatus?: number;
-  /** Cloudflare error code if applicable */
-  errorCode?: number;
-  /** Recent log entries (last N) */
-  recentLogs: LogEntry[];
-  /** Optional user-provided context */
-  userNote?: string;
+  error: {
+    message: string;
+    code?: number;
+    http_status?: number;
+  };
+  context: {
+    command?: string;
+    model?: string;
+    session_id?: string;
+    request_id?: string;
+    tool_calls?: string[];
+  };
+  user_message?: string;
+  metadata: {
+    version: string;
+    platform: string;
+    node_version: string;
+    cloud_mode: boolean;
+  };
 }
 
 export interface ReportResult {
@@ -44,31 +43,46 @@ export function buildReport(opts: {
   httpStatus?: number;
   errorCode?: number;
   sessionId?: string;
+  requestId?: string;
+  model?: string;
   userNote?: string;
+  cloudMode?: boolean;
 }): ReportPayload {
   return {
-    reportId: crypto.randomUUID(),
-    version: getAppVersion(),
-    platform: `${process.platform} ${process.arch}`,
-    nodeVersion: process.version,
-    sessionId: opts.sessionId,
-    errorMessage: opts.errorMessage,
-    httpStatus: opts.httpStatus,
-    errorCode: opts.errorCode,
-    recentLogs: getRecentLogs(50),
-    userNote: opts.userNote,
+    error: {
+      message: opts.errorMessage,
+      code: opts.errorCode,
+      http_status: opts.httpStatus,
+    },
+    context: {
+      command: "/report",
+      model: opts.model,
+      session_id: opts.sessionId,
+      request_id: opts.requestId,
+    },
+    user_message: opts.userNote,
+    metadata: {
+      version: getAppVersion(),
+      platform: `${process.platform} ${process.arch}`,
+      node_version: process.version,
+      cloud_mode: opts.cloudMode ?? false,
+    },
   };
 }
 
 /**
- * Send a report to the KimiFlare Cloud feedback endpoint.
- * The endpoint validates the payload and forwards it to Discord.
+ * Send a report to the KimiFlare Cloud API.
+ * The endpoint validates the token and forwards the report to Discord.
  */
-export async function sendReport(payload: ReportPayload): Promise<ReportResult> {
+export async function sendReport(payload: ReportPayload, token?: string): Promise<ReportResult> {
   try {
-    const res = await fetch(FEEDBACK_REPORT_URL, {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch(REPORT_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
     });
 
