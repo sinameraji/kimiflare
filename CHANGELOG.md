@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/sinameraji/kimiflare/compare/v0.59.0...v0.60.0) (2026-05-12)
+
+
+### Features
+
+* **feedback-worker:** store voice notes in R2, serve via /audio, text-only Discord webhook ([#401](https://github.com/sinameraji/kimiflare/issues/401)) ([69898e3](https://github.com/sinameraji/kimiflare/commit/69898e3076c996ed938dd77692088330e0a6d36b))
+
 ## [0.59.0](https://github.com/sinameraji/kimiflare/compare/v0.58.0...v0.59.0) (2026-05-12)
 
 
