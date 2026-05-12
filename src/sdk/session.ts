@@ -32,7 +32,7 @@ export async function createAgentSession(
 
   // Memory
   let memoryManager: MemoryManager | null = null;
-  const memoryEnabled = opts.memoryEnabled ?? config.memoryEnabled ?? true;
+  const memoryEnabled = opts.memoryEnabled ?? config.memoryEnabled ?? false;
   if (memoryEnabled) {
     const dbPath =
       config.memoryDbPath ?? join(homedir(), ".local", "share", "kimiflare", "memory.db");

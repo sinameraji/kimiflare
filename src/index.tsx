@@ -174,7 +174,7 @@ async function main() {
     cloudToken = cloudCreds.accessToken;
     cloudDeviceId = cloudCreds.deviceId;
     cfg = {
-      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL, memoryEnabled: true }),
+      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL, memoryEnabled: false }),
       cloudMode: true,
     };
   }
