@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.59.0](https://github.com/sinameraji/kimiflare/compare/v0.58.0...v0.59.0) (2026-05-12)
+
+
+### Features
+
+* **agent:** move pre-turn memory recall and skill routing into supervisor lifecycle ([#399](https://github.com/sinameraji/kimiflare/issues/399)) ([735cc7c](https://github.com/sinameraji/kimiflare/commit/735cc7c36bad18e054926910694b34e453adf9d3))
+
 ## [0.58.0](https://github.com/sinameraji/kimiflare/compare/v0.57.0...v0.58.0) (2026-05-12)
 
 
