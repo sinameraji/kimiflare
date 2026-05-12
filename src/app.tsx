@@ -3373,12 +3373,6 @@ function App({
         }
       }
 
-      // Ensure session-start memory recall has settled before the first turn
-      if (sessionStartRecallRef.current) {
-        await sessionStartRecallRef.current;
-        sessionStartRecallRef.current = null;
-      }
-
       if (opts?.queuedKey) {
         setEvents((evts) =>
           evts.map((e) =>

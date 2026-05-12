@@ -246,6 +246,18 @@ export function updateAccessedAt(db: Database.Database, ids: string[]): void {
   updateMany(ids);
 }
 
+/** Escape a raw query string for safe use in FTS5 MATCH.
+ *  Splits on whitespace, quotes each token, and adds a prefix wildcard.
+ *  This prevents syntax errors from special characters like /, -, etc.
+ */
+function escapeFts5(query: string): string {
+  return query
+    .split(/\s+/)
+    .filter((t) => t.length > 0)
+    .map((t) => `"${t.replace(/"/g, '""')}"*`)
+    .join(" ");
+}
+
 export function searchMemoriesFts(
   db: Database.Database,
   query: string,
@@ -254,7 +266,7 @@ export function searchMemoriesFts(
   agentRole?: string
 ): Array<{ memory: Memory; rank: number }> {
   const conditions: string[] = ["memories_fts MATCH ?", "m.forgotten = 0", "m.superseded_by IS NULL", "m.category != 'task'"];
-  const params: (string | number)[] = [`${query}*`];
+  const params: (string | number)[] = [escapeFts5(query)];
 
   if (repoPath) {
     conditions.push("m.repo_path = ?");
