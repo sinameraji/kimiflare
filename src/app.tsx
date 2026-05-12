@@ -555,6 +555,7 @@ function App({
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
+  const [loopModal, setLoopModal] = useState<{ resolve: (d: LimitDecision) => void } | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -702,6 +703,7 @@ function App({
   const sigintHandlerRef = useRef<(() => void) | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
+  const loopResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const sessionCreatedAtRef = useRef<string | null>(null);
@@ -925,7 +927,8 @@ function App({
       resumeSessions !== null ||
       checkpointSession !== null ||
       perm !== null ||
-      limitModal !== null;
+      limitModal !== null ||
+      loopModal !== null;
     if (modalActive && activePicker !== null) {
       setActivePicker(null);
     }
@@ -938,6 +941,7 @@ function App({
     resumeSessions,
     perm,
     limitModal,
+    loopModal,
     activePicker,
   ]);
 
@@ -1509,6 +1513,7 @@ function App({
       });
       const hadPerm = permResolveRef.current !== null;
       const hadLimit = limitResolveRef.current !== null;
+      const hadLoop = loopResolveRef.current !== null;
       if (hadPerm) {
         permResolveRef.current!("deny");
         permResolveRef.current = null;
@@ -1518,6 +1523,11 @@ function App({
         limitResolveRef.current!("stop");
         limitResolveRef.current = null;
         setLimitModal(null);
+      }
+      if (hadLoop) {
+        loopResolveRef.current!("stop");
+        loopResolveRef.current = null;
+        setLoopModal(null);
       }
       if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
         isAbortingRef.current = true;
@@ -1536,7 +1546,7 @@ function App({
         setTasksStartedAt(null);
         setTasksStartTokens(0);
         tasksRef.current = [];
-      } else if (!hadPerm && !hadLimit) {
+      } else if (!hadPerm && !hadLimit && !hadLoop) {
         logger.info("input:ctrl+c:exiting");
         void lspManagerRef.current.stopAll().finally(() => exit());
       }
@@ -1547,6 +1557,7 @@ function App({
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
+        loopModal !== null ||
         showLspWizard ||
         showCommandList ||
         commandWizard !== null ||
@@ -1567,6 +1578,11 @@ function App({
           limitResolveRef.current("stop");
           limitResolveRef.current = null;
           setLimitModal(null);
+        }
+        if (loopResolveRef.current) {
+          loopResolveRef.current("stop");
+          loopResolveRef.current = null;
+          setLoopModal(null);
         }
         activeScopeRef.current.abort("user_stopped");
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
@@ -1607,9 +1623,11 @@ function App({
       isAborting: isAbortingRef.current,
       hasPerm: permResolveRef.current !== null,
       hasLimit: limitResolveRef.current !== null,
+      hasLoop: loopResolveRef.current !== null,
     });
     const hadPerm = permResolveRef.current !== null;
     const hadLimit = limitResolveRef.current !== null;
+    const hadLoop = loopResolveRef.current !== null;
     if (hadPerm) {
       permResolveRef.current!("deny");
       permResolveRef.current = null;
@@ -1619,6 +1637,11 @@ function App({
       limitResolveRef.current!("stop");
       limitResolveRef.current = null;
       setLimitModal(null);
+    }
+    if (hadLoop) {
+      loopResolveRef.current!("stop");
+      loopResolveRef.current = null;
+      setLoopModal(null);
     }
     if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
       isAbortingRef.current = true;
@@ -2144,6 +2167,8 @@ function App({
       isAbortingRef.current = false;
       permResolveRef.current = null;
       limitResolveRef.current = null;
+      loopResolveRef.current = null;
+      setLoopModal(null);
       pendingToolCallsRef.current.clear();
     }
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
@@ -3661,6 +3686,11 @@ function App({
             limitResolveRef.current = resolve;
             setLimitModal({ limit: 50, resolve });
           }),
+        onLoopDetected: () =>
+          new Promise<LimitDecision>((resolve) => {
+            loopResolveRef.current = resolve;
+            setLoopModal({ resolve });
+          }),
         onKimiMdStale: () => {
           if (!kimiMdStaleNudgedRef.current) {
             kimiMdStaleNudgedRef.current = true;
@@ -3689,6 +3719,8 @@ function App({
         isAbortingRef.current = false;
         permResolveRef.current = null;
         limitResolveRef.current = null;
+        loopResolveRef.current = null;
+        setLoopModal(null);
         pendingToolCallsRef.current.clear();
 
         // Clear task list so it doesn't linger into the next turn
@@ -4230,6 +4262,17 @@ function App({
               limitModal.resolve(d);
               limitResolveRef.current = null;
               setLimitModal(null);
+            }}
+          />
+        ) : loopModal ? (
+          <LimitModal
+            limit={50}
+            title="Agent stuck in a loop"
+            description="The agent kept calling the same tools with identical arguments. What would you like to do?"
+            onDecide={(d) => {
+              loopModal.resolve(d);
+              loopResolveRef.current = null;
+              setLoopModal(null);
             }}
           />
         ) : (

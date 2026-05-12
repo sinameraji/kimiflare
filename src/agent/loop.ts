@@ -35,6 +35,9 @@ export interface AgentCallbacks {
   /** Called when the tool-call iteration limit is reached. Return "continue" to
    *  reset the counter and keep going, or "stop" to end the turn immediately. */
   onToolLimitReached?: () => Promise<"continue" | "stop">;
+  /** Called when the agent is detected repeating identical tool calls (loop). Return "continue" to
+   *  reset the guardrail and keep going, or "stop" to end the turn immediately. */
+  onLoopDetected?: () => Promise<"continue" | "stop">;
   /** Called when accumulated high-signal memories suggest KIMI.md may be stale. */
   onKimiMdStale?: () => void;
 }
@@ -698,6 +701,22 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       throw new BudgetExhaustedError();
     }
     if (loopExhausted) {
+      if (opts.callbacks.onLoopDetected) {
+        const decision = await opts.callbacks.onLoopDetected();
+        if (decision === "continue") {
+          opts.messages.push({
+            role: "system",
+            content:
+              "You were stuck calling the same tools with identical arguments. " +
+              "The guardrail has been reset so you can continue. Try a different approach.",
+          });
+          loopExhausted = false;
+          recentToolCalls.length = 0;
+          continue;
+        } else {
+          return;
+        }
+      }
       throw new AgentLoopError();
     }
   }

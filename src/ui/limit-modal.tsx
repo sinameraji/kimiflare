@@ -8,9 +8,11 @@ export type LimitDecision = "continue" | "stop";
 interface Props {
   limit: number;
   onDecide: (decision: LimitDecision) => void;
+  title?: string;
+  description?: string;
 }
 
-export function LimitModal({ limit, onDecide }: Props) {
+export function LimitModal({ limit, onDecide, title, description }: Props) {
   const theme = useTheme();
   const items = [
     { label: "Continue", value: "continue" as const },
@@ -20,10 +22,10 @@ export function LimitModal({ limit, onDecide }: Props) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.error} paddingX={1}>
       <Text color={theme.error} bold>
-        Tool-call limit reached ({limit})
+        {title ?? `Tool-call limit reached (${limit})`}
       </Text>
       <Text dimColor>
-        This session has made {limit} tool calls. What would you like to do?
+        {description ?? `This session has made ${limit} tool calls. What would you like to do?`}
       </Text>
       <Box marginTop={1}>
         <SelectInput
