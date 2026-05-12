@@ -11,7 +11,7 @@ import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
 
-export type TurnPhase = "idle" | "streaming" | "executing" | "compacting" | "error";
+export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
 export interface SupervisorCallbacks {
   onDone?: () => void;
@@ -40,7 +40,7 @@ export class TurnSupervisor {
       logger.warn("supervisor:start_rejected", { reason: "turn_already_running", phase: this._phase });
       throw new Error("TurnSupervisor: turn already in progress");
     }
-    this._phase = "streaming";
+    this._phase = "preparing";
     this._killRequested = false;
     logger.debug("supervisor:turn_start", { sessionId: opts.sessionId });
 

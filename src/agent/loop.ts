@@ -6,12 +6,18 @@ import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task } from "../tools/registry.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { HybridResult } from "../memory/schema.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
 import { generateTypeScriptApi, runInSandbox } from "../code-mode/index.js";
 import { estimatePromptTokens } from "./artifact-compaction.js";
 import { logger } from "../util/logger.js";
+import { selectSkills } from "../skills/router.js";
+import type { SemanticSkillRoutingResult } from "../skills/types.js";
+import type Database from "better-sqlite3";
+import { buildSystemPrompt, buildSessionPrefix } from "./system-prompt.js";
+import type { Mode } from "../mode.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -40,6 +46,12 @@ export interface AgentCallbacks {
   onLoopDetected?: () => Promise<"continue" | "stop">;
   /** Called when accumulated high-signal memories suggest KIMI.md may be stale. */
   onKimiMdStale?: () => void;
+  /** Called when session-start memory recall succeeds and memories are injected. */
+  onMemoryRecalled?: (count: number) => void;
+  /** Called when semantic skill routing completes. */
+  onSkillsSelected?: (result: SemanticSkillRoutingResult) => void;
+  /** Called after pre-turn setup (memory + skills) to emit the meta banner. */
+  onMetaBanner?: (info: { intentTier: string; skillsActive: number; memoryRecalled: boolean }) => void;
 }
 
 export interface AgentTurnOpts {
@@ -83,6 +95,25 @@ export interface AgentTurnOpts {
   cloudDeviceId?: string;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
   shell?: string;
+  /** Session-start memory recall promise. If provided, awaited at turn start and injected into messages. */
+  sessionStartRecall?: Promise<HybridResult[]>;
+  /** Skills DB for semantic skill routing. */
+  skillsDb?: Database.Database;
+  /** Config for skill routing. */
+  skillRoutingConfig?: {
+    accountId: string;
+    apiToken: string;
+    embeddingModel?: string;
+    gateway?: AiGatewayOptions;
+    cloudMode?: boolean;
+    cloudToken?: string;
+    cloudDeviceId?: string;
+    maxSkillTokens?: number;
+  };
+  /** Current mode for system prompt. */
+  mode?: Mode;
+  /** Whether to use cache-stable prompt assembly (dual system messages). */
+  cacheStable?: boolean;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -128,11 +159,132 @@ const MAX_PROMPT_TOKENS = 240_000;
  *  ~10k chars ≈ 2,500 tokens — generous but prevents runaway growth. */
 const MAX_TOOL_CONTENT_CHARS = 10_000;
 
+function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException("aborted", "AbortError"));
+      } else {
+        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      }
+    }),
+  ]);
+}
+
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const turnStart = performance.now();
   logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
+
+  // --- Pre-turn async work (memory recall + skill routing) ---
+  let memoryRecalledCount = 0;
+  let skillResult: SemanticSkillRoutingResult | undefined;
+
+  if (opts.sessionStartRecall) {
+    try {
+      const results = await raceWithSignal(opts.sessionStartRecall, opts.signal);
+      if (results.length > 0 && opts.memoryManager) {
+        const text = await raceWithSignal(
+          opts.memoryManager.synthesizeRecalled(results, opts.signal),
+          opts.signal,
+        );
+        memoryRecalledCount = results.length;
+        // Insert after existing system messages, before any user messages
+        const lastSystemIdx = opts.messages.findLastIndex((m) => m.role === "system");
+        const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : opts.messages.length;
+        opts.messages.splice(insertIdx, 0, { role: "system", content: text });
+        opts.callbacks.onMemoryRecalled?.(results.length);
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      // Non-fatal: session works fine without recalled memories
+    }
+  }
+
+  if (opts.signal.aborted) {
+    throw new DOMException("aborted", "AbortError");
+  }
+
+  if (opts.skillsDb && opts.skillRoutingConfig && opts.intentClassification) {
+    try {
+      const lastUserMsg = [...opts.messages].reverse().find((m) => m.role === "user");
+      const prompt =
+        typeof lastUserMsg?.content === "string"
+          ? lastUserMsg.content
+          : Array.isArray(lastUserMsg?.content)
+            ? lastUserMsg.content
+                .filter((p): p is { type: "text"; text: string } => p.type === "text")
+                .map((p) => p.text)
+                .join(" ")
+            : "";
+      if (prompt) {
+        skillResult = await raceWithSignal(
+          selectSkills(
+            {
+              prompt,
+              tier: opts.intentClassification.tier,
+              maxSkillTokens: opts.skillRoutingConfig.maxSkillTokens ?? 250_000 - 10_000,
+            },
+            {
+              db: opts.skillsDb,
+              accountId: opts.skillRoutingConfig.accountId,
+              apiToken: opts.skillRoutingConfig.apiToken,
+              embeddingModel: opts.skillRoutingConfig.embeddingModel,
+              gateway: opts.skillRoutingConfig.gateway,
+              cloudMode: opts.skillRoutingConfig.cloudMode,
+              cloudToken: opts.skillRoutingConfig.cloudToken,
+              cloudDeviceId: opts.skillRoutingConfig.cloudDeviceId,
+            },
+          ),
+          opts.signal,
+        );
+        opts.callbacks.onSkillsSelected?.(skillResult);
+
+        // Rebuild system prompt with skill context
+        const allTools = opts.tools;
+        if (opts.cacheStable) {
+          // Index 1 = session prefix (index 0 = static prefix)
+          opts.messages[1] = {
+            role: "system",
+            content: buildSessionPrefix({
+              cwd: opts.cwd,
+              tools: allTools,
+              model: opts.model,
+              mode: opts.mode,
+              skillContext: skillResult.skillContext,
+            }),
+          };
+        } else {
+          // Index 0 = single system prompt
+          opts.messages[0] = {
+            role: "system",
+            content: buildSystemPrompt({
+              cwd: opts.cwd,
+              tools: allTools,
+              model: opts.model,
+              mode: opts.mode,
+              skillContext: skillResult.skillContext,
+            }),
+          };
+        }
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      // Non-fatal: skills are optional
+    }
+  }
+
+  if (opts.signal.aborted) {
+    throw new DOMException("aborted", "AbortError");
+  }
+
+  opts.callbacks.onMetaBanner?.({
+    intentTier: opts.intentClassification?.tier ?? "medium",
+    skillsActive: skillResult?.sectionCount ?? 0,
+    memoryRecalled: memoryRecalledCount > 0,
+  });
 
   let toolDefs: ReturnType<typeof toOpenAIToolDefs>;
   let codeModeApiString = "";
