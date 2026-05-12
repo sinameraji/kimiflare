@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { loadConfig, DEFAULT_MODEL } from "./config.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
-import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -72,6 +72,7 @@ program
     console.log(`Token budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
     console.log(`Used: ${usage.input_tokens_used.toLocaleString()}`);
     console.log(`Grant expires: ${usage.expires_at}`);
+    console.log("Or when the global pool of free tokens runs out.");
   });
 
 program.addCommand(createRemoteCommand());
@@ -117,8 +118,20 @@ program
           if (usage) {
             console.log(`\nToken budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
             console.log(`Grant expires: ${usage.expires_at}`);
+            console.log("Or when the global pool of free tokens runs out.");
           }
         } catch (err) {
+          if (isKillSwitchError(err)) {
+            console.error(
+              "\nKimiFlare Cloud has reached its maximum budget across all users.\n" +
+                "The free credits period has ended.\n\n" +
+                "To continue using KimiFlare, switch to BYOK mode:\n" +
+                "  • kimiflare config set-key <your-cloudflare-api-key>\n" +
+                "  • kimiflare config set-account <your-account-id>\n" +
+                "  • Or re-run kimiflare and select BYOK\n",
+            );
+            process.exit(0);
+          }
           console.error("Authentication failed:", err instanceof Error ? err.message : String(err));
           process.exit(1);
         }
@@ -173,6 +186,26 @@ async function main() {
     }
     cloudToken = cloudCreds.accessToken;
     cloudDeviceId = cloudCreds.deviceId;
+
+    // Proactive health check: detect kill switch early before the first prompt
+    try {
+      const { fetchCloudUsage } = await import("./cloud/auth.js");
+      await fetchCloudUsage(cloudToken, cloudDeviceId);
+    } catch (err) {
+      if (isKillSwitchError(err)) {
+        console.error(
+          "\nKimiFlare Cloud has reached its maximum budget across all users.\n" +
+            "The free credits period has ended.\n\n" +
+            "To continue using KimiFlare, switch to BYOK mode:\n" +
+            "  • kimiflare config set-key <your-cloudflare-api-key>\n" +
+            "  • kimiflare config set-account <your-account-id>\n" +
+            "  • Or re-run kimiflare and select BYOK\n",
+        );
+        process.exit(0);
+      }
+      // Other errors (network, etc.) — don't block, let it retry on first request
+    }
+
     cfg = {
       ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL, memoryEnabled: true }),
       cloudMode: true,
@@ -355,6 +388,23 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
     if (err instanceof AgentLoopError) {
       process.stderr.write("\n\x1b[33m[Agent loop detected — exiting with code 43]\x1b[0m\n");
       process.exitCode = 43;
+      return;
+    }
+    if (isKillSwitchError(err)) {
+      process.stderr.write(
+        "\n\x1b[31m" +
+          "╔══════════════════════════════════════════════════════════════╗\n" +
+          "║  KimiFlare Cloud has reached its maximum budget across       ║\n" +
+          "║  all users. The free credits period has ended.               ║\n" +
+          "║                                                              ║\n" +
+          "║  To continue using KimiFlare, switch to BYOK mode:           ║\n" +
+          "║  • kimiflare config set-key <your-cloudflare-api-key>        ║\n" +
+          "║  • kimiflare config set-account <your-account-id>            ║\n" +
+          "║  • Or re-run kimiflare and select BYOK                       ║\n" +
+          "╚══════════════════════════════════════════════════════════════╝\n" +
+          "\x1b[0m\n",
+      );
+      process.exitCode = 0;
       return;
     }
     if (err instanceof KimiApiError) {

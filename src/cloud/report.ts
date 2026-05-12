@@ -5,6 +5,7 @@
 
 import { getRecentLogs, type LogEntry } from "../util/logger.js";
 import { getAppVersion } from "../util/version.js";
+import { detectKillSwitch } from "../util/errors.js";
 
 const REPORT_URL = "https://api.kimiflare.com/v1/report";
 
@@ -85,6 +86,8 @@ export async function sendReport(payload: ReportPayload, token?: string): Promis
       headers,
       body: JSON.stringify(payload),
     });
+
+    await detectKillSwitch(res);
 
     if (res.ok) {
       return { ok: true, message: "Report sent. Thanks for helping improve KimiFlare!" };

@@ -8,6 +8,7 @@ import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
 import { CloudQuotaMessage } from "./cloud-quota-message.js";
 import { ApiErrorMessage } from "./api-error-message.js";
+import { ServiceEndedMessage } from "./service-ended-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -43,6 +44,11 @@ export type ChatEvent =
       httpStatus?: number;
       code?: number;
       message: string;
+    }
+  | {
+      kind: "service_ended";
+      key: string;
+      endedAt?: string;
     };
 
 interface Props {
@@ -218,6 +224,9 @@ const EventView = React.memo(function EventView({
         message={evt.message}
       />
     );
+  }
+  if (evt.kind === "service_ended") {
+    return <ServiceEndedMessage endedAt={evt.endedAt} />;
   }
   return (
     <Text color={theme.error}>

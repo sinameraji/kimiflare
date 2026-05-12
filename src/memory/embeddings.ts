@@ -1,5 +1,6 @@
 import type { AiGatewayOptions } from "../agent/client.js";
 import { getUserAgent } from "../util/version.js";
+import { detectKillSwitch } from "../util/errors.js";
 
 export interface EmbedOpts {
   accountId: string;
@@ -34,6 +35,7 @@ async function fetchWithRetry(
   for (let i = 0; i < retries; i++) {
     try {
       const res = await fetch(url, init);
+      await detectKillSwitch(res);
       if (res.ok) return res;
       if (res.status === 429 || res.status >= 500) {
         // Rate limit or server error — retry with backoff

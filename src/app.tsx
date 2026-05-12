@@ -28,7 +28,7 @@ import { LspManager } from "./lsp/manager.js";
 import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { KimiApiError, isCloudQuotaExhaustedError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
 import { buildReport, sendReport } from "./cloud/report.js";
@@ -658,10 +658,22 @@ function App({
     if (!cfg?.cloudMode || !initialCloudToken) return;
     let cancelled = false;
     const fetchBudget = async () => {
-      const { fetchCloudUsage } = await import("./cloud/auth.js");
-      const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
-      if (usage && !cancelled) {
-        setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+      try {
+        const { fetchCloudUsage } = await import("./cloud/auth.js");
+        const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
+        if (usage && !cancelled) {
+          setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+        }
+      } catch (err) {
+        if (isKillSwitchError(err) && !cancelled) {
+          setCloudToken(undefined);
+          setCloudDeviceId(undefined);
+          setEvents((es) => [
+            ...es,
+            { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
+          ]);
+        }
+        // Other errors are non-fatal
       }
     };
     fetchBudget();
@@ -1947,10 +1959,22 @@ function App({
               const token = cloudToken ?? initialCloudToken!;
               const did = cloudDeviceId ?? initialCloudDeviceId;
               void (async () => {
-                const { fetchCloudUsage } = await import("./cloud/auth.js");
-                const usage = await fetchCloudUsage(token, did);
-                if (usage) {
-                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+                try {
+                  const { fetchCloudUsage } = await import("./cloud/auth.js");
+                  const usage = await fetchCloudUsage(token, did);
+                  if (usage) {
+                    setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+                  }
+                } catch (err) {
+                  if (isKillSwitchError(err)) {
+                    setCloudToken(undefined);
+                    setCloudDeviceId(undefined);
+                    setEvents((es) => [
+                      ...es,
+                      { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
+                    ]);
+                  }
+                  // Other errors are non-fatal
                 }
               })();
             }
@@ -2044,6 +2068,13 @@ function App({
         setEvents((evts) =>
           evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
         );
+      } else if (isKillSwitchError(e)) {
+        setCloudToken(undefined);
+        setCloudDeviceId(undefined);
+        setEvents((es) => [
+          ...es,
+          { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
+        ]);
       } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
         const token = cloudToken ?? initialCloudToken;
         const did = cloudDeviceId ?? initialCloudDeviceId;
@@ -3563,10 +3594,22 @@ function App({
             const token = cloudToken ?? initialCloudToken!;
             const did = cloudDeviceId ?? initialCloudDeviceId;
             void (async () => {
-              const { fetchCloudUsage } = await import("./cloud/auth.js");
-              const usage = await fetchCloudUsage(token, did);
-              if (usage) {
-                setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+              try {
+                const { fetchCloudUsage } = await import("./cloud/auth.js");
+                const usage = await fetchCloudUsage(token, did);
+                if (usage) {
+                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+                }
+              } catch (err) {
+                if (isKillSwitchError(err)) {
+                  setCloudToken(undefined);
+                  setCloudDeviceId(undefined);
+                  setEvents((es) => [
+                    ...es,
+                    { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
+                  ]);
+                }
+                // Other errors are non-fatal
               }
             })();
           }
@@ -3815,6 +3858,13 @@ function App({
               setEvents((evts) =>
                 evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
               );
+            } else if (isKillSwitchError(e)) {
+              setCloudToken(undefined);
+              setCloudDeviceId(undefined);
+              setEvents((es) => [
+                ...es,
+                { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
+              ]);
             } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
               const token = cloudToken ?? initialCloudToken;
               const did = cloudDeviceId ?? initialCloudDeviceId;

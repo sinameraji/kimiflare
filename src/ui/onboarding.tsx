@@ -19,6 +19,7 @@ import {
   POLL_INTERVAL_MS,
   POLL_TIMEOUT_MS,
 } from "../cloud/auth.js";
+import { isKillSwitchError } from "../util/errors.js";
 
 const execAsync = promisify(exec);
 
@@ -99,8 +100,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
             }
             return;
           }
-        } catch {
-          // Continue polling
+        } catch (err) {
+          if (isKillSwitchError(err)) {
+            if (!cancelled) {
+              setCloudAuth({
+                phase: "error",
+                message:
+                  "KimiFlare Cloud has reached its maximum budget across all users. " +
+                  "The free credits period has ended. Switch to BYOK mode to continue using KimiFlare.",
+              });
+            }
+            return;
+          }
+          // Continue polling on other errors
         }
 
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -307,6 +319,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
               </Text>
               <Text color={theme.info.color}>
                 Grant expires: {cloudAuth.usage.expires_at}
+              </Text>
+              <Text color={theme.info.color}>
+                Or when the global pool of free tokens runs out.
               </Text>
             </Box>
             <Box marginTop={1}>

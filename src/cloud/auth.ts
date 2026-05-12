@@ -13,6 +13,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir, hostname, userInfo } from "node:os";
 import { join } from "node:path";
+import { detectKillSwitch } from "../util/errors.js";
 
 export const CLOUD_API_URL = "https://api.kimiflare.com";
 export const POLL_INTERVAL_MS = 5000;
@@ -127,6 +128,8 @@ export async function registerDevice(codes: DeviceCodes): Promise<void> {
     body: JSON.stringify({ device_code: codes.deviceCode, user_code: codes.userCode, device_id: codes.deviceId }),
   });
 
+  await detectKillSwitch(registerRes);
+
   if (!registerRes.ok) {
     const err = (await registerRes.json().catch(() => ({}))) as { error?: string };
     throw new Error(`Failed to register device: ${err.error || registerRes.statusText}`);
@@ -139,6 +142,8 @@ export async function pollForToken(deviceCode: string, deviceId: string): Promis
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ device_code: deviceCode }),
   });
+
+  await detectKillSwitch(pollRes);
 
   if (!pollRes.ok) return null;
 
@@ -169,6 +174,7 @@ export async function fetchCloudUsage(token: string, deviceId?: string): Promise
   } catch {
     return null;
   }
+  await detectKillSwitch(res);
   if (!res.ok) return null;
   const data = (await res.json()) as Record<string, unknown>;
   if (

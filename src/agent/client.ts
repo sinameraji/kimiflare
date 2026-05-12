@@ -1,5 +1,5 @@
 import { readSSE } from "../util/sse.js";
-import { KimiApiError } from "../util/errors.js";
+import { KimiApiError, KillSwitchError, detectKillSwitch } from "../util/errors.js";
 import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
@@ -107,7 +107,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
         body: stableStringify(body, jsonReplacer),
         signal: opts.signal,
       });
+      await detectKillSwitch(res);
     } catch (fetchErr) {
+      if (fetchErr instanceof KillSwitchError) throw fetchErr;
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       logger.warn("runKimi:fetch_error", { requestId, attempt, error: msg });
       if (attempt < MAX_ATTEMPTS - 1) {

@@ -16,6 +16,31 @@ export class PermissionDeniedError extends Error {
   }
 }
 
+export class KillSwitchError extends Error {
+  endedAt: string | undefined;
+  constructor(endedAt?: string) {
+    super("SERVICE_ENDED");
+    this.name = "KillSwitchError";
+    this.endedAt = endedAt;
+  }
+}
+
+export function isKillSwitchError(err: unknown): err is KillSwitchError {
+  return err instanceof KillSwitchError;
+}
+
+/** Detect the cloud kill-switch response (503 + {error: "SERVICE_ENDED"}).
+ *  Call this immediately after fetch() and before checking res.ok.
+ *  Throws KillSwitchError when matched; otherwise returns silently. */
+export async function detectKillSwitch(res: Response): Promise<void> {
+  if (res.status === 503) {
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (data.error === "SERVICE_ENDED") {
+      throw new KillSwitchError(typeof data.ended_at === "string" ? data.ended_at : undefined);
+    }
+  }
+}
+
 export function isCloudQuotaExhaustedError(err: unknown): err is KimiApiError {
   return (
     err instanceof KimiApiError &&
