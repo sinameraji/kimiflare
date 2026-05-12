@@ -1,5 +1,6 @@
 export interface Env {
   DISCORD_WEBHOOK_URL: string;
+  AUDIO_BUCKET: R2Bucket;
 }
 
 interface RateLimitEntry {
@@ -9,15 +10,15 @@ interface RateLimitEntry {
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_AUDIO_TYPES = new Set([
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_AUDIO_PREFIXES = [
   "audio/webm",
   "audio/mp4",
   "audio/wav",
   "audio/mpeg",
   "audio/ogg",
   "audio/mp3",
-]);
+];
 
 const rateLimits = new Map<string, RateLimitEntry>();
 
@@ -45,6 +46,10 @@ function getClientIP(request: Request): string {
     request.headers.get("x-forwarded-for") ||
     "unknown"
   );
+}
+
+function isAllowedAudioType(type: string): boolean {
+  return ALLOWED_AUDIO_PREFIXES.some((prefix) => type.startsWith(prefix));
 }
 
 function htmlPage(session: string, version: string): string {
@@ -414,13 +419,50 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function getAudioExtension(type: string): string {
+  if (type.startsWith("audio/webm")) return "webm";
+  if (type.startsWith("audio/mp4")) return "m4a";
+  if (type.startsWith("audio/wav")) return "wav";
+  if (type.startsWith("audio/mpeg") || type.startsWith("audio/mp3")) return "mp3";
+  if (type.startsWith("audio/ogg")) return "ogg";
+  return "bin";
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
+    // Serve audio files from R2
+    const audioMatch = url.pathname.match(/^\/audio\/(.+)$/);
+    if (audioMatch && request.method === "GET") {
+      const key = audioMatch[1];
+      console.log(`[audio] serving key=${key}`);
+      try {
+        const object = await env.AUDIO_BUCKET.get(key);
+        if (!object) {
+          console.log(`[audio] not found key=${key}`);
+          return new Response("Not found.", { status: 404 });
+        }
+        const headers = new Headers();
+        object.writeHttpMetadata(headers);
+        headers.set("etag", object.httpEtag);
+        headers.set("content-type", object.httpMetadata?.contentType ?? "audio/webm");
+        headers.set("accept-ranges", "bytes");
+        console.log(`[audio] served key=${key} size=${object.size}`);
+        return new Response(object.body, { headers });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[audio] error key=${key} msg=${msg}`);
+        return new Response(`Failed to retrieve audio: ${msg}`, { status: 500 });
+      }
+    }
+
     if (url.pathname === "/upload" && request.method === "POST") {
       const ip = getClientIP(request);
+      console.log(`[upload] request from ip=${ip}`);
+
       if (!checkRateLimit(ip)) {
+        console.log(`[upload] rate limited ip=${ip}`);
         return new Response("Rate limit exceeded. Try again later.", {
           status: 429,
           headers: { "Access-Control-Allow-Origin": "*" },
@@ -431,6 +473,7 @@ export default {
       try {
         form = await request.formData();
       } catch {
+        console.log(`[upload] invalid form data ip=${ip}`);
         return new Response("Invalid form data.", {
           status: 400,
           headers: { "Access-Control-Allow-Origin": "*" },
@@ -439,6 +482,7 @@ export default {
 
       const audio = form.get("audio");
       if (!audio || !(audio instanceof File)) {
+        console.log(`[upload] missing audio file ip=${ip}`);
         return new Response("Missing audio file.", {
           status: 400,
           headers: { "Access-Control-Allow-Origin": "*" },
@@ -446,13 +490,15 @@ export default {
       }
 
       if (audio.size > MAX_FILE_SIZE) {
-        return new Response("File too large. Max 10 MB.", {
+        console.log(`[upload] file too large ip=${ip} size=${audio.size}`);
+        return new Response("File too large. Max 50 MB.", {
           status: 413,
           headers: { "Access-Control-Allow-Origin": "*" },
         });
       }
 
-      if (!ALLOWED_AUDIO_TYPES.has(audio.type)) {
+      if (!isAllowedAudioType(audio.type)) {
+        console.log(`[upload] unsupported audio type ip=${ip} type=${audio.type}`);
         return new Response(`Unsupported audio type: ${audio.type}`, {
           status: 400,
           headers: { "Access-Control-Allow-Origin": "*" },
@@ -464,31 +510,71 @@ export default {
       const text = String(form.get("text") || "").slice(0, 2000);
       const contact = String(form.get("contact") || "").slice(0, 256);
 
-      // Build Discord webhook payload
-      const discordForm = new FormData();
+      console.log(
+        `[upload] validated ip=${ip} session=${session} version=${version} size=${audio.size} type=${audio.type}`
+      );
+
+      // Upload to R2
+      const ext = getAudioExtension(audio.type);
+      const r2Key = `voice-notes/${session}-${Date.now()}.${ext}`;
+      try {
+        await env.AUDIO_BUCKET.put(r2Key, audio.stream(), {
+          httpMetadata: { contentType: audio.type },
+        });
+        console.log(`[upload] r2 put success key=${r2Key}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[upload] r2 put failed key=${r2Key} msg=${msg}`);
+        return new Response(`Failed to store audio: ${msg}`, {
+          status: 502,
+          headers: { "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      // Build public link
+      const audioUrl = `${url.origin}/audio/${r2Key}`;
+
+      // Build Discord webhook payload (text-only)
       const contentParts: string[] = [];
       contentParts.push(`🎙️ Voice note from kimiflare v${version}`);
       contentParts.push(`Session: \`${session}\``);
       if (contact) contentParts.push(`Contact: ${contact}`);
       if (text) contentParts.push(`Text note: ${text}`);
-      discordForm.append("content", contentParts.join("\n"));
-      discordForm.append("file", audio, audio.name || "voice-note.webm");
+      contentParts.push(`Link: ${audioUrl}`);
+
+      // Discord content limit is 2000 chars; truncate text note if needed
+      let content = contentParts.join("\n");
+      if (content.length > 2000) {
+        const overhead = content.length - (text?.length ?? 0);
+        const maxText = Math.max(0, 2000 - overhead - 3);
+        const safeText = text.slice(0, maxText) + (text.length > maxText ? "..." : "");
+        const safeParts: string[] = [];
+        safeParts.push(`🎙️ Voice note from kimiflare v${version}`);
+        safeParts.push(`Session: \`${session}\``);
+        if (contact) safeParts.push(`Contact: ${contact}`);
+        if (safeText) safeParts.push(`Text note: ${safeText}`);
+        safeParts.push(`Link: ${audioUrl}`);
+        content = safeParts.join("\n");
+      }
 
       try {
         const discordRes = await fetch(env.DISCORD_WEBHOOK_URL, {
           method: "POST",
-          body: discordForm,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
         });
         if (!discordRes.ok) {
           const body = await discordRes.text().catch(() => "");
           throw new Error(`Discord returned ${discordRes.status}: ${body}`);
         }
+        console.log(`[upload] discord webhook ok session=${session}`);
         return new Response("OK", {
           status: 200,
           headers: { "Access-Control-Allow-Origin": "*" },
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[upload] discord webhook failed session=${session} msg=${msg}`);
         return new Response(`Failed to forward to Discord: ${msg}`, {
           status: 502,
           headers: { "Access-Control-Allow-Origin": "*" },

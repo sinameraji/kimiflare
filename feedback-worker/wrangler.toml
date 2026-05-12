@@ -1,3 +1,14 @@
 name = "kimiflare-feedback"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
+
+[[r2_buckets]]
+bucket_name = "kimiflare-feedback-audio"
+binding = "AUDIO_BUCKET"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
