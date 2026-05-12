@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.58.0](https://github.com/sinameraji/kimiflare/compare/v0.57.0...v0.58.0) (2026-05-12)
+
+
+### Features
+
+* **cloud:** add kill switch integration for KimiFlare Cloud ([#395](https://github.com/sinameraji/kimiflare/issues/395)) ([ec37c10](https://github.com/sinameraji/kimiflare/commit/ec37c1036fece5a41d2aca50337ecdd2a81011e8))
+* **ui:** add loop-detected modal with continue/stop choices ([#397](https://github.com/sinameraji/kimiflare/issues/397)) ([d97fe3f](https://github.com/sinameraji/kimiflare/commit/d97fe3f02300a84f9886d9a36cf64fe7a548d14c))
+
+
+### Reverts
+
+* **config:** default memoryEnabled back to false (opt-in via /memory) ([#398](https://github.com/sinameraji/kimiflare/issues/398)) ([54e702d](https://github.com/sinameraji/kimiflare/commit/54e702dd6569b8467437965a551430bebf643a5e))
+
 ## [0.57.0](https://github.com/sinameraji/kimiflare/compare/v0.56.0...v0.57.0) (2026-05-11)
 
 
