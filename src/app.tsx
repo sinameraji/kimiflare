@@ -729,7 +729,7 @@ function App({
   const lspInitRef = useRef(false);
   const busyRef = useRef(busy);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
-  const sessionStartRecallRef = useRef<Promise<void> | null>(null);
+  const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
   const turnCounterRef = useRef(0);
 
@@ -1011,27 +1011,11 @@ function App({
         }
       });
 
-      // Fire session-start recall so the model walks in with context.
-      // The promise is awaited in submit() before the first user message.
+      // Fire session-start recall in the background so results are ready by the
+      // time the first turn starts. Synthesis and injection happen inside
+      // runAgentTurn so they are covered by the turn's abort signal.
       const cwd = process.cwd();
-      sessionStartRecallRef.current = (async () => {
-        try {
-          const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
-          if (results.length > 0) {
-            const text = await manager.synthesizeRecalled(results);
-            // Insert after existing system messages, before any user messages
-            const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-            const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-            messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-            setEvents((e) => [
-              ...e,
-              { kind: "memory", key: mkKey(), text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} about this repo` },
-            ]);
-          }
-        } catch {
-          // Non-fatal: session works fine without recalled memories
-        }
-      })();
+      sessionStartRecallRef.current = manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
 
       // Session-start drift check (Trigger A): if KIMI.md exists and high-signal
       // memories have been learned since the last refresh, mark as stale.
@@ -3389,12 +3373,6 @@ function App({
         }
       }
 
-      // Ensure session-start memory recall has settled before the first turn
-      if (sessionStartRecallRef.current) {
-        await sessionStartRecallRef.current;
-        sessionStartRecallRef.current = null;
-      }
-
       if (opts?.queuedKey) {
         setEvents((evts) =>
           evts.map((e) =>
@@ -3458,34 +3436,6 @@ function App({
         sessionTitleRef.current = generateSessionTitle(trimmed, classification.intent);
       }
 
-      // Route skills based on intent tier (semantic search)
-      let skillResult: SemanticSkillRoutingResult | undefined;
-      try {
-        const db = getMemoryDb();
-        if (db) {
-          skillResult = await selectSkills(
-            {
-              prompt: trimmed,
-              tier: classification.tier,
-              maxSkillTokens: CONTEXT_LIMIT - 10_000, // leave headroom
-            },
-            {
-              db,
-              accountId: cfg.accountId,
-              apiToken: cfg.apiToken,
-              embeddingModel: cfg.memoryEmbeddingModel,
-              gateway: gatewayFromConfig(cfg),
-              cloudMode: cfg.cloudMode,
-              cloudToken: cloudToken ?? initialCloudToken,
-              cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-            },
-          );
-          setSkillsActive(skillResult.sectionCount);
-        }
-      } catch {
-        setSkillsActive(0);
-      }
-
       const effortForTier: Record<string, ReasoningEffort> = {
         light: "low",
         medium: "medium",
@@ -3495,45 +3445,12 @@ function App({
       const effectiveCodeMode = classification.tier === "heavy";
       setCodeMode(effectiveCodeMode);
 
-      // Inject selected skills into system prompt
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model,
-            mode: modeRef.current,
-            skillContext: skillResult?.skillContext,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model,
-            mode: modeRef.current,
-            skillContext: skillResult?.skillContext,
-          }),
-        };
-      }
-
-      // Emit metadata banner
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "meta",
-          key: mkKey(),
-          intentTier: classification.tier,
-          skillsActive: skillResult?.sectionCount ?? 0,
-          memoryRecalled: false,
-        },
-      ]);
-
       const turnScope = sessionScopeRef.current.createChild();
       activeScopeRef.current = turnScope;
+
+      // Pre-turn async work (session-start memory recall + skill routing) is
+      // performed inside runAgentTurn so it is covered by the supervisor
+      // lifecycle and the turn's abort signal.
 
       const sharedCallbacks = {
         onAssistantStart: () => {
@@ -3701,6 +3618,27 @@ function App({
             ]);
           }
         },
+        onMemoryRecalled: (count: number) => {
+          setEvents((e) => [
+            ...e,
+            { kind: "memory", key: mkKey(), text: `recalled ${count} memory${count === 1 ? "" : "ies"} about this repo` },
+          ]);
+        },
+        onSkillsSelected: (result: SemanticSkillRoutingResult) => {
+          setSkillsActive(result.sectionCount);
+        },
+        onMetaBanner: (info: { intentTier: string; skillsActive: number; memoryRecalled: boolean }) => {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "meta",
+              key: mkKey(),
+              intentTier: info.intentTier as "light" | "medium" | "heavy",
+              skillsActive: info.skillsActive,
+              memoryRecalled: info.memoryRecalled,
+            },
+          ]);
+        },
       };
 
       const cleanupTurn = () => {
@@ -3735,6 +3673,9 @@ function App({
         );
       };
 
+      // Clear the one-shot session-start recall so it is not reused.
+      sessionStartRecallRef.current = null;
+
       supervisorRef.current.startTurn(
         {
           accountId: cfg.accountId,
@@ -3761,6 +3702,20 @@ function App({
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           onIterationEnd,
           intentClassification: classification,
+          sessionStartRecall: sessionStartRecallRef.current ?? undefined,
+          skillsDb: getMemoryDb() ?? undefined,
+          skillRoutingConfig: {
+            accountId: cfg.accountId,
+            apiToken: cfg.apiToken,
+            embeddingModel: cfg.memoryEmbeddingModel,
+            gateway: gatewayFromConfig(cfg),
+            cloudMode: cfg.cloudMode,
+            cloudToken: cloudToken ?? initialCloudToken,
+            cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+            maxSkillTokens: CONTEXT_LIMIT - 10_000,
+          },
+          mode: modeRef.current,
+          cacheStable: cacheStableRef.current,
           onFileChange: (path, content) => {
             if (content) {
               lspManagerRef.current.notifyChange(path, content);
