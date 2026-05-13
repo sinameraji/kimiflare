@@ -6,6 +6,9 @@ compatibility_date = "2025-04-01"
 bucket_name = "kimiflare-feedback-audio"
 binding = "AUDIO_BUCKET"
 
+# Set ADMIN_SECRET via `wrangler secret put ADMIN_SECRET` — do not commit the value.
+# This secret protects the /admin panel and /admin/reply endpoint.
+
 [observability]
 enabled = true
 
