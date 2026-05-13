@@ -8,6 +8,12 @@ interface Props {
   onOpen: (url: string) => void;
 }
 
+interface InboxMessage {
+  id: string;
+  createdAt: number;
+  seen: boolean;
+}
+
 type Step = "twitter" | "secret" | "checking" | "result";
 
 const FEEDBACK_WORKER_URL = "https://hello.kimiflare.com";
@@ -17,8 +23,8 @@ export function InboxModal({ onDone, onOpen }: Props) {
   const [step, setStep] = useState<Step>("twitter");
   const [twitter, setTwitter] = useState("");
   const [secret, setSecret] = useState("");
-  const [hasMessage, setHasMessage] = useState(false);
-  const [createdAt, setCreatedAt] = useState<number | null>(null);
+  const [messages, setMessages] = useState<InboxMessage[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const checkInbox = useCallback(
@@ -32,12 +38,19 @@ export function InboxModal({ onDone, onOpen }: Props) {
         if (!res.ok) {
           throw new Error(`Server returned ${res.status}`);
         }
-        const data = (await res.json()) as { hasMessage: boolean; createdAt?: number };
-        setHasMessage(data.hasMessage);
-        setCreatedAt(data.createdAt ?? null);
+        const data = (await res.json()) as {
+          hasMessage: boolean;
+          unreadCount: number;
+          messages: InboxMessage[];
+        };
+        // Sort newest first
+        const sorted = (data.messages ?? []).sort((a, b) => b.createdAt - a.createdAt);
+        setMessages(sorted);
+        setSelectedIndex(0);
         setStep("result");
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        setMessages([]);
         setStep("result");
       }
     },
@@ -70,16 +83,33 @@ export function InboxModal({ onDone, onOpen }: Props) {
     [twitter, checkInbox, onDone]
   );
 
+  const openSelected = useCallback(() => {
+    if (messages.length === 0) return;
+    const msg = messages[selectedIndex];
+    if (!msg) return;
+    const url = `${FEEDBACK_WORKER_URL}/inbox?u=${encodeURIComponent(twitter)}&s=${encodeURIComponent(secret)}&m=${encodeURIComponent(msg.id)}`;
+    onOpen(url);
+    onDone();
+  }, [messages, selectedIndex, twitter, secret, onOpen, onDone]);
+
   useInput(
     (_input, key) => {
       if (key.escape) {
         onDone();
         return;
       }
-      if (step === "result" && hasMessage && key.return) {
-        const url = `${FEEDBACK_WORKER_URL}/inbox?u=${encodeURIComponent(twitter)}&s=${encodeURIComponent(secret)}`;
-        onOpen(url);
-        onDone();
+      if (step === "result") {
+        if (key.upArrow) {
+          setSelectedIndex((i) => Math.max(0, i - 1));
+          return;
+        }
+        if (key.downArrow) {
+          setSelectedIndex((i) => Math.min(messages.length - 1, i + 1));
+          return;
+        }
+        if (key.return && messages.length > 0) {
+          openSelected();
+        }
       }
     },
     { isActive: step === "result" }
@@ -128,13 +158,34 @@ export function InboxModal({ onDone, onOpen }: Props) {
         <>
           {error ? (
             <Text color={theme.error}>Error: {error}</Text>
-          ) : hasMessage ? (
+          ) : messages.length > 0 ? (
             <>
               <Text color={theme.palette.foreground}>
-                You have a voice message from Sina
-                {createdAt ? ` (${new Date(createdAt).toLocaleString()})` : ""}.
+                You have {messages.length} message{messages.length === 1 ? "" : "s"}
+                {messages.some((m) => !m.seen) ? " (🔴 new)" : ""}:
               </Text>
-              <Text color={theme.info.color}>Press Enter to open it in your browser.</Text>
+              <Box flexDirection="column" marginTop={1}>
+                {messages.map((msg, idx) => {
+                  const isSelected = idx === selectedIndex;
+                  const dateStr = new Date(msg.createdAt).toLocaleString();
+                  const marker = msg.seen ? "  " : "🔴 ";
+                  return (
+                    <Text
+                      key={msg.id}
+                      color={isSelected ? theme.accent : theme.palette.foreground}
+                      bold={isSelected}
+                      dimColor={!isSelected && msg.seen}
+                    >
+                      {isSelected ? "> " : "  "}
+                      {marker}{dateStr}
+                      {msg.seen ? " (played)" : " (new)"}
+                    </Text>
+                  );
+                })}
+              </Box>
+              <Box marginTop={1}>
+                <Text color={theme.info.color}>↑↓ to select · Enter to open in browser</Text>
+              </Box>
             </>
           ) : (
             <Text color={theme.muted?.color ?? theme.palette.secondary}>

@@ -613,9 +613,8 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 28px 32px;
-    max-width: 520px;
+    max-width: 560px;
     width: 100%;
-    text-align: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.08);
   }
   .header {
@@ -634,23 +633,47 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }
-  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
-  p.sub { margin: 0 0 20px; font-size: 14px; color: var(--text-muted); }
-  .player-box {
+  h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; text-align: center; }
+  p.sub { margin: 0 0 20px; font-size: 14px; color: var(--text-muted); text-align: center; }
+  .msg-list { display: flex; flex-direction: column; gap: 12px; }
+  .msg-row {
     background: var(--bg);
     border: 1.5px dashed var(--border);
     border-radius: 10px;
-    padding: 24px;
-    margin-bottom: 16px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
-  audio { width: 100%; outline: none; }
-  .status { margin-top: 10px; font-size: 13px; min-height: 18px; font-weight: 500; }
+  .msg-row.new { border-color: var(--accent); background: var(--accent-soft); }
+  .msg-dot { font-size: 20px; line-height: 1; flex-shrink: 0; }
+  .msg-info { flex: 1; min-width: 0; }
+  .msg-date { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+  .msg-label { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+  .msg-play {
+    flex-shrink: 0;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  .msg-play:hover { background: var(--accent-hover); }
+  .msg-play:disabled { opacity: 0.6; cursor: not-allowed; }
+  .player-wrap { margin-top: 10px; }
+  .player-wrap audio { width: 100%; outline: none; }
+  .status { font-size: 13px; min-height: 18px; font-weight: 500; margin-top: 6px; }
   .status.ok { color: #16a34a; }
   .status.err { color: #dc2626; }
-  .privacy { font-size: 12px; color: var(--text-faint); line-height: 1.5; margin-top: 12px; }
+  .privacy { font-size: 12px; color: var(--text-faint); line-height: 1.5; margin-top: 16px; text-align: center; }
   .qr-wrap { text-align: center; margin-top: 12px; }
   .qr-wrap svg { display: inline-block; }
   .qr-label { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .empty { text-align: center; color: var(--text-muted); font-size: 14px; padding: 24px; }
   @media (max-width: 480px) {
     .card { padding: 20px 18px; border-radius: 12px; }
     h1 { font-size: 18px; }
@@ -664,47 +687,101 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     <div class="logo-text">kimiflare</div>
   </div>
   <h1>Hey, @${escapeHtml(twitter)}!</h1>
-  <p class="sub">Sina sent you a voice note.</p>
-  <div class="player-box">
-    <audio id="player" controls></audio>
-    <div class="status" id="status">Loading...</div>
-  </div>
+  <p class="sub">Your voice messages from Sina.</p>
+  <div id="msg-list"><div class="empty">Loading…</div></div>
 
   <div class="qr-wrap" id="page-qr">
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Can't hear? Scan to listen on your phone:</div>
     ${qrSvg}
   </div>
 
-  <p class="privacy">This message is private. Don't share this link.</p>
+  <p class="privacy">These messages are private. Don't share this link.</p>
 </div>
 <script>
   const urlParams = new URLSearchParams(window.location.search);
   const twitter = urlParams.get('u');
   const secret = urlParams.get('s');
-  const statusEl = document.getElementById('status');
-  const player = document.getElementById('player');
+  const listEl = document.getElementById('msg-list');
+  const audioPlayers = new Map();
 
-  async function loadAudio() {
+  async function loadMessages() {
+    try {
+      const res = await fetch('/inbox/check?u=' + encodeURIComponent(twitter) + '&s=' + encodeURIComponent(secret));
+      if (!res.ok) throw new Error('Failed to load messages');
+      const data = await res.json();
+      if (!data.messages || data.messages.length === 0) {
+        listEl.innerHTML = '<div class="empty">No messages yet.</div>';
+        return;
+      }
+      // Sort newest first
+      const messages = data.messages.slice().sort((a, b) => b.createdAt - a.createdAt);
+      listEl.innerHTML = messages.map((m, idx) => \`
+        <div class="msg-row \${m.seen ? '' : 'new'}" data-id="\${escapeHtml(m.id)}">
+          <div class="msg-dot">\${m.seen ? '' : '🔴'}</div>
+          <div class="msg-info">
+            <div class="msg-date">\${new Date(m.createdAt).toLocaleString()}</div>
+            <div class="msg-label">\${m.seen ? 'Played' : 'New'}</div>
+          </div>
+          <button class="msg-play" onclick="playMessage('\${escapeHtml(m.id)}', this)">▶ Play</button>
+        </div>
+        <div class="player-wrap" id="player-\${escapeHtml(m.id)}" style="display:none;">
+          <audio controls id="audio-\${escapeHtml(m.id)}"></audio>
+          <div class="status" id="status-\${escapeHtml(m.id)}"></div>
+        </div>
+      \`).join('');
+    } catch (e) {
+      listEl.innerHTML = '<div class="empty" style="color:#dc2626;">Failed to load messages</div>';
+    }
+  }
+
+  async function playMessage(messageId, btn) {
+    const playerWrap = document.getElementById('player-' + messageId);
+    const audio = document.getElementById('audio-' + messageId);
+    const statusEl = document.getElementById('status-' + messageId);
+    const row = document.querySelector('.msg-row[data-id="' + messageId + '"]');
+
+    // Hide other players
+    document.querySelectorAll('.player-wrap').forEach(el => { if (el.id !== 'player-' + messageId) el.style.display = 'none'; });
+    playerWrap.style.display = 'block';
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+
     try {
       const res = await fetch('/inbox/audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ twitter, secret })
+        body: JSON.stringify({ twitter, secret, messageId })
       });
       if (!res.ok) {
         const text = await res.text().catch(() => 'Failed to load audio');
         throw new Error(text);
       }
       const blob = await res.blob();
-      player.src = URL.createObjectURL(blob);
-      statusEl.textContent = '';
-      statusEl.className = 'status';
+      audio.src = URL.createObjectURL(blob);
+      audio.play();
+      btn.textContent = '▶ Play';
+      btn.disabled = false;
+      // Mark as seen visually
+      if (row) {
+        row.classList.remove('new');
+        row.querySelector('.msg-dot').textContent = '';
+        row.querySelector('.msg-label').textContent = 'Played';
+      }
     } catch (e) {
       statusEl.textContent = e.message;
       statusEl.className = 'status err';
+      btn.textContent = '▶ Play';
+      btn.disabled = false;
     }
   }
-  loadAudio();
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  loadMessages();
 </script>
 </body>
 </html>`;
@@ -1327,12 +1404,12 @@ export default {
       }
     }
 
-    // ── Inbox: check if a reply exists ──
+    // ── Inbox: check messages ──
     if (url.pathname === "/inbox/check" && request.method === "GET") {
       const twitter = String(url.searchParams.get("u") || "").trim().toLowerCase();
       const secret = String(url.searchParams.get("s") || "").trim();
       if (!twitter || !secret) {
-        return new Response(JSON.stringify({ hasMessage: false }), {
+        return new Response(JSON.stringify({ hasMessage: false, unreadCount: 0, messages: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
@@ -1342,18 +1419,26 @@ export default {
       try {
         const obj = await env.AUDIO_BUCKET.get(indexKey);
         if (!obj) {
-          return new Response(JSON.stringify({ hasMessage: false }), {
+          return new Response(JSON.stringify({ hasMessage: false, unreadCount: 0, messages: [] }), {
             status: 200,
             headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
           });
         }
-        const meta = await obj.json<{ createdAt: number }>();
-        return new Response(JSON.stringify({ hasMessage: true, createdAt: meta.createdAt }), {
+        const raw = await obj.json<{ createdAt?: number; audioKey?: string; messages?: Array<{ id: string; audioKey: string; createdAt: number; seen: boolean }> }>();
+        // Migrate old single-message format to array format
+        let messages: Array<{ id: string; createdAt: number; seen: boolean }> = [];
+        if (raw.messages && Array.isArray(raw.messages)) {
+          messages = raw.messages.map((m) => ({ id: m.id, createdAt: m.createdAt, seen: m.seen }));
+        } else if (raw.audioKey && raw.createdAt) {
+          messages = [{ id: "legacy", createdAt: raw.createdAt, seen: true }];
+        }
+        const unreadCount = messages.filter((m) => !m.seen).length;
+        return new Response(JSON.stringify({ hasMessage: messages.length > 0, unreadCount, messages }), {
           status: 200,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       } catch {
-        return new Response(JSON.stringify({ hasMessage: false }), {
+        return new Response(JSON.stringify({ hasMessage: false, unreadCount: 0, messages: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
@@ -1376,7 +1461,7 @@ export default {
 
     // ── Inbox: fetch audio blob (POST to avoid caching / link sharing) ──
     if (url.pathname === "/inbox/audio" && request.method === "POST") {
-      let body: { twitter?: string; secret?: string };
+      let body: { twitter?: string; secret?: string; messageId?: string };
       try {
         body = await request.json();
       } catch {
@@ -1384,19 +1469,40 @@ export default {
       }
       const twitter = String(body.twitter || "").trim().toLowerCase();
       const secret = String(body.secret || "").trim();
+      const messageId = String(body.messageId || "").trim();
       if (!twitter || !secret) {
         return new Response("Missing credentials.", { status: 400 });
       }
       const h = await hashKey(twitter, secret);
       const indexKey = `replies/index/${h}.json`;
       let audioKey: string;
+      let indexData: { messages?: Array<{ id: string; audioKey: string; createdAt: number; seen: boolean }>; audioKey?: string; createdAt?: number } = {};
       try {
         const obj = await env.AUDIO_BUCKET.get(indexKey);
         if (!obj) {
           return new Response("No message found.", { status: 404 });
         }
-        const meta = await obj.json<{ audioKey: string }>();
-        audioKey = meta.audioKey;
+        indexData = await obj.json<typeof indexData>();
+        if (indexData.messages && Array.isArray(indexData.messages)) {
+          const msg = messageId
+            ? indexData.messages.find((m) => m.id === messageId)
+            : indexData.messages[indexData.messages.length - 1];
+          if (!msg) {
+            return new Response("Message not found.", { status: 404 });
+          }
+          audioKey = msg.audioKey;
+          // Mark as seen
+          if (!msg.seen) {
+            msg.seen = true;
+            await env.AUDIO_BUCKET.put(indexKey, JSON.stringify(indexData), {
+              httpMetadata: { contentType: "application/json" },
+            });
+          }
+        } else if (indexData.audioKey) {
+          audioKey = indexData.audioKey;
+        } else {
+          return new Response("No message found.", { status: 404 });
+        }
       } catch {
         return new Response("No message found.", { status: 404 });
       }
@@ -1504,12 +1610,24 @@ export default {
 
       const h = await hashKey(twitter, secret);
       const indexKey = `replies/index/${h}.json`;
+      const newMessage = { id: crypto.randomUUID(), audioKey, createdAt: Date.now(), seen: false };
       try {
-        await env.AUDIO_BUCKET.put(
-          indexKey,
-          JSON.stringify({ audioKey, createdAt: Date.now() }),
-          { httpMetadata: { contentType: "application/json" } }
-        );
+        const existing = await env.AUDIO_BUCKET.get(indexKey);
+        let data: { messages?: Array<{ id: string; audioKey: string; createdAt: number; seen: boolean }>; audioKey?: string; createdAt?: number } = { messages: [] };
+        if (existing) {
+          data = await existing.json<typeof data>();
+          if (!data.messages || !Array.isArray(data.messages)) {
+            // Migrate old format
+            data.messages = [];
+            if (data.audioKey && data.createdAt) {
+              data.messages.push({ id: "legacy", audioKey: data.audioKey, createdAt: data.createdAt, seen: true });
+            }
+          }
+        }
+        data.messages.push(newMessage);
+        await env.AUDIO_BUCKET.put(indexKey, JSON.stringify(data), {
+          httpMetadata: { contentType: "application/json" },
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return new Response(`Failed to store index: ${msg}`, { status: 502 });
