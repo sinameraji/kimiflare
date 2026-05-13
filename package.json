@@ -64,7 +64,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^12.1.0",
-    "diff": "^7.0.0",
+    "diff": "^9.0.0",
     "fast-glob": "^3.3.2",
     "gray-matter": "^4.0.3",
     "ink": "^7.0.1",
