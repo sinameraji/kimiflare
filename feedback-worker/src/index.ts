@@ -389,8 +389,9 @@ async function htmlPage(session: string, version: string, pageUrl: string): Prom
 
   async function listMics() {
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const devices = await navigator.mediaDevices.enumerateDevices();
+      tempStream.getTracks().forEach(t => t.stop());
       micDevices = devices.filter(d => d.kind === 'audioinput');
       const select = $('mic-select');
       select.innerHTML = '';
@@ -438,7 +439,7 @@ async function htmlPage(session: string, version: string, pageUrl: string): Prom
   function stopRecording() {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
     mediaRecorder.stop();
-    if (stream) { stream.getTracks().forEach(t => t.stop()); }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     stopTimer();
     isRecording = false;
     if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
@@ -488,6 +489,7 @@ async function htmlPage(session: string, version: string, pageUrl: string): Prom
     chunks = [];
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       const type = mime || 'audio/webm';
       audioBlob = new Blob(chunks, { type });
       if (audioBlob.size === 0) {
