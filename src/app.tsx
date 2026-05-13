@@ -3989,32 +3989,15 @@ function App({
     return (
       <ThemeProvider theme={theme}>
         <Onboarding
-        onCancel={() => exit()}
-        onDone={async (newCfg, cloudCredentials) => {
-          setCfg(newCfg);
-          if (newCfg.cloudMode) {
-            const creds = cloudCredentials;
-            if (creds) {
-              setCloudToken(creds.accessToken);
-              setCloudDeviceId(creds.deviceId);
-              setEvents((e) => [
-                ...e,
-                { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare! (cloud mode)" },
-              ]);
-            } else {
-              setEvents((e) => [
-                ...e,
-                { kind: "info", key: mkKey(), text: "cloud mode configured — run `kimiflare auth cloud` to sign in" },
-              ]);
-            }
-          } else {
+          onCancel={() => exit()}
+          onDone={async (newCfg) => {
+            setCfg(newCfg);
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare!" },
             ]);
-          }
-        }}
-      />
+          }}
+        />
       </ThemeProvider>
     );
   }
