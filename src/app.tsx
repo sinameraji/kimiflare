@@ -63,6 +63,7 @@ import { saveRemoteSession, type RemoteSession } from "./remote/session-store.js
 import { deployForTui } from "./remote/deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
+import { InboxModal } from "./ui/inbox-modal.js";
 import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
 import {
@@ -579,6 +580,7 @@ function App({
   const [showLspWizard, setShowLspWizard] = useState(false);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
+  const [showInboxModal, setShowInboxModal] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
@@ -930,7 +932,8 @@ function App({
       checkpointSession !== null ||
       perm !== null ||
       limitModal !== null ||
-      loopModal !== null;
+      loopModal !== null ||
+      showInboxModal;
     if (modalActive && activePicker !== null) {
       setActivePicker(null);
     }
@@ -944,6 +947,7 @@ function App({
     perm,
     limitModal,
     loopModal,
+    showInboxModal,
     activePicker,
   ]);
 
@@ -2986,6 +2990,10 @@ function App({
         })();
         return true;
       }
+      if (c === "/inbox") {
+        setShowInboxModal(true);
+        return true;
+      }
       if (c === "/report") {
         const err = lastApiErrorRef.current;
         if (!err) {
@@ -4067,6 +4075,19 @@ function App({
               onCancel={() => setShowRemoteDashboard(false)}
             />
           )}
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (showInboxModal) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <InboxModal
+            onDone={() => setShowInboxModal(false)}
+            onOpen={(url) => openBrowser(url)}
+          />
         </Box>
       </ThemeProvider>
     );
