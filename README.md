@@ -25,9 +25,9 @@
 | Mode | How it works | Best for |
 |------|-------------|----------|
 | **BYOK** | Bring your own Cloudflare Account ID + API Token. Traffic goes straight to Workers AI from your account. | Power users who want full control and direct billing. |
-| **Kimiflare Cloud** | Device auth — no API key needed. We proxy requests through our managed endpoint. | Getting started quickly without a Cloudflare account. |
+| ~~**Kimiflare Cloud**~~ | ~~Device auth — no API key needed. We proxy requests through our managed endpoint.~~ | ~~Getting started quickly without a Cloudflare account.~~ |
 
-> 🎁 **Try Kimiflare Cloud free** — sign up and get **5 million tokens** on us until May 14, 2026. Run `kimiflare --cloud` or pick "Cloud (managed)" during onboarding.
+> ~~🎁 **Try Kimiflare Cloud free** — sign up and get **5 million tokens** on us until May 14, 2026. Run `kimiflare --cloud` or pick "Cloud (managed)" during onboarding.~~
 
 ## What to remember
 
@@ -66,7 +66,7 @@ npm install -g kimiflare
 kimiflare
 ```
 
-On first run, an interactive onboarding wizard asks how you want to connect — BYOK or Cloud. That's it.
+On first run, an interactive onboarding wizard asks how you want to connect — BYOK ~~or Cloud~~. That's it.
 
 Or run without installing:
 
@@ -148,7 +148,7 @@ const { session } = await createAgentSession({
 });
 ```
 
-**For zero-credential onboarding**, use KimiFlare Cloud mode. The user authenticates via GitHub device flow and a Cloudflare Worker proxies AI requests. Your app never sees raw Cloudflare credentials — only a GitHub token and `remoteWorkerUrl`.
+~~**For zero-credential onboarding**, use KimiFlare Cloud mode. The user authenticates via GitHub device flow and a Cloudflare Worker proxies AI requests. Your app never sees raw Cloudflare credentials — only a GitHub token and `remoteWorkerUrl`.~~
 
 #### RPC mode (subprocess)
 
