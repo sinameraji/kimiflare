@@ -602,10 +602,10 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     background: var(--bg);
     color: var(--text);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     min-height: 100vh;
-    padding: 16px;
+    padding: 24px 16px;
     -webkit-font-smoothing: antialiased;
   }
   .card {
@@ -615,7 +615,17 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     padding: 28px 32px;
     max-width: 560px;
     width: 100%;
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  }
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    margin: 0 -8px;
+    padding: 0 8px;
   }
   .header {
     display: flex;
@@ -689,7 +699,9 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
   </div>
   <h1>Hey, @${escapeHtml(twitter)}!</h1>
   <p class="sub">Your voice messages from Sina.</p>
-  <div id="msg-list"><div class="empty">Loading…</div></div>
+  <div class="scroll-area">
+    <div id="msg-list"><div class="empty">Loading…</div></div>
+  </div>
 
   <div class="qr-wrap" id="page-qr">
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Can't hear? Scan to listen on your phone:</div>
