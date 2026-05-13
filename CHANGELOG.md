@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.62.0](https://github.com/sinameraji/kimiflare/compare/v0.61.0...v0.62.0) (2026-05-13)
+
+
+### Features
+
+* **feedback:** QR code fallback, mic selector, mic level meter, R2 upload ([#408](https://github.com/sinameraji/kimiflare/issues/408)) ([7300afb](https://github.com/sinameraji/kimiflare/commit/7300afb2d8c26d33ec1231593e6b0163a35f01f2))
+* **inbox:** add /inbox command for voice replies from creator ([#407](https://github.com/sinameraji/kimiflare/issues/407)) ([4dfbd94](https://github.com/sinameraji/kimiflare/commit/4dfbd94bb61845bd907580c590157e75b212c9da))
+
+
+### Bug Fixes
+
+* **feedback-worker:** stop microphone stream leaks after recording ([#410](https://github.com/sinameraji/kimiflare/issues/410)) ([c18d832](https://github.com/sinameraji/kimiflare/commit/c18d8325acaa5fd384c3a081e01b1f95171d601f))
+
 ## [0.61.0](https://github.com/sinameraji/kimiflare/compare/v0.60.1...v0.61.0) (2026-05-13)
 
 
