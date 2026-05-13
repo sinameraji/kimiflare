@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.63.0](https://github.com/sinameraji/kimiflare/compare/v0.62.0...v0.63.0) (2026-05-13)
+
+
+### Features
+
+* **onboarding:** remove cloud mode option, default to BYOK ([#413](https://github.com/sinameraji/kimiflare/issues/413)) ([e6000db](https://github.com/sinameraji/kimiflare/commit/e6000dbe127f27ba2a9e8d75d67a4b9d7385d496))
+
+
+### Bug Fixes
+
+* **deps:** resolve npm audit vulnerabilities ([#411](https://github.com/sinameraji/kimiflare/issues/411)) ([3b0a875](https://github.com/sinameraji/kimiflare/commit/3b0a87597ef50f6cde8688fd61a229a7471b9656))
+
 ## [0.62.0](https://github.com/sinameraji/kimiflare/compare/v0.61.0...v0.62.0) (2026-05-13)
 
 
