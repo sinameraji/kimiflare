@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.1](https://github.com/sinameraji/kimiflare/compare/v0.60.0...v0.60.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **cloud:** TUI cloud auth now passes credentials directly and persists cloudMode ([#403](https://github.com/sinameraji/kimiflare/issues/403)) ([370e434](https://github.com/sinameraji/kimiflare/commit/370e434309731addabc32234cf84d746612a577c))
+
 ## [0.60.0](https://github.com/sinameraji/kimiflare/compare/v0.59.0...v0.60.0) (2026-05-12)
 
 
