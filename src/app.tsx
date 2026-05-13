@@ -32,10 +32,11 @@ import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCl
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
 import { buildReport, sendReport } from "./cloud/report.js";
+import type { CloudCredentials } from "./cloud/auth.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
-import { LimitModal, type LimitDecision } from "./ui/limit-modal.js";
+import { LimitModal, type LimitDecision, type LoopDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
@@ -556,7 +557,7 @@ function App({
   const [showReasoning, setShowReasoning] = useState(false);
   const [perm, setPerm] = useState<PendingPermission | null>(null);
   const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
-  const [loopModal, setLoopModal] = useState<{ resolve: (d: LimitDecision) => void } | null>(null);
+  const [loopModal, setLoopModal] = useState<{ resolve: (d: LoopDecision) => void } | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -704,7 +705,7 @@ function App({
   const sigintHandlerRef = useRef<(() => void) | null>(null);
   const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
-  const loopResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
+  const loopResolveRef = useRef<((d: LoopDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const sessionIdRef = useRef<string | null>(null);
   const sessionCreatedAtRef = useRef<string | null>(null);
@@ -3622,7 +3623,7 @@ function App({
             setLimitModal({ limit: 50, resolve });
           }),
         onLoopDetected: () =>
-          new Promise<LimitDecision>((resolve) => {
+          new Promise<LoopDecision>((resolve) => {
             loopResolveRef.current = resolve;
             setLoopModal({ resolve });
           }),
@@ -3981,13 +3982,13 @@ function App({
       <ThemeProvider theme={theme}>
         <Onboarding
         onCancel={() => exit()}
-        onDone={async (newCfg) => {
+        onDone={async (newCfg, cloudCredentials) => {
           setCfg(newCfg);
           if (newCfg.cloudMode) {
-            const { loadCloudCredentials } = await import("./cloud/auth.js");
-            const creds = await loadCloudCredentials();
+            const creds = cloudCredentials;
             if (creds) {
               setCloudToken(creds.accessToken);
+              setCloudDeviceId(creds.deviceId);
               setEvents((e) => [
                 ...e,
                 { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare! (cloud mode)" },
@@ -4242,6 +4243,10 @@ function App({
             limit={50}
             title="Agent stuck in a loop"
             description="The agent kept calling the same tools with identical arguments. What would you like to do?"
+            items={[
+              { label: "Continue", value: "continue" },
+              { label: "Synthesize", value: "synthesize" },
+            ]}
             onDecide={(d) => {
               loopModal.resolve(d);
               loopResolveRef.current = null;

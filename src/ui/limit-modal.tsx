@@ -4,20 +4,23 @@ import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 
 export type LimitDecision = "continue" | "stop";
+export type LoopDecision = "continue" | "stop" | "synthesize";
 
-interface Props {
+interface Props<T extends string = LimitDecision> {
   limit: number;
-  onDecide: (decision: LimitDecision) => void;
+  onDecide: (decision: T) => void;
   title?: string;
   description?: string;
+  items?: Array<{ label: string; value: T }>;
 }
 
-export function LimitModal({ limit, onDecide, title, description }: Props) {
+export function LimitModal<T extends string = LimitDecision>({ limit, onDecide, title, description, items }: Props<T>) {
   const theme = useTheme();
-  const items = [
-    { label: "Continue", value: "continue" as const },
-    { label: "Stop", value: "stop" as const },
+  const defaultItems = [
+    { label: "Continue", value: "continue" as T },
+    { label: "Stop", value: "stop" as T },
   ];
+  const selectItems = items ?? defaultItems;
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.error} paddingX={1}>
@@ -29,7 +32,7 @@ export function LimitModal({ limit, onDecide, title, description }: Props) {
       </Text>
       <Box marginTop={1}>
         <SelectInput
-          items={items}
+          items={selectItems}
           onSelect={(item) => onDecide(item.value)}
         />
       </Box>

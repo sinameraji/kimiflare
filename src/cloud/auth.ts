@@ -212,6 +212,7 @@ export async function loadCloudCredentials(): Promise<CloudCredentials | null> {
 
 export async function saveCloudCredentials(creds: CloudCredentials): Promise<void> {
   const p = cloudCredPath();
+  await mkdir(join(p, ".."), { recursive: true });
   await writeFile(p, JSON.stringify(creds, null, 2), "utf8");
   if (creds.deviceId) {
     await persistDeviceId(creds.deviceId).catch(() => { /* ignore */ });

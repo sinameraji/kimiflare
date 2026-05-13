@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { loadConfig, DEFAULT_MODEL } from "./config.js";
+import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
@@ -111,6 +111,15 @@ program
             }
           });
           console.log(`Authenticated! Token expires at ${new Date(creds.expiresAt * 1000).toISOString()}`);
+
+          // Also enable cloud mode in config so the user doesn't need --cloud on every run
+          const existing = await loadConfig();
+          await saveConfig({
+            accountId: "",
+            apiToken: "",
+            model: existing?.model ?? DEFAULT_MODEL,
+            cloudMode: true,
+          });
 
           // Fetch usage info
           const { fetchCloudUsage } = await import("./cloud/auth.js");

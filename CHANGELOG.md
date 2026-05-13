@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.61.0](https://github.com/sinameraji/kimiflare/compare/v0.60.1...v0.61.0) (2026-05-13)
+
+
+### Features
+
+* **ui:** add 'Synthesize' option to loop detection modal ([#405](https://github.com/sinameraji/kimiflare/issues/405)) ([17c8a8b](https://github.com/sinameraji/kimiflare/commit/17c8a8b24028c77966ac6318515b6621d417d4f4))
+
+## [0.60.1](https://github.com/sinameraji/kimiflare/compare/v0.60.0...v0.60.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **cloud:** TUI cloud auth now passes credentials directly and persists cloudMode ([#403](https://github.com/sinameraji/kimiflare/issues/403)) ([370e434](https://github.com/sinameraji/kimiflare/commit/370e434309731addabc32234cf84d746612a577c))
+
+## [0.60.0](https://github.com/sinameraji/kimiflare/compare/v0.59.0...v0.60.0) (2026-05-12)
+
+
+### Features
+
+* **feedback-worker:** store voice notes in R2, serve via /audio, text-only Discord webhook ([#401](https://github.com/sinameraji/kimiflare/issues/401)) ([69898e3](https://github.com/sinameraji/kimiflare/commit/69898e3076c996ed938dd77692088330e0a6d36b))
+
 ## [0.59.0](https://github.com/sinameraji/kimiflare/compare/v0.58.0...v0.59.0) (2026-05-12)
 
 
