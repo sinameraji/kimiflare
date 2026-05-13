@@ -43,6 +43,7 @@ import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tools/registry.js";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import QRCode from "qrcode";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
 import { checkForUpdate } from "./util/update-check.js";
@@ -2966,10 +2967,27 @@ function App({
         const session = crypto.randomUUID();
         const url = `${FEEDBACK_WORKER_URL}/?s=${session}&v=${getAppVersion()}`;
         openBrowser(url);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "Opened voice note page in your browser. Record your message there and hit Send when you're done." },
-        ]);
+        void (async () => {
+          try {
+            const qr = await QRCode.toString(url, { type: "terminal", small: true });
+            const lines = qr.split("\n").map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "qrcode",
+                key: mkKey(),
+                lines,
+                caption: "Scan this QR code with your phone to send a voice note:",
+              },
+              { kind: "info", key: mkKey(), text: "Also opened voice note page in your browser." },
+            ]);
+          } catch {
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "Opened voice note page in your browser. Record your message there and hit Send when you're done." },
+            ]);
+          }
+        })();
         return true;
       }
       if (c === "/inbox") {

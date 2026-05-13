@@ -1,7 +1,7 @@
 # KimiFlare — Project Context
 
 > Auto-generated context for AI agents working in this repository.
-> Last updated: 2026-05-11
+> Last updated: 2026-05-12
 
 ---
 
@@ -45,7 +45,7 @@
 | `src/` | Main application source. Flat-ish structure by domain (agent, tools, ui, memory, etc.). |
 | `src/index.tsx` | CLI entry point. Parses arguments with Commander, then launches TUI, print mode, or sub-commands. |
 | `src/app.tsx` | Ink-based TUI root. Manages React state for chat, pickers, tasks, permissions, and agent orchestration. |
-| `src/agent/` | AI interaction layer: API client, turn loop, message formatting, compaction, session state, system prompt. |
+| `src/agent/` | AI interaction layer: API client, turn loop, message formatting, compaction, session state, system prompt, supervisor. |
 | `src/tools/` | Tool implementations (read, write, edit, bash, glob, grep, web-fetch, web-search, browser, github, tasks, memory, LSP). |
 | `src/ui/` | Ink React components: chat, pickers, diff viewer, markdown renderer, status bars, themes, onboarding. |
 | `src/memory/` | Persistent memory with SQLite: extraction, embeddings, retrieval, cleanup. |
@@ -188,6 +188,7 @@ node --inspect-brk bin/kimiflare.mjs
 | `src/app.tsx` | Ink TUI root. Manages React state for chat, pickers, tasks, and permissions. |
 | `src/agent/loop.ts` | **Agent turn loop.** Calls AI, handles streaming, invokes tools, manages callbacks. |
 | `src/agent/client.ts` | **HTTP client.** Streams SSE from Cloudflare Workers AI. Handles retries, errors, usage. |
+| `src/agent/supervisor.ts` | **Turn lifecycle supervisor.** Orchestrates pre-turn memory recall, skill routing, and phase transitions. |
 | `src/tools/executor.ts` | **Tool dispatcher.** Maps tool names to implementations, handles permissions, output reduction. |
 | `src/tools/registry.ts` | Tool type definitions and OpenAI-compatible schema generation. |
 | `src/memory/manager.ts` | Persistent memory: SQLite storage, embedding-based retrieval, extraction. |

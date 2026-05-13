@@ -49,6 +49,12 @@ export type ChatEvent =
       kind: "service_ended";
       key: string;
       endedAt?: string;
+    }
+  | {
+      kind: "qrcode";
+      key: string;
+      lines: string[];
+      caption: string;
     };
 
 interface Props {
@@ -227,6 +233,18 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "service_ended") {
     return <ServiceEndedMessage endedAt={evt.endedAt} />;
+  }
+  if (evt.kind === "qrcode") {
+    return (
+      <Box flexDirection="column" marginY={1}>
+        <Text color={theme.info.color}>{evt.caption}</Text>
+        <Box flexDirection="column" marginTop={1}>
+          {evt.lines.map((line, i) => (
+            <Text key={i}>{line}</Text>
+          ))}
+        </Box>
+      </Box>
+    );
   }
   return (
     <Text color={theme.error}>

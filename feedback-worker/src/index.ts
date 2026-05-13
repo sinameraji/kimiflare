@@ -1,3 +1,5 @@
+import QRCode from "qrcode";
+
 export interface Env {
   DISCORD_WEBHOOK_URL: string;
   AUDIO_BUCKET: R2Bucket;
@@ -53,7 +55,7 @@ function isAllowedAudioType(type: string): boolean {
   return ALLOWED_AUDIO_PREFIXES.some((prefix) => type.startsWith(prefix));
 }
 
-function hashKey(twitter: string, secret: string): string {
+function hashKey(twitter: string, secret: string): Promise<string> {
   // Simple hash using Web Crypto API
   const encoder = new TextEncoder();
   const data = encoder.encode(`${twitter.toLowerCase().trim()}:${secret.trim()}`);
@@ -64,7 +66,8 @@ function hashKey(twitter: string, secret: string): string {
   });
 }
 
-function htmlPage(session: string, version: string): string {
+async function htmlPage(session: string, version: string, pageUrl: string): Promise<string> {
+  const qrSvg = await QRCode.toString(pageUrl, { type: "svg", margin: 2, width: 160 });
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -146,6 +149,11 @@ function htmlPage(session: string, version: string): string {
     border-color: var(--accent);
     background: var(--accent-soft);
   }
+  .record-box.error {
+    border-style: solid;
+    border-color: #dc2626;
+    background: #fef2f2;
+  }
   .btn {
     display: inline-flex;
     align-items: center;
@@ -167,6 +175,7 @@ function htmlPage(session: string, version: string): string {
   .btn-stop { background: #dc2626; color: #fff; }
   .btn-stop:hover { background: #b91c1c; }
   .btn-play { background: var(--text); color: #fff; }
+  .btn-play:disabled { background: var(--text-faint); cursor: not-allowed; }
   .btn-send { background: var(--accent); color: #fff; }
   .btn-send:hover { background: var(--accent-hover); }
   .btn-secondary { background: var(--card); color: var(--text-muted); border: 1px solid var(--border); font-weight: 500; }
@@ -190,7 +199,7 @@ function htmlPage(session: string, version: string): string {
     color: var(--text-muted);
     margin-bottom: 4px;
   }
-  .field input, .field textarea {
+  .field input, .field textarea, .field select {
     width: 100%;
     background: var(--card);
     border: 1.5px solid var(--border);
@@ -202,7 +211,7 @@ function htmlPage(session: string, version: string): string {
     outline: none;
     transition: all 0.15s;
   }
-  .field input:focus, .field textarea:focus { border-color: var(--accent); }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); }
   .field textarea { resize: none; min-height: 40px; height: 40px; }
   .field input::placeholder, .field textarea::placeholder { color: var(--text-faint); }
   .privacy { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
@@ -213,6 +222,15 @@ function htmlPage(session: string, version: string): string {
   .bar { width: 3px; background: var(--accent); border-radius: 2px; animation: bounce 0.5s infinite ease-in-out alternate; }
   @keyframes bounce { from { height: 3px; } to { height: 24px; } }
   .record-area { min-height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .meter-wrap { height: 40px; display: flex; align-items: flex-end; justify-content: center; gap: 2px; margin: 8px 0; }
+  .meter-bar { width: 4px; background: #dc2626; border-radius: 1px; transition: height 0.05s, background 0.2s; }
+  .meter-bar.active { background: #16a34a; }
+  .qr-wrap { text-align: center; margin-top: 12px; }
+  .qr-wrap svg { display: inline-block; }
+  .qr-label { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .mic-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .mic-row select { flex: 1; }
+  .mic-row button { flex-shrink: 0; }
   @media (max-width: 480px) {
     .card { padding: 20px 18px; border-radius: 12px; }
     h1 { font-size: 18px; }
@@ -233,6 +251,10 @@ function htmlPage(session: string, version: string): string {
 
   <div class="record-box" id="record-box">
     <div id="step-record" class="record-area">
+      <div class="mic-row" id="mic-row" style="display:none;">
+        <select id="mic-select"></select>
+        <button id="btn-refresh-mics" class="btn btn-secondary" style="padding:8px 12px;font-size:12px;">↻</button>
+      </div>
       <button id="btn-record" class="btn btn-record">● Record</button>
       <div class="waveform hidden" id="waveform">
         <div class="bar" style="animation-delay:0s"></div>
@@ -241,15 +263,16 @@ function htmlPage(session: string, version: string): string {
         <div class="bar" style="animation-delay:0.24s"></div>
         <div class="bar" style="animation-delay:0.32s"></div>
       </div>
+      <div class="meter-wrap hidden" id="meter"></div>
       <div class="timer hidden" id="timer">00:00</div>
     </div>
 
     <div id="step-review" class="hidden">
       <div class="timer" id="duration">00:00</div>
       <div class="actions">
-        <button id="btn-play" class="btn btn-play">▶ Play</button>
+        <button id="btn-play" class="btn btn-play" disabled>▶ Play</button>
         <button id="btn-rerecord" class="btn btn-secondary">↻ Re-record</button>
-        <button id="btn-send" class="btn btn-send">✉ Send</button>
+        <button id="btn-send" class="btn btn-send" disabled>✉ Send</button>
       </div>
     </div>
 
@@ -258,6 +281,22 @@ function htmlPage(session: string, version: string): string {
       <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:4px;">Sent!</div>
       <div style="font-size:14px;color:var(--text-muted);">Thanks for the feedback. You can close this tab.</div>
     </div>
+
+    <div id="step-qr" class="hidden">
+      <div style="font-size:28px;margin-bottom:8px;">📱</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:8px;">Recording not available here</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Your browser runs in a remote environment (browser isolation) that blocks microphone recording. Scan this QR code with your phone to record a voice note:</div>
+      <div class="qr-wrap">${qrSvg}</div>
+      <div class="qr-label">Scan with your phone camera</div>
+      <div style="margin-top:12px;">
+        <button id="btn-try-again" class="btn btn-secondary">Try again anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="qr-wrap" id="page-qr">
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Or scan to open on your phone:</div>
+    ${qrSvg}
   </div>
 
   <div class="fields">
@@ -287,6 +326,11 @@ function htmlPage(session: string, version: string): string {
   let timerInterval = null;
   let stream = null;
   let isRecording = false;
+  let audioCtx = null;
+  let analyser = null;
+  let meterRaf = null;
+  let micDevices = [];
+  let selectedMicId = null;
 
   const $ = id => document.getElementById(id);
   const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
@@ -313,22 +357,81 @@ function htmlPage(session: string, version: string): string {
     return sec;
   }
 
+  function buildMeter() {
+    const wrap = $('meter');
+    wrap.innerHTML = '';
+    for (let i = 0; i < 24; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'meter-bar';
+      bar.style.height = '3px';
+      wrap.appendChild(bar);
+    }
+  }
+
+  function updateMeter() {
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    const bars = document.querySelectorAll('.meter-bar');
+    const step = Math.floor(data.length / bars.length);
+    let hasSound = false;
+    bars.forEach((bar, i) => {
+      const val = data[i * step] || 0;
+      const h = Math.max(3, Math.min(40, val / 255 * 40));
+      bar.style.height = h + 'px';
+      bar.classList.toggle('active', val > 30);
+      if (val > 30) hasSound = true;
+    });
+    if (isRecording) {
+      meterRaf = requestAnimationFrame(updateMeter);
+    }
+  }
+
+  async function listMics() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      micDevices = devices.filter(d => d.kind === 'audioinput');
+      const select = $('mic-select');
+      select.innerHTML = '';
+      micDevices.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || 'Microphone ' + (i + 1);
+        select.appendChild(opt);
+      });
+      if (micDevices.length > 0) {
+        $('mic-row').style.display = 'flex';
+        selectedMicId = micDevices[0].deviceId;
+      }
+    } catch (e) {
+      // mic access not granted yet, can't list devices
+    }
+  }
+
   function reset() {
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     if (audioPlayer) { audioPlayer.pause(); audioPlayer = null; }
     if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+    analyser = null;
     audioBlob = null;
     chunks = [];
     mediaRecorder = null;
     isRecording = false;
-    $('record-box').classList.remove('active');
+    $('record-box').classList.remove('active', 'error');
     $('step-record').classList.remove('hidden');
     $('step-review').classList.add('hidden');
     $('step-sent').classList.add('hidden');
+    $('step-qr').classList.add('hidden');
     $('waveform').classList.add('hidden');
+    $('meter').classList.add('hidden');
     $('timer').classList.add('hidden');
     $('btn-record').textContent = '● Record';
     $('btn-record').className = 'btn btn-record';
+    $('btn-play').disabled = true;
+    $('btn-send').disabled = true;
     setStatus('');
   }
 
@@ -338,6 +441,15 @@ function htmlPage(session: string, version: string): string {
     if (stream) { stream.getTracks().forEach(t => t.stop()); }
     stopTimer();
     isRecording = false;
+    if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  }
+
+  function showQrFallback() {
+    $('step-record').classList.add('hidden');
+    $('step-review').classList.add('hidden');
+    $('step-qr').classList.remove('hidden');
+    $('record-box').classList.add('error');
   }
 
   $('btn-record').addEventListener('click', async () => {
@@ -346,11 +458,28 @@ function htmlPage(session: string, version: string): string {
       return;
     }
 
+    const micId = selectedMicId || $('mic-select').value || undefined;
+    const constraints = { audio: micId ? { deviceId: { exact: micId } } : true };
+
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
       setStatus('Microphone access denied. Please allow it and try again.', false);
       return;
+    }
+
+    // Set up audio level meter
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      src.connect(analyser);
+      buildMeter();
+      $('meter').classList.remove('hidden');
+      updateMeter();
+    } catch (e) {
+      // meter is optional
     }
 
     const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
@@ -361,9 +490,15 @@ function htmlPage(session: string, version: string): string {
     mediaRecorder.onstop = () => {
       const type = mime || 'audio/webm';
       audioBlob = new Blob(chunks, { type });
+      if (audioBlob.size === 0) {
+        showQrFallback();
+        return;
+      }
       audioUrl = URL.createObjectURL(audioBlob);
       $('step-record').classList.add('hidden');
       $('step-review').classList.remove('hidden');
+      $('btn-play').disabled = false;
+      $('btn-send').disabled = false;
     };
     mediaRecorder.start(100);
     isRecording = true;
@@ -386,7 +521,7 @@ function htmlPage(session: string, version: string): string {
   $('btn-rerecord').addEventListener('click', reset);
 
   $('btn-send').addEventListener('click', async () => {
-    if (!audioBlob) return;
+    if (!audioBlob || audioBlob.size === 0) return;
     const textNote = $('text-note').value.trim();
     const contact = $('contact').value.trim();
 
@@ -417,12 +552,27 @@ function htmlPage(session: string, version: string): string {
       $('btn-send').textContent = '✉ Send';
     }
   });
+
+  $('btn-try-again').addEventListener('click', () => {
+    reset();
+    setStatus('If recording fails again, scan the QR code above with your phone.', false);
+  });
+
+  $('mic-select').addEventListener('change', (e) => {
+    selectedMicId = e.target.value;
+  });
+
+  $('btn-refresh-mics').addEventListener('click', listMics);
+
+  // List mics on load if permission already granted
+  listMics();
 </script>
 </body>
 </html>`;
 }
 
-function inboxPlayerPage(twitter: string): string {
+async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string> {
+  const qrSvg = await QRCode.toString(pageUrl, { type: "svg", margin: 2, width: 160 });
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -498,6 +648,9 @@ function inboxPlayerPage(twitter: string): string {
   .status.ok { color: #16a34a; }
   .status.err { color: #dc2626; }
   .privacy { font-size: 12px; color: var(--text-faint); line-height: 1.5; margin-top: 12px; }
+  .qr-wrap { text-align: center; margin-top: 12px; }
+  .qr-wrap svg { display: inline-block; }
+  .qr-label { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
   @media (max-width: 480px) {
     .card { padding: 20px 18px; border-radius: 12px; }
     h1 { font-size: 18px; }
@@ -516,6 +669,12 @@ function inboxPlayerPage(twitter: string): string {
     <audio id="player" controls></audio>
     <div class="status" id="status">Loading...</div>
   </div>
+
+  <div class="qr-wrap" id="page-qr">
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">Can't hear? Scan to listen on your phone:</div>
+    ${qrSvg}
+  </div>
+
   <p class="privacy">This message is private. Don't share this link.</p>
 </div>
 <script>
@@ -623,6 +782,7 @@ function adminPage(): string {
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-secondary { background: var(--card); color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-play:disabled { background: var(--text-faint); cursor: not-allowed; }
   .record-box {
     background: var(--bg);
     border: 1.5px dashed var(--border);
@@ -636,9 +796,14 @@ function adminPage(): string {
     border-color: var(--accent);
     background: var(--accent-soft);
   }
+  .record-box.error {
+    border-style: solid;
+    border-color: #dc2626;
+    background: #fef2f2;
+  }
   .field { margin-bottom: 12px; }
   .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
-  .field input {
+  .field input, .field select {
     width: 100%;
     background: var(--card);
     border: 1.5px solid var(--border);
@@ -649,7 +814,7 @@ function adminPage(): string {
     font-size: 14px;
     outline: none;
   }
-  .field input:focus { border-color: var(--accent); }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
   .status { margin-top: 10px; font-size: 13px; min-height: 18px; font-weight: 500; }
   .status.ok { color: #16a34a; }
   .status.err { color: #dc2626; }
@@ -657,6 +822,12 @@ function adminPage(): string {
   .waveform { height: 32px; display: flex; align-items: center; justify-content: center; gap: 3px; margin: 8px 0; }
   .bar { width: 3px; background: var(--accent); border-radius: 2px; animation: bounce 0.5s infinite ease-in-out alternate; }
   @keyframes bounce { from { height: 3px; } to { height: 24px; } }
+  .meter-wrap { height: 40px; display: flex; align-items: flex-end; justify-content: center; gap: 2px; margin: 8px 0; }
+  .meter-bar { width: 4px; background: #dc2626; border-radius: 1px; transition: height 0.05s, background 0.2s; }
+  .meter-bar.active { background: #16a34a; }
+  .mic-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .mic-row select { flex: 1; }
+  .mic-row button { flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -675,6 +846,10 @@ function adminPage(): string {
     </div>
     <div class="record-box" id="record-box">
       <div id="step-record">
+        <div class="mic-row" id="mic-row" style="display:none;">
+          <select id="mic-select"></select>
+          <button id="btn-refresh-mics" class="btn btn-secondary" style="padding:8px 12px;font-size:12px;">↻</button>
+        </div>
         <button id="btn-record" class="btn btn-primary">● Record</button>
         <div class="waveform hidden" id="waveform">
           <div class="bar" style="animation-delay:0s"></div>
@@ -683,12 +858,13 @@ function adminPage(): string {
           <div class="bar" style="animation-delay:0.24s"></div>
           <div class="bar" style="animation-delay:0.32s"></div>
         </div>
+        <div class="meter-wrap hidden" id="meter"></div>
       </div>
       <div id="step-review" class="hidden">
         <div class="actions">
-          <button id="btn-play" class="btn btn-secondary">▶ Play</button>
+          <button id="btn-play" class="btn btn-secondary" disabled>▶ Play</button>
           <button id="btn-rerecord" class="btn btn-secondary">↻ Re-record</button>
-          <button id="btn-send" class="btn btn-primary">✉ Send</button>
+          <button id="btn-send" class="btn btn-primary" disabled>✉ Send</button>
         </div>
       </div>
     </div>
@@ -712,6 +888,11 @@ function adminPage(): string {
   let audioPlayer = null;
   let stream = null;
   let isRecording = false;
+  let audioCtx = null;
+  let analyser = null;
+  let meterRaf = null;
+  let micDevices = [];
+  let selectedMicId = null;
 
   const $ = id => document.getElementById(id);
 
@@ -721,36 +902,117 @@ function adminPage(): string {
     el.className = 'status ' + (ok ? 'ok' : 'err');
   }
 
+  function buildMeter() {
+    const wrap = $('meter');
+    wrap.innerHTML = '';
+    for (let i = 0; i < 24; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'meter-bar';
+      bar.style.height = '3px';
+      wrap.appendChild(bar);
+    }
+  }
+
+  function updateMeter() {
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    const bars = document.querySelectorAll('.meter-bar');
+    const step = Math.floor(data.length / bars.length);
+    bars.forEach((bar, i) => {
+      const val = data[i * step] || 0;
+      const h = Math.max(3, Math.min(40, val / 255 * 40));
+      bar.style.height = h + 'px';
+      bar.classList.toggle('active', val > 30);
+    });
+    if (isRecording) {
+      meterRaf = requestAnimationFrame(updateMeter);
+    }
+  }
+
+  async function listMics() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      micDevices = devices.filter(d => d.kind === 'audioinput');
+      const select = $('mic-select');
+      select.innerHTML = '';
+      micDevices.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || 'Microphone ' + (i + 1);
+        select.appendChild(opt);
+      });
+      if (micDevices.length > 0) {
+        $('mic-row').style.display = 'flex';
+        selectedMicId = micDevices[0].deviceId;
+      }
+    } catch (e) {
+      // mic access not granted yet, can't list devices
+    }
+  }
+
   function reset() {
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     if (audioPlayer) { audioPlayer.pause(); audioPlayer = null; }
     if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+    analyser = null;
     audioBlob = null;
     chunks = [];
     mediaRecorder = null;
     isRecording = false;
-    $('record-box').classList.remove('active');
+    $('record-box').classList.remove('active', 'error');
     $('step-record').classList.remove('hidden');
     $('step-review').classList.add('hidden');
     $('waveform').classList.add('hidden');
+    $('meter').classList.add('hidden');
     $('btn-record').textContent = '● Record';
     $('btn-record').className = 'btn btn-primary';
+    $('btn-play').disabled = true;
+    $('btn-send').disabled = true;
+  }
+
+  function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    mediaRecorder.stop();
+    if (stream) { stream.getTracks().forEach(t => t.stop()); }
+    isRecording = false;
+    if (meterRaf) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
   }
 
   $('btn-record').addEventListener('click', async () => {
     if (isRecording) {
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-      mediaRecorder.stop();
-      if (stream) { stream.getTracks().forEach(t => t.stop()); }
-      isRecording = false;
+      stopRecording();
       return;
     }
+
+    const micId = selectedMicId || $('mic-select').value || undefined;
+    const constraints = { audio: micId ? { deviceId: { exact: micId } } : true };
+
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (e) {
-      setStatus('Microphone access denied.', false);
+      setStatus('Microphone access denied. Please allow it and try again.', false);
       return;
     }
+
+    // Set up audio level meter
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      src.connect(analyser);
+      buildMeter();
+      $('meter').classList.remove('hidden');
+      updateMeter();
+    } catch (e) {
+      // meter is optional
+    }
+
     const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
                  MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
     mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -759,9 +1021,16 @@ function adminPage(): string {
     mediaRecorder.onstop = () => {
       const type = mime || 'audio/webm';
       audioBlob = new Blob(chunks, { type });
+      if (audioBlob.size === 0) {
+        setStatus('Recording failed. The microphone may be blocked by browser isolation. Try a different browser or device.', false);
+        reset();
+        return;
+      }
       audioUrl = URL.createObjectURL(audioBlob);
       $('step-record').classList.add('hidden');
       $('step-review').classList.remove('hidden');
+      $('btn-play').disabled = false;
+      $('btn-send').disabled = false;
     };
     mediaRecorder.start(100);
     isRecording = true;
@@ -781,6 +1050,12 @@ function adminPage(): string {
   });
 
   $('btn-rerecord').addEventListener('click', reset);
+
+  $('mic-select').addEventListener('change', (e) => {
+    selectedMicId = e.target.value;
+  });
+
+  $('btn-refresh-mics').addEventListener('click', listMics);
 
   $('btn-send').addEventListener('click', async () => {
     if (!audioBlob) return;
@@ -850,6 +1125,7 @@ function adminPage(): string {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  listMics();
   loadNotes();
 </script>
 </body>
@@ -949,6 +1225,13 @@ export default {
       if (!isAllowedAudioType(audio.type)) {
         console.log(`[upload] unsupported audio type ip=${ip} type=${audio.type}`);
         return new Response(`Unsupported audio type: ${audio.type}`, {
+          status: 400,
+          headers: { "Access-Control-Allow-Origin": "*" },
+        });
+      }
+
+      if (audio.size === 0) {
+        return new Response("Audio file is empty.", {
           status: 400,
           headers: { "Access-Control-Allow-Origin": "*" },
         });
@@ -1083,7 +1366,9 @@ export default {
       if (!twitter) {
         return new Response("Not found.", { status: 404 });
       }
-      return new Response(inboxPlayerPage(twitter), {
+      const pageUrl = url.toString();
+      const html = await inboxPlayerPage(twitter, pageUrl);
+      return new Response(html, {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
@@ -1251,7 +1536,9 @@ export default {
       if (!session || !/^[0-9a-f\-]{36,64}$/i.test(session)) {
         return new Response("Not found.", { status: 404 });
       }
-      return new Response(htmlPage(session, version), {
+      const pageUrl = url.toString();
+      const html = await htmlPage(session, version, pageUrl);
+      return new Response(html, {
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
