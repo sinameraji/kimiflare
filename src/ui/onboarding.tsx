@@ -1,131 +1,23 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
-import SelectInput from "ink-select-input";
-import Spinner from "ink-spinner";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { CustomTextInput } from "./text-input.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
 import { useTheme } from "./theme-context.js";
-import type { Theme } from "./theme.js";
-import {
-  generateDeviceCodes,
-  registerDevice,
-  pollForToken,
-  fetchCloudUsage,
-  saveCloudCredentials,
-  type CloudCredentials,
-  type DeviceCodes,
-  POLL_INTERVAL_MS,
-  POLL_TIMEOUT_MS,
-} from "../cloud/auth.js";
-import { isKillSwitchError } from "../util/errors.js";
-
-const execAsync = promisify(exec);
 
 interface Props {
-  onDone: (cfg: { accountId: string; apiToken: string; model: string; cloudMode?: boolean }, cloudCredentials?: CloudCredentials) => void;
+  onDone: (cfg: { accountId: string; apiToken: string; model: string }) => void;
   onCancel?: () => void;
 }
 
-type Step = "mode" | "accountId" | "apiToken" | "model" | "confirm" | "cloudAuth";
-
-type CloudAuthState =
-  | { phase: "ready"; codes: DeviceCodes }
-  | { phase: "polling"; codes: DeviceCodes; startTime: number }
-  | { phase: "success"; creds: CloudCredentials; usage: { remaining: number; input_token_limit: number; expires_at: string } }
-  | { phase: "error"; message: string };
-
-function openBrowser(url: string): void {
-  const platform = process.platform;
-  const cmd = platform === "darwin" ? `open "${url}"` : platform === "win32" ? `start "" "${url}"` : `xdg-open "${url}"`;
-  exec(cmd, (err) => {
-    if (err) {
-      // Silently fail — user can copy-paste the URL
-    }
-  });
-}
-
-function formatRemaining(ms: number): string {
-  const totalSeconds = Math.ceil(ms / 1000);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
+type Step = "accountId" | "apiToken" | "model" | "confirm";
 
 export function Onboarding({ onDone, onCancel }: Props) {
   const theme = useTheme();
-  const [step, setStep] = useState<Step>("mode");
-  const [mode, setMode] = useState<"cloud" | "byok">("byok");
+  const [step, setStep] = useState<Step>("accountId");
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [savedPath, setSavedPath] = useState<string | null>(null);
-  const [cloudAuth, setCloudAuth] = useState<CloudAuthState | null>(null);
-  const [pollTick, setPollTick] = useState(0);
-
-  // ─── Cloud Auth Effect ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (step !== "cloudAuth" || !cloudAuth) return;
-    if (cloudAuth.phase !== "polling") return;
-
-    let cancelled = false;
-
-    const tick = setInterval(() => {
-      setPollTick((t) => t + 1);
-    }, 1000);
-
-    const poll = async () => {
-      while (!cancelled) {
-        const elapsed = Date.now() - cloudAuth.startTime;
-        if (elapsed >= POLL_TIMEOUT_MS) {
-          if (!cancelled) {
-            setCloudAuth({ phase: "error", message: "Authentication timed out. Please try again." });
-          }
-          return;
-        }
-
-        try {
-          const creds = await pollForToken(cloudAuth.codes.deviceCode, cloudAuth.codes.deviceId);
-          if (creds && !cancelled) {
-            const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
-            if (usage && !cancelled) {
-              setCloudAuth({
-                phase: "success",
-                creds,
-                usage,
-              });
-            } else if (!cancelled) {
-              setCloudAuth({ phase: "error", message: "Authenticated but failed to fetch usage." });
-            }
-            return;
-          }
-        } catch (err) {
-          if (isKillSwitchError(err)) {
-            if (!cancelled) {
-              setCloudAuth({
-                phase: "error",
-                message:
-                  "KimiFlare Cloud has reached its maximum budget across all users. " +
-                  "The free credits period has ended. Switch to BYOK mode to continue using KimiFlare.",
-              });
-            }
-            return;
-          }
-          // Continue polling on other errors
-        }
-
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-      }
-    };
-
-    poll();
-
-    return () => {
-      cancelled = true;
-      clearInterval(tick);
-    };
-  }, [step, cloudAuth]);
 
   // ─── Keyboard Handling ─────────────────────────────────────────────────────
   useInput(
@@ -140,61 +32,6 @@ export function Onboarding({ onDone, onCancel }: Props) {
   );
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
-  const startCloudAuth = useCallback(async () => {
-    try {
-      const codes = await generateDeviceCodes();
-      await registerDevice(codes);
-      setCloudAuth({ phase: "ready", codes });
-      setStep("cloudAuth");
-    } catch (err) {
-      setCloudAuth({
-        phase: "error",
-        message: err instanceof Error ? err.message : "Failed to start authentication",
-      });
-      setStep("cloudAuth");
-    }
-  }, []);
-
-  const handleModeSelect = (item: { value: string }) => {
-    if (item.value === "cloud") {
-      setMode("cloud");
-      void startCloudAuth();
-    } else {
-      setMode("byok");
-      setStep("accountId");
-    }
-  };
-
-  const handleOpenBrowser = () => {
-    if (cloudAuth?.phase === "ready") {
-      openBrowser(cloudAuth.codes.authUrl);
-      setCloudAuth({ phase: "polling", codes: cloudAuth.codes, startTime: Date.now() });
-    }
-  };
-
-  const handleCloudSuccess = async () => {
-    if (cloudAuth?.phase !== "success") return;
-    const cfg = { accountId: "", apiToken: "", model: DEFAULT_MODEL, cloudMode: true as const };
-    try {
-      const path = await saveConfig(cfg);
-      setSavedPath(path);
-      onDone(cfg, cloudAuth.creds);
-    } catch (e) {
-      setSavedPath(`error: ${(e as Error).message}`);
-    }
-  };
-
-  const handleCloudRetry = () => {
-    setCloudAuth(null);
-    void startCloudAuth();
-  };
-
-  const handleCloudSwitchToByok = () => {
-    setCloudAuth(null);
-    setMode("byok");
-    setStep("accountId");
-  };
-
   const handleAccountIdSubmit = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -227,14 +64,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   // ─── Step Count ────────────────────────────────────────────────────────────
-  const byokSteps = ["accountId", "apiToken", "model", "confirm"] as const;
-  const stepIndex =
-    step === "mode"
-      ? 1
-      : step === "cloudAuth"
-        ? 2
-        : byokSteps.indexOf(step as (typeof byokSteps)[number]) + 2;
-  const totalSteps = mode === "cloud" ? 2 : byokSteps.length + 1;
+  const steps = ["accountId", "apiToken", "model", "confirm"] as const;
+  const stepIndex = steps.indexOf(step) + 1;
+  const totalSteps = steps.length;
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -251,114 +83,6 @@ export function Onboarding({ onDone, onCancel }: Props) {
       </Text>
 
       <Box marginTop={1} flexDirection="column">
-        {step === "mode" && (
-          <>
-            <Text>How do you want to connect?</Text>
-            <Box marginTop={1}>
-              <SelectInput
-                items={[
-                  { label: "Cloud (managed) — no API key needed", value: "cloud" },
-                  { label: "BYOK — bring your own Cloudflare key", value: "byok" },
-                ]}
-                onSelect={handleModeSelect}
-              />
-            </Box>
-          </>
-        )}
-
-        {step === "cloudAuth" && cloudAuth?.phase === "ready" && (
-          <>
-            <Text>Authenticating with Kimiflare Cloud...</Text>
-            <Box marginTop={1} flexDirection="column">
-              <Text>1. Open this URL in your browser:</Text>
-              <Text color={theme.palette.primary}>{cloudAuth.codes.authUrl}</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text>2. </Text>
-              <Text bold>[Press Enter to open browser]</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text color={theme.palette.primary}>› </Text>
-              <CustomTextInput
-                value=""
-                onChange={() => {}}
-                onSubmit={handleOpenBrowser}
-              />
-            </Box>
-          </>
-        )}
-
-        {step === "cloudAuth" && cloudAuth?.phase === "polling" && (
-          <>
-            <Text>
-              <Text color={theme.spinner}>
-                <Spinner type="dots" />
-              </Text>{" "}
-              Waiting for authentication...
-            </Text>
-            <Text color={theme.info.color}>
-              Expires in {formatRemaining(POLL_TIMEOUT_MS - (Date.now() - cloudAuth.startTime))}
-            </Text>
-            <Text color={theme.info.color}>
-              URL: {cloudAuth.codes.authUrl}
-            </Text>
-          </>
-        )}
-
-        {step === "cloudAuth" && cloudAuth?.phase === "success" && (
-          <>
-            <Text color={theme.palette.success}>Authenticated!</Text>
-            <Box marginTop={1} flexDirection="column">
-              <Text>
-                Token budget:{" "}
-                <Text bold>
-                  {cloudAuth.usage.remaining.toLocaleString()} /{" "}
-                  {cloudAuth.usage.input_token_limit.toLocaleString()}
-                </Text>{" "}
-                remaining
-              </Text>
-              <Text color={theme.info.color}>
-                Grant expires: {cloudAuth.usage.expires_at}
-              </Text>
-              <Text color={theme.info.color}>
-                Or when the global pool of free tokens runs out.
-              </Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text>[Press Enter to continue]</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text color={theme.palette.primary}>› </Text>
-              <CustomTextInput
-                value=""
-                onChange={() => {}}
-                onSubmit={handleCloudSuccess}
-              />
-            </Box>
-          </>
-        )}
-
-        {step === "cloudAuth" && cloudAuth?.phase === "error" && (
-          <>
-            <Text color={theme.palette.error}>Authentication failed</Text>
-            <Text color={theme.info.color}>{cloudAuth.message}</Text>
-            <Box marginTop={1}>
-              <SelectInput
-                items={[
-                  { label: "Retry", value: "retry" },
-                  { label: "Switch to BYOK", value: "byok" },
-                  { label: "Cancel", value: "cancel" },
-                ]}
-                onSelect={(item) => {
-                  if (item.value === "retry") handleCloudRetry();
-                  else if (item.value === "byok") handleCloudSwitchToByok();
-                  else if (onCancel) onCancel();
-                }}
-              />
-            </Box>
-          </>
-        )}
-
         {step === "accountId" && (
           <>
             <Text>Enter your Cloudflare Account ID</Text>
