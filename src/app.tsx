@@ -32,6 +32,7 @@ import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCl
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
 import { buildReport, sendReport } from "./cloud/report.js";
+import type { CloudCredentials } from "./cloud/auth.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -3963,13 +3964,13 @@ function App({
       <ThemeProvider theme={theme}>
         <Onboarding
         onCancel={() => exit()}
-        onDone={async (newCfg) => {
+        onDone={async (newCfg, cloudCredentials) => {
           setCfg(newCfg);
           if (newCfg.cloudMode) {
-            const { loadCloudCredentials } = await import("./cloud/auth.js");
-            const creds = await loadCloudCredentials();
+            const creds = cloudCredentials;
             if (creds) {
               setCloudToken(creds.accessToken);
+              setCloudDeviceId(creds.deviceId);
               setEvents((e) => [
                 ...e,
                 { kind: "info", key: mkKey(), text: "configuration saved — welcome to kimiflare! (cloud mode)" },

@@ -24,7 +24,7 @@ import { isKillSwitchError } from "../util/errors.js";
 const execAsync = promisify(exec);
 
 interface Props {
-  onDone: (cfg: { accountId: string; apiToken: string; model: string; cloudMode?: boolean }) => void;
+  onDone: (cfg: { accountId: string; apiToken: string; model: string; cloudMode?: boolean }, cloudCredentials?: CloudCredentials) => void;
   onCancel?: () => void;
 }
 
@@ -178,7 +178,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
     try {
       const path = await saveConfig(cfg);
       setSavedPath(path);
-      onDone(cfg);
+      onDone(cfg, cloudAuth.creds);
     } catch (e) {
       setSavedPath(`error: ${(e as Error).message}`);
     }
