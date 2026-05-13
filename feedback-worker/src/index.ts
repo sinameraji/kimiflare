@@ -635,7 +635,7 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
   }
   h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; text-align: center; }
   p.sub { margin: 0 0 20px; font-size: 14px; color: var(--text-muted); text-align: center; }
-  .msg-list { display: flex; flex-direction: column; gap: 12px; }
+  .msg-list { display: flex; flex-direction: column; gap: 16px; }
   .msg-row {
     background: var(--bg);
     border: 1.5px dashed var(--border);
@@ -644,6 +644,7 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-bottom: 4px;
   }
   .msg-row.new { border-color: var(--accent); background: var(--accent-soft); }
   .msg-dot { font-size: 20px; line-height: 1; flex-shrink: 0; }
@@ -664,7 +665,7 @@ async function inboxPlayerPage(twitter: string, pageUrl: string): Promise<string
   }
   .msg-play:hover { background: var(--accent-hover); }
   .msg-play:disabled { opacity: 0.6; cursor: not-allowed; }
-  .player-wrap { margin-top: 10px; }
+  .player-wrap { margin-top: 10px; margin-bottom: 8px; }
   .player-wrap audio { width: 100%; outline: none; }
   .status { font-size: 13px; min-height: 18px; font-weight: 500; margin-top: 6px; }
   .status.ok { color: #16a34a; }
