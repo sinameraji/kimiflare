@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.0](https://github.com/sinameraji/kimiflare/compare/v0.60.1...v0.61.0) (2026-05-13)
+
+
+### Features
+
+* **ui:** add 'Synthesize' option to loop detection modal ([#405](https://github.com/sinameraji/kimiflare/issues/405)) ([17c8a8b](https://github.com/sinameraji/kimiflare/commit/17c8a8b24028c77966ac6318515b6621d417d4f4))
+
 ## [0.60.1](https://github.com/sinameraji/kimiflare/compare/v0.60.0...v0.60.1) (2026-05-13)
 
 
