@@ -42,8 +42,9 @@ export interface AgentCallbacks {
    *  reset the counter and keep going, or "stop" to end the turn immediately. */
   onToolLimitReached?: () => Promise<"continue" | "stop">;
   /** Called when the agent is detected repeating identical tool calls (loop). Return "continue" to
-   *  reset the guardrail and keep going, or "stop" to end the turn immediately. */
-  onLoopDetected?: () => Promise<"continue" | "stop">;
+   *  reset the guardrail and keep going, "synthesize" to ask the agent to conclude without tools,
+   *  or "stop" to end the turn immediately. */
+  onLoopDetected?: () => Promise<"continue" | "stop" | "synthesize">;
   /** Called when accumulated high-signal memories suggest KIMI.md may be stale. */
   onKimiMdStale?: () => void;
   /** Called when session-start memory recall succeeds and memories are injected. */
@@ -865,9 +866,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           loopExhausted = false;
           recentToolCalls.length = 0;
           continue;
-        } else {
-          return;
         }
+        if (decision === "synthesize") {
+          opts.messages.push({
+            role: "system",
+            content:
+              "You were stuck calling the same tools with identical arguments. " +
+              "Please synthesize and conclude your findings so far. Do not call any more tools.",
+          });
+          loopExhausted = false;
+          recentToolCalls.length = 0;
+          continue;
+        }
+        return;
       }
       throw new AgentLoopError();
     }
