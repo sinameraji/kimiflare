@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.64.0](https://github.com/sinameraji/kimiflare/compare/v0.63.0...v0.64.0) (2026-05-16)
+
+
+### Features
+
+* **ai-gateway:** make Cloudflare AI Gateway the default backend ([#420](https://github.com/sinameraji/kimiflare/issues/420)) ([e67725e](https://github.com/sinameraji/kimiflare/commit/e67725e5d1d14e803e5ea99168f8e6daef68e377))
+* **lsp:** configurable per-request timeout and auto-restart on crash ([#422](https://github.com/sinameraji/kimiflare/issues/422)) ([6a2df6a](https://github.com/sinameraji/kimiflare/commit/6a2df6ac7e10306d8ebf59b7d92fd9c1f2d9af85))
+* **mcp:** per-call timeout for tool invocations ([#421](https://github.com/sinameraji/kimiflare/issues/421)) ([6577721](https://github.com/sinameraji/kimiflare/commit/657772179c270ba06fe686b6b28d8dd7704f44ac))
+* ship M1.1, M1.10, log M3.1–M3.3 progress ([#425](https://github.com/sinameraji/kimiflare/issues/425)) ([89bb94a](https://github.com/sinameraji/kimiflare/commit/89bb94ae8a75bb31d21c68c04288b39dcca19aff))
+
+
+### Bug Fixes
+
+* **app:** disable Ink's built-in Ctrl+C handler so useInput can interrupt (M1.0, real fix) ([#427](https://github.com/sinameraji/kimiflare/issues/427)) ([d0b4d46](https://github.com/sinameraji/kimiflare/commit/d0b4d46c922fdc343d503533cea67f38d6c1fe4b))
+
 ## [0.63.0](https://github.com/sinameraji/kimiflare/compare/v0.62.0...v0.63.0) (2026-05-13)
 
 
