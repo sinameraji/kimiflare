@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.1](https://github.com/sinameraji/kimiflare/compare/v0.68.0...v0.68.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **loop:** wrap onKimiMdStale/onWarning fires in memory-extraction IIFE ([#444](https://github.com/sinameraji/kimiflare/issues/444)) ([8699021](https://github.com/sinameraji/kimiflare/commit/8699021e68f9dc70b092b02b779f835956a6e8e4))
+
 ## [0.68.0](https://github.com/sinameraji/kimiflare/compare/v0.67.0...v0.68.0) (2026-05-16)
 
 
