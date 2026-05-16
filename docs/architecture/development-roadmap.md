@@ -9,6 +9,35 @@ Each milestone lists PR-sized work items with explicit references to
 the relevant finding (`RF-N`), opportunity (`OP-N`), or competitor
 gap (numbered 1–10 in the competitor doc).
 
+## Progress log
+
+Most-recent-first. When an item ships, move it here in one line so a
+fresh session can pick up where the last one left off without
+re-reading the full roadmap.
+
+- **M4.1** — `PermissionController` extracted from `app.tsx` —
+  merged in #419 *(app.tsx 4,393 → 4,334 LOC, hook + 11 tests added,
+  pure refactor, behavior preserved including the
+  `promptOnBlockedBash` init-turn asymmetry)*.
+- **M0** — architecture docs landed — merged in #418
+  *(agent-loop.md, agent-loop-findings.md, competitor-analysis.md,
+  this file)*.
+
+## Known blockers / urgent
+
+User-reported, jump the queue when convenient. These should be
+finished before their containing milestone is considered done.
+
+- **Ctrl+C abort race → half-dead TUI** *(see [RF-20](./agent-loop-findings.md#rf-20))*.
+  Long-standing bug: when busy, Ctrl+C leaves the TUI in an
+  in-between state where chars print on the screen but Enter doesn't
+  submit. Diagnosed: race between `useInput` Ctrl+C handler
+  (`app.tsx:1508`) and the `process.on("SIGINT")` fallback
+  (`app.tsx:1613`) — both fire, the SIGINT one then hits the
+  fall-through and calls `exit()` mid-cleanup. Fix is a one-line
+  guard at the top of the SIGINT handler: bail if
+  `isAbortingRef.current` is already true. Tracked as M1.0.
+
 ## Guiding principles
 
 1. **Small PRs.** Every item below should land in one PR ≤ 500 LOC of
@@ -55,21 +84,17 @@ milestone per 1–2 weeks for M1–M3, then heavier work scales out.
 
 ---
 
-## M0 — Branch hygiene & docs land *(½ day)*
+## M0 — Branch hygiene & docs land *(½ day)* ✅ **DONE** *(see #418)*
 
 **Goal:** This roadmap and its sibling docs land on `main`. Nothing
 else.
 
 **PRs:**
 
-- **M0.1** — `docs(architecture): add agent loop reference, findings,
-  competitor analysis, and development roadmap`
-  - Adds `docs/architecture/agent-loop.md`,
-    `agent-loop-findings.md`, `competitor-analysis.md`, and this
-    file.
-  - No code changes.
+- ✅ **M0.1** — `docs(architecture): add agent loop reference,
+  findings, competitor analysis, and roadmap` *(merged in #418)*.
 
-**Exit criteria:** All four docs merged to `main`.
+**Exit criteria:** All four docs merged to `main`. ✅
 
 ---
 
@@ -81,6 +106,10 @@ batching.
 
 **PRs:**
 
+- **M1.0** — `fix(app): SIGINT handler bails when useInput already
+  aborting` *(RF-20)* — **user-flagged urgent**. One-line guard at
+  top of SIGINT handler. Closes the long-standing "Ctrl+C freezes
+  the session" bug. Should land first.
 - **M1.1** — `fix(client): full-jitter retry backoff` *(OP-1 / RF-8)*
   - `src/agent/client.ts:116` → `random(0, 500 * 2^attempt)`.
   - Unit test: 5 retries don't fall into a sub-300ms window.
@@ -193,9 +222,15 @@ that touches UI assumes M4 is making steady progress.
 
 **PRs (in suggested order, but most are independent):**
 
-- **M4.1** — `refactor(ui): extract PermissionController`
-  - Modal + decision threading + `sessionAllowed` set lift to a
-    standalone hook + component.
+- ✅ **M4.1** — `refactor(ui): extract usePermissionController hook`
+  *(merged in #419)*. Pulled the permission-prompt state machine
+  into `src/ui/use-permission-controller.ts` (139 LOC) with a pure
+  `decidePermission()` core and 11 unit tests. `app.tsx` shrank
+  4,393 → 4,334 LOC. Pre-refactor behavior preserved, including the
+  init-turn vs main-turn `promptOnBlockedBash` asymmetry. Note for
+  next extraction: the wiring pattern (hook returns `{ pending,
+  askPermission, hasPending, decide, denyPending, clearResolveRef }`)
+  works well — reuse it for the other controllers.
 - **M4.2** — `refactor(ui): extract PickerController`
   - File picker, mention picker, slash picker share a state machine.
 - **M4.3** — `refactor(ui): extract ModalHost`

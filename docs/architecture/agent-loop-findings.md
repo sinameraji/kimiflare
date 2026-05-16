@@ -264,6 +264,50 @@ they're outside a true sandbox.
 **Fix:** track per session, not per process. Re-emit on each session
 start that uses code mode.
 
+### RF-20 — Ctrl+C race between `useInput` and SIGINT handler leaves TUI half-dead (S)
+
+`src/app.tsx:1508` (useInput Ctrl+C branch) and `src/app.tsx:1613`
+(SIGINT handler installed at `app.tsx:646`).
+
+User-reported, long-standing. Symptom: pressing Ctrl+C during a busy
+turn leaves the TUI in an in-between state where typed characters
+still print to the screen but Enter does not submit. The session
+appears usable but is broken.
+
+Root cause: a Ctrl+C from the terminal sends **both** the raw byte
+(captured by Ink's `useInput`) **and** the SIGINT signal (caught by
+Node's `process.on("SIGINT")`). Both handlers fire:
+
+1. `useInput` fires first (`app.tsx:1530`): sets
+   `isAbortingRef.current = true`, kills the supervisor, aborts the
+   scope. The reset of `isAbortingRef.current` back to `false` lives
+   in the turn's `finally` block, which has not run yet.
+2. A microtask later, the SIGINT handler fires (`app.tsx:1613`). It
+   sees `isAborting === true`, so the
+   `if (busyRef.current && activeScopeRef.current && !isAbortingRef.current)`
+   branch at `1635` is **false**. It falls through to the
+   `else if (!hadPerm && !hadLimit)` branch at `1645` — both of those
+   were already drained by `useInput` — and calls `exit()`.
+
+`exit()` runs while Ink's render tree is mid-cleanup; the UI tears
+down halfway. Escape doesn't have this problem because Escape doesn't
+trigger SIGINT.
+
+**Fix:** add a one-line guard at the top of `sigintHandlerRef.current`:
+
+```ts
+if (isAbortingRef.current) {
+  logger.info("sigint:handler:already-aborting");
+  return; // useInput is handling it
+}
+```
+
+This also leaves the fallback case (raw mode disabled, useInput
+doesn't fire) working — in that case `isAborting` is still `false`
+when the SIGINT handler runs and it does its dance correctly.
+
+Tracked as M1.0 in the development roadmap.
+
 ---
 
 ## Opportunities
