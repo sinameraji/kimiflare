@@ -460,6 +460,17 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     logger.debug("turn:api_request", { sessionId: opts.sessionId, messageCount: apiMessages.length });
+    const turnGateway = opts.gateway
+      ? {
+          ...opts.gateway,
+          metadata: {
+            ...(opts.gateway.metadata ?? {}),
+            feature: "chat",
+            ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+            turnIdx: turn,
+          },
+        }
+      : undefined;
     const events = runKimi({
       accountId: opts.accountId,
       apiToken: opts.apiToken,
@@ -471,7 +482,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       maxCompletionTokens: opts.maxCompletionTokens,
       reasoningEffort: opts.reasoningEffort,
       sessionId: opts.sessionId,
-      gateway: opts.gateway,
+      gateway: turnGateway,
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
       cloudDeviceId: opts.cloudDeviceId,

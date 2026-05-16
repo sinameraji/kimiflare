@@ -74,10 +74,19 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
       : `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${model}`;
     headers.Authorization = `Bearer ${opts.apiToken}`;
 
-    if (opts.gateway?.metadata) {
-      for (const [k, v] of Object.entries(opts.gateway.metadata)) {
-        headers[`cf-aig-metadata-${k}`] = String(v);
-      }
+    if (opts.gateway) {
+      const merged: Record<string, string | number | boolean> = {
+        ...(opts.gateway.metadata ?? {}),
+        feature: "embedding",
+      };
+      const entries = Object.entries(merged).slice(0, 5);
+      headers["cf-aig-metadata"] = JSON.stringify(Object.fromEntries(entries));
+    }
+    if (opts.gateway?.cacheTtl !== undefined) {
+      headers["cf-aig-cache-ttl"] = String(opts.gateway.cacheTtl);
+    }
+    if (opts.gateway?.skipCache !== undefined) {
+      headers["cf-aig-skip-cache"] = String(opts.gateway.skipCache);
     }
   }
 

@@ -210,8 +210,8 @@ node --inspect-brk bin/kimiflare.mjs
 7. Optional: memory extraction, cost tracking, compaction, skill injection.
 
 ### External Integrations
-- **Cloudflare Workers AI** — primary LLM backend (Kimi-K2.6).
-- **Cloudflare AI Gateway** — caching, rate limiting, observability.
+- **Cloudflare AI Gateway** — the spine. All Workers AI traffic is routed through the user's own Gateway by default: this gives us per-request logs, caching, and authoritative cost attribution via `cf-aig-metadata` tagging (`feature`, `sessionId`, `turnIdx`). Gateway logs are the source of truth for `/cost`; local heuristics are demoted to a brief fallback used only until logs catch up. Emergency opt-out: `KIMIFLARE_DISABLE_AI_GATEWAY=1`.
+- **Cloudflare Workers AI** — LLM backend (Kimi-K2.6). Reached via the Gateway in normal operation; direct path remains in code as fallback only.
 - **KimiFlare Cloud** — optional proxy mode with device auth.
 - **MCP Servers** — external tools via Model Context Protocol.
 - **LSP Servers** — language servers for code intelligence.
