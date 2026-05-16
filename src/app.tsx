@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
-import { TurnSupervisor } from "./agent/supervisor.js";
 import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
 import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
@@ -108,6 +107,7 @@ import { usePickerController } from "./ui/use-picker-controller.js";
 import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
+import { useTurnController } from "./ui/use-turn-controller.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -479,7 +479,6 @@ function App({
     [],
   );
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
 
@@ -498,7 +497,22 @@ function App({
   }, []);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
-  const [showReasoning, setShowReasoning] = useState(false);
+  const turn = useTurnController();
+  const {
+    busy, busyRef,
+    isAbortingRef, lastEscapeAtRef,
+    supervisorRef,
+    turnPhase, setTurnPhase,
+    turnStartedAt,
+    currentToolName, setCurrentToolName,
+    lastActivityAt, setLastActivityAt,
+    turnCounterRef,
+    showReasoning,
+    tasks, setTasks, tasksRef,
+    tasksStartedAt, setTasksStartedAt,
+    tasksStartTokens, setTasksStartTokens,
+    beginTurn, endTurn, clearTaskTracking,
+  } = turn;
   const {
     pending: perm,
     askPermission: askForPermission,
@@ -546,13 +560,6 @@ function App({
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
   const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
-  const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
-  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
-  const [turnPhase, setTurnPhase] = useState<import("./ui/status.js").TurnPhase>("waiting");
-  const [currentToolName, setCurrentToolName] = useState<string | null>(null);
-  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
   const [verbose, setVerbose] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
@@ -662,9 +669,6 @@ function App({
   const activeAsstIdRef = useRef<number | null>(null);
   const sessionScopeRef = useRef<AbortScope>(new AbortScope());
   const activeScopeRef = useRef<AbortScope | null>(null);
-  const supervisorRef = useRef<TurnSupervisor>(new TurnSupervisor());
-  const isAbortingRef = useRef(false);
-  const lastEscapeAtRef = useRef(0);
   /** Holds the latest Ctrl+C interrupt logic so the SIGINT handler can delegate to it. */
   const sigintHandlerRef = useRef<(() => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
@@ -672,7 +676,6 @@ function App({
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
-  const tasksRef = useRef<Task[]>([]);
   const usageRef = useRef<Usage | null>(null);
   const gatewayMetaRef = useRef<GatewayMeta | null>(null);
   const lastApiErrorRef = useRef<{ httpStatus?: number; code?: number; message: string } | null>(null);
@@ -689,11 +692,9 @@ function App({
   const lspManagerRef = useRef(new LspManager());
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
-  const busyRef = useRef(busy);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
   const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
-  const turnCounterRef = useRef(0);
 
   const sessionMgr = useSessionManager({
     cfg,
@@ -1341,10 +1342,7 @@ function App({
         // Save session so interrupted turn is not lost
         void saveSessionSafe();
         // Clear task list immediately so it doesn't keep spinning
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
+        clearTaskTracking();
       } else if (!hadPerm && !hadLimit && !hadLoop) {
         logger.info("input:ctrl+c:exiting");
         void lspManagerRef.current.stopAll().finally(() => exit());
@@ -1391,15 +1389,12 @@ function App({
         }
         pendingToolCallsRef.current.clear();
         // Clear task list immediately so it doesn't keep spinning
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
+        clearTaskTracking();
         return;
       }
     }
     if (key.ctrl && inputChar === "r") {
-      setShowReasoning((s) => !s);
+      turn.toggleReasoning();
       return;
     }
     if (key.shift && key.tab) {
@@ -1443,10 +1438,7 @@ function App({
       activeScopeRef.current.abort("user_stopped");
       setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
       void saveSessionSafe();
-      setTasks([]);
-      setTasksStartedAt(null);
-      setTasksStartTokens(0);
-      tasksRef.current = [];
+      clearTaskTracking();
     } else if (!hadPerm && !hadLimit) {
       logger.info("sigint:handler:exiting");
       void lspManagerRef.current.stopAll().finally(() => exit());
@@ -1527,9 +1519,7 @@ function App({
       setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't compact while model is running" }]);
       return;
     }
-    setBusy(true);
-    busyRef.current = true;
-    setTurnStartedAt(Date.now());
+    beginTurn();
     const turnScope = sessionScopeRef.current.createChild();
     activeScopeRef.current = turnScope;
     try {
@@ -1604,14 +1594,8 @@ function App({
       }
     } finally {
       logger.info("runCompact:finally");
-      setBusy(false);
-      busyRef.current = false;
-      setTurnStartedAt(null);
-      setTurnPhase("waiting");
-      setCurrentToolName(null);
-      setLastActivityAt(null);
+      endTurn();
       activeScopeRef.current = null;
-      isAbortingRef.current = false;
       clearPermissionResolveRef();
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
@@ -1629,9 +1613,7 @@ function App({
 
     setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init" }]);
     messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
-    setBusy(true);
-    busyRef.current = true;
-    setTurnStartedAt(Date.now());
+    beginTurn();
     const turnScope = sessionScopeRef.current.createChild();
     activeScopeRef.current = turnScope;
 
@@ -1915,15 +1897,9 @@ function App({
       setCodeMode(false);
       const asstId = activeAsstIdRef.current;
       if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
-      setBusy(false);
-      busyRef.current = false;
-      setTurnStartedAt(null);
-      setTurnPhase("waiting");
-      setCurrentToolName(null);
-      setLastActivityAt(null);
+      endTurn();
       activeAsstIdRef.current = null;
       activeScopeRef.current = null;
-      isAbortingRef.current = false;
       clearPermissionResolveRef();
       limitResolveRef.current = null;
       loopResolveRef.current = null;
@@ -1987,15 +1963,13 @@ function App({
         setSessionUsage(null);
         gatewayMetaRef.current = null;
         setGatewayMeta(null);
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
+        clearTaskTracking();
         compactSuggestedRef.current = false;
         updateNudgedRef.current = false;
         return true;
       }
       if (c === "/reasoning") {
-        setShowReasoning((s) => {
+        turn.setShowReasoning((s) => {
           const next = !s;
           setEvents((e) => [
             ...e,
@@ -3208,11 +3182,9 @@ function App({
         ]);
       }
 
-      setBusy(true);
-      busyRef.current = true;
+      beginTurn();
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
-      setTurnStartedAt(Date.now());
 
       const classification = classifyIntent(trimmed);
       setIntentTier(classification.tier);
@@ -3408,15 +3380,9 @@ function App({
         setCodeMode(false);
         const asstId = activeAsstIdRef.current;
         if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
-        setBusy(false);
-        busyRef.current = false;
-        setTurnStartedAt(null);
-        setTurnPhase("waiting");
-        setCurrentToolName(null);
-        setLastActivityAt(null);
+        endTurn();
         activeAsstIdRef.current = null;
         activeScopeRef.current = null;
-        isAbortingRef.current = false;
         clearPermissionResolveRef();
         limitResolveRef.current = null;
         loopResolveRef.current = null;
@@ -3424,10 +3390,7 @@ function App({
         pendingToolCallsRef.current.clear();
 
         // Clear task list so it doesn't linger into the next turn
-        setTasks([]);
-        setTasksStartedAt(null);
-        setTasksStartTokens(0);
-        tasksRef.current = [];
+        clearTaskTracking();
 
         // Mark any still-running tools as interrupted
         setEvents((evts) =>

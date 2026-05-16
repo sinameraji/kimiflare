@@ -15,7 +15,24 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M4.4** — `SessionManager` extracted from `app.tsx` — *(this PR)*.
+- **M4.5** — `TurnController` extracted from `app.tsx` — *(this PR)*.
+  Hook in `src/ui/use-turn-controller.ts` owns the turn-lifecycle
+  state: `busy` / `busyRef`, `supervisorRef`, `isAbortingRef`,
+  `lastEscapeAtRef`, the four status-pill fields (`turnPhase`,
+  `turnStartedAt`, `currentToolName`, `lastActivityAt`),
+  `showReasoning`, `turnCounterRef`, and the task-tracking trio
+  (`tasks` + `tasksRef`, `tasksStartedAt`, `tasksStartTokens`).
+  Operations: `beginTurn()`, `endTurn()`, `clearTaskTracking()`,
+  `toggleReasoning()`, `markAborting()`. Folded three duplicated
+  `beginTurn` blocks, three `endTurn` blocks, and three task-reset
+  blocks into single-line calls. Other-controller cleanups (permission
+  ref, limit/loop refs, pending tool calls) stay at the call sites —
+  they belong to M4.1 / M4.3 / M4.4 territory. `app.tsx` 3,954 →
+  3,917 LOC; the headline number is small because the hook also adds
+  149 LOC of consolidated state declarations, but the structural win
+  is real (turn lifecycle now has one owner instead of being smeared
+  across 10 useState/useRef calls and three duplicated finally blocks).
+- **M4.4** — `SessionManager` extracted from `app.tsx` — merged in #448.
   Pulled load/resume/checkpoint/save state and handlers into
   `src/ui/use-session-manager.ts`. The hook owns the three identity
   refs (`sessionIdRef`, `sessionCreatedAtRef`, `sessionTitleRef`) and
@@ -327,8 +344,12 @@ that touches UI assumes M4 is making steady progress.
   save/resume/checkpoint handlers. `extractFirstUserText()` extracted
   as a pure helper for the session-id seed text. `app.tsx` shrank
   4,093 → 3,954 LOC.
-- **M4.5** — `refactor(ui): extract TurnController`
-  - Supervisor wiring, status pills, reasoning view.
+- ✅ **M4.5** — `refactor(ui): extract TurnController`
+  *(merged in this PR)*. Hook in `src/ui/use-turn-controller.ts` owns
+  busy / supervisor / phase / status / reasoning / task-tracking state
+  plus `beginTurn` / `endTurn` / `clearTaskTracking` helpers. Three
+  duplicated lifecycle blocks folded to one-line calls. `app.tsx`
+  shrank 3,954 → 3,917 LOC.
 - **M4.6** — `refactor(ui): extract InputController`
   - The 200+ line `useInput` handler split by mode (normal /
     picker / modal).
