@@ -1,5 +1,6 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { ToolSpec } from "../tools/registry.js";
+import { toolTimeoutError } from "../tools/tool-error.js";
 
 export interface McpToolEntry {
   spec: ToolSpec;
@@ -18,7 +19,7 @@ export function withTimeout<T>(
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms`));
+      reject(toolTimeoutError(label, ms));
     }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => {

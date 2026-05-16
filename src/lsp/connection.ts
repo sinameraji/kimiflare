@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { JsonRpcMessage, JsonRpcRequest, JsonRpcNotification, JsonRpcResponse } from "./protocol.js";
+import { toolTimeoutError, toolAbortError } from "../tools/tool-error.js";
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -94,7 +95,7 @@ export class LspConnection extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`LSP request '${method}' timed out after ${this.requestTimeoutMs}ms`));
+        reject(toolTimeoutError(`LSP request '${method}'`, this.requestTimeoutMs));
       }, this.requestTimeoutMs);
 
       const pending: PendingRequest = { resolve, reject, signal, timer };
@@ -104,7 +105,7 @@ export class LspConnection extends EventEmitter {
         const onAbort = () => {
           this.pending.delete(id);
           clearTimeout(timer);
-          reject(new Error("LSP request cancelled"));
+          reject(toolAbortError(`LSP request '${method}'`));
         };
         if (signal.aborted) {
           onAbort();

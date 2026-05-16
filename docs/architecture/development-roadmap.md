@@ -15,7 +15,33 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M5.2** — Optional OTLP/HTTP log export *(OP-20)* — *(this PR)*.
+- **M2.1** — Structured `ToolError` envelope *(OP-12)* — *(this PR)*.
+  New `src/tools/tool-error.ts` exports a `ToolError` class
+  (`{ code, message, recoverable, suggestion?, cause? }`) plus the
+  factory helpers `toolTimeoutError` / `toolAbortError` /
+  `toolInvalidArgsError` / `toolNotFoundError` and a `wrapAsToolError`
+  coercion. `ToolResult` gains optional `errorCode` / `recoverable` /
+  `suggestion` fields that the executor populates: thrown `ToolError`
+  passes through, plain `Error` falls back to `unknown`/not-recoverable,
+  and the three pre-existing failure paths (unknown tool, invalid JSON
+  args, permission denied) are now classified inline as `not_found` /
+  `invalid_args` / `permission_denied`. MCP and LSP timeout paths
+  upgraded to throw typed errors (`code: "timeout"`, recoverable). The
+  agent loop emits a `tool:error_classified` warn-level event to the
+  M5.1 structured-log sink whenever a tool returns a classified error
+  so dashboards can answer "which tool / code dominates failures this
+  week" without parsing message strings. **No behavior change beyond
+  the new log event** — the executor's stringified-error path is
+  byte-identical for non-typed failures, and the loop does not (yet)
+  retry on `recoverable: true`. Migrating individual tools to throw
+  `ToolError` is opt-in and gradual; the roadmap's `useTypedErrors`
+  feature flag isn't needed because nothing in this PR gates behavior
+  on the new fields. 22 new tests across `tool-error.test.ts` and
+  `executor.test.ts` cover the type's defaults, the wrap coercion,
+  factory helpers, and the executor classification of all four
+  failure paths. **M2.1 complete — unblocks M6.1 (hooks need typed
+  error classification).**
+- **M5.2** — Optional OTLP/HTTP log export *(OP-20)* — merged in #460.
   Third sink in the logger stack: `src/util/otel-sink.ts` ships each
   entry to an OpenTelemetry collector when `KIMIFLARE_OTEL_ENDPOINT`
   is set. Batched (every 5s or 100 entries, whichever first),
@@ -309,14 +335,14 @@ that touches many call sites — review carefully.
 
 **PRs:**
 
-- **M2.1** — `refactor(tools): introduce structured ToolError`
-  *(OP-12)*
-  - New type: `ToolError { code, message, recoverable, suggestion? }`.
-  - All tools return `ToolResult { content?, error?, … }`.
-  - Loop checks `recoverable` to decide retry vs. fail-fast.
-  - Migration of all 15 core tools + MCP / LSP adapters.
-  - **High risk:** broad surface change. Land behind a feature flag
-    in the loop (`opts.useTypedErrors`) for one release if needed.
+- ✅ **M2.1** — `refactor(tools): introduce structured ToolError`
+  *(OP-12)* — *merged in this PR*. Type + factories in
+  `src/tools/tool-error.ts`; executor lifts code/recoverable/suggestion
+  onto `ToolResult`; MCP + LSP timeouts throw typed errors; loop emits
+  `tool:error_classified` to the M5.1 sink. No feature flag needed —
+  the loop's retry behavior is unchanged (no retry policy exists yet
+  to gate). Individual tool migrations are opt-in and can land
+  one-at-a-time without breaking anything.
 - **M2.2** — `refactor(executor): typed askPermission return`
   *(OP-13)*
   - `askPermission` now returns `{ decision, scope: "once" | "session"
