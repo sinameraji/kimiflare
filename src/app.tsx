@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
-import SelectInput from "ink-select-input";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
@@ -37,7 +36,7 @@ import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
 import { usePermissionController } from "./ui/use-permission-controller.js";
-import { LimitModal, type LimitDecision, type LoopDecision } from "./ui/limit-modal.js";
+import type { LimitDecision, LoopDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
@@ -63,8 +62,6 @@ import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client
 import { saveRemoteSession, type RemoteSession } from "./remote/session-store.js";
 import { deployForTui } from "./remote/deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
-import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
-import { InboxModal } from "./ui/inbox-modal.js";
 import { nextMode, type Mode } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
 import {
@@ -103,13 +100,8 @@ import type { CustomCommand, SlashItem } from "./commands/types.js";
 import { BUILTIN_COMMANDS, BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import type { SaveCustomCommandOptions } from "./commands/save.js";
-import { CommandWizard } from "./ui/command-wizard.js";
 import { buildInitPrompt } from "./init/context-generator.js";
-import { CommandPicker } from "./ui/command-picker.js";
-import { CommandList } from "./ui/command-list.js";
-import { LspWizard } from "./ui/lsp-wizard.js";
 import { ThemeProvider } from "./ui/theme-context.js";
-import { ThemePicker } from "./ui/theme-picker.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
@@ -119,6 +111,8 @@ import fg from "fast-glob";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
+import { useModalHost } from "./ui/use-modal-host.js";
+import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -530,8 +524,21 @@ function App({
       ]);
     },
   );
-  const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
-  const [loopModal, setLoopModal] = useState<{ resolve: (d: LoopDecision) => void } | null>(null);
+  const modals = useModalHost();
+  const {
+    limitModal, setLimitModal,
+    loopModal, setLoopModal,
+    commandWizard, setCommandWizard,
+    commandPicker, setCommandPicker,
+    commandToDelete, setCommandToDelete,
+    showCommandList, setShowCommandList,
+    showLspWizard, setShowLspWizard,
+    showThemePicker, setShowThemePicker,
+    showRemoteDashboard, setShowRemoteDashboard,
+    showInboxModal, setShowInboxModal,
+    hasFullscreenModal,
+    hasAnyModal,
+  } = modals;
   const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -546,14 +553,7 @@ function App({
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
   const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
   const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
-  const [commandWizard, setCommandWizard] = useState<{ mode: "create" | "edit"; initial?: CustomCommand } | null>(null);
-  const [commandPicker, setCommandPicker] = useState<{ mode: "edit" | "delete" } | null>(null);
-  const [commandToDelete, setCommandToDelete] = useState<CustomCommand | null>(null);
-  const [showCommandList, setShowCommandList] = useState(false);
-  const [showLspWizard, setShowLspWizard] = useState(false);
-  const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
-  const [showInboxModal, setShowInboxModal] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
   const [tasksStartTokens, setTasksStartTokens] = useState<number>(0);
@@ -565,7 +565,6 @@ function App({
   const [hasUpdate, setHasUpdate] = useState(initialUpdateResult?.hasUpdate ?? false);
   const [latestVersion, setLatestVersion] = useState<string | null>(initialUpdateResult?.latestVersion ?? null);
   const [theme, setTheme] = useState<Theme>(resolveTheme(initialCfg?.theme));
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [originalTheme, setOriginalTheme] = useState<Theme | null>(null);
   const [skillsActive, setSkillsActive] = useState(0);
   const [memoryRecalled, setMemoryRecalled] = useState(false);
@@ -728,6 +727,11 @@ function App({
     return [...BUILTIN_COMMANDS, ...customs];
   }, [customCommandsVersion]);
 
+  // Preserves the pre-refactor asymmetry: the picker close-on-modal check
+  // includes showInboxModal but EXCLUDES showRemoteDashboard and
+  // showThemePicker. Likely an oversight from when those modals were
+  // added later — kept as-is for this pure refactor; revisit when we
+  // audit modal/keybinding semantics.
   const modalActive =
     commandWizard !== null ||
     commandPicker !== null ||
@@ -1370,6 +1374,10 @@ function App({
     }
     if (key.escape) {
       const now = Date.now();
+      // Preserves the pre-refactor asymmetry: this Esc-handler check
+      // EXCLUDES commandPicker, showInboxModal, and showRemoteDashboard
+      // (so Esc still fires the abort-turn path when those are open).
+      // Kept as-is for this pure refactor.
       const modalOpen =
         perm !== null ||
         limitModal !== null ||
@@ -3153,7 +3161,63 @@ function App({
         ]);
       }
     },
-    [reloadCustomCommands, setEvents],
+    [reloadCustomCommands, setEvents, setCommandToDelete],
+  );
+
+  const handleLspSave = useCallback(
+    (
+      servers: NonNullable<Cfg["lspServers"]>,
+      enabled: boolean,
+      scope: "project" | "global",
+    ) => {
+      setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
+      setLspScope(scope);
+      if (scope === "project") {
+        void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
+          .then((path) => {
+            setLspProjectPath(path);
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
+            ]);
+          })
+          .catch(() => {
+            setEvents((e) => [
+              ...e,
+              { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
+            ]);
+          });
+      } else if (cfg) {
+        void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
+        ]);
+      }
+      setShowLspWizard(false);
+    },
+    [cfg, setCfg, setEvents, setShowLspWizard],
+  );
+
+  const handleRemoteCancel = useCallback(
+    async (session: RemoteSession) => {
+      try {
+        const { cancelRemoteSession } = await import("./remote/worker-client.js");
+        await cancelRemoteSession(session.workerUrl, session.sessionId);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `Cancelled session ${session.sessionId}` },
+        ]);
+      } catch (err) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: `Failed to cancel: ${err instanceof Error ? err.message : String(err)}` },
+        ]);
+      }
+      setSelectedRemoteSession(null);
+      setShowRemoteDashboard(false);
+    },
+    [setEvents, setShowRemoteDashboard],
   );
 
   const processMessage = useCallback(
@@ -3836,187 +3900,26 @@ function App({
     );
   }
 
-  if (showRemoteDashboard) {
+  if (hasFullscreenModal) {
     return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          {selectedRemoteSession ? (
-            <RemoteSessionDetail
-              session={selectedRemoteSession}
-              onBack={() => setSelectedRemoteSession(null)}
-              onCancel={async (session) => {
-                try {
-                  const { cancelRemoteSession } = await import("./remote/worker-client.js");
-                  await cancelRemoteSession(session.workerUrl, session.sessionId);
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: `Cancelled session ${session.sessionId}` },
-                  ]);
-                } catch (err) {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "error", key: mkKey(), text: `Failed to cancel: ${err instanceof Error ? err.message : String(err)}` },
-                  ]);
-                }
-                setSelectedRemoteSession(null);
-                setShowRemoteDashboard(false);
-              }}
-            />
-          ) : (
-            <RemoteDashboard
-              onSelect={(session) => setSelectedRemoteSession(session)}
-              onCancel={() => setShowRemoteDashboard(false)}
-            />
-          )}
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showInboxModal) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <InboxModal
-            onDone={() => setShowInboxModal(false)}
-            onOpen={(url) => openBrowser(url)}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showLspWizard) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <LspWizard
-            servers={cfg?.lspServers ?? {}}
-            currentScope={lspScope}
-            hasProjectDir={existsSync(join(process.cwd(), ".kimiflare"))}
-            onDone={() => setShowLspWizard(false)}
-            onSave={(servers, enabled, scope) => {
-              setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
-              setLspScope(scope);
-              if (scope === "project") {
-                void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
-                  .then((path) => {
-                    setLspProjectPath(path);
-                    setEvents((e) => [
-                      ...e,
-                      { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
-                    ]);
-                  })
-                  .catch(() => {
-                    setEvents((e) => [
-                      ...e,
-                      { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
-                    ]);
-                  });
-              } else if (cfg) {
-                void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
-                setEvents((e) => [
-                  ...e,
-                  { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
-                ]);
-              }
-              setShowLspWizard(false);
-            }}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (commandWizard) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <CommandWizard
-            mode={commandWizard.mode}
-            initial={commandWizard.initial}
-            existingNames={customCommandsRef.current.map((c) => c.name)}
-            builtinNames={BUILTIN_COMMAND_NAMES}
-            onDone={() => setCommandWizard(null)}
-            onSave={handleCommandSave}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (commandPicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <CommandPicker
-            commands={customCommandsRef.current}
-            title={commandPicker.mode === "edit" ? "Edit custom command" : "Delete custom command"}
-            onPick={(cmd) => {
-              setCommandPicker(null);
-              if (!cmd) return;
-              if (commandPicker.mode === "edit") {
-                setCommandWizard({ mode: "edit", initial: cmd });
-              } else {
-                setCommandToDelete(cmd);
-              }
-            }}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (commandToDelete) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
-        <Text color={theme.accent} bold>
-          Delete /{commandToDelete.name}?
-        </Text>
-        <Text color={theme.info.color}>
-          {commandToDelete.filepath}
-        </Text>
-        <Box marginTop={1}>
-          <SelectInput
-            items={[
-              { label: "Yes, delete", value: "yes", key: "yes" },
-              { label: "Cancel", value: "cancel", key: "cancel" },
-            ]}
-            onSelect={(item) => {
-              if (item.value === "yes") {
-                void handleCommandDelete(commandToDelete);
-              } else {
-                setCommandToDelete(null);
-              }
-            }}
-          />
-        </Box>
-      </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showCommandList) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <CommandList
-            commands={customCommandsRef.current}
-            onDone={() => setShowCommandList(false)}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (showThemePicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <ThemePicker themes={themeList()} onPick={handleThemePick} />
-        </Box>
-      </ThemeProvider>
+      <ModalHost
+        modals={modals}
+        theme={theme}
+        customCommands={customCommandsRef.current}
+        builtinNames={BUILTIN_COMMAND_NAMES}
+        onCommandSave={handleCommandSave}
+        onCommandDelete={handleCommandDelete}
+        lspServers={cfg?.lspServers ?? {}}
+        lspScope={lspScope}
+        hasProjectDir={existsSync(join(process.cwd(), ".kimiflare"))}
+        onLspSave={handleLspSave}
+        themes={themeList()}
+        onPickTheme={handleThemePick}
+        selectedRemoteSession={selectedRemoteSession}
+        onSelectRemoteSession={setSelectedRemoteSession}
+        onCancelRemoteSession={handleRemoteCancel}
+        onInboxOpen={openBrowser}
+      />
     );
   }
 
@@ -4039,29 +3942,11 @@ function App({
               submitRef.current(text);
             }}
           />
-        ) : limitModal ? (
-          <LimitModal
-            limit={limitModal.limit}
-            onDecide={(d) => {
-              limitModal.resolve(d);
-              limitResolveRef.current = null;
-              setLimitModal(null);
-            }}
-          />
-        ) : loopModal ? (
-          <LimitModal
-            limit={50}
-            title="Agent stuck in a loop"
-            description="The agent kept calling the same tools with identical arguments. What would you like to do?"
-            items={[
-              { label: "Continue", value: "continue" },
-              { label: "Synthesize", value: "synthesize" },
-            ]}
-            onDecide={(d) => {
-              loopModal.resolve(d);
-              loopResolveRef.current = null;
-              setLoopModal(null);
-            }}
+        ) : limitModal || loopModal ? (
+          <ModalOverlay
+            modals={modals}
+            onLimitResolved={() => { limitResolveRef.current = null; }}
+            onLoopResolved={() => { loopResolveRef.current = null; }}
           />
         ) : (
           <Box flexDirection="column" marginTop={1}>
