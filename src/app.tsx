@@ -317,7 +317,7 @@ interface Cfg {
   coauthor?: boolean;
   coauthorName?: string;
   coauthorEmail?: string;
-  mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean }>;
+  mcpServers?: Record<string, { type: "local" | "remote"; command?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; enabled?: boolean; timeoutMs?: number }>;
   cacheStablePrompts?: boolean;
   compiledContext?: boolean;
   imageHistoryTurns?: number;
@@ -1251,9 +1251,13 @@ function App({
       if (server.enabled === false) continue;
       try {
         if (server.type === "local" && server.command && server.command.length > 0) {
-          await manager.addLocalServer(name, server.command, server.env);
+          await manager.addLocalServer(name, server.command, server.env, {
+            timeoutMs: server.timeoutMs,
+          });
         } else if (server.type === "remote" && server.url) {
-          await manager.addRemoteServer(name, server.url, server.headers);
+          await manager.addRemoteServer(name, server.url, server.headers, {
+            timeoutMs: server.timeoutMs,
+          });
         } else {
           setEvents((e) => [
             ...e,
