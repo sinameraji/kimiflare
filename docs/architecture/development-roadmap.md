@@ -15,7 +15,23 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M5.1** — Structured JSON logs to disk *(OP-20)* — *(this PR)*.
+- **M5.2** — Optional OTLP/HTTP log export *(OP-20)* — *(this PR)*.
+  Third sink in the logger stack: `src/util/otel-sink.ts` ships each
+  entry to an OpenTelemetry collector when `KIMIFLARE_OTEL_ENDPOINT`
+  is set. Batched (every 5s or 100 entries, whichever first),
+  best-effort (drops silently on failure, never blocks the agent loop),
+  with a `beforeExit` drain so short-lived print-mode runs don't lose
+  the tail. Hand-rolled the OTLP/HTTP JSON encoder (no SDK dep) — 200
+  LOC vs ~50 KB gzipped from `@opentelemetry/exporter-logs-otlp-http`.
+  Auth via `KIMIFLARE_OTEL_HEADERS=Authorization=Bearer xyz,...`. The
+  M5.1 correlation IDs (`session_id`, `turn_id`, `request_id`) lift
+  to OTLP record attributes and `data.*` flattens with type-preserving
+  encoding (string / int / bool / nested→JSON-string). 21 unit tests
+  cover URL normalization (base vs `/v1/logs`-suffixed), header
+  parsing, batch auto-flush, retry on 5xx + on fetch throw,
+  drop-counter accuracy, and the OTLP schema. README "Shipping to an
+  OpenTelemetry collector" subsection added. **M5 complete.**
+- **M5.1** — Structured JSON logs to disk *(OP-20)* — merged in #458.
   `src/util/log-sink.ts` adds a file sink to the existing structured
   logger: one JSONL file per day at
   `~/.config/kimiflare/logs/<date>.jsonl`, 7-day retention pruned at
@@ -435,9 +451,11 @@ driven.
   automatically — no migration of `console.log` / `console.warn`
   required since the agent loop was already using `logger`. New
   `kimiflare logs path | dir | prune` CLI subcommands.
-- **M5.2** — `feat(telemetry): optional OTel export`
-  *(OP-20)*
-  - `KIMIFLARE_OTEL_ENDPOINT` env var → emit OTLP. No-op if unset.
+- ✅ **M5.2** — `feat(telemetry): optional OTel export`
+  *(OP-20)* — *merged in this PR*. OTLP/HTTP exporter in
+  `src/util/otel-sink.ts`; gated on `KIMIFLARE_OTEL_ENDPOINT`. Batched
+  + best-effort + `beforeExit`-drained. Hand-rolled JSON encoder, no
+  SDK dep. Correlation IDs from M5.1 lift to OTLP attributes.
 
 **Exit criteria:** `cat ~/.config/kimiflare/logs/*.jsonl | jq` can
 answer "what's the per-tool p95 latency this week" without writing

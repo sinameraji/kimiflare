@@ -266,6 +266,32 @@ Disable the file sink entirely with `KIMIFLARE_LOG_SINK=off`. The
 separate `KIMIFLARE_LOG_LEVEL` env var (default `off`) controls stderr
 output — independent of the file sink.
 
+### Shipping to an OpenTelemetry collector
+
+If you set `KIMIFLARE_OTEL_ENDPOINT`, KimiFlare also ships each log
+entry to that endpoint over [OTLP/HTTP](https://opentelemetry.io/docs/specs/otlp/)
+so it lands in Datadog, Honeycomb, Grafana Loki, an internal collector,
+or any other backend that speaks OTel. Batched every 5 s (or every
+100 entries, whichever first) and best-effort — never blocks the agent
+loop.
+
+```sh
+# Full path:
+export KIMIFLARE_OTEL_ENDPOINT="https://otel.example.com/v1/logs"
+# Or just the base URL (we auto-append /v1/logs):
+export KIMIFLARE_OTEL_ENDPOINT="https://otel.example.com"
+
+# Optional headers (comma-separated key=value pairs) — e.g. for auth:
+export KIMIFLARE_OTEL_HEADERS="Authorization=Bearer xyz,X-Tenant=acme"
+```
+
+Each log entry maps to one OTel `LogRecord`. Correlation IDs
+(`session_id`, `turn_id`, `request_id`) become record attributes,
+`data.*` fields are flattened to attributes with type-preserving
+encoding, and a `service.name=kimiflare` + `service.version` pair sits
+on the resource. The same `request_id` joins to Cloudflare AI Gateway's
+per-request log without any extra work.
+
 ## Development
 
 ```sh
