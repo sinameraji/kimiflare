@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.0](https://github.com/sinameraji/kimiflare/compare/v0.64.0...v0.65.0) (2026-05-16)
+
+
+### Features
+
+* **usage:** reconcile per-turn cost from AI Gateway logs ([#437](https://github.com/sinameraji/kimiflare/issues/437)) ([39eca8c](https://github.com/sinameraji/kimiflare/commit/39eca8c7e389b4d01c528719de3a94927fd2054e))
+
 ## [0.64.0](https://github.com/sinameraji/kimiflare/compare/v0.63.0...v0.64.0) (2026-05-16)
 
 
