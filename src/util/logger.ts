@@ -1,16 +1,17 @@
 /**
  * Structured logger for KimiFlare turn lifecycle events.
  *
- * Two sinks:
+ * Three sinks, all independent:
  *   1. **stderr** (gated by `KIMIFLARE_LOG_LEVEL`, default `off`) — for
  *      interactive debugging. Tail with `2>&1 | jq` from a dev shell.
  *   2. **file** (`~/.config/kimiflare/logs/<date>.jsonl`, default ON;
  *      disable with `KIMIFLARE_LOG_SINK=off`) — for post-hoc analysis,
  *      shipped in M5.1. Always-on so the data exists even when the TUI
  *      is silent.
- *
- * The two sinks are independent: you can leave stderr off and still get
- * the file logs (the common case), or vice-versa.
+ *   3. **OTLP/HTTP** (gated by `KIMIFLARE_OTEL_ENDPOINT`, default
+ *      unset) — ship to any OpenTelemetry collector / SaaS backend
+ *      (Datadog, Honeycomb, Grafana, …), shipped in M5.2. Batched,
+ *      best-effort; never blocks the agent loop.
  *
  * Tail in a second terminal:
  *   KIMIFLARE_LOG_LEVEL=info npm run dev          # stderr live tail
@@ -18,6 +19,7 @@
  */
 
 import { writeLogLine, getLogSessionId, getLogTurnId } from "./log-sink.js";
+import { enqueueOtelLog } from "./otel-sink.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "off";
 
@@ -103,6 +105,10 @@ export function log(
 
   // File sink (always-on unless disabled via KIMIFLARE_LOG_SINK=off).
   writeLogLine(entry);
+
+  // OTLP/HTTP sink (no-op unless KIMIFLARE_OTEL_ENDPOINT is set and
+  // initOtelSink() has been called).
+  enqueueOtelLog(entry);
 }
 
 /** Convenience wrappers */

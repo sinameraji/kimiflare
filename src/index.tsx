@@ -193,6 +193,15 @@ const opts = program.opts<{
 }>();
 
 async function main() {
+  // Initialize the OTLP/HTTP log exporter if `KIMIFLARE_OTEL_ENDPOINT`
+  // is set. No-op otherwise — the env-var gate keeps this zero-cost for
+  // users who don't care. Done before loadConfig so any early errors
+  // ship too.
+  const { initOtelSink, installOtelExitHook } = await import("./util/otel-sink.js");
+  if (initOtelSink()) {
+    installOtelExitHook();
+  }
+
   const globalCfg = await loadConfig();
   const updateResult = await checkForUpdate();
 
