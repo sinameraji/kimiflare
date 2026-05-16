@@ -23,14 +23,36 @@ export const globTool: ToolSpec<Args> = {
   needsPermission: false,
   render: (args) => ({ title: `glob ${args.pattern ?? ""}${args.path ? ` in ${collapsePath(String(args.path), process.cwd())}` : ""}` }),
   async run(args, ctx) {
+    if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
-    const entries = (await fg(args.pattern, {
+    // Stream results so a Ctrl+C during a recursive walk over a large
+    // monorepo can interrupt promptly. fast-glob doesn't expose an
+    // AbortSignal, so we check between yielded entries and destroy the
+    // stream on abort.
+    const stream = fg.stream(args.pattern, {
       cwd: root,
       absolute: true,
       dot: false,
       onlyFiles: false,
       stats: true,
-    })) as unknown as Array<{ path: string; stats?: { mtimeMs: number } }>;
+    }) as NodeJS.ReadableStream & { destroy: (err?: Error) => void };
+    const entries: Array<{ path: string; stats?: { mtimeMs: number } }> = [];
+    const onAbort = () => {
+      try {
+        stream.destroy(new DOMException("aborted", "AbortError"));
+      } catch {
+        /* already destroyed */
+      }
+    };
+    ctx.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      for await (const entry of stream) {
+        if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
+        entries.push(entry as unknown as { path: string; stats?: { mtimeMs: number } });
+      }
+    } finally {
+      ctx.signal?.removeEventListener("abort", onAbort);
+    }
     entries.sort((a, b) => (b.stats?.mtimeMs ?? 0) - (a.stats?.mtimeMs ?? 0));
     const paths = entries.slice(0, 200).map((e) => e.path);
     return paths.length ? paths.join("\n") : "(no matches)";
