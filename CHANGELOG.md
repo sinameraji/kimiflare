@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.2](https://github.com/sinameraji/kimiflare/compare/v0.68.1...v0.68.2) (2026-05-16)
+
+
+### Performance Improvements
+
+* **routing:** parallelize pre-turn memory recall + skill routing ([#449](https://github.com/sinameraji/kimiflare/issues/449)) ([967c0f1](https://github.com/sinameraji/kimiflare/commit/967c0f1d5f987300f8ee4ddb45c7f3403e8f6662))
+
 ## [0.68.1](https://github.com/sinameraji/kimiflare/compare/v0.68.0...v0.68.1) (2026-05-16)
 
 
