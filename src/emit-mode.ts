@@ -116,6 +116,17 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
           });
         },
         onToolResult: (result) => {
+          // KimiFlare's executor returns the full tool output at once rather
+          // than streaming, so we emit the entire content as a single
+          // ToolExecutionStdout chunk before ToolExecutionFinished. The
+          // Camouflage renderer accumulates byte counts from these chunks
+          // and shows them in the collapsed tool-row summary.
+          if (result.content && result.content.length > 0) {
+            emit(result.ok ? "ToolExecutionStdout" : "ToolExecutionStderr", {
+              tool_id: result.tool_call_id,
+              chunk: result.content,
+            });
+          }
           emit("ToolExecutionFinished", {
             tool_id: result.tool_call_id,
             exit_code: result.ok ? 0 : 1,
