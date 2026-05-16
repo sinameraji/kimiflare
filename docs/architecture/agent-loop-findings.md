@@ -183,7 +183,7 @@ mismatch.
 
 **Fix:** include each tool's parameter schema digest in the cache key.
 
-### RF-12 — Tool output truncation is silent to the UI (S)
+### RF-12 — Tool output truncation is silent to the UI (S) — ✅ shipped (OP-3, callback only)
 
 `src/agent/loop.ts:704–708, 736–740`.
 
@@ -196,6 +196,13 @@ know.
 **Fix:** emit a `onTruncation(tool, rawBytes, reducedBytes, artifactId)`
 callback; render an inline hint in the TUI ("output truncated — use
 `expand artifact <id>` to view full").
+
+**Status:** `AgentCallbacks.onTruncation({ tool, toolCallId, rawBytes,
+reducedBytes, artifactId? })` is now fired from both truncation sites
+(regular executor path and code-mode sandbox path). The TUI hint
+itself ("output truncated — use `expand_artifact <id>` to view full")
+is **not yet wired** because that lives in `app.tsx`, which is
+reserved for the M4 breakup; SDK consumers can subscribe today.
 
 ### RF-13 — Sync FS tools don't honor `ctx.signal` (M) — ✅ first half shipped (OP-5)
 
@@ -384,7 +391,7 @@ Tracked as M1.0 in the development roadmap.
 
 - **OP-1.** Full-jitter retry backoff (fix for RF-8).
 - **OP-2.** Size-aware artifact eviction (fix for RF-9). ✅ shipped
-- **OP-3.** `onTruncation` callback + TUI hint (fix for RF-12).
+- **OP-3.** `onTruncation` callback + TUI hint (fix for RF-12). ✅ callback shipped; TUI hint deferred to M4
 - **OP-4.** Per-call SSE idle timeout knob (fix for RF-7). ✅ shipped
 - **OP-5.** `signal.aborted` checks inside grep/glob/read inner loops
   (fix for RF-13, first half). ✅ shipped

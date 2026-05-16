@@ -37,6 +37,9 @@ export interface AgentCallbacks {
   onTasks?: (tasks: Task[]) => void;
   /** Called once per session when the sandbox falls back to node:vm. */
   onWarning?: (message: string) => void;
+  /** Called when a tool's content was truncated before being shown to the model.
+   *  `artifactId`, when present, points at the full raw bytes in the artifact store. */
+  onTruncation?: (info: { tool: string; toolCallId: string; rawBytes: number; reducedBytes: number; artifactId?: string }) => void;
   askPermission: PermissionAsker;
   /** Called when the tool-call iteration limit is reached. Return "continue" to
    *  reset the counter and keep going, or "stop" to end the turn immediately. */
@@ -736,9 +739,16 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           ? `Error: ${sandboxResult.error}\n\nOutput:\n${sandboxResult.output}`
           : sandboxResult.output;
         if (resultContent.length > MAX_TOOL_CONTENT_CHARS) {
+          const rawBytes = resultContent.length;
           resultContent =
             resultContent.slice(0, MAX_TOOL_CONTENT_CHARS) +
-            `\n\n[truncated: ${resultContent.length - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
+            `\n\n[truncated: ${rawBytes - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
+          opts.callbacks.onTruncation?.({
+            tool: "execute_code",
+            toolCallId: tc.id,
+            rawBytes,
+            reducedBytes: resultContent.length,
+          });
         }
 
         const result: ToolResult = {
@@ -768,9 +778,17 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         );
         let content = result.content;
         if (content.length > MAX_TOOL_CONTENT_CHARS) {
+          const rawBytes = content.length;
           content =
             content.slice(0, MAX_TOOL_CONTENT_CHARS) +
-            `\n\n[truncated: ${content.length - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
+            `\n\n[truncated: ${rawBytes - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
+          opts.callbacks.onTruncation?.({
+            tool: tc.function.name,
+            toolCallId: tc.id,
+            rawBytes,
+            reducedBytes: content.length,
+            artifactId: result.artifactId,
+          });
         }
         logger.debug("turn:tool_end", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id, ok: result.ok });
         toolResults.push(result);
