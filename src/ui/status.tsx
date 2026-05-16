@@ -186,7 +186,13 @@ function formatTokens(n: number): string {
 
 export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {
   const status = gatewayMeta?.cacheStatus?.trim();
-  return status ? `AI Gateway · cache ${status.toLowerCase()}` : null;
+  if (!status) return null;
+  // Suppress "miss" — the gateway returns MISS on every uncached request,
+  // including when caching isn't configured at all, so it'd otherwise read
+  // like a constant failure. Hits (and other non-miss statuses like
+  // REVALIDATED / BYPASS) are still surfaced — those are the useful signals.
+  if (status.toUpperCase() === "MISS") return null;
+  return `AI Gateway · cache ${status.toLowerCase()}`;
 }
 
 function formatDuration(ms: number): string {
