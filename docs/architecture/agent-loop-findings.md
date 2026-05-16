@@ -284,47 +284,55 @@ start that uses code mode.
 `ctx.sessionId`. New sessions in the same process now see the
 warning.
 
-### RF-20 — Ctrl+C race between `useInput` and SIGINT handler leaves TUI half-dead (S)
+### RF-20 — Ctrl+C left TUI half-dead (S) — ✅ shipped (M1.0)
 
-`src/app.tsx:1508` (useInput Ctrl+C branch) and `src/app.tsx:1613`
-(SIGINT handler installed at `app.tsx:646`).
+`render()` call in `src/app.tsx` was not setting `exitOnCtrlC: false`.
 
 User-reported, long-standing. Symptom: pressing Ctrl+C during a busy
-turn leaves the TUI in an in-between state where typed characters
-still print to the screen but Enter does not submit. The session
-appears usable but is broken.
+turn left the TUI in an in-between state where typed characters
+still printed to the screen but Enter did not submit. The session
+appeared usable but was broken.
 
-Root cause: a Ctrl+C from the terminal sends **both** the raw byte
-(captured by Ink's `useInput`) **and** the SIGINT signal (caught by
-Node's `process.on("SIGINT")`). Both handlers fire:
+**Initial misdiagnosis (worth recording so the next investigator does
+not repeat it):** I first attributed this to a race between the
+`useInput` Ctrl+C branch and the `process.on("SIGINT")` fallback
+handler in `app.tsx`. That race is real but rare — it only fires when
+raw mode is disabled by a child process. In normal interactive use,
+SIGINT is never delivered because the terminal emits the raw `0x03`
+byte instead. The first fix (#426) was therefore at the wrong layer
+and was later superseded.
 
-1. `useInput` fires first (`app.tsx:1530`): sets
-   `isAbortingRef.current = true`, kills the supervisor, aborts the
-   scope. The reset of `isAbortingRef.current` back to `false` lives
-   in the turn's `finally` block, which has not run yet.
-2. A microtask later, the SIGINT handler fires (`app.tsx:1613`). It
-   sees `isAborting === true`, so the
-   `if (busyRef.current && activeScopeRef.current && !isAbortingRef.current)`
-   branch at `1635` is **false**. It falls through to the
-   `else if (!hadPerm && !hadLimit)` branch at `1645` — both of those
-   were already drained by `useInput` — and calls `exit()`.
+**Actual root cause:** Ink's `render()` defaults to
+`exitOnCtrlC: true`. That means Ink's built-in handler **intercepts
+the Ctrl+C keystroke before `useInput` ever sees it** and calls
+`app.exit()`, which:
 
-`exit()` runs while Ink's render tree is mid-cleanup; the UI tears
-down halfway. Escape doesn't have this problem because Escape doesn't
-trigger SIGINT.
+1. Unmounts the React tree — the TUI stops rendering and its last
+   frame stays frozen on screen.
+2. Restores the terminal from raw to cooked mode.
+3. Resolves `instance.waitUntilExit()`, but the Node process keeps
+   running because the agent loop, LSP servers, MCP clients and
+   other async work are independent of the render lifecycle.
 
-**Fix:** add a one-line guard at the top of `sigintHandlerRef.current`:
+The result: a frozen Ink frame visible on screen, plus a fresh
+cooked-mode terminal cursor below it echoing the user's keystrokes
+locally; `Enter` goes to a stdin buffer with no readers. The
+carefully-written useInput Ctrl+C branch in `app.tsx` (kill
+supervisor, abort scope, deny pending modals, emit `(interrupted)`)
+was **effectively dead code** the whole time — Ink ate the keystroke
+first.
 
-```ts
-if (isAbortingRef.current) {
-  logger.info("sigint:handler:already-aborting");
-  return; // useInput is handling it
-}
-```
+**Fix shipped:** pass `exitOnCtrlC: false` to `render()`. Per Ink's
+own docs (`node_modules/ink/build/render.d.ts:28`):
 
-This also leaves the fallback case (raw mode disabled, useInput
-doesn't fire) working — in that case `isAborting` is still `false`
-when the SIGINT handler runs and it does its dance correctly.
+> Configure whether Ink should listen for Ctrl+C keyboard input and
+> exit the app. This is needed in case `process.stdin` is in raw
+> mode, because then Ctrl+C is ignored by default and the process is
+> expected to handle it manually.
+
+With this flag, Ctrl+C reaches `useInput` and the existing interrupt
+logic runs as designed. The SIGINT fallback in `app.tsx:646` is
+unchanged and still serves the rare non-raw-mode case.
 
 Tracked as M1.0 in the development roadmap.
 
