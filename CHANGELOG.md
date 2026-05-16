@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.0](https://github.com/sinameraji/kimiflare/compare/v0.67.0...v0.68.0) (2026-05-16)
+
+
+### Features
+
+* **usage:** surface gateway latency, per-feature cost, cache-hit ratio ([#441](https://github.com/sinameraji/kimiflare/issues/441)) ([e3405cf](https://github.com/sinameraji/kimiflare/commit/e3405cf4250e7ce39273224cb5a208fcee59bc30))
+
 ## [0.67.0](https://github.com/sinameraji/kimiflare/compare/v0.66.0...v0.67.0) (2026-05-16)
 
 
