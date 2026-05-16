@@ -878,6 +878,18 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           });
         }
         logger.debug("turn:tool_end", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id, ok: result.ok });
+        if (!result.ok && result.errorCode) {
+          // M2.1: surface the classified failure mode in the structured
+          // log so the M5.1 + M5.2 sinks can answer "which tools fail
+          // most, and how?" without parsing message strings.
+          logger.warn("tool:error_classified", {
+            sessionId: opts.sessionId,
+            tool: tc.function.name,
+            toolCallId: tc.id,
+            code: result.errorCode,
+            recoverable: result.recoverable,
+          });
+        }
         toolResults.push(result);
         opts.messages.push({
           role: "tool",

@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { isDiffCommand } from "./executor.js";
+import { isDiffCommand, ToolExecutor } from "./executor.js";
+import { ToolError } from "./tool-error.js";
+import type { ToolSpec } from "./registry.js";
 
 describe("isDiffCommand", () => {
   it("matches `git show` and its argument forms", () => {
@@ -55,5 +57,122 @@ describe("isDiffCommand", () => {
     assert.strictEqual(isDiffCommand("npm test"), false);
     assert.strictEqual(isDiffCommand("ls -la"), false);
     assert.strictEqual(isDiffCommand("show diff"), false);
+  });
+});
+
+// ── M2.1: ToolError classification on ToolResult ─────────────────────────
+
+function makeTool(opts: {
+  name?: string;
+  needsPermission?: boolean;
+  run: ToolSpec["run"];
+}): ToolSpec {
+  return {
+    name: opts.name ?? "test_tool",
+    description: "test",
+    parameters: { type: "object", properties: {}, additionalProperties: true },
+    needsPermission: opts.needsPermission ?? false,
+    run: opts.run,
+  };
+}
+
+const allowAll = async () => "allow" as const;
+const ctx = { cwd: process.cwd() };
+
+describe("ToolExecutor — typed error classification", () => {
+  it("lifts ToolError code / recoverable / suggestion onto the result", async () => {
+    const tool = makeTool({
+      run: async () => {
+        throw new ToolError({
+          code: "timeout",
+          message: "took too long",
+          suggestion: "retry with a smaller request",
+        });
+      },
+    });
+    const exec = new ToolExecutor([tool]);
+    const res = await exec.run(
+      { id: "c1", name: "test_tool", arguments: "{}" },
+      allowAll,
+      ctx,
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "timeout");
+    assert.strictEqual(res.recoverable, true);
+    assert.strictEqual(res.suggestion, "retry with a smaller request");
+    assert.match(res.content, /took too long/);
+  });
+
+  it("classifies a plain Error from the tool as 'unknown', not recoverable", async () => {
+    const tool = makeTool({
+      run: async () => {
+        throw new Error("kaboom");
+      },
+    });
+    const exec = new ToolExecutor([tool]);
+    const res = await exec.run(
+      { id: "c2", name: "test_tool", arguments: "{}" },
+      allowAll,
+      ctx,
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "unknown");
+    assert.strictEqual(res.recoverable, false);
+    assert.strictEqual(res.suggestion, undefined);
+  });
+
+  it("classifies invalid JSON arguments as 'invalid_args'", async () => {
+    const tool = makeTool({ run: async () => "ok" });
+    const exec = new ToolExecutor([tool]);
+    const res = await exec.run(
+      { id: "c3", name: "test_tool", arguments: "not-json{" },
+      allowAll,
+      ctx,
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "invalid_args");
+    assert.strictEqual(res.recoverable, false);
+  });
+
+  it("classifies unknown tool name as 'not_found'", async () => {
+    const exec = new ToolExecutor([]);
+    const res = await exec.run(
+      { id: "c4", name: "missing", arguments: "{}" },
+      allowAll,
+      ctx,
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "not_found");
+    assert.strictEqual(res.recoverable, false);
+  });
+
+  it("classifies a denied permission as 'permission_denied'", async () => {
+    const tool = makeTool({
+      needsPermission: true,
+      run: async () => "ok",
+    });
+    const exec = new ToolExecutor([tool]);
+    const res = await exec.run(
+      { id: "c5", name: "test_tool", arguments: "{}" },
+      async () => "deny",
+      ctx,
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "permission_denied");
+    assert.strictEqual(res.recoverable, false);
+  });
+
+  it("leaves successful results without classification fields", async () => {
+    const tool = makeTool({ run: async () => "happy path" });
+    const exec = new ToolExecutor([tool]);
+    const res = await exec.run(
+      { id: "c6", name: "test_tool", arguments: "{}" },
+      allowAll,
+      ctx,
+    );
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.errorCode, undefined);
+    assert.strictEqual(res.recoverable, undefined);
+    assert.strictEqual(res.suggestion, undefined);
   });
 });

@@ -1,4 +1,5 @@
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
+import { wrapAsToolError, type ToolErrorCode } from "./tool-error.js";
 import { readTool } from "./read.js";
 import { writeTool } from "./write.js";
 import { editTool } from "./edit.js";
@@ -61,6 +62,16 @@ export interface ToolResult {
   reducedBytes?: number;
   /** Artifact ID if the raw output was stored for later expansion. */
   artifactId?: string;
+  /** Stable code classifying the failure mode. Populated only when
+   *  `ok` is false. Sites that have not yet been migrated to
+   *  `ToolError` fall back to `"unknown"`. (M2.1) */
+  errorCode?: ToolErrorCode;
+  /** True when the failure is reasonable to retry. Populated only when
+   *  `ok` is false. The loop reads this for retry-vs-fail-fast
+   *  decisions — currently informational; retry policy lands later. */
+  recoverable?: boolean;
+  /** Optional one-line UI hint describing how to recover. */
+  suggestion?: string;
 }
 
 export class ToolExecutor {
@@ -107,6 +118,8 @@ export class ToolExecutor {
         name: call.name,
         content: `Error: unknown tool "${call.name}". Valid tools: ${[...this.tools.keys()].join(", ")}.`,
         ok: false,
+        errorCode: "not_found",
+        recoverable: false,
       };
     }
 
@@ -119,6 +132,9 @@ export class ToolExecutor {
         name: call.name,
         content: `Error: invalid JSON arguments for ${call.name}: ${(e as Error).message}. Arguments received: ${truncateForError(call.arguments)}`,
         ok: false,
+        errorCode: "invalid_args",
+        recoverable: false,
+        suggestion: "reformulate the tool call with valid JSON arguments",
       };
     }
 
@@ -132,6 +148,9 @@ export class ToolExecutor {
             name: call.name,
             content: `Permission denied by user. Do not retry this exact call; ask the user what they want to do differently.`,
             ok: false,
+            errorCode: "permission_denied",
+            recoverable: false,
+            suggestion: "ask the user what they want to do differently",
           };
         }
         if (decision === "allow_session") this.sessionAllowed.add(sessionKey);
@@ -189,7 +208,8 @@ export class ToolExecutor {
         artifactId: reduced.artifactId,
       };
     } catch (e) {
-      const msg = `Error running ${call.name}: ${(e as Error).message ?? String(e)}`;
+      const err = wrapAsToolError(e);
+      const msg = `Error running ${call.name}: ${err.message}`;
       return {
         tool_call_id: call.id,
         name: call.name,
@@ -197,6 +217,9 @@ export class ToolExecutor {
         ok: false,
         rawBytes: msg.length,
         reducedBytes: msg.length,
+        errorCode: err.code,
+        recoverable: err.recoverable,
+        suggestion: err.suggestion,
       };
     }
   }
