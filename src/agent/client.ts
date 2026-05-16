@@ -113,7 +113,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       logger.warn("runKimi:fetch_error", { requestId, attempt, error: msg });
       if (attempt < MAX_ATTEMPTS - 1) {
-        const delay = 500 * 2 ** attempt + Math.random() * 250;
+        const delay = Math.random() * (500 * 2 ** attempt);
         await sleep(delay, opts.signal);
         continue;
       }
@@ -140,7 +140,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       if (isRetryable(apiErr, attempt)) {
         const isRateLimit = apiErr.httpStatus === 429;
         const baseDelay = isRateLimit ? 2000 : 500;
-        const delay = baseDelay * 2 ** attempt + Math.random() * 250;
+        const delay = Math.random() * (baseDelay * 2 ** attempt);
         logger.warn("runKimi:retrying", { requestId, attempt, code: apiErr.code, httpStatus: apiErr.httpStatus, delay });
         await sleep(delay, opts.signal);
         continue;

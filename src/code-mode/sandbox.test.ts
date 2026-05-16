@@ -125,7 +125,7 @@ describe("buildFallbackWarning", () => {
 });
 
 describe("fallback warning deduplication", () => {
-  it("only emits the fallback warning once per process", async () => {
+  it("only emits the fallback warning once per session", async () => {
     resetFallbackWarningFlag();
 
     // Force a fallback by passing code that will cause isolated-vm to fail
@@ -162,5 +162,53 @@ describe("fallback warning deduplication", () => {
       (result2.warnings?.filter((w) => w.includes("Code Mode is using")).length ?? 0);
 
     assert.strictEqual(warningCount, 1);
+  });
+
+  it("re-emits the fallback warning for a new session in the same process", async () => {
+    resetFallbackWarningFlag();
+
+    const sessionA: ToolContext = { ...mockCtx, sessionId: "session-a" };
+    const sessionB: ToolContext = { ...mockCtx, sessionId: "session-b" };
+
+    const a1 = await runInSandbox({
+      code: `console.log("a1");`,
+      tools: mockTools,
+      executor: mockExecutor,
+      askPermission: mockAskPermission,
+      ctx: sessionA,
+    });
+    const a2 = await runInSandbox({
+      code: `console.log("a2");`,
+      tools: mockTools,
+      executor: mockExecutor,
+      askPermission: mockAskPermission,
+      ctx: sessionA,
+    });
+    const b1 = await runInSandbox({
+      code: `console.log("b1");`,
+      tools: mockTools,
+      executor: mockExecutor,
+      askPermission: mockAskPermission,
+      ctx: sessionB,
+    });
+
+    const warningsIn = (r: { warnings?: string[] }) =>
+      r.warnings?.filter((w) => w.includes("Code Mode is using")).length ?? 0;
+
+    // If isolated-vm is unavailable in the test environment (the common case),
+    // session A should see exactly one warning across its two runs, and
+    // session B should also see its own warning.
+    // If isolated-vm IS available, no warnings fire at all; that's fine too —
+    // the assertion below tolerates both worlds.
+    const aWarnings = warningsIn(a1) + warningsIn(a2);
+    const bWarnings = warningsIn(b1);
+
+    if (aWarnings > 0) {
+      assert.strictEqual(aWarnings, 1, "session A should see warning at most once");
+      assert.strictEqual(bWarnings, 1, "session B should also see warning once");
+    } else {
+      // isolated-vm is available; no fallback warnings expected.
+      assert.strictEqual(bWarnings, 0);
+    }
   });
 });

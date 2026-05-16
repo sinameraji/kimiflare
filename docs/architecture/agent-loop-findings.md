@@ -107,7 +107,7 @@ first-byte.
 **Fix:** expose `idleTimeoutMs` on the call options. Bonus: once the first
 data byte arrives, drop the idle timeout to 30 s — the model is alive.
 
-### RF-8 — Retry backoff has weak jitter (S)
+### RF-8 — Retry backoff has weak jitter (S) — ✅ shipped (M1.1)
 
 `src/agent/client.ts:116`, `500 * 2^attempt + random(0..250)`.
 
@@ -116,6 +116,9 @@ AI), all clients retry on nearly identical schedules. The ±250 ms jitter
 window is too narrow at the larger waits.
 
 **Fix:** full-jitter backoff: `random(0, 500 * 2^attempt)`.
+
+**Status:** Applied to both retry sites (network-error branch and
+API-error branch including rate-limit handling) in `src/agent/client.ts`.
 
 ### RF-9 — Artifact eviction is age-only (S)
 
@@ -265,7 +268,7 @@ sanitization, this is a footgun.
 good escape helper) rather than template strings; add a unit test with
 adversarial inputs (`"`, `$`, `;`, backticks).
 
-### RF-19 — `isolated-vm` → `node:vm` fallback warning fires once per process (S)
+### RF-19 — `isolated-vm` → `node:vm` fallback warning fires once per process (S) — ✅ shipped (M1.10)
 
 `src/code-mode/sandbox.ts`, `fallbackWarningShown` flag.
 
@@ -276,6 +279,10 @@ they're outside a true sandbox.
 
 **Fix:** track per session, not per process. Re-emit on each session
 start that uses code mode.
+
+**Status:** Boolean flag replaced with a `Set<sessionId>` keyed off
+`ctx.sessionId`. New sessions in the same process now see the
+warning.
 
 ### RF-20 — Ctrl+C race between `useInput` and SIGINT handler leaves TUI half-dead (S)
 

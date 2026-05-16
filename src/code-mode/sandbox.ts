@@ -287,11 +287,12 @@ async function runWithNodeVm(opts: SandboxOptions): Promise<SandboxResult> {
   return { output: logs.join("\n"), logs, toolCalls, warnings };
 }
 
-let fallbackWarningShown = false;
+const fallbackWarningShownSessions = new Set<string>();
+const NO_SESSION_KEY = "__no_session__";
 
-/** @internal Reset the fallback warning flag for testing. */
+/** @internal Reset the fallback warning state for testing. */
 export function resetFallbackWarningFlag(): void {
-  fallbackWarningShown = false;
+  fallbackWarningShownSessions.clear();
 }
 
 export function buildFallbackWarning(errMessage: string): string {
@@ -319,9 +320,11 @@ export async function runInSandbox(opts: SandboxOptions): Promise<SandboxResult>
     const message = err instanceof Error ? err.message : String(err);
     const result = await runWithNodeVm(opts);
 
-    // Only emit the fallback warning once per process
-    if (!fallbackWarningShown) {
-      fallbackWarningShown = true;
+    // Emit the fallback warning once per session — new sessions in the same
+    // process (common when embedded via SDK) still see it.
+    const sessionKey = opts.ctx.sessionId ?? NO_SESSION_KEY;
+    if (!fallbackWarningShownSessions.has(sessionKey)) {
+      fallbackWarningShownSessions.add(sessionKey);
       const warning = buildFallbackWarning(message);
       return { ...result, warnings: [warning, ...(result.warnings ?? [])] };
     }

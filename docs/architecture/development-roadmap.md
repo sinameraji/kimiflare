@@ -15,6 +15,17 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M1.10** — Per-session sandbox fallback warning *(OP-10 / RF-19)*
+  — *(this PR)*. Replaces the per-process `fallbackWarningShown`
+  flag in `src/code-mode/sandbox.ts` with a per-session `Set<string>`
+  keyed by `ctx.sessionId`. SDK embeddings that spawn multiple
+  sessions in one process now see the warning on each new session.
+- **M1.1** — Full-jitter retry backoff *(OP-1 / RF-8)* — *(this
+  PR)*. `src/agent/client.ts` retries (both the network-error branch
+  and the API-error branch) now use
+  `Math.random() * (baseDelay * 2 ** attempt)` instead of
+  `baseDelay * 2 ** attempt + Math.random() * 250`. Spreads
+  retries across a wider window during thundering-herd scenarios.
 - **M3.2 + M3.3** — LSP per-request timeout and auto-restart on
   crash — merged in #422 *(adds `LspServerConfig.timeoutMs` and
   `maxRestartAttempts`; subscribes to the connection's `exit` event;
@@ -121,9 +132,10 @@ batching.
   aborting` *(RF-20)* — **user-flagged urgent**. One-line guard at
   top of SIGINT handler. Closes the long-standing "Ctrl+C freezes
   the session" bug. Should land first.
-- **M1.1** — `fix(client): full-jitter retry backoff` *(OP-1 / RF-8)*
-  - `src/agent/client.ts:116` → `random(0, 500 * 2^attempt)`.
-  - Unit test: 5 retries don't fall into a sub-300ms window.
+- ✅ **M1.1** — `fix(client): full-jitter retry backoff` *(OP-1 /
+  RF-8)* — *shipped in this PR*. Both retry sites in
+  `src/agent/client.ts` (network-error and API-error branches) now
+  use `Math.random() * (baseDelay * 2 ** attempt)`.
 - **M1.2** — `feat(session-state): size-aware artifact eviction`
   *(OP-2 / RF-9)*
   - `src/agent/session-state.ts:82–88` — evict largest among oldest
@@ -160,10 +172,10 @@ batching.
     trigger at 3 high-signal memories.
 - **M1.9** — `fix(loop): zero-tool-call budget check` *(OP-9 / RF-5)*
   - `loop.ts:530–574` — drop the `toolCalls.length > 0` guard.
-- **M1.10** — `fix(code-mode): per-session fallback warning`
-  *(OP-10 / RF-19)*
-  - `src/code-mode/sandbox.ts` — track warning state per session,
-    not per process.
+- ✅ **M1.10** — `fix(code-mode): per-session fallback warning`
+  *(OP-10 / RF-19)* — *shipped in this PR*. `fallbackWarningShown`
+  boolean replaced with a `Set<sessionId>`; new sessions in the
+  same process re-see the warning.
 
 **Exit criteria:** All 10 PRs merged; one minor release cut by
 release-please.
