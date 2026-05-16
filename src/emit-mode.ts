@@ -277,6 +277,40 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
           onUsageFinal: (usage) => {
             setTokens(usage.prompt_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
           },
+          onTasks: (tasks) => {
+            // Each agent-managed task becomes a row in the Camouflage
+            // background-task ribbon. Status mapping:
+            //   pending     → running (the task exists but isn't done)
+            //   in_progress → running
+            //   completed   → done (fades in the UI after a short delay)
+            for (const t of tasks) {
+              const state = t.status === "completed" ? "done" : "running";
+              emit("BackgroundTaskUpdate", {
+                task_id: t.id,
+                label: t.title,
+                state,
+              });
+            }
+          },
+          onSkillsSelected: (result) => {
+            const n = (result as any)?.selected?.length ?? 0;
+            if (n > 0) {
+              emit("BackgroundTaskUpdate", {
+                task_id: "skills",
+                label: `selected ${n} skill${n === 1 ? "" : "s"}`,
+                state: "done",
+              });
+            }
+          },
+          onMemoryRecalled: (count) => {
+            if (count > 0) {
+              emit("BackgroundTaskUpdate", {
+                task_id: "memory",
+                label: `recalled ${count} ${count === 1 ? "memory" : "memories"}`,
+                state: "done",
+              });
+            }
+          },
           onWarning: (msg) => {
             emit("RuntimeError", { message: msg, kind: "generic", severity: "warn" });
           },
