@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.67.0](https://github.com/sinameraji/kimiflare/compare/v0.66.0...v0.67.0) (2026-05-16)
+
+
+### Features
+
+* **loop:** cross-turn web-fetch guardrail (OP-6 / RF-3) ([#433](https://github.com/sinameraji/kimiflare/issues/433)) ([f6428f7](https://github.com/sinameraji/kimiflare/commit/f6428f7224b73337e4cb6a1304d899bca1f330fb))
+* **loop:** onTruncation callback for truncated tool output (OP-3 / RF-12) ([#429](https://github.com/sinameraji/kimiflare/issues/429)) ([ccfec01](https://github.com/sinameraji/kimiflare/commit/ccfec014abde123d3ba026bfaff585140e440e93))
+* **loop:** sliding-window drift detection (OP-8 / RF-2) ([#435](https://github.com/sinameraji/kimiflare/issues/435)) ([367d4e1](https://github.com/sinameraji/kimiflare/commit/367d4e1cd32ccb0b224edc2602c836c1a396bdbe))
+
 ## [0.66.0](https://github.com/sinameraji/kimiflare/compare/v0.65.0...v0.66.0) (2026-05-16)
 
 
