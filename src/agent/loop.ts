@@ -244,10 +244,12 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const codeMode = opts.codeMode ?? false;
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
+  const preTurnStart = performance.now();
   let memoryRecalledCount = 0;
   let skillResult: SemanticSkillRoutingResult | undefined;
 
   const lastUserPrompt = extractLastUserText(opts.messages);
+  const userPromptPreview = lastUserPrompt.slice(0, 200);
 
   // Light + trivially short prompts skip skill routing entirely. These almost
   // never benefit from injected skills and the embeddings round-trip dominates
@@ -346,6 +348,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   if (opts.signal.aborted) {
     throw new DOMException("aborted", "AbortError");
   }
+
+  const preTurnMs = Math.round(performance.now() - preTurnStart);
 
   opts.callbacks.onMetaBanner?.({
     intentTier: opts.intentClassification?.tier ?? "medium",
@@ -529,6 +533,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     logger.debug("turn:api_request", { sessionId: opts.sessionId, messageCount: apiMessages.length });
+    // Cloudflare AI Gateway caps cf-aig-metadata at 5 keys. Keep the most
+    // queryable signals: feature + sessionId for tracing, tier/cm/skl for
+    // routing analysis from the dashboard. turnIdx is dropped here (still
+    // available in cost-debug.jsonl).
     const turnGateway = opts.gateway
       ? {
           ...opts.gateway,
@@ -536,7 +544,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             ...(opts.gateway.metadata ?? {}),
             feature: "chat",
             ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-            turnIdx: turn,
+            tier: opts.intentClassification?.tier ?? "medium",
+            cm: codeMode ? "1" : "0",
+            skl: String(skillResult?.sectionCount ?? 0),
           },
         }
       : undefined;
@@ -652,6 +662,13 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           toolResults,
           usage: lastUsage,
           shadowStrip: shadowStripMetrics,
+          durationMs: Math.round(performance.now() - turnStart),
+          intentClassification: opts.intentClassification,
+          codeMode: opts.codeMode,
+          selectedSkills: opts.selectedSkills,
+          userPromptPreview,
+          preTurnMs,
+          memoryRecalled: memoryRecalledCount > 0,
         });
       }
       if (budgetExhausted) {
@@ -1015,6 +1032,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         intentClassification: opts.intentClassification,
         codeMode: opts.codeMode,
         selectedSkills: opts.selectedSkills,
+        userPromptPreview,
+        preTurnMs,
+        memoryRecalled: memoryRecalledCount > 0,
       });
     }
 
