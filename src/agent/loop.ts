@@ -115,6 +115,13 @@ export interface AgentTurnOpts {
   mode?: Mode;
   /** Whether to use cache-stable prompt assembly (dual system messages). */
   cacheStable?: boolean;
+  /** Abort the API stream if no data arrives for this many milliseconds. Default 60000.
+   *  Cold Workers AI calls after tool use can exceed the default — bump this for
+   *  long-running embeddings / image-heavy turns. */
+  idleTimeoutMs?: number;
+  /** Once the first byte arrives, tighten the idle timeout to this value.
+   *  Default 30000 — a live stream stalling mid-flight should surface fast. */
+  postFirstByteIdleTimeoutMs?: number;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -486,7 +493,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       cloudMode: opts.cloudMode,
       cloudToken: opts.cloudToken,
       cloudDeviceId: opts.cloudDeviceId,
-      idleTimeoutMs: 60_000,
+      idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
+      postFirstByteIdleTimeoutMs: opts.postFirstByteIdleTimeoutMs,
     });
 
     let gotFirstChunk = false;

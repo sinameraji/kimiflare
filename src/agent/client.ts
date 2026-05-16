@@ -33,6 +33,9 @@ export interface RunKimiOpts {
   requestId?: string;
   /** Abort the stream if no data arrives for this many milliseconds. Default 60000. */
   idleTimeoutMs?: number;
+  /** Once the first byte arrives, tighten the idle timeout to this value.
+   *  Default 30000 — a live stream stalling mid-flight should surface fast. */
+  postFirstByteIdleTimeoutMs?: number;
 }
 
 export interface AiGatewayOptions {
@@ -155,7 +158,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
     let lastUsage: Usage | null = null;
     logger.debug("runKimi:stream_start", { requestId });
-    for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs)) {
+    for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs, opts.postFirstByteIdleTimeoutMs)) {
       if (ev.type === "usage") lastUsage = ev.usage;
       yield ev;
     }
@@ -252,18 +255,19 @@ function readGatewayMeta(headers: Headers): GatewayMeta | null {
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
+const DEFAULT_POST_FIRST_BYTE_IDLE_TIMEOUT_MS = 30_000;
 
 async function* parseStream(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
   idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+  postFirstByteIdleTimeoutMs = DEFAULT_POST_FIRST_BYTE_IDLE_TIMEOUT_MS,
 ): AsyncGenerator<KimiEvent, void, void> {
   const toolCalls = new Map<number, { id: string; name: string; args: string }>();
   let lastUsage: Usage | null = null;
   let finishReason: string | null = null;
-  let lastDataAt = Date.now();
 
-  for await (const dataStr of readSSE(body, signal, idleTimeoutMs)) {
+  for await (const dataStr of readSSE(body, signal, idleTimeoutMs, postFirstByteIdleTimeoutMs)) {
     if (dataStr === "[DONE]") break;
     let chunk: StreamChunk | null = null;
     try {

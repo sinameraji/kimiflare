@@ -12,11 +12,13 @@ export async function* readSSE(
   stream: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
   idleTimeoutMs?: number,
+  postFirstByteIdleTimeoutMs?: number,
 ): AsyncGenerator<string, void, void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder("utf-8");
   let buffer = "";
   let lastDataAt = Date.now();
+  let gotFirstByte = false;
 
   const onAbort = () => {
     reader.cancel(new DOMException("aborted", "AbortError")).catch(() => {
@@ -42,16 +44,23 @@ export async function* readSSE(
   try {
     while (true) {
       if (signal?.aborted) throw new DOMException("aborted", "AbortError");
-      if (idleTimeoutMs !== undefined && Date.now() - lastDataAt > idleTimeoutMs) {
-        logger.warn("sse:idle_timeout", { idleTimeoutMs });
+      // After the first byte we know the model is alive; tighten the idle
+      // budget so a stalled mid-stream surfaces sooner.
+      const activeIdleTimeoutMs =
+        gotFirstByte && postFirstByteIdleTimeoutMs !== undefined
+          ? postFirstByteIdleTimeoutMs
+          : idleTimeoutMs;
+      if (activeIdleTimeoutMs !== undefined && Date.now() - lastDataAt > activeIdleTimeoutMs) {
+        logger.warn("sse:idle_timeout", { idleTimeoutMs: activeIdleTimeoutMs, gotFirstByte });
         throw new DOMException(
-          `kimiflare: stream idle for ${idleTimeoutMs}ms — no data received from API`,
+          `kimiflare: stream idle for ${activeIdleTimeoutMs}ms — no data received from API`,
           "TimeoutError",
         );
       }
       const { done, value } = await abortRace(reader.read());
       if (done) break;
       lastDataAt = Date.now();
+      gotFirstByte = true;
       buffer += decoder.decode(value, { stream: true });
       buffer = buffer.replace(/\r\n/g, "\n");
 

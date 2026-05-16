@@ -96,7 +96,7 @@ throw at the loop boundary is a worse UX than a compaction prompt.
 **Fix:** at the cap, try one round of message compaction (drop oldest
 tool results, keep their artifacts) before throwing.
 
-### RF-7 — SSE idle timeout is global (S)
+### RF-7 — SSE idle timeout is global (S) — ✅ shipped (OP-4)
 
 `src/agent/client.ts:254`, default 60_000 ms.
 
@@ -106,6 +106,11 @@ first-byte.
 
 **Fix:** expose `idleTimeoutMs` on the call options. Bonus: once the first
 data byte arrives, drop the idle timeout to 30 s — the model is alive.
+
+**Status:** `idleTimeoutMs` and `postFirstByteIdleTimeoutMs` are now
+plumbed through `AgentTurnOpts` → `RunKimiOpts` → `readSSE`. Defaults
+are 60s pre-first-byte, 30s post-first-byte. Callers can override per
+turn (long embedding/image turns can bump the pre-first-byte budget).
 
 ### RF-8 — Retry backoff has weak jitter (S) — ✅ shipped (M1.1)
 
@@ -345,7 +350,7 @@ Tracked as M1.0 in the development roadmap.
 - **OP-1.** Full-jitter retry backoff (fix for RF-8).
 - **OP-2.** Size-aware artifact eviction (fix for RF-9).
 - **OP-3.** `onTruncation` callback + TUI hint (fix for RF-12).
-- **OP-4.** Per-call SSE idle timeout knob (fix for RF-7).
+- **OP-4.** Per-call SSE idle timeout knob (fix for RF-7). ✅ shipped
 - **OP-5.** `signal.aborted` checks inside grep/glob/read inner loops
   (fix for RF-13, first half).
 - **OP-6.** Cross-turn `webFetchHistory` (fix for RF-3).
