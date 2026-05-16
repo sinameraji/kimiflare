@@ -23,6 +23,7 @@
  */
 
 import * as readline from "node:readline";
+import { execSync } from "node:child_process";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
@@ -65,6 +66,46 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
   };
 
   emit("SessionStarted", {});
+
+  // Seed status-bar segments the TUI will render at the bottom.
+  // Mode is hardcoded to "edit" for now (emit-mode doesn't currently
+  // surface KimiFlare's mode cycling). Branch is resolved once via
+  // `git rev-parse`. Phase/elapsed/tokens update across the session.
+  const sessionStartMs = Date.now();
+  let promptTokens = 0;
+  let cachedTokens = 0;
+  let currentPhase: "idle" | "thinking" | "streaming" | "tool" = "idle";
+  const branch = tryGitBranch();
+  const initialSegments: Record<string, string> = {
+    mode: "edit",
+    phase: currentPhase,
+    elapsed: "0s",
+    branch,
+  };
+  emit("StatusUpdate", { segments: initialSegments });
+
+  const setPhase = (next: typeof currentPhase): void => {
+    if (next === currentPhase) return;
+    currentPhase = next;
+    emit("StatusUpdate", { segments: { phase: next } });
+  };
+
+  const setTokens = (prompt: number, cached: number): void => {
+    if (prompt === promptTokens && cached === cachedTokens) return;
+    promptTokens = prompt;
+    cachedTokens = cached;
+    const txt = cached > 0
+      ? `in ${formatK(prompt)} (${formatK(cached)} cached)`
+      : `in ${formatK(prompt)}`;
+    emit("StatusUpdate", { segments: { tokens: txt } });
+  };
+
+  // Tick the elapsed segment once a second so the TUI status bar stays
+  // live during long turns. Stopped in the finally block.
+  const elapsedTimer = setInterval(() => {
+    const secs = Math.floor((Date.now() - sessionStartMs) / 1000);
+    emit("StatusUpdate", { segments: { elapsed: formatElapsed(secs) } });
+  }, 1000);
 
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
@@ -113,6 +154,7 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
           onAssistantStart: () => {
             streamCounter += 1;
             currentStreamId = `s${streamCounter}`;
+            setPhase("thinking"); // before first token, we're still composing
             emit("AssistantStreamStarted", { stream_id: currentStreamId });
           },
           onTextDelta: (delta) => {
@@ -121,6 +163,7 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
               currentStreamId = `s${streamCounter}`;
               emit("AssistantStreamStarted", { stream_id: currentStreamId });
             }
+            setPhase("streaming"); // first delta flips phase
             emit("AssistantTokenDelta", { stream_id: currentStreamId, token: delta });
           },
           onAssistantFinal: () => {
@@ -128,8 +171,10 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
               emit("AssistantMessageCompleted", { stream_id: currentStreamId });
               currentStreamId = null;
             }
+            setPhase("idle");
           },
           onToolCallFinalized: (call) => {
+            setPhase("tool");
             emit("ToolExecutionStarted", {
               tool_id: call.id,
               tool: call.function.name,
@@ -147,6 +192,16 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
               tool_id: result.tool_call_id,
               exit_code: result.ok ? 0 : 1,
             });
+            // After a tool result we typically loop back to thinking
+            // (next assistant turn) — flip phase optimistically; the next
+            // onAssistantStart/onTextDelta will overwrite.
+            setPhase("thinking");
+          },
+          onUsage: (usage) => {
+            setTokens(usage.prompt_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
+          },
+          onUsageFinal: (usage) => {
+            setTokens(usage.prompt_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
           },
           onWarning: (msg) => {
             emit("RuntimeError", { message: msg, kind: "generic", severity: "warn" });
@@ -243,9 +298,38 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
       }
     }
   } finally {
+    clearInterval(elapsedTimer);
+    // Final status sweep so the TUI's last visible state is coherent
+    // (phase=idle, final elapsed) before SessionEnded arrives.
+    const finalSecs = Math.floor((Date.now() - sessionStartMs) / 1000);
+    emit("StatusUpdate", { segments: { phase: "idle", elapsed: formatElapsed(finalSecs) } });
     process.off("SIGINT", sigintHandler);
     emit("SessionEnded", {});
     console.log = origLog;
     if (exitCode !== 0) process.exitCode = exitCode;
+  }
+}
+
+function formatK(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k`;
+  return `${n}`;
+}
+
+function formatElapsed(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}m ${s}s`;
+}
+
+function tryGitBranch(): string {
+  try {
+    const out = execSync("git rev-parse --abbrev-ref HEAD 2>/dev/null", {
+      encoding: "utf8",
+      timeout: 200,
+    }).trim();
+    return out || "—";
+  } catch {
+    return "—";
   }
 }
