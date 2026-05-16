@@ -120,7 +120,7 @@ window is too narrow at the larger waits.
 **Status:** Applied to both retry sites (network-error branch and
 API-error branch including rate-limit handling) in `src/agent/client.ts`.
 
-### RF-9 — Artifact eviction is age-only (S)
+### RF-9 — Artifact eviction is age-only (S) — ✅ shipped (OP-2)
 
 `src/agent/session-state.ts:82–88`.
 
@@ -131,6 +131,11 @@ prefer the latter.
 **Fix:** size-weighted LRU: pick the oldest item whose size would
 materially relieve pressure (e.g., evict the largest among the oldest
 quartile).
+
+**Status:** When the char cap is exceeded, `ArtifactStore.add()` now
+calls `evictSizeWeighted()` — sort by ts, slice the oldest quartile,
+drop the largest in that window. Count-cap eviction stays age-only
+(sizes don't matter when the count is the constraint).
 
 ### RF-10 — In-place mutation of `opts.messages` during skill rebuild (M)
 
@@ -343,7 +348,7 @@ Tracked as M1.0 in the development roadmap.
 ### Quick wins (S — pick most of these up in a week)
 
 - **OP-1.** Full-jitter retry backoff (fix for RF-8).
-- **OP-2.** Size-aware artifact eviction (fix for RF-9).
+- **OP-2.** Size-aware artifact eviction (fix for RF-9). ✅ shipped
 - **OP-3.** `onTruncation` callback + TUI hint (fix for RF-12).
 - **OP-4.** Per-call SSE idle timeout knob (fix for RF-7).
 - **OP-5.** `signal.aborted` checks inside grep/glob/read inner loops

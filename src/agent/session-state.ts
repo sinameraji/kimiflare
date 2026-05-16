@@ -78,11 +78,12 @@ export class ArtifactStore {
   }
 
   add(a: Artifact): void {
-    // Enforce total char cap by evicting oldest artifacts first
+    // Enforce total char cap with size-weighted LRU: from the oldest quartile,
+    // evict the largest artifact first. One 200KB eviction beats five 5KB ones.
     while (this.totalChars() + a.raw.length > this.maxTotalChars && this.artifacts.size > 0) {
-      this.evictOldest();
+      this.evictSizeWeighted();
     }
-    // Enforce count cap
+    // Enforce count cap (age-only is fine here — sizes don't matter for count)
     while (this.artifacts.size >= this.maxArtifacts) {
       this.evictOldest();
     }
@@ -128,6 +129,22 @@ export class ArtifactStore {
       if (!oldest || a.ts < oldest.ts) oldest = a;
     }
     if (oldest) this.artifacts.delete(oldest.id);
+  }
+
+  /** Evict the largest artifact among the oldest quartile (by timestamp).
+   *  Bounded by the oldest quartile so we never evict freshly-added artifacts;
+   *  size-weighted within that window so one big artifact gets dropped instead
+   *  of many small ones. */
+  private evictSizeWeighted(): void {
+    const sorted = [...this.artifacts.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    if (sorted.length === 0) return;
+    const quartile = Math.max(1, Math.ceil(sorted.length / 4));
+    const candidates = sorted.slice(0, quartile);
+    let pick: Artifact = candidates[0]!;
+    for (const a of candidates) {
+      if (a.raw.length > pick.raw.length) pick = a;
+    }
+    this.artifacts.delete(pick.id);
   }
 }
 
