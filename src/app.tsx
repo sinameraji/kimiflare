@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
-import type { AiGatewayOptions, GatewayMeta } from "./agent/client.js";
-import { buildSystemPrompt, buildSystemMessages, buildSessionPrefix } from "./agent/system-prompt.js";
+import type { GatewayMeta } from "./agent/client.js";
+import { buildSystemPrompt, buildSessionPrefix } from "./agent/system-prompt.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import {
   compactMessagesViaArtifacts,
@@ -39,7 +39,7 @@ import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import type { Task } from "./tools/registry.js";
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import QRCode from "qrcode";
 import type { ToolRender } from "./tools/registry.js";
@@ -62,13 +62,8 @@ import { deployForTui } from "./remote/deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
 import { nextMode, type Mode } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
-import {
-  selectSkills,
-  indexSkills,
-  initSkillsSchema,
-  type SemanticSkillRoutingResult,
-} from "./skills/index.js";
-import { openMemoryDb, getMemoryDb } from "./memory/db.js";
+import type { SemanticSkillRoutingResult } from "./skills/index.js";
+import { getMemoryDb } from "./memory/db.js";
 import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
 import {
   loadSession,
@@ -77,16 +72,10 @@ import {
   type Checkpoint,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
-import { execSync } from "node:child_process";
-import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
+import { encodeImageFile, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, formatFeatureBreakdown, getSessionGatewayLogs, usageEvents } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
-import { RETENTION } from "./storage-limits.js";
-import { shouldShowCreatorMessage, markCreatorMessageSeen } from "./util/state.js";
-import { getAppVersion } from "./util/version.js";
-import { spawn } from "node:child_process";
-import { platform } from "node:os";
 import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
 import type { CustomCommand, SlashItem } from "./commands/types.js";
@@ -114,133 +103,25 @@ import {
   type InterruptDeps,
 } from "./ui/input-handlers.js";
 import { dispatchSlashCommand, type SlashContext } from "./ui/slash-commands.js";
-import { readFileSync } from "node:fs";
-
-/**
- * Build a comprehensive ignore list for the @ file mention picker.
- * Combines common noise patterns (dependencies, build output, caches, etc.)
- * with patterns read from the project's .gitignore file.
- *
- * All hardcoded patterns use the `** /` prefix so they match at any depth
- * (e.g. `** /node_modules/ *` catches both root and nested node_modules).
- */
-const MAX_GITIGNORE_SIZE = 1 * 1024 * 1024; // 1 MB
-
-export function buildFilePickerIgnoreList(cwd: string): string[] {
-  const hardcoded = [
-    // Dependencies
-    "**/node_modules/**",
-    "**/vendor/**",
-    "**/.bundle/**",
-    "**/bower_components/**",
-    // Version control
-    "**/.git/**",
-    "**/.svn/**",
-    "**/.hg/**",
-    // Build / output directories
-    "**/dist/**",
-    "**/build/**",
-    "**/out/**",
-    "**/public/**",
-    "**/.next/**",
-    "**/.nuxt/**",
-    "**/.svelte-kit/**",
-    "**/.vercel/**",
-    "**/.netlify/**",
-    "**/target/**",
-    "**/bin/**",
-    "**/obj/**",
-    "**/Debug/**",
-    "**/Release/**",
-    "**/.gradle/**",
-    // Caches
-    "**/.cache/**",
-    "**/.parcel-cache/**",
-    "**/.turbo/**",
-    "**/.eslintcache",
-    "**/.stylelintcache",
-    "**/.rpt2_cache/**",
-    "**/.rts2_cache/**",
-    // Temporary
-    "**/tmp/**",
-    "**/temp/**",
-    "**/*.tmp",
-    // Coverage
-    "**/coverage/**",
-    "**/.nyc_output/**",
-    // OS files
-    "**/.DS_Store",
-    "**/Thumbs.db",
-    // Logs
-    "**/*.log",
-    "**/logs/**",
-    // Lock files (auto-generated, usually huge)
-    "**/package-lock.json",
-    "**/yarn.lock",
-    "**/pnpm-lock.yaml",
-    "**/bun.lockb",
-    "**/Cargo.lock",
-    "**/Gemfile.lock",
-    "**/composer.lock",
-    "**/Pipfile.lock",
-    "**/poetry.lock",
-    "**/go.sum",
-    // Minified / source maps
-    "**/*.min.js",
-    "**/*.min.css",
-    "**/*.map",
-    // kimiflare internal
-    "**/.kimiflare/**",
-    // IDE (usually not relevant to mention)
-    "**/.idea/**",
-  ];
-
-  // Try to read .gitignore for project-specific ignores.
-  // Gitignore patterns are relative to the repo root and may match at any
-  // depth. We approximate that by prefixing with `** /`. Patterns that
-  // already start with `*` or `/` are handled carefully.
-  const gitignorePatterns: string[] = [];
-  try {
-    const gitignorePath = join(cwd, ".gitignore");
-    const stats = statSync(gitignorePath);
-    if (stats.size > MAX_GITIGNORE_SIZE) {
-      // Guardrail 1.4: skip oversized .gitignore files
-      return hardcoded;
-    }
-    const content = readFileSync(gitignorePath, "utf-8");
-    for (const line of content.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-
-      // Skip negation patterns — fast-glob ignore doesn't support them
-      if (trimmed.startsWith("!")) continue;
-
-      let pattern = trimmed;
-      const isAnchored = pattern.startsWith("/");
-      const isDir = pattern.endsWith("/");
-
-      // Remove leading slash for processing
-      if (isAnchored) pattern = pattern.slice(1);
-      // Remove trailing slash for processing
-      if (isDir) pattern = pattern.slice(0, -1);
-
-      // Skip patterns that are already wildcards or empty
-      if (!pattern) continue;
-
-      if (isAnchored) {
-        // Anchored patterns only match at root, so keep them relative to cwd
-        gitignorePatterns.push(isDir ? pattern + "/**" : pattern);
-      } else {
-        // Unanchored patterns match at any depth — prepend `**/`
-        gitignorePatterns.push(isDir ? "**/" + pattern + "/**" : "**/" + pattern);
-      }
-    }
-  } catch {
-    // No .gitignore found — that's fine
-  }
-
-  return [...hardcoded, ...gitignorePatterns];
-}
+import { runInit as runInitImpl } from "./init/run-init.js";
+import { runStartupTasks } from "./ui/run-startup-tasks.js";
+import {
+  AUTO_COMPACT_SUGGEST_PCT,
+  buildFilePickerIgnoreList,
+  capEvents,
+  compactEventsVisual,
+  CONTEXT_LIMIT,
+  detectGitBranch,
+  findImagePaths,
+  gatewayFromConfig,
+  gatewayUsageLookupFromConfig,
+  makePrefixMessages,
+  MAX_IMAGES_PER_MESSAGE,
+  mkAssistantId,
+  mkKey,
+  openBrowser,
+  trackRecentFile,
+} from "./ui/app-helpers.js";
 
 export interface Cfg {
   accountId: string;
@@ -284,175 +165,6 @@ export interface Cfg {
   cloudToken?: string;
   shell?: string;
 }
-
-function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
-  if (process.env.KIMIFLARE_DISABLE_AI_GATEWAY === "1") return undefined;
-  if (!cfg.aiGatewayId) return undefined;
-  return {
-    id: cfg.aiGatewayId,
-    cacheTtl: cfg.aiGatewayCacheTtl,
-    skipCache: cfg.aiGatewaySkipCache,
-    collectLogPayload: cfg.aiGatewayCollectLogPayload,
-    metadata: cfg.aiGatewayMetadata,
-  };
-}
-
-function gatewayUsageLookupFromConfig(
-  cfg: Cfg,
-  meta: GatewayMeta | null,
-): GatewayUsageLookup | undefined {
-  if (process.env.KIMIFLARE_DISABLE_AI_GATEWAY === "1") return undefined;
-  if (!cfg.aiGatewayId || !meta) return undefined;
-  return {
-    accountId: cfg.accountId,
-    apiToken: cfg.apiToken,
-    gatewayId: cfg.aiGatewayId,
-    meta,
-  };
-}
-
-export const FEEDBACK_WORKER_URL = "https://hello.kimiflare.com";
-
-export function openBrowser(url: string): void {
-  const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
-  const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
-  child.unref();
-}
-
-export function detectGitHubRepo(cachedRepo?: string): { owner: string; name: string } | null {
-  if (cachedRepo) {
-    const parts = cachedRepo.split("/");
-    if (parts.length === 2) return { owner: parts[0]!, name: parts[1]! };
-  }
-  try {
-    const remoteUrl = execSync("git remote get-url origin", { cwd: process.cwd(), encoding: "utf8" }).trim();
-    const httpsMatch = remoteUrl.match(/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?$/);
-    if (httpsMatch) return { owner: httpsMatch[1]!, name: httpsMatch[2]! };
-    const sshMatch = remoteUrl.match(/github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/);
-    if (sshMatch) return { owner: sshMatch[1]!, name: sshMatch[2]! };
-  } catch {
-    // not a git repo or no origin remote
-  }
-  return null;
-}
-
-function detectGitBranch(): string | null {
-  try {
-    return execSync("git branch --show-current", { cwd: process.cwd(), encoding: "utf8" }).trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function trackRecentFile(ref: React.MutableRefObject<Map<string, number>>, path: string, max = 10): void {
-  ref.current.set(path, Date.now());
-  if (ref.current.size > max) {
-    let oldest: string | null = null;
-    let oldestTime = Infinity;
-    for (const [p, t] of ref.current) {
-      if (t < oldestTime) {
-        oldestTime = t;
-        oldest = p;
-      }
-    }
-    if (oldest) ref.current.delete(oldest);
-  }
-}
-
-const CONTEXT_LIMIT = 262_000;
-const AUTO_COMPACT_SUGGEST_PCT = 0.8;
-const MAX_EVENTS = 500;
-
-let nextAssistantId = 1;
-let nextKey = 1;
-const mkKey = () => `evt_${nextKey++}`;
-
-function capEvents(prev: ChatEvent[]): ChatEvent[] {
-  if (prev.length <= MAX_EVENTS) return prev;
-  return prev.slice(prev.length - MAX_EVENTS);
-}
-
-/** Visually compact events by collapsing old turns into a placeholder.
- *  Keeps the last `keepLastTurns` user messages and everything after them. */
-function compactEventsVisual(prev: ChatEvent[], keepLastTurns: number): ChatEvent[] {
-  let seen = 0;
-  let cutoff = -1;
-  for (let i = prev.length - 1; i >= 0; i--) {
-    if (prev[i]!.kind === "user") {
-      seen++;
-      if (seen === keepLastTurns + 1) {
-        cutoff = i;
-        break;
-      }
-    }
-  }
-  if (cutoff <= 0) return prev;
-  const kept = prev.slice(cutoff);
-  return [
-    { kind: "info", key: mkKey(), text: `··· ${cutoff} earlier messages compacted ···` },
-    ...kept,
-  ];
-}
-
-const MAX_IMAGES_PER_MESSAGE = 10;
-
-function makePrefixMessages(
-  cacheStable: boolean,
-  model: string,
-  mode: Mode,
-  tools: ToolSpec[],
-): ChatMessage[] {
-  if (cacheStable) {
-    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
-  }
-  return [
-    {
-      role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
-    },
-  ];
-}
-
-function findImagePaths(text: string): string[] {
-  const paths: string[] = [];
-
-  // Extract quoted paths first (e.g. "/path/to/my image.png")
-  const quotedRegex = /"([^"]+)"|'([^']+)'/g;
-  let match;
-  while ((match = quotedRegex.exec(text)) !== null) {
-    const path = match[1] ?? match[2];
-    if (path && isImagePath(path) && existsSync(path)) {
-      paths.push(path);
-    }
-  }
-
-  // Process remaining text, handling backslash-escaped spaces
-  const remaining = text.replace(/"[^"]+"|'[^']+'/g, "");
-  const ESCAPED_SPACE = "\u0000";
-  const processed = remaining.replace(/\\ /g, ESCAPED_SPACE);
-
-  for (const token of processed.split(/\s+/)) {
-    const clean = token
-      .replace(new RegExp(ESCAPED_SPACE, "g"), " ")
-      .replace(/^["']|["',;:!?]$/g, "")
-      .replace(/[.,;:!?]$/, "");
-    if (clean && isImagePath(clean) && existsSync(clean) && !paths.includes(clean)) {
-      paths.push(clean);
-    }
-  }
-
-  return paths;
-}
-
-
-
-
 function App({
   initialCfg,
   initialUpdateResult,
@@ -811,149 +523,19 @@ function App({
 
   useEffect(() => {
     if (!cfg) return;
-    // Prune old sessions on startup
-    void import("./sessions.js").then(({ pruneSessions }) =>
-      pruneSessions().then((removed) => {
-        if (removed > 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: `pruned ${removed} old session files` },
-          ]);
-        }
-      }),
-    );
-
-    // Prune old structured logs (M5.1) and surface the current path once.
-    void import("./util/log-sink.js").then(({ pruneOldLogs, logPathFor, isLogSinkEnabled }) => {
-      if (!isLogSinkEnabled()) return;
-      try {
-        pruneOldLogs();
-      } catch {
-        // Non-fatal: log retention is best-effort.
-      }
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `structured logs: ${logPathFor()} (tail with: tail -f $(kimiflare logs path) | jq)`,
-        },
-      ]);
-    });
-
-    // Show creator welcome message once per version
-    void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
-      if (shouldShow) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "Hey, how do you like this version? I'd love to hear from you — type /hello to send me a voice note. Only I see it, and I may DM you back.",
-          },
-        ]);
-        void markCreatorMessageSeen(getAppVersion());
-      }
-    });
-
-    // Initialize memory manager if enabled
-    if (cfg.memoryEnabled) {
-      const dbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
-      const manager = new MemoryManager({
-        dbPath,
-        accountId: cfg.accountId,
-        apiToken: cfg.apiToken,
-        model: cfg.model,
-        plumbingModel: cfg.plumbingModel,
-        extractionModel: cfg.memoryExtractionModel,
-        embeddingModel: cfg.memoryEmbeddingModel,
-        gateway: gatewayFromConfig(cfg),
-        maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
-        maxEntries: cfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
-      });
-      manager.open();
-      memoryManagerRef.current = manager;
-
-      // Run cleanup and backfill on startup
-      void manager.cleanup(process.cwd()).then((result) => {
-        const total = result.oldDeleted + result.excessDeleted + result.duplicatesMerged;
-        if (total > 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "memory", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
-          ]);
-        }
-      });
-      void manager.backfill(process.cwd()).then((fixed) => {
-        if (fixed > 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "memory", key: mkKey(), text: `memory backfill: embedded ${fixed} un-vectorized entries` },
-          ]);
-        }
-      });
-
-      // Fire session-start recall in the background so results are ready by the
-      // time the first turn starts. Synthesis and injection happen inside
-      // runAgentTurn so they are covered by the turn's abort signal.
-      const cwd = process.cwd();
-      sessionStartRecallRef.current = manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
-
-      // Session-start drift check (Trigger A): if KIMI.md exists and high-signal
-      // memories have been learned since the last refresh, mark as stale.
-      if (existsSync(join(cwd, "KIMI.md"))) {
-        const lastRefresh = manager.getLastKimiMdRefreshTime(cwd);
-        const driftCount = manager.countHighSignalMemoriesSince(cwd, lastRefresh);
-        if (driftCount >= 5) {
-          setKimiMdStale(true);
-        }
-      }
-    } else {
-      memoryManagerRef.current?.close();
-      memoryManagerRef.current = null;
-    }
-
-    // Initialize skills index (independent of memory feature flag)
-    const skillDbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
-    const skillDb = getMemoryDb() ?? openMemoryDb(skillDbPath);
-    initSkillsSchema(skillDb);
-    void indexSkills({
-      cwd: process.cwd(),
-      db: skillDb,
-      accountId: cfg.accountId,
-      apiToken: cfg.apiToken,
-      gateway: gatewayFromConfig(cfg),
-      embeddingModel: cfg.memoryEmbeddingModel,
-      cloudMode: cfg.cloudMode,
-      cloudToken: cloudToken ?? initialCloudToken,
-      cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-    }).then((result) => {
-      if (result.indexed > 0) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `indexed ${result.indexed} skill${result.indexed === 1 ? "" : "s"}` },
-        ]);
-      }
-      if (result.errors.length > 0) {
-        for (const err of result.errors) {
-          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `skill index error: ${err}` }]);
-        }
-      }
-    });
-
-    void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
-      customCommandsRef.current = commands;
-      setCustomCommandsVersion((v) => v + 1);
-      for (const w of warnings) {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `commands: ${w}` }]);
-      }
-      const shadowed = commands.filter((c) => BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()));
-      for (const c of shadowed) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `commands: /${c.name} (${c.filepath}) shadowed by built-in — will not run` },
-        ]);
-      }
+    runStartupTasks({
+      cfg,
+      setEvents,
+      mkKey,
+      memoryManagerRef,
+      sessionStartRecallRef,
+      setKimiMdStale,
+      customCommandsRef,
+      setCustomCommandsVersion,
+      cloudToken,
+      initialCloudToken,
+      cloudDeviceId,
+      initialCloudDeviceId,
     });
   }, [cfg, setEvents]);
 
@@ -1583,308 +1165,56 @@ function App({
 
   const runInit = useCallback(async () => {
     if (!cfg) return;
-    if (busy) {
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /init while model is running" }]);
-      return;
-    }
-    const cwd = process.cwd();
-    const { prompt, targetFilename, isRefresh } = buildInitPrompt(cwd);
-
-    setEvents((e) => [...e, { kind: "user", key: mkKey(), text: isRefresh ? `/init (refreshing ${targetFilename})` : "/init" }]);
-    messagesRef.current.push({ role: "user", content: sanitizeString(prompt) });
-    beginTurn();
-    const turnScope = sessionScopeRef.current.createChild();
-    activeScopeRef.current = turnScope;
-
-    const initClassification = classifyIntent(prompt);
-    const initEffortForTier: Record<string, ReasoningEffort> = {
-      light: "low",
-      medium: "medium",
-      heavy: "high",
-    };
-    const initReasoningEffort = initEffortForTier[initClassification.tier] ?? effortRef.current;
-    const effectiveCodeMode = initClassification.tier === "heavy";
-    setCodeMode(effectiveCodeMode);
-
-    try {
-      await runAgentTurn({
-        accountId: cfg.accountId,
-        apiToken: cfg.apiToken,
-        model: cfg.model,
-        gateway: gatewayFromConfig(cfg),
-        messages: messagesRef.current,
-        tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-        executor: executorRef.current,
-        cwd,
-        signal: turnScope.signal,
-        reasoningEffort: initReasoningEffort,
-        intentClassification: initClassification,
-        coauthor:
-          cfg.coauthor !== false
-            ? { name: cfg.coauthorName || "kimiflare", email: cfg.coauthorEmail || "kimiflare@proton.me" }
-            : undefined,
-        sessionId: ensureSessionId(),
-        memoryManager: memoryManagerRef.current,
-        githubToken: cfg.githubOAuthToken,
-        codeMode: effectiveCodeMode,
-        cloudMode: cfg.cloudMode,
-        cloudToken: cloudToken ?? initialCloudToken,
-        cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-        shell: cfg.shell,
-        onIterationEnd,
-        onFileChange: (path, content) => {
-          if (content) {
-            lspManagerRef.current.notifyChange(path, content);
-          } else {
-            // For edit tool, read the file and notify with full content
-            void import("node:fs/promises").then(({ readFile }) =>
-              readFile(path, "utf8")
-                .then((c) => lspManagerRef.current.notifyChange(path, c))
-                .catch(() => {}),
-            );
-          }
-        },
-        callbacks: {
-          onAssistantStart: () => {
-            const id = nextAssistantId++;
-            activeAsstIdRef.current = id;
-            setEvents((e) => [
-              ...e,
-              { kind: "assistant", key: `asst_${id}`, id, text: "", reasoning: "", streaming: true },
-            ]);
-          },
-          onReasoningDelta: (d) => {
-            const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, (e) => ({ reasoning: e.reasoning + d }));
-          },
-          onTextDelta: (d) => {
-            const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
-          },
-          onAssistantFinal: () => {
-            const id = activeAsstIdRef.current;
-            if (id !== null) updateAssistant(id, () => ({ streaming: false }));
-          },
-          onToolCallFinalized: (call) => {
-            pendingToolCallsRef.current.set(call.id, call.function.name);
-            const spec = executorRef.current.list().find((t) => t.name === call.function.name);
-            let renderMeta: ToolRender | undefined;
-            let args: Record<string, unknown> = {};
-            try {
-              args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-              renderMeta = spec?.render?.(args);
-            } catch {
-              /* ignore */
-            }
-            // Track file paths from read/edit/write/grep tools for recent-files boost
-            if (typeof args.path === "string") {
-              trackRecentFile(recentFilesRef, args.path, MAX_RECENT_FILES);
-            }
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "tool",
-                key: `tool_${call.id}`,
-                id: call.id,
-                name: call.function.name,
-                args: call.function.arguments,
-                status: "queued",
-                render: renderMeta,
-                expanded: false,
-              },
-            ]);
-          },
-          onToolWillExecute: (id: string) => {
-            setTurnPhase("executing");
-            setCurrentToolName(pendingToolCallsRef.current.get(id) ?? null);
-            setLastActivityAt(Date.now());
-            updateTool(id, { status: "running", startedAt: Date.now() });
-          },
-          onToolResult: (r) => {
-            pendingToolCallsRef.current.delete(r.tool_call_id);
-            setLastActivityAt(Date.now());
-            if (pendingToolCallsRef.current.size === 0) {
-              setTurnPhase("waiting");
-              setCurrentToolName(null);
-            }
-            const isDenied = typeof r.content === "string" && r.content.startsWith("Permission denied");
-            updateTool(r.tool_call_id, { status: isDenied ? "rejected" : r.ok ? "done" : "error", result: r.content });
-          },
-          onWarning: (msg) => {
-            setEvents((e) => [
-              ...e,
-              {
-                kind: "info",
-                key: mkKey(),
-                text: msg,
-              },
-            ]);
-          },
-          onUsage: (u) => {
-            usageRef.current = u;
-            setUsage(u);
-          },
-          onUsageFinal: (u, meta) => {
-            const sid = ensureSessionId();
-            void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
-            void getCostReport(sid).then((report) => setSessionUsage(report.session));
-            if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-              const token = cloudToken ?? initialCloudToken!;
-              const did = cloudDeviceId ?? initialCloudDeviceId;
-              void (async () => {
-                try {
-                  const { fetchCloudUsage } = await import("./cloud/auth.js");
-                  const usage = await fetchCloudUsage(token, did);
-                  if (usage) {
-                    setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-                  }
-                } catch (err) {
-                  if (isKillSwitchError(err)) {
-                    setCloudToken(undefined);
-                    setCloudDeviceId(undefined);
-                    setEvents((es) => [
-                      ...es,
-                      { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-                    ]);
-                  }
-                  // Other errors are non-fatal
-                }
-              })();
-            }
-          },
-          onGatewayMeta: updateGatewayMeta,
-          askPermission: (req) => askForPermission(req, { promptOnBlockedBash: true }),
-          onKimiMdStale: () => {
-            if (!kimiMdStaleNudgedRef.current) {
-              kimiMdStaleNudgedRef.current = true;
-              setKimiMdStale(true);
-              setEvents((e) => [
-                ...e,
-                { kind: "info", key: mkKey(), text: "Project context may be stale. Run /init to refresh KIMI.md based on recent changes." },
-              ]);
-            }
-          },
-        },
-      });
-
-      if (existsSync(join(cwd, "KIMI.md"))) {
-        if (cacheStableRef.current) {
-          messagesRef.current[1] = {
-            role: "system",
-            content: buildSessionPrefix({
-              cwd,
-              tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-              model: cfg.model,
-              mode: modeRef.current,
-            }),
-          };
-        } else {
-          messagesRef.current[0] = {
-            role: "system",
-            content: buildSystemPrompt({
-              cwd,
-              tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-              model: cfg.model,
-              mode: modeRef.current,
-            }),
-          };
-        }
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "KIMI.md generated; context loaded for future turns" },
-        ]);
-        // Record refresh so drift detection knows this snapshot is current
-        void memoryManagerRef.current?.recordKimiMdRefresh(cwd, ensureSessionId());
-        setKimiMdStale(false);
-        kimiMdStaleNudgedRef.current = false;
-      }
-    } catch (e) {
-      if ((e as Error).name === "AbortError") {
-        for (const [tcId, tcName] of pendingToolCallsRef.current) {
-          messagesRef.current.push({
-            role: "tool",
-            tool_call_id: tcId,
-            content: "(stopped)",
-            name: tcName,
-          });
-        }
-        setEvents((evts) =>
-          evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
-        );
-      } else if (isKillSwitchError(e)) {
-        setCloudToken(undefined);
-        setCloudDeviceId(undefined);
-        setEvents((es) => [
-          ...es,
-          { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
-        ]);
-      } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-        const token = cloudToken ?? initialCloudToken;
-        const did = cloudDeviceId ?? initialCloudDeviceId;
-        let used = 0;
-        let limit = 0;
-        let expiresAt = "";
-        if (token) {
-          try {
-            const { fetchCloudUsage } = await import("./cloud/auth.js");
-            const usage = await fetchCloudUsage(token, did);
-            if (usage) {
-              used = usage.input_tokens_used;
-              limit = usage.input_token_limit;
-              expiresAt = usage.expires_at;
-            }
-          } catch { /* ignore */ }
-        }
-        if (!limit) {
-          const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
-          if (m && m[1] && m[2]) {
-            used = parseInt(m[1].replace(/,/g, ""), 10);
-            limit = parseInt(m[2].replace(/,/g, ""), 10);
-          }
-        }
-        setEvents((es) => [
-          ...es,
-          { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
-        ]);
-      } else if (e instanceof AgentLoopError) {
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: "The agent got stuck repeating the same actions. Here's what we know so far." },
-        ]);
-      } else if (
-        e instanceof KimiApiError &&
-        (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
-      ) {
-        const err = { httpStatus: e.httpStatus, code: e.code, message: humanizeCloudflareError(e) };
-        lastApiErrorRef.current = err;
-        setEvents((es) => [
-          ...es,
-          { kind: "api_error", key: mkKey(), ...err },
-        ]);
-      } else {
-        const displayText =
-          e instanceof KimiApiError
-            ? humanizeCloudflareError(e)
-            : `init failed: ${(e as Error).message}`;
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: displayText },
-        ]);
-      }
-    } finally {
-      logger.info("runInit:finally");
-      setCodeMode(false);
-      const asstId = activeAsstIdRef.current;
-      if (asstId !== null) updateAssistant(asstId, () => ({ streaming: false }));
-      endTurn();
-      activeAsstIdRef.current = null;
-      activeScopeRef.current = null;
-      clearPermissionResolveRef();
-      limitResolveRef.current = null;
-      loopResolveRef.current = null;
-      setLoopModal(null);
-      pendingToolCallsRef.current.clear();
-    }
+    await runInitImpl({
+      cfg,
+      busy,
+      mkKey,
+      setEvents,
+      cloudToken,
+      initialCloudToken,
+      cloudDeviceId,
+      initialCloudDeviceId,
+      setCodeMode,
+      setTurnPhase,
+      setCurrentToolName,
+      setLastActivityAt,
+      setUsage,
+      setSessionUsage,
+      setCloudBudget,
+      setCloudToken,
+      setCloudDeviceId,
+      setKimiMdStale,
+      setLoopModal,
+      beginTurn,
+      endTurn,
+      ensureSessionId,
+      onIterationEnd,
+      updateAssistant,
+      updateTool,
+      updateGatewayMeta,
+      askForPermission,
+      clearPermissionResolveRef,
+      messagesRef,
+      sessionScopeRef,
+      activeScopeRef,
+      mcpToolsRef,
+      lspToolsRef,
+      executorRef,
+      effortRef,
+      memoryManagerRef,
+      pendingToolCallsRef,
+      recentFilesRef,
+      usageRef,
+      activeAsstIdRef,
+      gatewayMetaRef,
+      kimiMdStaleNudgedRef,
+      lspManagerRef,
+      modeRef,
+      cacheStableRef,
+      lastApiErrorRef,
+      limitResolveRef,
+      loopResolveRef,
+    });
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
   const handleThemePick = useCallback(
@@ -2236,7 +1566,7 @@ function App({
 
       const sharedCallbacks = {
         onAssistantStart: () => {
-          const id = nextAssistantId++;
+          const id = mkAssistantId();
           activeAsstIdRef.current = id;
           setTurnPhase("generating");
           setLastActivityAt(Date.now());

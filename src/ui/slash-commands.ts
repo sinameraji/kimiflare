@@ -60,7 +60,7 @@ import {
   FEEDBACK_WORKER_URL,
   formatTokens,
   openBrowser,
-} from "../app.js";
+} from "./app-helpers.js";
 import { startRemoteSession, streamRemoteProgress } from "../remote/worker-client.js";
 import { saveRemoteSession, type RemoteSession } from "../remote/session-store.js";
 import { deployForTui } from "../remote/deploy.js";

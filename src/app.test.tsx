@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { mkdtempSync, writeFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildFilePickerIgnoreList } from "./app.js";
+import { buildFilePickerIgnoreList } from "./ui/app-helpers.js";
 import {
   filterPickerItems,
   shouldOpenMentionPicker,

@@ -1,0 +1,198 @@
+/**
+ * Startup-time bookkeeping previously inlined in the App component's main
+ * cfg-driven useEffect: session prune, log retention, creator welcome,
+ * memory manager init + cleanup + backfill + KIMI.md drift check,
+ * skill indexing, and custom-command load.
+ *
+ * All operations are fire-and-forget — they surface info events via
+ * `setEvents` and otherwise don't block startup. Identical behavior to
+ * the prior in-component implementation.
+ */
+import React from "react";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+import type { Cfg } from "../app.js";
+import type { ChatEvent } from "./chat.js";
+import type { CustomCommand } from "../commands/types.js";
+import { BUILTIN_COMMAND_NAMES } from "../commands/builtins.js";
+import { loadCustomCommands } from "../commands/loader.js";
+import { MemoryManager } from "../memory/manager.js";
+import { getMemoryDb, openMemoryDb } from "../memory/db.js";
+import { indexSkills, initSkillsSchema } from "../skills/index.js";
+import { markCreatorMessageSeen, shouldShowCreatorMessage } from "../util/state.js";
+import { getAppVersion } from "../util/version.js";
+import { RETENTION } from "../storage-limits.js";
+import type { HybridResult } from "../memory/schema.js";
+import { gatewayFromConfig } from "./app-helpers.js";
+
+type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
+
+export interface RunStartupTasksDeps {
+  cfg: Cfg;
+  setEvents: SetEvents;
+  mkKey: () => string;
+  memoryManagerRef: React.MutableRefObject<MemoryManager | null>;
+  sessionStartRecallRef: React.MutableRefObject<Promise<HybridResult[]> | null>;
+  setKimiMdStale: (v: boolean) => void;
+  customCommandsRef: React.MutableRefObject<CustomCommand[]>;
+  setCustomCommandsVersion: React.Dispatch<React.SetStateAction<number>>;
+  cloudToken: string | undefined;
+  initialCloudToken: string | undefined;
+  cloudDeviceId: string | undefined;
+  initialCloudDeviceId: string | undefined;
+}
+
+export function runStartupTasks(deps: RunStartupTasksDeps): void {
+  const {
+    cfg, setEvents, mkKey,
+    memoryManagerRef, sessionStartRecallRef, setKimiMdStale,
+    customCommandsRef, setCustomCommandsVersion,
+    cloudToken, initialCloudToken, cloudDeviceId, initialCloudDeviceId,
+  } = deps;
+
+  // Prune old sessions on startup
+  void import("../sessions.js").then(({ pruneSessions }) =>
+    pruneSessions().then((removed) => {
+      if (removed > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `pruned ${removed} old session files` },
+        ]);
+      }
+    }),
+  );
+
+  // Prune old structured logs (M5.1) and surface the current path once.
+  void import("../util/log-sink.js").then(({ pruneOldLogs, logPathFor, isLogSinkEnabled }) => {
+    if (!isLogSinkEnabled()) return;
+    try {
+      pruneOldLogs();
+    } catch {
+      // Non-fatal: log retention is best-effort.
+    }
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text: `structured logs: ${logPathFor()} (tail with: tail -f $(kimiflare logs path) | jq)`,
+      },
+    ]);
+  });
+
+  // Show creator welcome message once per version
+  void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
+    if (shouldShow) {
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: "Hey, how do you like this version? I'd love to hear from you — type /hello to send me a voice note. Only I see it, and I may DM you back.",
+        },
+      ]);
+      void markCreatorMessageSeen(getAppVersion());
+    }
+  });
+
+  // Initialize memory manager if enabled
+  if (cfg.memoryEnabled) {
+    const dbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+    const manager = new MemoryManager({
+      dbPath,
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model: cfg.model,
+      plumbingModel: cfg.plumbingModel,
+      extractionModel: cfg.memoryExtractionModel,
+      embeddingModel: cfg.memoryEmbeddingModel,
+      gateway: gatewayFromConfig(cfg),
+      maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
+      maxEntries: cfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
+    });
+    manager.open();
+    memoryManagerRef.current = manager;
+
+    // Run cleanup and backfill on startup
+    void manager.cleanup(process.cwd()).then((result) => {
+      const total = result.oldDeleted + result.excessDeleted + result.duplicatesMerged;
+      if (total > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "memory", key: mkKey(), text: `memory cleanup: removed ${total} stale entries` },
+        ]);
+      }
+    });
+    void manager.backfill(process.cwd()).then((fixed) => {
+      if (fixed > 0) {
+        setEvents((e) => [
+          ...e,
+          { kind: "memory", key: mkKey(), text: `memory backfill: embedded ${fixed} un-vectorized entries` },
+        ]);
+      }
+    });
+
+    // Fire session-start recall in the background so results are ready by the
+    // time the first turn starts. Synthesis and injection happen inside
+    // runAgentTurn so they are covered by the turn's abort signal.
+    const cwd = process.cwd();
+    sessionStartRecallRef.current = manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
+
+    // Session-start drift check (Trigger A): if KIMI.md exists and high-signal
+    // memories have been learned since the last refresh, mark as stale.
+    if (existsSync(join(cwd, "KIMI.md"))) {
+      const lastRefresh = manager.getLastKimiMdRefreshTime(cwd);
+      const driftCount = manager.countHighSignalMemoriesSince(cwd, lastRefresh);
+      if (driftCount >= 5) {
+        setKimiMdStale(true);
+      }
+    }
+  } else {
+    memoryManagerRef.current?.close();
+    memoryManagerRef.current = null;
+  }
+
+  // Initialize skills index (independent of memory feature flag)
+  const skillDbPath = cfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+  const skillDb = getMemoryDb() ?? openMemoryDb(skillDbPath);
+  initSkillsSchema(skillDb);
+  void indexSkills({
+    cwd: process.cwd(),
+    db: skillDb,
+    accountId: cfg.accountId,
+    apiToken: cfg.apiToken,
+    gateway: gatewayFromConfig(cfg),
+    embeddingModel: cfg.memoryEmbeddingModel,
+    cloudMode: cfg.cloudMode,
+    cloudToken: cloudToken ?? initialCloudToken,
+    cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+  }).then((result) => {
+    if (result.indexed > 0) {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `indexed ${result.indexed} skill${result.indexed === 1 ? "" : "s"}` },
+      ]);
+    }
+    if (result.errors.length > 0) {
+      for (const err of result.errors) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `skill index error: ${err}` }]);
+      }
+    }
+  });
+
+  void loadCustomCommands(process.cwd()).then(({ commands, warnings }) => {
+    customCommandsRef.current = commands;
+    setCustomCommandsVersion((v) => v + 1);
+    for (const w of warnings) {
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `commands: ${w}` }]);
+    }
+    const shadowed = commands.filter((c) => BUILTIN_COMMAND_NAMES.has(c.name.toLowerCase()));
+    for (const c of shadowed) {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `commands: /${c.name} (${c.filepath}) shadowed by built-in — will not run` },
+      ]);
+    }
+  });
+}
