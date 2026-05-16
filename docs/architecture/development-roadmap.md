@@ -15,7 +15,23 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M4.2** — `PickerController` extracted from `app.tsx` — *(this PR)*.
+- **M4.3** — `ModalHost` extracted from `app.tsx` — *(this PR)*.
+  Lifted ten modal families (limit, loop, command wizard / picker /
+  delete / list, LSP wizard, theme picker, remote dashboard, inbox)
+  into `src/ui/use-modal-host.ts` (state owner) and
+  `src/ui/modal-host.tsx` (renderer; fullscreen `<ModalHost>` and
+  inline `<ModalOverlay>`). The hook destructures with the original
+  state-variable names, so the 49 setter call sites elsewhere in
+  `app.tsx` did not need to change. `app.tsx` shrank 4,153 → 4,038 LOC.
+  Pure refactor. Two pre-existing keybinding asymmetries spotted in
+  the picker close-on-modal check and the Esc-handler modal-open
+  check (each excludes a different subset of modals); both preserved
+  verbatim and flagged inline for the eventual M9.10 audit. Resolver
+  refs (`limitResolveRef`, `loopResolveRef`) still live in `app.tsx`
+  because the agent loop's abort path reads them — `<ModalOverlay>`
+  gets `onLimitResolved` / `onLoopResolved` callbacks to clear them.
+- **M4.2** — `PickerController` extracted from `app.tsx` — merged in
+  #432.
   Pulled the file-mention `@`, slash-command `/` state machine into
   `src/ui/use-picker-controller.ts` (~320 LOC) with a pure
   `decidePickerTransition()` core and 32 unit tests (helpers +
@@ -283,9 +299,15 @@ that touches UI assumes M4 is making steady progress.
   `decidePickerTransition()` core and 32 unit tests. `app.tsx` shrank
   4,355 → 4,153 LOC. Pure refactor; the two pickers share state and
   lifted cleanly with no call-site asymmetries to preserve.
-- **M4.3** — `refactor(ui): extract ModalHost`
-  - Limit, loop, command, LSP, theme, remote, inbox modals routed
-    through one host.
+- ✅ **M4.3** — `refactor(ui): extract ModalHost`
+  *(merged in this PR)*. State owner in
+  `src/ui/use-modal-host.ts`, renderer in `src/ui/modal-host.tsx`
+  (`<ModalHost>` for the 8 fullscreen modals, `<ModalOverlay>` for
+  the 2 resolver overlays). Hook destructures with the original
+  state-variable names so existing setter call sites don't churn.
+  `app.tsx` shrank 4,153 → 4,038 LOC. Pure refactor; two pre-existing
+  modal-set asymmetries (picker close-on-modal vs. Esc modal-open
+  check) preserved verbatim and flagged inline for the M9.10 audit.
 - **M4.4** — `refactor(ui): extract SessionManager`
   - Load, resume, checkpoint, save logic into one module.
 - **M4.5** — `refactor(ui): extract TurnController`
