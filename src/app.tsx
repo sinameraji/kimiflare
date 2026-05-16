@@ -108,6 +108,11 @@ import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
 import { useTurnController } from "./ui/use-turn-controller.js";
+import {
+  interruptTurn as runInterruptTurn,
+  interruptOrExit as runInterruptOrExit,
+  type InterruptDeps,
+} from "./ui/input-handlers.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -1307,6 +1312,11 @@ function App({
     [cfg],
   );
 
+  // The deps for interruptTurn / interruptOrExit. Assigned via a ref
+  // below — after updateTool is declared — because useInput, the SIGINT
+  // handler, and Esc all need to share the same object.
+  const interruptDepsRef = useRef<InterruptDeps | null>(null);
+
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       logger.info("input:ctrl+c", {
@@ -1316,36 +1326,9 @@ function App({
         hasPerm: hasPendingPermission(),
         hasLimit: limitResolveRef.current !== null,
       });
-      const hadPerm = denyPendingPermission();
-      const hadLimit = limitResolveRef.current !== null;
-      const hadLoop = loopResolveRef.current !== null;
-      if (hadLimit) {
-        limitResolveRef.current!("stop");
-        limitResolveRef.current = null;
-        setLimitModal(null);
-      }
-      if (hadLoop) {
-        loopResolveRef.current!("stop");
-        loopResolveRef.current = null;
-        setLoopModal(null);
-      }
-      if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
-        isAbortingRef.current = true;
-        supervisorRef.current.killTurn();
-        activeScopeRef.current.abort("user_stopped");
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-        // Mark all in-flight tool events as cancelled
-        for (const [toolId] of pendingToolCallsRef.current) {
-          updateTool(toolId, { status: "cancelled" });
-        }
-        pendingToolCallsRef.current.clear();
-        // Save session so interrupted turn is not lost
-        void saveSessionSafe();
-        // Clear task list immediately so it doesn't keep spinning
-        clearTaskTracking();
-      } else if (!hadPerm && !hadLimit && !hadLoop) {
+      const outcome = runInterruptOrExit(interruptDepsRef.current!);
+      if (!outcome.didInterruptTurn && !outcome.hadPermission && !outcome.hadLimit && !outcome.hadLoop) {
         logger.info("input:ctrl+c:exiting");
-        void lspManagerRef.current.stopAll().finally(() => exit());
       }
       return;
     }
@@ -1368,28 +1351,7 @@ function App({
         showThemePicker;
       if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
-        isAbortingRef.current = true;
-        supervisorRef.current.killTurn();
-        denyPendingPermission();
-        if (limitResolveRef.current) {
-          limitResolveRef.current("stop");
-          limitResolveRef.current = null;
-          setLimitModal(null);
-        }
-        if (loopResolveRef.current) {
-          loopResolveRef.current("stop");
-          loopResolveRef.current = null;
-          setLoopModal(null);
-        }
-        activeScopeRef.current.abort("user_stopped");
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-        // Mark all in-flight tool events as cancelled
-        for (const [toolId] of pendingToolCallsRef.current) {
-          updateTool(toolId, { status: "cancelled" });
-        }
-        pendingToolCallsRef.current.clear();
-        // Clear task list immediately so it doesn't keep spinning
-        clearTaskTracking();
+        runInterruptTurn(interruptDepsRef.current!);
         return;
       }
     }
@@ -1419,29 +1381,15 @@ function App({
       hasLimit: limitResolveRef.current !== null,
       hasLoop: loopResolveRef.current !== null,
     });
-    const hadPerm = denyPendingPermission();
-    const hadLimit = limitResolveRef.current !== null;
-    const hadLoop = loopResolveRef.current !== null;
-    if (hadLimit) {
-      limitResolveRef.current!("stop");
-      limitResolveRef.current = null;
-      setLimitModal(null);
-    }
-    if (hadLoop) {
-      loopResolveRef.current!("stop");
-      loopResolveRef.current = null;
-      setLoopModal(null);
-    }
-    if (busyRef.current && activeScopeRef.current && !isAbortingRef.current) {
-      isAbortingRef.current = true;
-      supervisorRef.current.killTurn();
-      activeScopeRef.current.abort("user_stopped");
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "(interrupted)" }]);
-      void saveSessionSafe();
-      clearTaskTracking();
-    } else if (!hadPerm && !hadLimit) {
+    // SIGINT preserves the pre-refactor asymmetry: it does NOT iterate
+    // pendingToolCalls to mark them cancelled (the Ctrl+C path does).
+    // Pass `skipPendingToolCleanup: true` so interruptTurn matches.
+    const outcome = runInterruptOrExit({
+      ...interruptDepsRef.current!,
+      skipPendingToolCleanup: true,
+    });
+    if (!outcome.didInterruptTurn && !outcome.hadPermission && !outcome.hadLimit && !outcome.hadLoop) {
       logger.info("sigint:handler:exiting");
-      void lspManagerRef.current.stopAll().finally(() => exit());
     }
   };
 
@@ -1512,6 +1460,18 @@ function App({
     gatewayMetaRef.current = meta;
     setGatewayMeta(meta);
   }, []);
+
+  // Keep the interruptDepsRef in sync with the latest refs / state. Read
+  // by the useInput handler (Ctrl+C, Esc) and the SIGINT handler above.
+  interruptDepsRef.current = {
+    busyRef, activeScopeRef, isAbortingRef, supervisorRef,
+    limitResolveRef, loopResolveRef, setLimitModal, setLoopModal,
+    hasPendingPermission, denyPendingPermission,
+    pendingToolCallsRef, updateTool,
+    setEvents, mkKey,
+    saveSessionSafe, clearTaskTracking,
+    lspManagerRef, exit,
+  };
 
   const runCompact = useCallback(async () => {
     if (!cfg) return;

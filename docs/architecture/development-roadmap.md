@@ -15,7 +15,21 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M4.5** — `TurnController` extracted from `app.tsx` — *(this PR)*.
+- **M4.6** — `InputController` helpers extracted from `app.tsx` —
+  *(this PR)*. The Ctrl+C, Esc, and SIGINT abort paths used to be
+  three nearly-identical ~30-line copies of "deny permission → clear
+  limit/loop resolvers → kill turn → save session → clear tasks → exit
+  if idle." That logic lives in `src/ui/input-handlers.ts` now as
+  three pure helpers: `clearLimitLoopResolvers`, `interruptTurn`,
+  `interruptOrExit`. App.tsx wires them via a single
+  `interruptDepsRef` so all three call sites share the same dep
+  bundle. Added 12 unit tests covering the decision matrix (idle,
+  resolver-only, busy-with-scope, already-aborting, exit-when-idle).
+  The pre-refactor asymmetry where SIGINT skipped the
+  `pendingToolCalls` cleanup (Ctrl+C and Esc did it) is preserved
+  behind a `skipPendingToolCleanup` flag and flagged inline for the
+  M9.10 audit. `app.tsx` 3,917 → 3,877 LOC.
+- **M4.5** — `TurnController` extracted from `app.tsx` — merged in #452.
   Hook in `src/ui/use-turn-controller.ts` owns the turn-lifecycle
   state: `busy` / `busyRef`, `supervisorRef`, `isAbortingRef`,
   `lastEscapeAtRef`, the four status-pill fields (`turnPhase`,
@@ -350,9 +364,18 @@ that touches UI assumes M4 is making steady progress.
   plus `beginTurn` / `endTurn` / `clearTaskTracking` helpers. Three
   duplicated lifecycle blocks folded to one-line calls. `app.tsx`
   shrank 3,954 → 3,917 LOC.
-- **M4.6** — `refactor(ui): extract InputController`
-  - The 200+ line `useInput` handler split by mode (normal /
-    picker / modal).
+- ✅ **M4.6** — `refactor(ui): extract InputController helpers`
+  *(merged in this PR)*. Ctrl+C, Esc, and SIGINT abort paths
+  consolidated into `clearLimitLoopResolvers` / `interruptTurn` /
+  `interruptOrExit` in `src/ui/input-handlers.ts`. A
+  `skipPendingToolCleanup` flag preserves the pre-refactor SIGINT
+  asymmetry (flagged for M9.10). `app.tsx` shrank 3,917 → 3,877 LOC.
+  Picker keybindings already flowed through `usePickerController`
+  (M4.2); modal-mode keybindings already routed through
+  `useModalHost` (M4.3) — what was left to extract was the abort-path
+  duplication, which is what this PR addresses. The
+  picker / modal "split by mode" framing in the original roadmap entry
+  turned out to already be true after M4.2 + M4.3.
 
 **Definition of done per PR:** No behavior change, no new tests
 fail, `app.tsx` shrinks by ≥ 300 LOC.
