@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fetchGatewayUsageSnapshot, getCostReport, recordUsage } from "../usage-tracker.js";
+import { fetchGatewayUsageSnapshot, getCostReport, recordUsage, usageEvents } from "../usage-tracker.js";
 
 describe("AI Gateway usage enrichment", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -72,6 +72,23 @@ describe("AI Gateway usage enrichment", () => {
     const dir = await mkdtemp(join(tmpdir(), "kimiflare-usage-"));
     process.env.XDG_DATA_HOME = dir;
     try {
+      // Reconcile is now fire-and-forget — wait for the second emit, which
+      // fires after the background Gateway log fetch patches the turn cost.
+      // (The first emit fires synchronously inside recordUsage with the
+      // estimate-only state.)
+      let updates = 0;
+      const reconciled = new Promise<void>((resolve) => {
+        const handler = (sid: string) => {
+          if (sid !== "session_1") return;
+          updates += 1;
+          if (updates >= 2) {
+            usageEvents.off("update", handler);
+            resolve();
+          }
+        };
+        usageEvents.on("update", handler);
+      });
+
       await recordUsage(
         "session_1",
         {
@@ -88,6 +105,8 @@ describe("AI Gateway usage enrichment", () => {
         },
       );
 
+      await reconciled;
+
       const report = await getCostReport("session_1");
       assert.strictEqual(report.session.promptTokens, 10);
       assert.strictEqual(report.session.completionTokens, 2);
@@ -95,6 +114,44 @@ describe("AI Gateway usage enrichment", () => {
       assert.strictEqual(report.session.gatewayCachedRequests, 1);
       assert.strictEqual(report.session.gatewayCost, 0.00001);
       assert.strictEqual(report.session.cost, 0.00001);
+      assert.strictEqual(report.session.reconcilePending, false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports reconcilePending=true immediately after recordUsage", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kimiflare-usage-pending-"));
+    process.env.XDG_DATA_HOME = dir;
+    try {
+      // Block the Gateway fetch so reconcile cannot complete during this test.
+      const blockedFetch = globalThis.fetch;
+      globalThis.fetch = () => new Promise(() => {});
+      try {
+        await recordUsage(
+          "session_pending",
+          {
+            prompt_tokens: 10,
+            completion_tokens: 2,
+            total_tokens: 12,
+            prompt_tokens_details: { cached_tokens: 0 },
+          },
+          {
+            accountId: "acct",
+            apiToken: "token",
+            gatewayId: "gateway",
+            meta: { logId: "log_pending", cacheStatus: "MISS" },
+          },
+        );
+
+        const report = await getCostReport("session_pending");
+        // Local-pricing estimate should be present, gateway cost not yet.
+        assert.ok(report.session.cost > 0);
+        assert.strictEqual(report.session.gatewayCost, undefined);
+        assert.strictEqual(report.session.reconcilePending, true);
+      } finally {
+        globalThis.fetch = blockedFetch;
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

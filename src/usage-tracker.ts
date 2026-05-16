@@ -1,6 +1,8 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import type { Usage } from "./agent/messages.js";
 import type { GatewayMeta } from "./agent/client.js";
 import { getUserAgent } from "./util/version.js";
@@ -8,6 +10,18 @@ import { calculateCost } from "./pricing.js";
 import { RETENTION } from "./storage-limits.js";
 
 const LOG_VERSION = 1;
+
+/** Emits "update" with the sessionId whenever a session's cost/turn state changes
+ *  out-of-band (e.g. after a Gateway-log reconcile). The UI subscribes to refresh
+ *  its displayed numbers without polling. */
+export const usageEvents = new EventEmitter();
+
+/** Maximum number of per-turn records kept per session. */
+const MAX_TURNS_PER_SESSION = 50;
+
+/** Reconciliation poll schedule in ms — total budget ~7.5s. Tuned for Gateway
+ *  log eventual-consistency: the log is usually queryable within 1–2s. */
+const RECONCILE_DELAYS_MS = [500, 1000, 2000, 4000];
 
 export interface DailyUsage {
   date: string; // YYYY-MM-DD
@@ -18,6 +32,23 @@ export interface DailyUsage {
   gatewayRequests?: number;
   gatewayCachedRequests?: number;
   gatewayCost?: number;
+  /** True iff this is a session-scoped DailyUsage with at least one turn whose
+   *  Gateway cost has not yet been confirmed. Always undefined for day/month/all-time. */
+  reconcilePending?: boolean;
+}
+
+/** A single agent turn's cost record. `estimatedCost` is the local-pricing
+ *  number captured at recordUsage time; `confirmedCost` (if set) replaces it
+ *  once the Gateway log API confirms the actual billed cost. */
+export interface TurnCost {
+  turnId: string;
+  logId?: string;
+  estimatedCost: number;
+  confirmedCost?: number;
+  durationMs?: number;
+  cacheStatus?: string;
+  reconciledAt?: number;
+  reconcileFailed?: boolean;
 }
 
 export interface SessionUsage {
@@ -31,6 +62,7 @@ export interface SessionUsage {
   gatewayCachedRequests?: number;
   gatewayCost?: number;
   gatewayLogs?: GatewayUsageSnapshot[];
+  turns?: TurnCost[];
   // Cost attribution fields
   category?: string;
   confidence?: number;
@@ -103,6 +135,15 @@ async function loadLog(): Promise<UsageLog> {
 async function saveLog(log: UsageLog): Promise<void> {
   await mkdir(usageDir(), { recursive: true });
   await writeFile(usagePath(), JSON.stringify(log, null, 2), "utf8");
+}
+
+/** Serialize all read-modify-write operations on usage.json so concurrent
+ *  recordUsage / reconcile calls don't clobber each other's edits. */
+let writeChain: Promise<unknown> = Promise.resolve();
+function withLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeChain.then(fn, fn);
+  writeChain = next.catch(() => undefined);
+  return next;
 }
 
 /** Load the append-only history JSONL file. Never pruned. */
@@ -237,41 +278,137 @@ export async function recordUsage(
   usage: Usage,
   gateway?: GatewayUsageLookup,
 ): Promise<void> {
-  const log = pruneUsageLog(await loadLog());
-  const date = today();
-  const gatewaySnapshot = gateway
-    ? await fetchGatewayUsageSnapshot(gateway).catch(() => gatewaySnapshotFromMeta(gateway.meta))
-    : undefined;
-  const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
-  const totalCost = gatewaySnapshot?.cost ?? cost.total;
+  const cost = calculateCost(
+    usage.prompt_tokens,
+    usage.completion_tokens,
+    usage.prompt_tokens_details?.cached_tokens ?? 0,
+  );
+  const estimatedCost = cost.total;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;
+  const turnId = randomUUID();
+  const logId = gateway?.meta.logId;
 
-  const day = getOrCreateDay(log, date);
-  day.promptTokens += usage.prompt_tokens;
-  day.completionTokens += usage.completion_tokens;
-  day.cachedTokens += usage.prompt_tokens_details?.cached_tokens ?? 0;
-  day.cost += totalCost;
-  if (gatewaySnapshot) {
-    day.gatewayRequests = (day.gatewayRequests ?? 0) + 1;
-    day.gatewayCachedRequests = (day.gatewayCachedRequests ?? 0) + (gatewaySnapshot.cached ? 1 : 0);
-    day.gatewayCost = (day.gatewayCost ?? 0) + (gatewaySnapshot.cost ?? 0);
+  await withLock(async () => {
+    const log = pruneUsageLog(await loadLog());
+    const date = today();
+
+    const day = getOrCreateDay(log, date);
+    day.promptTokens += usage.prompt_tokens;
+    day.completionTokens += usage.completion_tokens;
+    day.cachedTokens += cachedTokens;
+    day.cost += estimatedCost;
+
+    const session = getOrCreateSession(log, sessionId, date);
+    session.promptTokens += usage.prompt_tokens;
+    session.completionTokens += usage.completion_tokens;
+    session.cachedTokens += cachedTokens;
+    session.cost += estimatedCost;
+
+    const turn: TurnCost = {
+      turnId,
+      logId,
+      estimatedCost,
+      cacheStatus: gateway?.meta.cacheStatus,
+    };
+    session.turns = [...(session.turns ?? []), turn].slice(-MAX_TURNS_PER_SESSION);
+
+    // Capture whatever Gateway metadata is immediately available from headers,
+    // so /cost has a stub to render before the reconcile lands.
+    if (gateway) {
+      const stub = gatewaySnapshotFromMeta(gateway.meta);
+      if (stub) {
+        session.gatewayRequests = (session.gatewayRequests ?? 0) + 1;
+        session.gatewayCachedRequests =
+          (session.gatewayCachedRequests ?? 0) + (stub.cached ? 1 : 0);
+        session.gatewayLogs = [...(session.gatewayLogs ?? []), stub].slice(-100);
+        day.gatewayRequests = (day.gatewayRequests ?? 0) + 1;
+        day.gatewayCachedRequests =
+          (day.gatewayCachedRequests ?? 0) + (stub.cached ? 1 : 0);
+      }
+    }
+
+    await saveLog(log);
+    await upsertHistoryDay(day);
+  });
+
+  usageEvents.emit("update", sessionId);
+
+  // Fire-and-forget reconcile against the Gateway logs API. Eventual consistency
+  // means the log may not be queryable for ~1s after the request, so we poll.
+  if (gateway && logId) {
+    void reconcileTurnCost(sessionId, turnId, gateway).catch(() => undefined);
+  }
+}
+
+/** Poll the AI Gateway logs API until this turn's log surfaces (or we exhaust
+ *  the retry budget), then patch the turn record with the real cost/duration
+ *  and adjust the session/day totals. Emits "update" so the UI re-renders. */
+export async function reconcileTurnCost(
+  sessionId: string,
+  turnId: string,
+  gateway: GatewayUsageLookup,
+): Promise<void> {
+  for (const delay of RECONCILE_DELAYS_MS) {
+    await new Promise((r) => setTimeout(r, delay));
+    let snapshot: GatewayUsageSnapshot | undefined;
+    try {
+      snapshot = await fetchGatewayUsageSnapshot(gateway);
+    } catch {
+      continue;
+    }
+    // Require the matched log entry to carry an authoritative cost. The
+    // header-only fallback (no cost field) is not a successful reconcile.
+    if (!snapshot || typeof snapshot.cost !== "number") continue;
+
+    const patched = await withLock(async () => {
+      const log = pruneUsageLog(await loadLog());
+      const session = log.sessions.find((s) => s.id === sessionId);
+      const turn = session?.turns?.find((t) => t.turnId === turnId);
+      if (!session || !turn || turn.confirmedCost !== undefined) return false;
+
+      const delta = snapshot!.cost! - turn.estimatedCost;
+      turn.confirmedCost = snapshot!.cost;
+      turn.durationMs = snapshot!.duration;
+      turn.cacheStatus = snapshot!.cacheStatus ?? turn.cacheStatus;
+      turn.reconciledAt = Date.now();
+
+      session.cost += delta;
+      session.gatewayCost = (session.gatewayCost ?? 0) + snapshot!.cost!;
+
+      const day = getOrCreateDay(log, session.date);
+      day.cost += delta;
+      day.gatewayCost = (day.gatewayCost ?? 0) + snapshot!.cost!;
+
+      // Replace the latest gatewayLogs stub with the fully-populated snapshot
+      // when we can match by logId; otherwise append.
+      const logs = session.gatewayLogs ?? [];
+      const idx = snapshot!.logId
+        ? logs.findIndex((l) => l.logId === snapshot!.logId)
+        : -1;
+      if (idx >= 0) logs[idx] = snapshot!;
+      else logs.push(snapshot!);
+      session.gatewayLogs = logs.slice(-100);
+
+      await saveLog(log);
+      await upsertHistoryDay(day);
+      return true;
+    });
+
+    if (patched) {
+      usageEvents.emit("update", sessionId);
+    }
+    return;
   }
 
-  const session = getOrCreateSession(log, sessionId, date);
-  session.promptTokens += usage.prompt_tokens;
-  session.completionTokens += usage.completion_tokens;
-  session.cachedTokens += usage.prompt_tokens_details?.cached_tokens ?? 0;
-  session.cost += totalCost;
-  if (gatewaySnapshot) {
-    session.gatewayRequests = (session.gatewayRequests ?? 0) + 1;
-    session.gatewayCachedRequests = (session.gatewayCachedRequests ?? 0) + (gatewaySnapshot.cached ? 1 : 0);
-    session.gatewayCost = (session.gatewayCost ?? 0) + (gatewaySnapshot.cost ?? 0);
-    session.gatewayLogs = [...(session.gatewayLogs ?? []), gatewaySnapshot].slice(-100);
-  }
-
-  await saveLog(log);
-
-  // Also persist to the append-only history log (never pruned)
-  await upsertHistoryDay(day);
+  // Retries exhausted — mark the turn so the UI can drop its spinner.
+  await withLock(async () => {
+    const log = await loadLog();
+    const turn = log.sessions.find((s) => s.id === sessionId)?.turns?.find((t) => t.turnId === turnId);
+    if (!turn || turn.confirmedCost !== undefined) return;
+    turn.reconcileFailed = true;
+    await saveLog(log);
+  });
+  usageEvents.emit("update", sessionId);
 }
 
 export interface CostReport {
@@ -296,9 +433,19 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
   const date = today();
   const currentMonth = date.slice(0, 7); // YYYY-MM
 
-  const session = sessionId
-    ? (log.sessions.find((s) => s.id === sessionId) ??
-      { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 })
+  const rawSession = sessionId ? log.sessions.find((s) => s.id === sessionId) : undefined;
+  const session: DailyUsage = rawSession
+    ? {
+        date: rawSession.date,
+        promptTokens: rawSession.promptTokens,
+        completionTokens: rawSession.completionTokens,
+        cachedTokens: rawSession.cachedTokens,
+        cost: rawSession.cost,
+        gatewayRequests: rawSession.gatewayRequests,
+        gatewayCachedRequests: rawSession.gatewayCachedRequests,
+        gatewayCost: rawSession.gatewayCost,
+        reconcilePending: hasPendingReconcile(rawSession),
+      }
     : { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
 
   const todayUsage =
@@ -344,6 +491,13 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
   }
 
   return { session, today: todayUsage, month: monthUsage, allTime };
+}
+
+function hasPendingReconcile(session: SessionUsage): boolean {
+  if (!session.turns) return false;
+  return session.turns.some(
+    (t) => t.logId && t.confirmedCost === undefined && !t.reconcileFailed,
+  );
 }
 
 /** Fetch the GatewayUsageSnapshot array recorded against a session, for /cost rendering. */

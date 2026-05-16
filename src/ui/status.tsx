@@ -104,6 +104,12 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
           <Text color={theme.info.color} >
             {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget).join("  ·  ")}
           </Text>
+          {sessionUsage?.reconcilePending ? (
+            <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
+              {" "}
+              <Spinner type="dots" />
+            </Text>
+          ) : null}
           {warn ? (
             <Text color={theme.warn} bold>
               {"  ·  "}/compact recommended
@@ -141,10 +147,13 @@ export function buildRightParts(
     const cached = sessionUsage.cachedTokens;
     parts.push(`in ${sessionUsage.promptTokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`ctx ${pct}%`);
+    // ≈ prefix signals the cost is still the local estimate; once Gateway
+    // reconciles the turn, the prefix and accompanying spinner go away.
+    const prefix = sessionUsage.reconcilePending ? "≈$" : "$";
     if (cloudMode) {
-      parts.push(`\x1b[9m$${sessionUsage.cost.toFixed(2)}\x1b[29m`);
+      parts.push(`\x1b[9m${prefix}${sessionUsage.cost.toFixed(2)}\x1b[29m`);
     } else {
-      parts.push(`$${sessionUsage.cost.toFixed(2)}`);
+      parts.push(`${prefix}${sessionUsage.cost.toFixed(2)}`);
     }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
