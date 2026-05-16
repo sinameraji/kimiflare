@@ -24,6 +24,7 @@ program
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
+  .option("--emit-events", "emit Camouflage NDJSON events to stdout; one-shot, requires -p")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
 program
@@ -189,6 +190,7 @@ const opts = program.opts<{
   reasoning?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
+  emitEvents?: boolean;
   mode?: string;
 }>();
 
@@ -262,6 +264,36 @@ async function main() {
   if (opts.mode === "rpc") {
     const { startRpcServer } = await import("./sdk/rpc.js");
     await startRpcServer();
+    return;
+  }
+
+  if (opts.emitEvents) {
+    if (opts.print === undefined) {
+      console.error(
+        "kimiflare: --emit-events requires -p \"<prompt>\" (one-shot mode).\n" +
+          "Multi-turn stdin-driven emit mode is not yet implemented.",
+      );
+      process.exit(2);
+    }
+    if (!cfg) {
+      console.error("kimiflare: --emit-events requires credentials (config or --cloud).");
+      process.exit(2);
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const { runEmitMode } = await import("./emit-mode.js");
+    await runEmitMode({
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model,
+      prompt: opts.print,
+      allowAll: !!opts.dangerouslyAllowAll,
+      codeMode: cfg.codeMode,
+      continueOnLimit: !!opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+      cloudMode,
+      cloudToken,
+      cloudDeviceId,
+    });
     return;
   }
 
