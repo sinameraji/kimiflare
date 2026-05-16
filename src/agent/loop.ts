@@ -137,6 +137,18 @@ const codeModeApiCache = new Map<string, string>();
 const driftAccumulator = new Map<string, number>();
 const DRIFT_THRESHOLD = 5;
 
+/** Per-session count of fire-and-forget memory-extraction errors. Exposed via
+ *  `getMemoryExtractionErrorCount` for a future `/memory health` surface. */
+const memoryExtractionErrorCounts = new Map<string, number>();
+
+export function getMemoryExtractionErrorCount(sessionId: string | undefined): number {
+  return memoryExtractionErrorCounts.get(sessionId ?? "default") ?? 0;
+}
+
+export function _resetMemoryExtractionErrorCountsForTests(): void {
+  memoryExtractionErrorCounts.clear();
+}
+
 function isHighSignalMemory(memory: {
   topicKey: string;
   category: string;
@@ -813,8 +825,29 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                       }
                     }
                   }
-                } catch {
-                  // Swallow auto-extraction errors so they never break the loop
+                } catch (err) {
+                  // Auto-extraction must never break the turn, but a silent
+                  // swallow hides systemic failures (bad embedding endpoint,
+                  // DB lock, schema mismatch). Track per session and surface
+                  // through onWarning so /memory health (and SDK consumers)
+                  // can see something is wrong.
+                  const sid = opts.sessionId ?? "default";
+                  const next = (memoryExtractionErrorCounts.get(sid) ?? 0) + 1;
+                  memoryExtractionErrorCounts.set(sid, next);
+                  const msg = err instanceof Error ? err.message : String(err);
+                  logger.debug("memory:extract_error", {
+                    sessionId: opts.sessionId,
+                    tool: tc.function.name,
+                    count: next,
+                    error: msg,
+                  });
+                  // Only emit the user-visible warning on the first failure
+                  // per session — repeated errors stay in the counter.
+                  if (next === 1) {
+                    opts.callbacks.onWarning?.(
+                      `[memory] auto-extraction failed (${msg}). Subsequent failures will be counted silently; check /memory health.`,
+                    );
+                  }
                 }
               })();
             }

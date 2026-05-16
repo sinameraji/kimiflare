@@ -17,7 +17,7 @@ work).
 
 ## Red flags
 
-### RF-1 — Fire-and-forget memory extraction swallows errors (S → M)
+### RF-1 — Fire-and-forget memory extraction swallows errors (S → M) — ✅ shipped (OP-7)
 
 `src/agent/loop.ts:752–810`, error swallowed at `:806`.
 
@@ -30,6 +30,17 @@ from "memory recall is empty."
 **Fix:** route extraction errors through `onWarning` (already in the
 callback surface) at debug level; add a per-session error counter exposed
 in `/cost` or a `/memory health` subcommand.
+
+**Status:**
+- Errors increment a per-session counter in
+  `memoryExtractionErrorCounts` (module-level Map, same pattern as the
+  drift accumulator).
+- The first error per session also fires `onWarning(…)` with a `[memory]`
+  prefix — subsequent failures stay silent on the UI but still increment
+  the counter, and every error is sent to `logger.debug` with the
+  underlying message.
+- `getMemoryExtractionErrorCount(sessionId)` is exported for the eventual
+  `/memory health` subcommand (TUI work, M4-adjacent).
 
 ### RF-2 — Drift accumulator decays as fast as it fires (S)
 
@@ -350,7 +361,7 @@ Tracked as M1.0 in the development roadmap.
   (fix for RF-13, first half).
 - **OP-6.** Cross-turn `webFetchHistory` (fix for RF-3).
 - **OP-7.** Memory extraction error counter + `/memory health` surface
-  (fix for RF-1).
+  (fix for RF-1). ✅ counter + onWarning shipped; `/memory health` surface deferred to M4
 - **OP-8.** Sliding-window drift detection (fix for RF-2).
 - **OP-9.** Zero-tool-call budget check (fix for RF-5).
 - **OP-10.** Re-emit isolated-vm fallback warning per session
