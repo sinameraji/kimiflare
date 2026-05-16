@@ -15,7 +15,20 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M4.3** — `ModalHost` extracted from `app.tsx` — *(this PR)*.
+- **M4.4** — `SessionManager` extracted from `app.tsx` — *(this PR)*.
+  Pulled load/resume/checkpoint/save state and handlers into
+  `src/ui/use-session-manager.ts`. The hook owns the three identity
+  refs (`sessionIdRef`, `sessionCreatedAtRef`, `sessionTitleRef`) and
+  returns them so the ~20 call sites elsewhere in `app.tsx` keep
+  working unchanged. The picker JSX (resume + checkpoint) stays inline
+  — 20 LOC of declarative JSX not worth its own component. Pure
+  refactor; resume-flow side effects (history, usage, gateway meta,
+  memory recall) all preserved. New `resetSession()` helper folds the
+  three null-assignments at the start of the `/clear` path into one
+  call. Extracted `extractFirstUserText()` as a pure helper for the
+  session-id seed text and added 7 unit tests. `app.tsx` 4,093 →
+  3,954 LOC.
+- **M4.3** — `ModalHost` extracted from `app.tsx` — merged in #443.
   Lifted ten modal families (limit, loop, command wizard / picker /
   delete / list, LSP wizard, theme picker, remote dashboard, inbox)
   into `src/ui/use-modal-host.ts` (state owner) and
@@ -308,8 +321,12 @@ that touches UI assumes M4 is making steady progress.
   `app.tsx` shrank 4,153 → 4,038 LOC. Pure refactor; two pre-existing
   modal-set asymmetries (picker close-on-modal vs. Esc modal-open
   check) preserved verbatim and flagged inline for the M9.10 audit.
-- **M4.4** — `refactor(ui): extract SessionManager`
-  - Load, resume, checkpoint, save logic into one module.
+- ✅ **M4.4** — `refactor(ui): extract SessionManager`
+  *(merged in this PR)*. Hook in `src/ui/use-session-manager.ts` owns
+  the three identity refs plus picker state and the
+  save/resume/checkpoint handlers. `extractFirstUserText()` extracted
+  as a pure helper for the session-id seed text. `app.tsx` shrank
+  4,093 → 3,954 LOC.
 - **M4.5** — `refactor(ui): extract TurnController`
   - Supervisor wiring, status pills, reasoning view.
 - **M4.6** — `refactor(ui): extract InputController`

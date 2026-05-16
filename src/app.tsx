@@ -16,7 +16,6 @@ import {
   ArtifactStore,
   formatRecalledArtifacts,
   serializeArtifactStore,
-  deserializeArtifactStore,
   type SessionState,
 } from "./agent/session-state.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -73,14 +72,9 @@ import {
 import { openMemoryDb, getMemoryDb } from "./memory/db.js";
 import { listAllSkills, createSkill, deleteSkill, setSkillEnabled, findSkillFile } from "./skills/manager.js";
 import {
-  listSessions,
   loadSession,
-  loadSessionFromCheckpoint,
   addCheckpoint,
-  makeSessionId,
-  saveSession,
   generateSessionTitle,
-  type SessionSummary,
   type Checkpoint,
 } from "./sessions.js";
 import { unlink } from "node:fs/promises";
@@ -113,6 +107,7 @@ import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
 import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
+import { useSessionManager } from "./ui/use-session-manager.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -550,9 +545,6 @@ function App({
   const [effort, setEffort] = useState<ReasoningEffort>(
     initialCfg?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
   );
-  const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
-  const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
-  const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
   const [selectedRemoteSession, setSelectedRemoteSession] = useState<RemoteSession | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksStartedAt, setTasksStartedAt] = useState<number | null>(null);
@@ -678,9 +670,6 @@ function App({
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const loopResolveRef = useRef<((d: LoopDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
-  const sessionIdRef = useRef<string | null>(null);
-  const sessionCreatedAtRef = useRef<string | null>(null);
-  const sessionTitleRef = useRef<string | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
   const tasksRef = useRef<Task[]>([]);
@@ -705,6 +694,37 @@ function App({
   const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
   const turnCounterRef = useRef(0);
+
+  const sessionMgr = useSessionManager({
+    cfg,
+    messagesRef,
+    sessionStateRef,
+    artifactStoreRef,
+    compiledContextRef,
+    gatewayMetaRef,
+    memoryManagerRef,
+    setEvents,
+    setHistory,
+    setUsage,
+    setSessionUsage,
+    setGatewayMeta,
+    mkKey,
+  });
+  const {
+    sessionIdRef,
+    sessionCreatedAtRef,
+    sessionTitleRef,
+    resumeSessions, setResumeSessions,
+    checkpointSession, setCheckpointSession,
+    checkpointList,
+    ensureSessionId,
+    saveSessionSafe,
+    openResumePicker,
+    doResumeSession,
+    handleResumePick,
+    handleCheckpointPick,
+    resetSession,
+  } = sessionMgr;
 
   // Batched streaming delta refs to reduce React re-render frequency
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
@@ -1199,47 +1219,6 @@ function App({
     }
   }, [cfg, initMcp, initLsp]);
 
-  const ensureSessionId = useCallback(() => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    const firstUser = messagesRef.current.find((m) => m.role === "user");
-    let firstText = "session";
-    if (typeof firstUser?.content === "string") {
-      firstText = firstUser.content;
-    } else if (Array.isArray(firstUser?.content)) {
-      const textPart = firstUser.content.find((p) => p.type === "text");
-      if (textPart?.text) firstText = textPart.text;
-    }
-    sessionIdRef.current = makeSessionId(firstText);
-    return sessionIdRef.current;
-  }, []);
-
-  const saveSessionSafe = useCallback(async () => {
-    if (!cfg) return;
-    ensureSessionId();
-    const now = new Date().toISOString();
-    if (!sessionCreatedAtRef.current) {
-      sessionCreatedAtRef.current = now;
-    }
-    try {
-      await saveSession({
-        id: sessionIdRef.current!,
-        cwd: process.cwd(),
-        model: cfg.model,
-        createdAt: sessionCreatedAtRef.current,
-        updatedAt: now,
-        title: sessionTitleRef.current ?? undefined,
-        messages: messagesRef.current,
-        sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
-        artifactStore: serializeArtifactStore(artifactStoreRef.current),
-      });
-    } catch (e) {
-      setEvents((es) => [
-        ...es,
-        { kind: "error", key: mkKey(), text: `session save failed: ${(e as Error).message}` },
-      ]);
-    }
-  }, [cfg, ensureSessionId]);
-
   /** Mid-turn compaction hook: called between tool-iteration cycles in runAgentTurn.
    *  Prevents context overflow during long exploration sessions. */
   const onIterationEnd = useCallback(
@@ -1639,11 +1618,6 @@ function App({
     }
   }, [cfg, busy, saveSessionSafe]);
 
-  const openResumePicker = useCallback(async () => {
-    const sessions = await listSessions(200, process.cwd());
-    setResumeSessions(sessions);
-  }, []);
-
   const runInit = useCallback(async () => {
     if (!cfg) return;
     if (busy) {
@@ -1976,115 +1950,6 @@ function App({
     [],
   );
 
-  const doResumeSession = useCallback(
-    async (filePath: string, checkpointId?: string) => {
-      try {
-        const file = checkpointId
-          ? (await loadSessionFromCheckpoint(filePath, checkpointId)).file
-          : await loadSession(filePath);
-        messagesRef.current = file.messages;
-        sessionIdRef.current = file.id;
-        sessionCreatedAtRef.current = file.createdAt;
-        if (file.sessionState && compiledContextRef.current) {
-          sessionStateRef.current = file.sessionState;
-        }
-        if (file.artifactStore) {
-          artifactStoreRef.current = deserializeArtifactStore(file.artifactStore);
-        } else {
-          artifactStoreRef.current = new ArtifactStore();
-        }
-        // Recall memories for resumed session so the model has context
-        const manager = memoryManagerRef.current;
-        if (manager) {
-          try {
-            const cwd = process.cwd();
-            const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
-            if (results.length > 0) {
-              const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-              messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-            }
-          } catch {
-            // Non-fatal
-          }
-        }
-
-        const msg = checkpointId
-          ? `resumed session ${file.id} from checkpoint`
-          : `resumed session ${file.id} (${file.messages.filter((m) => m.role !== "system").length} msgs)`;
-        setEvents([{ kind: "info", key: mkKey(), text: msg }]);
-        const userMsgs = file.messages
-          .filter((m) => m.role === "user" && m.content)
-          .map((m) => {
-            if (!m.content) return "";
-            if (typeof m.content === "string") return m.content;
-            const textPart = m.content.find((p) => p.type === "text");
-            return textPart?.text ?? "";
-          })
-          .filter((text) => text.length > 0);
-        if (userMsgs.length > 0) setHistory(userMsgs);
-        setUsage(null);
-        setSessionUsage(null);
-        gatewayMetaRef.current = null;
-        setGatewayMeta(null);
-        void getCostReport(file.id).then((report) => setSessionUsage(report.session));
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: `failed to load session: ${(e as Error).message}` },
-        ]);
-      }
-    },
-    [],
-  );
-
-  const handleResumePick = useCallback(
-    async (picked: SessionSummary | null) => {
-      setResumeSessions(null);
-      if (!picked) return;
-      if (picked.checkpointCount > 0) {
-        // Load checkpoints and show picker
-        try {
-          const file = await loadSession(picked.filePath);
-          setCheckpointList(file.checkpoints ?? []);
-          setCheckpointSession(picked);
-        } catch (e) {
-          setEvents((es) => [
-            ...es,
-            { kind: "error", key: mkKey(), text: `failed to load checkpoints: ${(e as Error).message}` },
-          ]);
-          await doResumeSession(picked.filePath);
-        }
-        return;
-      }
-      await doResumeSession(picked.filePath);
-    },
-    [doResumeSession],
-  );
-
-  const handleCheckpointPick = useCallback(
-    async (checkpointId: string | null) => {
-      const session = checkpointSession;
-      setCheckpointSession(null);
-      setCheckpointList([]);
-      if (!session || !checkpointId) {
-        // User cancelled or went back — reopen session list
-        if (session) {
-          setResumeSessions(await listSessions(200, process.cwd()));
-        }
-        return;
-      }
-      if (checkpointId === "__start__") {
-        await doResumeSession(session.filePath);
-        return;
-      }
-      await doResumeSession(session.filePath, checkpointId);
-    },
-    [checkpointSession, doResumeSession],
-  );
-
-
   const handleSlash = useCallback(
     (cmd: string): boolean => {
       const raw = cmd.trim();
@@ -2106,11 +1971,7 @@ function App({
         } else {
           messagesRef.current = [messagesRef.current[0]!];
         }
-        sessionIdRef.current = null;
-        sessionCreatedAtRef.current = null;
-        sessionTitleRef.current = null;
-        sessionStateRef.current = emptySessionState();
-        artifactStoreRef.current = new ArtifactStore();
+        resetSession();
         executorRef.current.clearArtifacts();
         if (flushTimeoutRef.current) {
           clearTimeout(flushTimeoutRef.current);
