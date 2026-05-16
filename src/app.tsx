@@ -4332,6 +4332,15 @@ export async function renderApp(
     />,
     {
       incrementalRendering: true,
+      // Disable Ink's built-in Ctrl+C → app.exit() handler. We need
+      // Ctrl+C to reach our useInput handler so it can interrupt the
+      // current turn (abort the scope, kill the supervisor, deny
+      // pending modals) without unmounting the React tree. Without
+      // this, Ink consumes Ctrl+C, exits the app mid-cleanup, the
+      // agent loop and LSP servers keep the process alive in the
+      // background, and the terminal is left in cooked mode showing
+      // a frozen last frame with a phantom prompt below — see RF-20.
+      exitOnCtrlC: false,
     },
   );
   await instance.waitUntilExit();
