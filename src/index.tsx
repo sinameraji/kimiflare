@@ -26,6 +26,8 @@ program
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
+  .option("--ui <name>", "render UI with the given engine (default: ink; supported: ink, camouflage)")
+  .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
 program
@@ -193,6 +195,8 @@ const opts = program.opts<{
   maxInputTokens?: number;
   emitEvents?: boolean;
   multiTurn?: boolean;
+  ui?: string;
+  camouflageBin?: string;
   mode?: string;
 }>();
 
@@ -266,6 +270,37 @@ async function main() {
   if (opts.mode === "rpc") {
     const { startRpcServer } = await import("./sdk/rpc.js");
     await startRpcServer();
+    return;
+  }
+
+  if (opts.ui === "camouflage") {
+    if (opts.print === undefined) {
+      console.error(
+        "kimiflare: --ui camouflage requires -p \"<prompt>\" (initial prompt).\n" +
+          "After the first turn, type follow-ups directly into the Camouflage TUI.",
+      );
+      process.exit(2);
+    }
+    if (!cfg) {
+      console.error("kimiflare: --ui camouflage requires credentials (config or --cloud).");
+      process.exit(2);
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const { runUiMode } = await import("./ui-mode.js");
+    await runUiMode({
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model,
+      prompt: opts.print,
+      allowAll: !!opts.dangerouslyAllowAll,
+      codeMode: cfg.codeMode,
+      continueOnLimit: !!opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+      cloudMode,
+      cloudToken,
+      cloudDeviceId,
+      camouflageBin: opts.camouflageBin,
+    });
     return;
   }
 
