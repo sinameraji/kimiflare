@@ -915,7 +915,18 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                       const recent = events.filter((t) => t >= cutoff);
                       driftEvents.set(sid, recent);
                       if (recent.length >= DRIFT_THRESHOLD) {
-                        opts.callbacks.onKimiMdStale?.();
+                        // Wrapped defensively: a throwing callback inside
+                        // this fire-and-forget IIFE would become an
+                        // unhandled rejection (process-fatal under Node's
+                        // default --unhandled-rejections=throw).
+                        try {
+                          opts.callbacks.onKimiMdStale?.();
+                        } catch (cbErr) {
+                          logger.debug("memory:onKimiMdStale_threw", {
+                            sessionId: opts.sessionId,
+                            error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+                          });
+                        }
                         driftEvents.set(sid, []);
                       }
                     }
@@ -938,10 +949,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                   });
                   // Only emit the user-visible warning on the first failure
                   // per session — repeated errors stay in the counter.
+                  // Wrapped defensively for the same reason as the
+                  // onKimiMdStale fire above.
                   if (next === 1) {
-                    opts.callbacks.onWarning?.(
-                      `[memory] auto-extraction failed (${msg}). Subsequent failures will be counted silently; check /memory health.`,
-                    );
+                    try {
+                      opts.callbacks.onWarning?.(
+                        `[memory] auto-extraction failed (${msg}). Subsequent failures will be counted silently; check /memory health.`,
+                      );
+                    } catch (cbErr) {
+                      logger.debug("memory:onWarning_threw", {
+                        sessionId: opts.sessionId,
+                        error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+                      });
+                    }
                   }
                 }
               })();
