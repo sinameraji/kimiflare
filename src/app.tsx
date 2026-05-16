@@ -20,7 +20,7 @@ import {
   deserializeArtifactStore,
   type SessionState,
 } from "./agent/session-state.js";
-import { ToolExecutor, ALL_TOOLS, type PermissionDecision } from "./tools/executor.js";
+import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ToolSpec } from "./tools/registry.js";
 import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
@@ -36,6 +36,7 @@ import type { CloudCredentials } from "./cloud/auth.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
+import { usePermissionController } from "./ui/use-permission-controller.js";
 import { LimitModal, type LimitDecision, type LoopDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
@@ -64,7 +65,7 @@ import { deployForTui } from "./remote/deploy.js";
 import { authGitHubForTui } from "./remote/tui-auth.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./ui/remote-dashboard.js";
 import { InboxModal } from "./ui/inbox-modal.js";
-import { nextMode, type Mode, isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
+import { nextMode, type Mode } from "./mode.js";
 import { classifyIntent } from "./intent/classify.js";
 import {
   selectSkills,
@@ -424,12 +425,6 @@ function trackRecentFile(ref: React.MutableRefObject<Map<string, number>>, path:
   }
 }
 
-interface PendingPermission {
-  tool: ToolSpec;
-  args: Record<string, unknown>;
-  resolve: (d: PermissionDecision) => void;
-}
-
 const CONTEXT_LIMIT = 262_000;
 const AUTO_COMPACT_SUGGEST_PCT = 0.8;
 const MAX_EVENTS = 500;
@@ -556,7 +551,26 @@ function App({
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [perm, setPerm] = useState<PendingPermission | null>(null);
+  const {
+    pending: perm,
+    askPermission: askForPermission,
+    hasPending: hasPendingPermission,
+    decide: decidePermission,
+    denyPending: denyPendingPermission,
+    clearResolveRef: clearPermissionResolveRef,
+  } = usePermissionController(
+    () => modeRef.current,
+    (toolName) => {
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: `plan mode blocked ${toolName}; exit plan mode to execute`,
+        },
+      ]);
+    },
+  );
   const [limitModal, setLimitModal] = useState<{ limit: number; resolve: (d: LimitDecision) => void } | null>(null);
   const [loopModal, setLoopModal] = useState<{ resolve: (d: LoopDecision) => void } | null>(null);
   const [queue, setQueue] = useState<Array<{ full: string; display: string; key: string }>>([]);
@@ -705,7 +719,6 @@ function App({
   const lastEscapeAtRef = useRef(0);
   /** Holds the latest Ctrl+C interrupt logic so the SIGINT handler can delegate to it. */
   const sigintHandlerRef = useRef<(() => void) | null>(null);
-  const permResolveRef = useRef<((d: PermissionDecision) => void) | null>(null);
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const loopResolveRef = useRef<((d: LoopDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
@@ -1498,17 +1511,12 @@ function App({
         busy: busyRef.current,
         hasActiveScope: activeScopeRef.current !== null,
         isAborting: isAbortingRef.current,
-        hasPerm: permResolveRef.current !== null,
+        hasPerm: hasPendingPermission(),
         hasLimit: limitResolveRef.current !== null,
       });
-      const hadPerm = permResolveRef.current !== null;
+      const hadPerm = denyPendingPermission();
       const hadLimit = limitResolveRef.current !== null;
       const hadLoop = loopResolveRef.current !== null;
-      if (hadPerm) {
-        permResolveRef.current!("deny");
-        permResolveRef.current = null;
-        setPerm(null);
-      }
       if (hadLimit) {
         limitResolveRef.current!("stop");
         limitResolveRef.current = null;
@@ -1559,11 +1567,7 @@ function App({
         lastEscapeAtRef.current = now;
         isAbortingRef.current = true;
         supervisorRef.current.killTurn();
-        if (permResolveRef.current) {
-          permResolveRef.current("deny");
-          permResolveRef.current = null;
-          setPerm(null);
-        }
+        denyPendingPermission();
         if (limitResolveRef.current) {
           limitResolveRef.current("stop");
           limitResolveRef.current = null;
@@ -1611,18 +1615,13 @@ function App({
       busy: busyRef.current,
       hasActiveScope: activeScopeRef.current !== null,
       isAborting: isAbortingRef.current,
-      hasPerm: permResolveRef.current !== null,
+      hasPerm: hasPendingPermission(),
       hasLimit: limitResolveRef.current !== null,
       hasLoop: loopResolveRef.current !== null,
     });
-    const hadPerm = permResolveRef.current !== null;
+    const hadPerm = denyPendingPermission();
     const hadLimit = limitResolveRef.current !== null;
     const hadLoop = loopResolveRef.current !== null;
-    if (hadPerm) {
-      permResolveRef.current!("deny");
-      permResolveRef.current = null;
-      setPerm(null);
-    }
     if (hadLimit) {
       limitResolveRef.current!("stop");
       limitResolveRef.current = null;
@@ -1808,7 +1807,7 @@ function App({
       setLastActivityAt(null);
       activeScopeRef.current = null;
       isAbortingRef.current = false;
-      permResolveRef.current = null;
+      clearPermissionResolveRef();
       limitResolveRef.current = null;
       pendingToolCallsRef.current.clear();
     }
@@ -1993,37 +1992,7 @@ function App({
             }
           },
           onGatewayMeta: updateGatewayMeta,
-          askPermission: (req) =>
-            new Promise<PermissionDecision>((resolve) => {
-              if (modeRef.current === "auto") {
-                resolve("allow");
-                return;
-              }
-              if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
-                if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
-                  resolve("allow");
-                  return;
-                }
-                if (req.tool.name === "bash") {
-                  // Non-whitelisted bash in plan mode: ask for temporary permission
-                  permResolveRef.current = resolve;
-                  setPerm({ tool: req.tool, args: req.args, resolve });
-                  return;
-                }
-                setEvents((e) => [
-                  ...e,
-                  {
-                    kind: "info",
-                    key: mkKey(),
-                    text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
-                  },
-                ]);
-                resolve("deny");
-                return;
-              }
-              permResolveRef.current = resolve;
-              setPerm({ tool: req.tool, args: req.args, resolve });
-            }),
+          askPermission: (req) => askForPermission(req, { promptOnBlockedBash: true }),
           onKimiMdStale: () => {
             if (!kimiMdStaleNudgedRef.current) {
               kimiMdStaleNudgedRef.current = true;
@@ -2155,7 +2124,7 @@ function App({
       activeAsstIdRef.current = null;
       activeScopeRef.current = null;
       isAbortingRef.current = false;
-      permResolveRef.current = null;
+      clearPermissionResolveRef();
       limitResolveRef.current = null;
       loopResolveRef.current = null;
       setLoopModal(null);
@@ -3600,31 +3569,7 @@ function App({
             setTasksStartTokens(0);
           }
         },
-        askPermission: (req: import("./tools/executor.js").PermissionRequest) =>
-          new Promise<PermissionDecision>((resolve) => {
-            if (modeRef.current === "auto") {
-              resolve("allow");
-              return;
-            }
-            if (modeRef.current === "plan" && isBlockedInPlanMode(req.tool.name)) {
-              if (req.tool.name === "bash" && typeof req.args.command === "string" && isReadOnlyBash(req.args.command)) {
-                resolve("allow");
-                return;
-              }
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `plan mode blocked ${req.tool.name}; exit plan mode to execute`,
-                },
-              ]);
-              resolve("deny");
-              return;
-            }
-            permResolveRef.current = resolve;
-            setPerm({ tool: req.tool, args: req.args, resolve });
-          }),
+        askPermission: askForPermission,
         onToolLimitReached: () =>
           new Promise<LimitDecision>((resolve) => {
             limitResolveRef.current = resolve;
@@ -3682,7 +3627,7 @@ function App({
         activeAsstIdRef.current = null;
         activeScopeRef.current = null;
         isAbortingRef.current = false;
-        permResolveRef.current = null;
+        clearPermissionResolveRef();
         limitResolveRef.current = null;
         loopResolveRef.current = null;
         setLoopModal(null);
@@ -4224,11 +4169,7 @@ function App({
           <PermissionModal
             tool={perm.tool}
             args={perm.args}
-            onDecide={(d) => {
-              perm.resolve(d);
-              permResolveRef.current = null;
-              setPerm(null);
-            }}
+            onDecide={decidePermission}
             onFeedback={(text) => {
               submitRef.current(text);
             }}
