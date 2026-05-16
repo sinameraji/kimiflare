@@ -1614,7 +1614,18 @@ function App({
   // Keep the SIGINT handler in sync with the latest state/refs so that when
   // the terminal sends a real SIGINT (bypassing Ink raw mode) we can still
   // interrupt the turn or exit gracefully.
+  //
+  // A terminal Ctrl+C delivers BOTH the raw byte (captured by Ink's useInput)
+  // AND the SIGINT signal. Without the guard below, both handlers fire on
+  // every Ctrl+C: useInput aborts the turn (setting isAbortingRef.current to
+  // true), then SIGINT falls through to its fall-through exit() branch and
+  // tears Ink down mid-cleanup — leaving the TUI in an in-between state
+  // where typed characters print but Enter doesn't submit. See RF-20.
   sigintHandlerRef.current = () => {
+    if (isAbortingRef.current) {
+      logger.info("sigint:handler:already-aborting");
+      return;
+    }
     logger.info("sigint:handler", {
       busy: busyRef.current,
       hasActiveScope: activeScopeRef.current !== null,
