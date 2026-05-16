@@ -22,7 +22,6 @@ import type { ToolSpec } from "./tools/registry.js";
 import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
 import { LspManager } from "./lsp/manager.js";
-import { makeLspTools } from "./tools/lsp.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
@@ -80,14 +79,13 @@ import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
 import type { CustomCommand, SlashItem } from "./commands/types.js";
 import { BUILTIN_COMMANDS, BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
-import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import type { SaveCustomCommandOptions } from "./commands/save.js";
 import { buildInitPrompt } from "./init/context-generator.js";
 import { ThemeProvider } from "./ui/theme-context.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
-import { saveProjectLspConfig, type ResolvedLspConfig } from "./util/lsp-config.js";
+import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
@@ -105,6 +103,14 @@ import {
 import { dispatchSlashCommand, type SlashContext } from "./ui/slash-commands.js";
 import { runInit as runInitImpl } from "./init/run-init.js";
 import { runStartupTasks } from "./ui/run-startup-tasks.js";
+import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
+import { runCompact as runCompactImpl } from "./agent/run-compact.js";
+import {
+  handleCommandDelete as handleCommandDeleteImpl,
+  handleCommandSave as handleCommandSaveImpl,
+  handleLspSave as handleLspSaveImpl,
+  handleRemoteCancel as handleRemoteCancelImpl,
+} from "./ui/command-handlers.js";
 import {
   AUTO_COMPACT_SUGGEST_PCT,
   buildFilePickerIgnoreList,
@@ -688,133 +694,37 @@ function App({
   }, [cfg]);
 
   const initMcp = useCallback(async () => {
-    if (!cfg?.mcpServers || mcpInitRef.current) return;
-    mcpInitRef.current = true;
-    const manager = mcpManagerRef.current;
-    let totalTools = 0;
-    for (const [name, server] of Object.entries(cfg.mcpServers)) {
-      if (server.enabled === false) continue;
-      try {
-        if (server.type === "local" && server.command && server.command.length > 0) {
-          await manager.addLocalServer(name, server.command, server.env, {
-            timeoutMs: server.timeoutMs,
-          });
-        } else if (server.type === "remote" && server.url) {
-          await manager.addRemoteServer(name, server.url, server.headers, {
-            timeoutMs: server.timeoutMs,
-          });
-        } else {
-          setEvents((e) => [
-            ...e,
-            { kind: "error", key: mkKey(), text: `MCP server "${name}" has invalid config` },
-          ]);
-          continue;
-        }
-        const tools = manager.getAllTools();
-        const newTools = tools.filter((t) => !mcpToolsRef.current.some((mt) => mt.name === t.name));
-        for (const tool of newTools) {
-          executorRef.current.register(tool);
-        }
-        mcpToolsRef.current = tools;
-        totalTools = tools.length;
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: `MCP server "${name}" failed: ${(e as Error).message}` },
-        ]);
-      }
-    }
-    if (totalTools > 0) {
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      }
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available` },
-      ]);
-    }
+    if (!cfg) return;
+    await initMcpImpl({
+      cfg,
+      setEvents,
+      mkKey,
+      executorRef,
+      messagesRef,
+      cacheStableRef,
+      modeRef,
+      mcpToolsRef,
+      lspToolsRef,
+      mcpManagerRef,
+      mcpInitRef,
+    });
   }, [cfg]);
 
   const initLsp = useCallback(async () => {
-    if (!cfg?.lspEnabled || !cfg?.lspServers || lspInitRef.current) {
-      if (lspInitRef.current) return;
-      if (!cfg?.lspEnabled) {
-        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP is disabled. Enable it in config to use language servers." }]);
-      } else if (!cfg?.lspServers || Object.keys(cfg.lspServers).length === 0) {
-        setEvents((es) => [...es, { kind: "info", key: mkKey(), text: "LSP reload complete — no servers configured." }]);
-      }
-      return;
-    }
-    lspInitRef.current = true;
-    const manager = lspManagerRef.current;
-    let totalServers = 0;
-    for (const [name, server] of Object.entries(cfg.lspServers)) {
-      if (server.enabled === false) continue;
-      try {
-        await manager.startServer(name, server, process.cwd());
-        totalServers++;
-      } catch (e) {
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: `LSP server "${name}" failed: ${(e as Error).message}` },
-        ]);
-      }
-    }
-    if (totalServers > 0) {
-      const tools = makeLspTools(manager);
-      for (const tool of tools) {
-        executorRef.current.register(tool);
-      }
-      lspToolsRef.current = tools;
-      if (cacheStableRef.current) {
-        messagesRef.current[1] = {
-          role: "system",
-          content: buildSessionPrefix({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      } else {
-        messagesRef.current[0] = {
-          role: "system",
-          content: buildSystemPrompt({
-            cwd: process.cwd(),
-            tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-            model: cfg.model ?? DEFAULT_MODEL,
-            mode: modeRef.current,
-          }),
-        };
-      }
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active` },
-      ]);
-    } else {
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: "LSP reload complete — no servers started (check config or enabled status)." },
-      ]);
-    }
+    if (!cfg) return;
+    await initLspImpl({
+      cfg,
+      setEvents,
+      mkKey,
+      executorRef,
+      messagesRef,
+      cacheStableRef,
+      modeRef,
+      mcpToolsRef,
+      lspToolsRef,
+      lspManagerRef,
+      lspInitRef,
+    });
   }, [cfg]);
 
   useEffect(() => {
@@ -1076,91 +986,24 @@ function App({
 
   const runCompact = useCallback(async () => {
     if (!cfg) return;
-    if (busy) {
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't compact while model is running" }]);
-      return;
-    }
-    beginTurn();
-    const turnScope = sessionScopeRef.current.createChild();
-    activeScopeRef.current = turnScope;
-    try {
-      if (compiledContextRef.current) {
-        const store = artifactStoreRef.current;
-        const result = compactMessagesViaArtifacts({
-          messages: messagesRef.current,
-          state: sessionStateRef.current,
-          store,
-        });
-        if (result.metrics.rawTurnsRemoved === 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
-          ]);
-        } else {
-          messagesRef.current = result.newMessages;
-          sessionStateRef.current = result.newState;
-          setEvents((e) =>
-            compactEventsVisual(
-              [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `compacted ${result.metrics.rawTurnsRemoved} turns → ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens, ${result.metrics.archivedArtifacts} artifacts`,
-                },
-              ],
-              4,
-            ),
-          );
-          await saveSessionSafe();
-        }
-      } else {
-        const result = await summarizeMessagesViaLlm({
-          accountId: cfg.accountId,
-          apiToken: cfg.apiToken,
-          model: cfg.model,
-          messages: messagesRef.current,
-          signal: turnScope.signal,
-          gateway: gatewayFromConfig(cfg),
-        });
-        if (result.replacedCount === 0) {
-          setEvents((e) => [
-            ...e,
-            { kind: "info", key: mkKey(), text: "nothing to compact yet" },
-          ]);
-        } else {
-          messagesRef.current = result.newMessages;
-          setEvents((e) =>
-            compactEventsVisual(
-              [
-                ...e,
-                {
-                  kind: "info",
-                  key: mkKey(),
-                  text: `compacted ${result.replacedCount} messages into a summary`,
-                },
-              ],
-              4,
-            ),
-          );
-          await saveSessionSafe();
-        }
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        setEvents((es) => [
-          ...es,
-          { kind: "error", key: mkKey(), text: `compact failed: ${(e as Error).message}` },
-        ]);
-      }
-    } finally {
-      logger.info("runCompact:finally");
-      endTurn();
-      activeScopeRef.current = null;
-      clearPermissionResolveRef();
-      limitResolveRef.current = null;
-      pendingToolCallsRef.current.clear();
-    }
+    await runCompactImpl({
+      cfg,
+      busy,
+      mkKey,
+      setEvents,
+      beginTurn,
+      endTurn,
+      saveSessionSafe,
+      clearPermissionResolveRef,
+      sessionScopeRef,
+      activeScopeRef,
+      compiledContextRef,
+      artifactStoreRef,
+      messagesRef,
+      sessionStateRef,
+      limitResolveRef,
+      pendingToolCallsRef,
+    });
   }, [cfg, busy, saveSessionSafe]);
 
   const runInit = useCallback(async () => {
@@ -1308,48 +1151,21 @@ function App({
     [buildSlashContext],
   );
 
-
   const handleCommandSave = useCallback(
-    async (opts: SaveCustomCommandOptions) => {
-      setCommandWizard(null);
-      try {
-        // If editing and name changed, delete the old file first
-        if (commandWizard?.mode === "edit" && commandWizard.initial && commandWizard.initial.name !== opts.name) {
-          await deleteCustomCommand(commandWizard.initial);
-        }
-        const result = await saveCustomCommand(opts);
-        await reloadCustomCommands();
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `saved /${opts.name} → ${result.filepath}` },
-        ]);
-      } catch (err) {
-        setEvents((e) => [
-          ...e,
-          { kind: "error", key: mkKey(), text: `failed to save /${opts.name}: ${(err as Error).message}` },
-        ]);
-      }
-    },
+    (opts: SaveCustomCommandOptions) =>
+      handleCommandSaveImpl(
+        { setEvents, mkKey, commandWizard, setCommandWizard, reloadCustomCommands },
+        opts,
+      ),
     [commandWizard, reloadCustomCommands, setEvents],
   );
 
   const handleCommandDelete = useCallback(
-    async (cmd: CustomCommand) => {
-      setCommandToDelete(null);
-      try {
-        await deleteCustomCommand(cmd);
-        await reloadCustomCommands();
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `deleted /${cmd.name} (${cmd.filepath})` },
-        ]);
-      } catch (err) {
-        setEvents((e) => [
-          ...e,
-          { kind: "error", key: mkKey(), text: `failed to delete /${cmd.name}: ${(err as Error).message}` },
-        ]);
-      }
-    },
+    (cmd: CustomCommand) =>
+      handleCommandDeleteImpl(
+        { setEvents, mkKey, setCommandToDelete, reloadCustomCommands },
+        cmd,
+      ),
     [reloadCustomCommands, setEvents, setCommandToDelete],
   );
 
@@ -1358,54 +1174,30 @@ function App({
       servers: NonNullable<Cfg["lspServers"]>,
       enabled: boolean,
       scope: "project" | "global",
-    ) => {
-      setCfg((c) => (c ? { ...c, lspEnabled: enabled, lspServers: servers } : c));
-      setLspScope(scope);
-      if (scope === "project") {
-        void saveProjectLspConfig(process.cwd(), { lspEnabled: enabled, lspServers: servers })
-          .then((path) => {
-            setLspProjectPath(path);
-            setEvents((e) => [
-              ...e,
-              { kind: "info", key: mkKey(), text: `LSP config saved to project (${path}). Run /lsp reload to apply.` },
-            ]);
-          })
-          .catch(() => {
-            setEvents((e) => [
-              ...e,
-              { kind: "error", key: mkKey(), text: "Failed to save project LSP config." },
-            ]);
-          });
-      } else if (cfg) {
-        void saveConfig({ ...cfg, lspEnabled: enabled, lspServers: servers }).catch(() => {});
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `LSP config saved to global config. Run /lsp reload to apply.` },
-        ]);
-      }
-      setShowLspWizard(false);
-    },
+    ) =>
+      handleLspSaveImpl(
+        {
+          cfg,
+          setCfg,
+          setEvents,
+          mkKey,
+          setLspScope,
+          setLspProjectPath,
+          setShowLspWizard,
+        },
+        servers,
+        enabled,
+        scope,
+      ),
     [cfg, setCfg, setEvents, setShowLspWizard],
   );
 
   const handleRemoteCancel = useCallback(
-    async (session: RemoteSession) => {
-      try {
-        const { cancelRemoteSession } = await import("./remote/worker-client.js");
-        await cancelRemoteSession(session.workerUrl, session.sessionId);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `Cancelled session ${session.sessionId}` },
-        ]);
-      } catch (err) {
-        setEvents((e) => [
-          ...e,
-          { kind: "error", key: mkKey(), text: `Failed to cancel: ${err instanceof Error ? err.message : String(err)}` },
-        ]);
-      }
-      setSelectedRemoteSession(null);
-      setShowRemoteDashboard(false);
-    },
+    (session: RemoteSession) =>
+      handleRemoteCancelImpl(
+        { setEvents, mkKey, setSelectedRemoteSession, setShowRemoteDashboard },
+        session,
+      ),
     [setEvents, setShowRemoteDashboard],
   );
 
