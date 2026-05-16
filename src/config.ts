@@ -20,6 +20,10 @@ export interface LspServerConfig {
   env?: Record<string, string>;
   enabled?: boolean;
   rootPatterns?: string[];
+  /** Per-request timeout in milliseconds for LSP calls. Default: 10000. */
+  timeoutMs?: number;
+  /** Max auto-restart attempts after a crash. Default: 3. Set 0 to disable. */
+  maxRestartAttempts?: number;
 }
 
 export interface KimiConfig {
