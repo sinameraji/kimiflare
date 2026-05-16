@@ -539,12 +539,15 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     if (lastUsage) {
       opts.callbacks.onUsageFinal?.(lastUsage, gatewayMeta);
       cumulativePromptTokens += lastUsage.prompt_tokens;
+      // Flip the budget flag regardless of whether this turn produced tool
+      // calls — a long pure-text turn past the cap should still trip the
+      // limit. The no-tools branch below short-circuits to BudgetExhaustedError
+      // instead of an extra synthesis turn. (RF-5 / OP-9.)
       if (
         !budgetExhausted &&
         opts.maxInputTokens !== undefined &&
         opts.maxInputTokens > 0 &&
-        cumulativePromptTokens >= opts.maxInputTokens &&
-        toolCalls.length > 0
+        cumulativePromptTokens >= opts.maxInputTokens
       ) {
         budgetExhausted = true;
       }

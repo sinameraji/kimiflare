@@ -71,7 +71,7 @@ hashing.
 **Fix:** allow each `ToolSpec` to declare a `signatureKey(args)` projector
 that strips known nonce fields. Default falls back to current behavior.
 
-### RF-5 — Budget exhaustion only triggers when tools were called (S)
+### RF-5 — Budget exhaustion only triggers when tools were called (S) — ✅ shipped (OP-9)
 
 `src/agent/loop.ts:530–574`. The condition is
 `cumulativePromptTokens >= maxInputTokens && toolCalls.length > 0`.
@@ -82,6 +82,11 @@ practice agents do sometimes emit long pure-text turns past the cap.
 **Fix:** evaluate budget on every iteration end; let the no-tools case
 short-circuit straight to `BudgetExhaustedError` instead of an extra
 synthesis turn.
+
+**Status:** Removed `toolCalls.length > 0` from the budget condition.
+Pure-text turns past the cap now flip `budgetExhausted`, and the
+existing no-tools branch (which throws `BudgetExhaustedError` when the
+flag is set) short-circuits without an extra synthesis turn.
 
 ### RF-6 — `MAX_PROMPT_TOKENS = 240_000` hard error (S)
 
@@ -352,7 +357,7 @@ Tracked as M1.0 in the development roadmap.
 - **OP-7.** Memory extraction error counter + `/memory health` surface
   (fix for RF-1).
 - **OP-8.** Sliding-window drift detection (fix for RF-2).
-- **OP-9.** Zero-tool-call budget check (fix for RF-5).
+- **OP-9.** Zero-tool-call budget check (fix for RF-5). ✅ shipped
 - **OP-10.** Re-emit isolated-vm fallback warning per session
   (fix for RF-19).
 
