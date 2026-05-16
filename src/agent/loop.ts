@@ -91,6 +91,10 @@ export interface AgentTurnOpts {
   intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
   /** Skills injected into the system prompt for this turn. */
   selectedSkills?: { name: string; body: string }[];
+  /** User-configured lifecycle hooks (M6.1). When provided, the loop
+   *  fires PreToolUse before every tool call (veto-able) and PostToolUse
+   *  after, plus Stop at end-of-turn. Pass `undefined` to disable. */
+  hooks?: import("../hooks/manager.js").HooksManager;
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
@@ -242,6 +246,24 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
+
+  // M6.1: fire the Stop hook on any clean exit (turn ended normally,
+  // user opted to stop on loop/limit). Skipped on abort/throw because
+  // those aren't "the agent finished its turn." Inline at each return
+  // site below — three of them in this function.
+  const fireStopHook = async (): Promise<void> => {
+    if (opts.signal.aborted) return;
+    if (!opts.hooks?.hasEnabledHooks("Stop")) return;
+    try {
+      await opts.hooks.fire(
+        "Stop",
+        { event: "Stop", session_id: opts.sessionId ?? null, cwd: opts.cwd },
+        null,
+      );
+    } catch {
+      // best-effort — must not crash turn cleanup
+    }
+  };
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   const preTurnStart = performance.now();
@@ -454,6 +476,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           });
           iter = 0;
         } else {
+          await fireStopHook();
           return;
         }
       } else if (opts.continueOnLimit) {
@@ -675,6 +698,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         throw new BudgetExhaustedError();
       }
       logger.info("turn:complete", { sessionId: opts.sessionId, durationMs: Math.round(performance.now() - turnStart) });
+      await fireStopHook();
       return;
     }
 
@@ -857,12 +881,98 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       } else {
         opts.callbacks.onToolWillExecute?.(tc.id, tc.function.name);
         logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });
+
+        // M6.1: PreToolUse hook (veto-able). Skip the pre-check when no
+        // hook is configured to avoid the JSON.parse on the args path
+        // for the common case.
+        let parsedToolArgs: Record<string, unknown> = {};
+        if (opts.hooks?.hasEnabledHooks("PreToolUse")) {
+          try {
+            parsedToolArgs = tc.function.arguments?.trim()
+              ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
+              : {};
+          } catch {
+            parsedToolArgs = {};
+          }
+          const preOutcome = await opts.hooks.fire(
+            "PreToolUse",
+            {
+              event: "PreToolUse",
+              session_id: opts.sessionId ?? null,
+              cwd: opts.cwd,
+              tool: tc.function.name,
+              args: parsedToolArgs,
+            },
+            tc.function.name,
+            opts.signal,
+          );
+          if (preOutcome.vetoed) {
+            const reason = preOutcome.vetoReason || "PreToolUse hook blocked the call";
+            const synthetic: ToolResult = {
+              tool_call_id: tc.id,
+              name: tc.function.name,
+              content: `Hook blocked this call: ${reason}`,
+              ok: false,
+              errorCode: "policy_rejection",
+              recoverable: false,
+              suggestion: "the user has a hook that blocks this call — try a different approach",
+            };
+            toolResults.push(synthetic);
+            opts.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: sanitizeString(synthetic.content),
+              name: tc.function.name,
+            });
+            opts.callbacks.onToolResult?.(synthetic);
+            logger.warn("hook:vetoed_tool_call", {
+              sessionId: opts.sessionId,
+              tool: tc.function.name,
+              toolCallId: tc.id,
+              reason,
+            });
+            continue;
+          }
+        }
+
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
           { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell },
           opts.onFileChange,
         );
+
+        // M6.1: PostToolUse hook (informational, fire-and-forget). The
+        // exit code is logged but never blocks the loop; the model's
+        // turn moves on regardless.
+        if (opts.hooks?.hasEnabledHooks("PostToolUse")) {
+          // Reuse parsedToolArgs if PreToolUse already parsed; else
+          // parse once here. Cheap enough.
+          if (Object.keys(parsedToolArgs).length === 0 && tc.function.arguments) {
+            try {
+              parsedToolArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+            } catch {
+              parsedToolArgs = {};
+            }
+          }
+          void opts.hooks.fire(
+            "PostToolUse",
+            {
+              event: "PostToolUse",
+              session_id: opts.sessionId ?? null,
+              cwd: opts.cwd,
+              tool: tc.function.name,
+              args: parsedToolArgs,
+              result: {
+                ok: result.ok,
+                content: result.content,
+                errorCode: result.errorCode,
+              },
+            },
+            tc.function.name,
+            opts.signal,
+          ).catch(() => {});
+        }
         let content = result.content;
         if (content.length > MAX_TOOL_CONTENT_CHARS) {
           const rawBytes = content.length;
@@ -1078,6 +1188,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           recentToolCalls.length = 0;
           continue;
         }
+        await fireStopHook();
         return;
       }
       throw new AgentLoopError();

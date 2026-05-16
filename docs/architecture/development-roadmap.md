@@ -15,7 +15,35 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M2.2** — Typed `askPermission` return *(OP-13)* — *(this PR)*.
+- **M6.1** — User-configured lifecycle hooks *(Competitor #2)* —
+  *(this PR)*. New `src/hooks/` module (~700 LOC) reads
+  `~/.config/kimiflare/settings.json` + `.kimiflare/settings.json`
+  and fires shell hooks at five lifecycle events: `PreToolUse`
+  (veto-able), `PostToolUse`, `UserPromptSubmit` (veto-able), `Stop`,
+  `PreCompact`. Hooks receive the event payload as JSON on stdin
+  *and* as `KIMIFLARE_HOOK_*` env vars for shell-one-liner
+  ergonomics; non-zero exit on veto events cancels the underlying
+  action with the hook's stdout as the rejection reason. Configurable
+  per-hook `timeoutMs` (default 30s) hard-kills hung hooks.
+  Ships with a `RECOMMENDED_HOOKS` catalog (terminal bell on Stop,
+  macOS notification, secrets-file guards, prettier auto-format,
+  tool-call audit log) — all `enabled: false`, surfaced via
+  `/hooks recommended`. New `/hooks` slash command:
+  `list | recommended | path | reload | enable <id> [scope] | disable <id>`.
+  Loop integration: PreToolUse + PostToolUse wired around every
+  `executor.run`; PreToolUse veto synthesizes a
+  `policy_rejection`-coded ToolResult (using M2.1's typed error
+  shape). Stop fires at the three clean-exit paths in
+  `runAgentTurn` (skipped on abort/throw). PreCompact fires from
+  `runCompact` before either path runs. UserPromptSubmit fires in
+  `app.tsx` after slash / custom-command expansion. Cross-platform
+  recommended hooks (e.g. macOS notification) filter themselves out
+  on non-matching platforms. 26 new tests in `settings.test.ts` +
+  `runner.test.ts` cover loader merging (global + project), id
+  derivation, hook-config validation, regex matcher filtering, veto
+  semantics for veto events, informational behavior for the rest,
+  env-var exposure, and the mock-spawn outcome shape.
+- **M2.2** — Typed `askPermission` return *(OP-13)* — merged in #465.
   Replaces the overloaded `"allow" | "allow_session" | "deny"` enum
   with an orthogonal `{ decision: "allow" | "deny", scope: "once" |
   "session" | "pattern" }` shape. The new `"pattern"` scope is the
@@ -512,15 +540,13 @@ not a refactor.
 
 **PRs:**
 
-- **M6.1** — `feat(hooks): user-configured lifecycle hooks`
-  *(Competitor #2)*
-  - Read `~/.config/kimiflare/settings.json` and
-    `.kimiflare/settings.json`.
-  - Events: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`,
-    `Stop`, `PreCompact`.
-  - Shell out with JSON on stdin; collect exit code + stdout.
-  - **Depends on M2.1** (typed errors so hook failures classify
-    properly).
+- ✅ **M6.1** — `feat(hooks): user-configured lifecycle hooks`
+  *(Competitor #2)* — *merged in this PR*. All five events wired
+  (`PreToolUse` / `PostToolUse` / `UserPromptSubmit` / `Stop` /
+  `PreCompact`). Veto semantics implemented for the two veto-able
+  events using M2.1's `policy_rejection` ToolResult code. Ships
+  with a `RECOMMENDED_HOOKS` catalog (disabled by default) and a
+  `/hooks` slash command for discoverability.
 - **M6.2** — `feat(permissions): pattern-based allowlists`
   *(Competitor #3)*
   - Patterns in `settings.json`: `"Bash(npm test:*)"`,

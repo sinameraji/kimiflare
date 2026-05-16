@@ -22,6 +22,7 @@ import type { ToolSpec } from "./tools/registry.js";
 import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
 import { LspManager } from "./lsp/manager.js";
+import { HooksManager } from "./hooks/manager.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
@@ -417,6 +418,7 @@ function App({
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
+  const hooksManagerRef = useRef<HooksManager>(new HooksManager(process.cwd()));
   const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
 
@@ -1003,6 +1005,8 @@ function App({
       sessionStateRef,
       limitResolveRef,
       pendingToolCallsRef,
+      hooks: hooksManagerRef.current,
+      sessionId: sessionIdRef.current,
     });
   }, [cfg, busy, saveSessionSafe]);
 
@@ -1112,6 +1116,7 @@ function App({
     ensureSessionId,
     lspManagerRef,
     mcpManagerRef,
+    hooksManagerRef,
     cacheStableRef,
     messagesRef,
     flushTimeoutRef,
@@ -1295,6 +1300,31 @@ function App({
       const nudge = maybeLspNudge(display, cfg?.lspEnabled ?? false, cfg?.lspServers ?? {});
       if (nudge) {
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: nudge }]);
+      }
+
+      // M6.1: UserPromptSubmit hook (veto-able). Fired after we know
+      // the prompt resolves to actual user-message content (post slash /
+      // custom command expansion). A vetoing hook cancels the turn
+      // before any LLM call.
+      if (hooksManagerRef.current.hasEnabledHooks("UserPromptSubmit")) {
+        const promptOutcome = await hooksManagerRef.current.fire(
+          "UserPromptSubmit",
+          {
+            event: "UserPromptSubmit",
+            session_id: sessionIdRef.current,
+            cwd: process.cwd(),
+            prompt: display,
+          },
+          null,
+        );
+        if (promptOutcome.vetoed) {
+          const reason = promptOutcome.vetoReason || "UserPromptSubmit hook blocked the prompt";
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `hook blocked the prompt: ${reason}` },
+          ]);
+          return;
+        }
       }
 
       messagesRef.current.push({ role: "user", content });
@@ -1565,6 +1595,7 @@ function App({
               : undefined,
           sessionId: ensureSessionId(),
           memoryManager: memoryManagerRef.current,
+          hooks: hooksManagerRef.current,
           githubToken: cfg.githubOAuthToken,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,

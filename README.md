@@ -292,6 +292,82 @@ encoding, and a `service.name=kimiflare` + `service.version` pair sits
 on the resource. The same `request_id` joins to Cloudflare AI Gateway's
 per-request log without any extra work.
 
+## Hooks
+
+KimiFlare can fire shell commands at five points in an agent turn,
+configured per-project (`.kimiflare/settings.json`) or globally
+(`~/.config/kimiflare/settings.json`):
+
+| Event              | Fires when                                      | Veto? |
+|--------------------|-------------------------------------------------|-------|
+| `PreToolUse`       | A tool call is about to run                     | Yes   |
+| `PostToolUse`      | A tool call just finished                       | No    |
+| `UserPromptSubmit` | You hit Enter on a prompt                       | Yes   |
+| `Stop`             | A turn ended cleanly                            | No    |
+| `PreCompact`       | Auto-compaction is about to run                 | No    |
+
+Hooks receive the event payload as JSON on stdin **and** as
+`KIMIFLARE_HOOK_*` env vars (for shell-one-liner ergonomics).
+Non-zero exit on a veto event cancels the underlying action and
+surfaces the hook's stdout as the rejection reason.
+
+### Browse + enable from the TUI
+
+```text
+/hooks                            # list configured hooks
+/hooks recommended                # list starter hooks shipped with kimiflare
+/hooks enable stop-bell           # enable one (writes to .kimiflare/settings.json)
+/hooks enable stop-bell global    # ...or the global file
+/hooks disable stop-bell
+/hooks path                       # print settings.json paths
+/hooks reload                     # re-read settings.json after a manual edit
+```
+
+The recommended catalog includes terminal bells / macOS notifications
+on `Stop`, secret-file guards on `PreToolUse` (e.g. block edits to
+`*.env`), auto-format-with-prettier on `PostToolUse`, and a tool-call
+audit log. All ship disabled — `/hooks recommended` lists them.
+
+### Schema example
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "id": "no-secrets",
+        "matcher": "^(edit|write)$",
+        "command": "case \"$KIMIFLARE_HOOK_PATH\" in *.env|*.pem) echo 'blocked'; exit 1;; esac"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "id": "format-ts",
+        "matcher": "^(edit|write)$",
+        "command": "npx --no-install prettier --write \"$KIMIFLARE_HOOK_PATH\" >/dev/null 2>&1 || true"
+      }
+    ],
+    "Stop": [
+      { "id": "bell", "command": "printf '\\a'" }
+    ]
+  }
+}
+```
+
+Per-hook fields:
+- `command` (required) — the shell command.
+- `matcher` (optional) — anchored regex matched against the tool name
+  for `PreToolUse` / `PostToolUse`. Ignored for other events.
+- `id` (optional) — stable handle for `/hooks enable|disable`.
+  Auto-derived from `event + command` when omitted.
+- `enabled` (default `true`) — set `false` to keep a hook in config
+  but skip it.
+- `timeoutMs` (default `30000`) — hard kill if the hook hangs.
+- `description` (optional) — shown by `/hooks list`.
+
+Hooks are always-on infrastructure: they fire whether the TUI is open
+or kimiflare is running in `--print` mode.
+
 ## Development
 
 ```sh
