@@ -69,6 +69,12 @@ export interface CostDebugEntry {
   intentClassification?: IntentClassification; // NEW: what we predicted
   codeMode?: boolean; // NEW: was Code Mode enabled this turn
   selectedSkills?: string[]; // NEW: skill names injected this turn
+  /** First 200 chars of the last user message in this turn — for quickly grepping logs. */
+  userPromptPreview?: string;
+  /** Wall-clock ms spent on pre-turn setup (memory recall + skill routing) before the first model call. */
+  preTurnMs?: number;
+  /** True if at least one memory was recalled and injected this turn. */
+  memoryRecalled?: boolean;
 }
 
 function debugDir(): string {
@@ -165,6 +171,9 @@ export interface TurnDebugContext {
   codeMode?: boolean;
   /** Skills injected into this turn */
   selectedSkills?: { name: string; body: string }[];
+  userPromptPreview?: string;
+  preTurnMs?: number;
+  memoryRecalled?: boolean;
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -274,6 +283,9 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     intentClassification: ctx.intentClassification,
     codeMode: ctx.codeMode,
     selectedSkills: ctx.selectedSkills?.map((s) => s.name),
+    userPromptPreview: ctx.userPromptPreview,
+    preTurnMs: ctx.preTurnMs,
+    memoryRecalled: ctx.memoryRecalled,
   });
 }
 
