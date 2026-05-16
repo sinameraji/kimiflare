@@ -107,6 +107,80 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
     emit("StatusUpdate", { segments: { elapsed: formatElapsed(secs) } });
   }, 1000);
 
+  // Bidirectional permission routing (active in --multi-turn). A single
+  // stdin reader fans out: PermissionResponse messages resolve the
+  // matching pending askPermission promise; UserInputSubmitted messages
+  // go into a queue consumed by the main multi-turn loop after each turn.
+  const pendingPermissions = new Map<string, (choice: "allow" | "allow_session" | "deny") => void>();
+  const followUpQueue: string[] = [];
+  let followUpResolver: ((text: string | null) => void) | null = null;
+  let stdinClosed = false;
+
+  function dispatchInbound(line: string): void {
+    let msg: { event_type?: string; payload?: any };
+    try { msg = JSON.parse(line); }
+    catch {
+      emit("RuntimeError", {
+        message: `multi-turn: invalid JSON on stdin: ${line.slice(0, 80)}`,
+        source: "emit-mode",
+        kind: "generic",
+        severity: "warn",
+      });
+      return;
+    }
+    if (msg.event_type === "PermissionResponse" && typeof msg.payload?.request_id === "string") {
+      const resolver = pendingPermissions.get(msg.payload.request_id);
+      if (resolver) {
+        pendingPermissions.delete(msg.payload.request_id);
+        const choice = msg.payload.choice;
+        if (choice === "allow_once") resolver("allow");
+        else if (choice === "allow_session") resolver("allow_session");
+        else resolver("deny");
+      }
+      return;
+    }
+    if (msg.event_type === "UserInputSubmitted" && typeof msg.payload?.text === "string") {
+      if (followUpResolver) {
+        const r = followUpResolver;
+        followUpResolver = null;
+        r(msg.payload.text);
+      } else {
+        followUpQueue.push(msg.payload.text);
+      }
+      return;
+    }
+    // Unknown event_type: silently drop (forward-compat with future TUI events).
+  }
+
+  let stdinReader: readline.Interface | null = null;
+  if (opts.multiTurn) {
+    stdinReader = readline.createInterface({ input: process.stdin });
+    stdinReader.on("line", (line) => {
+      const trimmed = line.trim();
+      if (trimmed) dispatchInbound(trimmed);
+    });
+    stdinReader.on("close", () => {
+      stdinClosed = true;
+      // Wake the follow-up loop so it can exit.
+      if (followUpResolver) {
+        const r = followUpResolver;
+        followUpResolver = null;
+        r(null);
+      }
+      // Resolve any pending permission asks as deny so the agent doesn't hang.
+      for (const [reqId, resolver] of pendingPermissions) {
+        pendingPermissions.delete(reqId);
+        resolver("deny");
+      }
+    });
+  }
+
+  async function nextFollowUp(): Promise<string | null> {
+    if (followUpQueue.length > 0) return followUpQueue.shift()!;
+    if (stdinClosed) return null;
+    return new Promise<string | null>((resolve) => { followUpResolver = resolve; });
+  }
+
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
   const messages: ChatMessage[] = [
@@ -213,9 +287,24 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
               tool: tool.name,
               action: JSON.stringify(args),
             });
+            // --dangerously-allow-all short-circuits regardless of mode.
             if (opts.allowAll) {
               emit("PermissionGranted", { request_id: reqId });
               return "allow";
+            }
+            // In multi-turn mode, wait for the TUI to send PermissionResponse.
+            // In one-shot mode, fall back to auto-deny (the user has no way
+            // to respond without a live input channel).
+            if (opts.multiTurn) {
+              const choice = await new Promise<"allow" | "allow_session" | "deny">((resolve) => {
+                pendingPermissions.set(reqId, resolve);
+              });
+              if (choice === "allow" || choice === "allow_session") {
+                emit("PermissionGranted", { request_id: reqId });
+              } else {
+                emit("PermissionDenied", { request_id: reqId });
+              }
+              return choice;
             }
             emit("PermissionDenied", { request_id: reqId });
             return "deny";
@@ -270,35 +359,21 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
     // Initial turn from -p.
     await runTurn(opts.prompt);
 
-    // Multi-turn loop: keep reading stdin for UserInputSubmitted lines.
+    // Multi-turn loop: pull follow-up prompts from the queue (fed by the
+    // stdin dispatcher above). nextFollowUp() resolves to null on stdin
+    // EOF, breaking the loop. PermissionResponse routing happens in the
+    // dispatcher, not here, so a permission ask mid-turn never blocks
+    // the multi-turn loop.
     if (opts.multiTurn && !aborted) {
-      const rl = readline.createInterface({ input: process.stdin });
-      for await (const line of rl) {
-        if (aborted) break;
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let msg: { event_type?: string; payload?: { text?: string } };
-        try {
-          msg = JSON.parse(trimmed);
-        } catch {
-          emit("RuntimeError", {
-            message: `multi-turn: invalid JSON on stdin: ${trimmed.slice(0, 80)}`,
-            source: "emit-mode",
-            kind: "generic",
-            severity: "warn",
-          });
-          continue;
-        }
-        if (msg.event_type === "UserInputSubmitted" && typeof msg.payload?.text === "string") {
-          await runTurn(msg.payload.text);
-        }
-        // PermissionResponse handling lands in Phase 1.4; for now we
-        // silently drop unrecognised events so a TUI that emits both
-        // UserInputSubmitted and PermissionResponse doesn't crash us.
+      while (!aborted) {
+        const text = await nextFollowUp();
+        if (text === null) break;
+        await runTurn(text);
       }
     }
   } finally {
     clearInterval(elapsedTimer);
+    if (stdinReader) stdinReader.close();
     // Final status sweep so the TUI's last visible state is coherent
     // (phase=idle, final elapsed) before SessionEnded arrives.
     const finalSecs = Math.floor((Date.now() - sessionStartMs) / 1000);
