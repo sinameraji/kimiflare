@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.70.0](https://github.com/sinameraji/kimiflare/compare/v0.69.0...v0.70.0) (2026-05-16)
+
+
+### Features
+
+* **telemetry:** structured JSON log sink + correlation IDs (M5.1) ([#458](https://github.com/sinameraji/kimiflare/issues/458)) ([439816e](https://github.com/sinameraji/kimiflare/commit/439816e1433a1ccf1dca6687676fccfdd5343e4c))
+
 ## [0.69.0](https://github.com/sinameraji/kimiflare/compare/v0.68.2...v0.69.0) (2026-05-16)
 
 
