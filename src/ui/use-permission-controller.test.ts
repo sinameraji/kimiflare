@@ -16,11 +16,11 @@ describe("decidePermission", () => {
     it("resolves any tool with allow", () => {
       assert.deepStrictEqual(decidePermission(req("bash", { command: "rm -rf /" }), "auto"), {
         kind: "resolve",
-        decision: "allow",
+        decision: { decision: "allow", scope: "once" },
       });
       assert.deepStrictEqual(decidePermission(req("write"), "auto"), {
         kind: "resolve",
-        decision: "allow",
+        decision: { decision: "allow", scope: "once" },
       });
     });
   });
@@ -33,7 +33,7 @@ describe("decidePermission", () => {
     it("auto-allows read-only bash without prompting", () => {
       assert.deepStrictEqual(decidePermission(req("bash", { command: "git status" }), "plan"), {
         kind: "resolve",
-        decision: "allow",
+        decision: { decision: "allow", scope: "once" },
       });
     });
 

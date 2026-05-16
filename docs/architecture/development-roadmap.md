@@ -15,7 +15,22 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
-- **M2.1** — Structured `ToolError` envelope *(OP-12)* — *(this PR)*.
+- **M2.2** — Typed `askPermission` return *(OP-13)* — *(this PR)*.
+  Replaces the overloaded `"allow" | "allow_session" | "deny"` enum
+  with an orthogonal `{ decision: "allow" | "deny", scope: "once" |
+  "session" | "pattern" }` shape. The new `"pattern"` scope is the
+  load-bearing addition — it's how M6.2's settings.json allowlists
+  (e.g. `"Bash(npm test:*)"`) will be expressed without overloading
+  the decision enum. The legacy string is kept as a deprecated alias
+  in a `PermissionDecision` union; `toPermissionResult()` normalizes
+  either shape at the executor boundary so existing SDK callers keep
+  working unchanged. Executor branches on `scope` now: `"once"` and
+  `"pattern"` skip the session cache, `"session"` adds to it as
+  before. Updated permission modal, controller, SDK event type, and
+  RPC validation. 10 new tests covering the normalizer + executor
+  scope handling under both shapes. **M2 complete — unblocks M6.2
+  pattern allowlists.**
+- **M2.1** — Structured `ToolError` envelope *(OP-12)* — merged in #462.
   New `src/tools/tool-error.ts` exports a `ToolError` class
   (`{ code, message, recoverable, suggestion?, cause? }`) plus the
   factory helpers `toolTimeoutError` / `toolAbortError` /
@@ -343,11 +358,12 @@ that touches many call sites — review carefully.
   the loop's retry behavior is unchanged (no retry policy exists yet
   to gate). Individual tool migrations are opt-in and can land
   one-at-a-time without breaking anything.
-- **M2.2** — `refactor(executor): typed askPermission return`
-  *(OP-13)*
-  - `askPermission` now returns `{ decision, scope: "once" | "session"
-    | "pattern" }`.
-  - Caller can prepare for pattern allowlists in M6.
+- ✅ **M2.2** — `refactor(executor): typed askPermission return`
+  *(OP-13)* — *merged in this PR*. New
+  `PermissionDecisionResult` shape `{ decision, scope }`; legacy
+  string accepted via union + `toPermissionResult()` normalizer.
+  Executor branches on `scope` for caching. Modal, controller, SDK
+  event, and RPC all updated.
 
 **Exit criteria:** Both PRs merged. All existing tools migrated. No
 test regressions.
