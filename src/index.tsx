@@ -24,7 +24,8 @@ program
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
-  .option("--emit-events", "emit Camouflage NDJSON events to stdout; one-shot, requires -p")
+  .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
+  .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
 program
@@ -191,6 +192,7 @@ const opts = program.opts<{
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   emitEvents?: boolean;
+  multiTurn?: boolean;
   mode?: string;
 }>();
 
@@ -287,6 +289,7 @@ async function main() {
       model,
       prompt: opts.print,
       allowAll: !!opts.dangerouslyAllowAll,
+      multiTurn: !!opts.multiTurn,
       codeMode: cfg.codeMode,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
