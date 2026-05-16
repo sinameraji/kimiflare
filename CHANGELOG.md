@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.69.0](https://github.com/sinameraji/kimiflare/compare/v0.68.2...v0.69.0) (2026-05-16)
+
+
+### Features
+
+* **observability:** log prompt preview + preTurnMs, surface routing in AI Gateway ([#455](https://github.com/sinameraji/kimiflare/issues/455)) ([a69d470](https://github.com/sinameraji/kimiflare/commit/a69d47001d6e0c0f793161477262958081a13e2c))
+* **tools:** streaming read for files over the 2 MB cap (M3.4) ([#454](https://github.com/sinameraji/kimiflare/issues/454)) ([f69f8ba](https://github.com/sinameraji/kimiflare/commit/f69f8ba7e23cf8da42925cf25f4f9b33d6af83cf))
+
 ## [0.68.2](https://github.com/sinameraji/kimiflare/compare/v0.68.1...v0.68.2) (2026-05-16)
 
 
