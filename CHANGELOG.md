@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.66.0](https://github.com/sinameraji/kimiflare/compare/v0.65.0...v0.66.0) (2026-05-16)
+
+
+### Features
+
+* **artifacts:** size-weighted eviction in ArtifactStore (OP-2 / RF-9) ([#428](https://github.com/sinameraji/kimiflare/issues/428)) ([9ae379e](https://github.com/sinameraji/kimiflare/commit/9ae379efd85c6ad4c6b431ae609e7c00e4b2d09a))
+* **client:** per-call SSE idle timeout with post-first-byte tightening (OP-4 / RF-7) ([#430](https://github.com/sinameraji/kimiflare/issues/430)) ([f2ed8f2](https://github.com/sinameraji/kimiflare/commit/f2ed8f231130bbc2a11e3203bd70f2f1ae60acf8))
+* **memory:** per-session extraction-error counter + first-failure warning (OP-7 / RF-1) ([#434](https://github.com/sinameraji/kimiflare/issues/434)) ([d70e72a](https://github.com/sinameraji/kimiflare/commit/d70e72a063f7563ed67cca0d67d6d1bb6c108370))
+* **tools:** honor ctx.signal in grep/glob/read (OP-5 / RF-13 first half) ([#431](https://github.com/sinameraji/kimiflare/issues/431)) ([ce71766](https://github.com/sinameraji/kimiflare/commit/ce71766e4d31b6bbab2430d11564b3a8846e8471))
+
+
+### Bug Fixes
+
+* **loop:** enforce token budget on pure-text turns too (OP-9 / RF-5) ([#436](https://github.com/sinameraji/kimiflare/issues/436)) ([b3963c9](https://github.com/sinameraji/kimiflare/commit/b3963c92fd2f7698ae76061c50d1fd7d8fcb4fdf))
+
 ## [0.65.0](https://github.com/sinameraji/kimiflare/compare/v0.64.0...v0.65.0) (2026-05-16)
 
 
