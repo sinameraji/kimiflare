@@ -244,8 +244,12 @@ sufficient.
 - `read`: checks `signal.aborted` at entry, after stat, and forwards
   `ctx.signal` to `fs.readFile`.
 
-**Still pending (second half):** streaming read for the >MAX_BYTES case
-and explicit `write`/`edit` check-at-start.
+**Status (second half):**
+- ✅ `read`: streaming path for files over MAX_BYTES (M3.4). Above the
+  cap, callers must supply `offset`+`limit` and the file is streamed
+  line-by-line with abort-signal checks between chunks; a 50 MB hard
+  ceiling on bytes scanned protects against runaway reads.
+- Still pending: explicit `write`/`edit` check-at-start.
 
 ### RF-14 — `src/app.tsx` is a 4,393-line god component (L)
 

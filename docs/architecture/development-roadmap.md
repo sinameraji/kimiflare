@@ -15,8 +15,19 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M3.4** — Streaming read for large files *(RF-13 second half)* —
+  *(this PR)*. `src/tools/read.ts` previously refused any file over
+  2 MB outright. Files above the cap now require an explicit
+  `offset`+`limit` slice and stream line-by-line, checking
+  `ctx.signal` between chunks and destroying the underlying read
+  stream on abort. A 50 MB hard ceiling on bytes scanned protects
+  against runaway reads (e.g. `offset: 999_999_999` on a multi-GB
+  log file). Small-file fast path unchanged. Exported
+  `readSliceStreaming` for direct testing; 8 unit tests cover both
+  paths plus the abort + EOF + over-cap-no-slice cases. **M3
+  complete.**
 - **M4.6** — `InputController` helpers extracted from `app.tsx` —
-  *(this PR)*. The Ctrl+C, Esc, and SIGINT abort paths used to be
+  merged in #453. The Ctrl+C, Esc, and SIGINT abort paths used to be
   three nearly-identical ~30-line copies of "deny permission → clear
   limit/loop resolvers → kill turn → save session → clear tasks → exit
   if idle." That logic lives in `src/ui/input-handlers.ts` now as
@@ -307,13 +318,16 @@ test regressions.
   `LspServerStatus`. A `/lsp status` slash command remains to be
   built — deferred because it touches `app.tsx` and would conflict
   with M4 extractions.
-- **M3.4** — `feat(tools): streaming read for large files`
-  *(RF-13, second half)*
-  - Stream-read past, say, 1 MB. Check `signal` between chunks.
+- ✅ **M3.4** — `feat(tools): streaming read for large files`
+  *(RF-13, second half)* — *merged in this PR*. Files over the 2 MB
+  cap now require an explicit `offset`+`limit` slice and stream
+  line-by-line with abort-signal checks between chunks; a 50 MB hard
+  ceiling on bytes scanned protects against runaway reads. Small-file
+  fast path unchanged.
 
 **Exit criteria:** Hung MCP server scenario from RF-16 verified
 fixed by a regression test (mock server that never responds).
-M3.4 remains; M3.1–M3.3 shipped.
+**M3 complete** (M3.1–M3.4 all shipped).
 
 ---
 
