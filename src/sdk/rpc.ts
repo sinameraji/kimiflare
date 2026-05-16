@@ -134,8 +134,27 @@ export async function startRpcServer(
             send({ id: cmd.id, type: "error", error: "No active session" });
             break;
           }
-          const decision = cmd.decision as PermissionDecision;
-          if (decision === "allow" || decision === "allow_session" || decision === "deny") {
+          // M2.2: accept either the legacy string or the typed
+          // `PermissionDecisionResult` shape (`{ decision, scope }`).
+          // Both work because `PermissionDecision` is a union and the
+          // executor normalizes at the boundary.
+          const raw = cmd.decision as unknown;
+          let decision: PermissionDecision | null = null;
+          if (raw === "allow" || raw === "allow_session" || raw === "deny") {
+            decision = raw;
+          } else if (
+            raw !== null &&
+            typeof raw === "object" &&
+            (raw as { decision?: unknown }).decision !== undefined
+          ) {
+            const r = raw as { decision: unknown; scope: unknown };
+            const okDecision = r.decision === "allow" || r.decision === "deny";
+            const okScope = r.scope === "once" || r.scope === "session" || r.scope === "pattern";
+            if (okDecision && okScope) {
+              decision = { decision: r.decision, scope: r.scope } as PermissionDecision;
+            }
+          }
+          if (decision !== null) {
             session.resolvePermission(typeof cmd.requestId === "string" ? cmd.requestId : "", decision);
           }
           send({ id: cmd.id, type: "ok" });

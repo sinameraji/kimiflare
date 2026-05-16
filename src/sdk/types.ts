@@ -59,7 +59,10 @@ export type SessionEvent =
 
   // Permission
   | { type: "permission.request"; requestId: string; toolName: string; args: unknown }
-  | { type: "permission.resolved"; requestId: string; decision: "allow" | "allow_session" | "deny" }
+  // M2.2: accepts either legacy string or typed `PermissionDecisionResult`
+  // shape. Existing wire-format consumers can keep matching on string
+  // values; new consumers can switch on the `{ decision, scope }` shape.
+  | { type: "permission.resolved"; requestId: string; decision: PermissionDecision }
 
   // Tasks
   | { type: "tasks.update"; tasks: Task[] }

@@ -1,9 +1,15 @@
 import { useCallback, useRef, useState } from "react";
 import type {
   PermissionDecision,
+  PermissionDecisionResult,
   PermissionRequest,
 } from "../tools/executor.js";
 import { isBlockedInPlanMode, isReadOnlyBash, type Mode } from "../mode.js";
+
+/** Pre-built typed decisions for the two auto-resolve paths so we don't
+ *  recreate them on every call. M2.2 — see `PermissionDecisionResult`. */
+const AUTO_ALLOW: PermissionDecisionResult = { decision: "allow", scope: "once" };
+const AUTO_DENY: PermissionDecisionResult = { decision: "deny", scope: "once" };
 
 export interface PendingPermission {
   tool: PermissionRequest["tool"];
@@ -34,14 +40,14 @@ export function decidePermission(
   mode: Mode,
   opts: DecidePermissionOptions = {},
 ): PermissionOutcome {
-  if (mode === "auto") return { kind: "resolve", decision: "allow" };
+  if (mode === "auto") return { kind: "resolve", decision: AUTO_ALLOW };
   if (mode === "plan" && isBlockedInPlanMode(req.tool.name)) {
     if (
       req.tool.name === "bash" &&
       typeof req.args.command === "string" &&
       isReadOnlyBash(req.args.command)
     ) {
-      return { kind: "resolve", decision: "allow" };
+      return { kind: "resolve", decision: AUTO_ALLOW };
     }
     if (req.tool.name === "bash" && opts.promptOnBlockedBash) {
       return { kind: "prompt" };
@@ -103,7 +109,7 @@ export function usePermissionController(
         }
         if (outcome.kind === "plan_blocked") {
           onPlanModeBlockedRef.current(outcome.toolName);
-          resolve("deny");
+          resolve(AUTO_DENY);
           return;
         }
         // outcome.kind === "prompt"
@@ -127,7 +133,7 @@ export function usePermissionController(
     if (pendingResolve === null) return false;
     resolveRef.current = null;
     setPending(null);
-    pendingResolve("deny");
+    pendingResolve(AUTO_DENY);
     return true;
   }, []);
 

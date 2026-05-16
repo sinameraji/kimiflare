@@ -35,7 +35,57 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryForgetTool,
 ];
 
-export type PermissionDecision = "allow" | "allow_session" | "deny";
+/**
+ * Whether the user said yes or no.
+ *
+ * NOTE on naming: the legacy `PermissionDecision` string type
+ * (`"allow" | "allow_session" | "deny"`) also lives below as a
+ * deprecated back-compat alias. New callers should return the typed
+ * `PermissionDecisionResult` shape; the executor normalizes either at
+ * the boundary so existing SDK callers keep working unchanged.
+ */
+export type PermissionDecisionKind = "allow" | "deny";
+
+/**
+ * How broadly an allow applies. M2.1's enum overloaded this with the
+ * decision — `"allow_session"` meant "allow + cache for the session" —
+ * which made the new `"pattern"` scope from M6.2 impossible to express.
+ *
+ *   - `once`    — approved this single call. The executor will ask
+ *                 again next time the same tool is requested.
+ *   - `session` — approved for the rest of the session (existing
+ *                 `"allow_session"` behavior).
+ *   - `pattern` — approved because the call matched a pre-configured
+ *                 glob in settings.json (M6.2). The executor does NOT
+ *                 cache pattern-allow decisions — the pattern itself
+ *                 is the durable record and lives in the config file.
+ *
+ * `scope` is meaningful only when `decision === "allow"`; for `deny`
+ * it's ignored, but we keep it required so the shape stays uniform.
+ */
+export type PermissionScope = "once" | "session" | "pattern";
+
+export interface PermissionDecisionResult {
+  decision: PermissionDecisionKind;
+  scope: PermissionScope;
+}
+
+/**
+ * Legacy single-string decision. Kept for SDK back-compat — callers can
+ * still return `"allow" | "allow_session" | "deny"` and the executor
+ * normalizes via `toPermissionResult`. Prefer
+ * `PermissionDecisionResult` in new code.
+ *
+ * @deprecated since M2.2. Use `PermissionDecisionResult` instead.
+ */
+export type PermissionDecisionLegacy = "allow" | "allow_session" | "deny";
+
+/**
+ * Union of the new typed result and the legacy string. Both shapes are
+ * accepted by `PermissionAsker`; the executor calls
+ * `toPermissionResult` to normalize.
+ */
+export type PermissionDecision = PermissionDecisionLegacy | PermissionDecisionResult;
 
 export interface PermissionRequest {
   tool: ToolSpec;
@@ -44,6 +94,28 @@ export interface PermissionRequest {
 }
 
 export type PermissionAsker = (req: PermissionRequest) => Promise<PermissionDecision>;
+
+/**
+ * Normalize either decision shape into `PermissionDecisionResult`.
+ * Mapping:
+ *   `"allow"`         → `{ decision: "allow", scope: "once" }`
+ *   `"allow_session"` → `{ decision: "allow", scope: "session" }`
+ *   `"deny"`          → `{ decision: "deny", scope: "once" }`
+ *   typed shape       → returned as-is
+ */
+export function toPermissionResult(d: PermissionDecision): PermissionDecisionResult {
+  if (typeof d === "string") {
+    switch (d) {
+      case "allow":
+        return { decision: "allow", scope: "once" };
+      case "allow_session":
+        return { decision: "allow", scope: "session" };
+      case "deny":
+        return { decision: "deny", scope: "once" };
+    }
+  }
+  return d;
+}
 
 export interface ToolInvocation {
   id: string;
@@ -141,8 +213,9 @@ export class ToolExecutor {
     if (tool.needsPermission) {
       const sessionKey = this.permissionKey(tool, args);
       if (!this.sessionAllowed.has(sessionKey)) {
-        const decision = await askPermission({ tool, args, sessionKey });
-        if (decision === "deny") {
+        const raw = await askPermission({ tool, args, sessionKey });
+        const result = toPermissionResult(raw);
+        if (result.decision === "deny") {
           return {
             tool_call_id: call.id,
             name: call.name,
@@ -153,7 +226,11 @@ export class ToolExecutor {
             suggestion: "ask the user what they want to do differently",
           };
         }
-        if (decision === "allow_session") this.sessionAllowed.add(sessionKey);
+        // Only cache when the user said "for this session." `once` is
+        // intentionally not cached (we re-ask), and `pattern` allows
+        // come from settings.json so the pattern itself is the durable
+        // record — no in-memory cache needed.
+        if (result.scope === "session") this.sessionAllowed.add(sessionKey);
       }
     }
 

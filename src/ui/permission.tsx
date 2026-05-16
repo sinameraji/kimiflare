@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { platform } from "node:os";
 import type { ToolSpec } from "../tools/registry.js";
-import type { PermissionDecision } from "../tools/executor.js";
+import type { PermissionDecision, PermissionDecisionResult } from "../tools/executor.js";
 import { DiffView } from "./diff-view.js";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
@@ -15,11 +15,20 @@ interface Props {
   onFeedback?: (text: string) => void;
 }
 
-const OPTIONS: { value: PermissionDecision; label: string; key: number }[] = [
-  { value: "allow", label: "Allow once", key: 1 },
-  { value: "allow_session", label: "Allow for this session", key: 2 },
-  { value: "deny", label: "Something else", key: 3 },
+/**
+ * Three user-visible choices, each carrying the typed result the
+ * executor will see. Built off the M2.2 `PermissionDecisionResult`
+ * shape — `decision` and `scope` are now orthogonal so M6.2 can layer
+ * pattern allowlists in front of the modal without changing the modal's
+ * output type.
+ */
+const OPTIONS: { value: PermissionDecisionResult; label: string; key: number }[] = [
+  { value: { decision: "allow", scope: "once" }, label: "Allow once", key: 1 },
+  { value: { decision: "allow", scope: "session" }, label: "Allow for this session", key: 2 },
+  { value: { decision: "deny", scope: "once" }, label: "Something else", key: 3 },
 ];
+
+const DENY: PermissionDecisionResult = { decision: "deny", scope: "once" };
 
 const MOD_KEY = platform() === "darwin" ? "\u2325" : "Alt";
 
@@ -46,11 +55,11 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
     (index: number) => {
       const opt = OPTIONS[index];
       if (!opt) return;
-      if (opt.value === "deny") {
+      if (opt.value.decision === "deny") {
         if (onFeedback) {
           setFeedbackActive(true);
         } else {
-          onDecide("deny");
+          onDecide(DENY);
         }
       } else {
         onDecide(opt.value);
@@ -61,7 +70,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
 
   const handleFeedbackSubmit = useCallback(
     (text: string) => {
-      onDecide("deny");
+      onDecide(DENY);
       if (text.trim()) {
         onFeedback?.(text);
       }
@@ -72,7 +81,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
   );
 
   const handleFeedbackCancel = useCallback(() => {
-    onDecide("deny");
+    onDecide(DENY);
     setFeedbackActive(false);
     setFeedbackValue("");
   }, [onDecide]);
@@ -84,7 +93,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
         return;
       }
 
-      // Direct selection via Alt+1-4
+      // Direct selection via Alt+1-3
       if (key.meta && inputChar === "1") {
         handleSelect(0);
         return;
@@ -122,7 +131,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
 
       // Escape cancels
       if (key.escape) {
-        onDecide("deny");
+        onDecide(DENY);
       }
     },
     { isActive: !feedbackActive },
@@ -169,7 +178,7 @@ export function PermissionModal({ tool, args, onDecide, onFeedback }: Props) {
       <Box marginTop={1} flexDirection="column">
         {OPTIONS.map((opt, i) => (
           <Text
-            key={opt.value}
+            key={`${opt.value.decision}_${opt.value.scope}`}
             color={i === selectedIndex ? theme.accent : undefined}
             bold={i === selectedIndex}
           >
