@@ -155,6 +155,9 @@ export function buildRightParts(
     } else {
       parts.push(`${prefix}${sessionUsage.cost.toFixed(2)}`);
     }
+    if (typeof sessionUsage.lastTurnMs === "number") {
+      parts.push(formatDuration(sessionUsage.lastTurnMs));
+    }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
     const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
@@ -184,6 +187,11 @@ function formatTokens(n: number): string {
 export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {
   const status = gatewayMeta?.cacheStatus?.trim();
   return status ? `AI Gateway · cache ${status.toLowerCase()}` : null;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function formatElapsed(ms: number): string {

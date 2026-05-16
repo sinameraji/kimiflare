@@ -153,6 +153,7 @@ export async function reconcileWithCloudflare(opts: ReconcileOptions): Promise<R
       cloudflareCost,
       driftPct: Math.round(driftPct * 1000) / 10,
       message: `Reconciled ${logs.length} Gateway log entries`,
+      featureBreakdown: aggregateByFeature(logs),
     };
     cache.set(key, { result, expires: Date.now() + 60 * 60 * 1000 });
     return result;
