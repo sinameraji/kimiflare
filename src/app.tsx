@@ -89,7 +89,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
-import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, getSessionGatewayLogs } from "./usage-tracker.js";
+import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, getSessionGatewayLogs, usageEvents } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
@@ -493,6 +493,20 @@ function App({
   const [busy, setBusy] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [sessionUsage, setSessionUsage] = useState<DailyUsage | null>(null);
+
+  // Refresh sessionUsage when usage-tracker emits an out-of-band update
+  // (e.g. after a Gateway-log reconcile lands and patches a turn's real cost).
+  useEffect(() => {
+    const handler = (sid: string) => {
+      if (sessionIdRef.current && sid === sessionIdRef.current) {
+        void getCostReport(sid).then((report) => setSessionUsage(report.session));
+      }
+    };
+    usageEvents.on("update", handler);
+    return () => {
+      usageEvents.off("update", handler);
+    };
+  }, []);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
   const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
