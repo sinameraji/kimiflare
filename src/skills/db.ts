@@ -95,6 +95,13 @@ export function deleteOrphanedSkills(db: Database.Database, existingPaths: strin
   return Number(result.changes);
 }
 
+export function hasAnySections(db: Database.Database): boolean {
+  const row = db
+    .prepare("SELECT 1 FROM skill_sections LIMIT 1")
+    .get() as { 1: number } | undefined;
+  return row !== undefined;
+}
+
 export function listAllSectionRows(
   db: Database.Database
 ): Array<{

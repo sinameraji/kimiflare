@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import type { AiGatewayOptions } from "../agent/client.js";
 import { fetchEmbeddings, cosineSimilarity } from "../memory/embeddings.js";
-import { listAllSectionRows, rowToSectionResult } from "./db.js";
+import { hasAnySections, listAllSectionRows, rowToSectionResult } from "./db.js";
 import type { SectionResult } from "./types.js";
 
 export interface SearchOpts {
@@ -23,6 +23,8 @@ export async function searchSections(
   db: Database.Database,
   opts: SearchOpts
 ): Promise<SectionResult[]> {
+  if (!hasAnySections(db)) return [];
+
   const embeddings = await fetchEmbeddings({
     accountId: opts.accountId,
     apiToken: opts.apiToken,

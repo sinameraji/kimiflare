@@ -211,6 +211,19 @@ const MAX_PROMPT_TOKENS = 240_000;
  *  ~10k chars ≈ 2,500 tokens — generous but prevents runaway growth. */
 const MAX_TOOL_CONTENT_CHARS = 10_000;
 
+function extractLastUserText(messages: ChatMessage[]): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  if (!lastUser) return "";
+  if (typeof lastUser.content === "string") return lastUser.content;
+  if (Array.isArray(lastUser.content)) {
+    return lastUser.content
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join(" ");
+  }
+  return "";
+}
+
 function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return Promise.race([
     promise,
@@ -230,101 +243,103 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
 
-  // --- Pre-turn async work (memory recall + skill routing) ---
+  // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   let memoryRecalledCount = 0;
   let skillResult: SemanticSkillRoutingResult | undefined;
 
-  if (opts.sessionStartRecall) {
-    try {
-      const results = await raceWithSignal(opts.sessionStartRecall, opts.signal);
-      if (results.length > 0 && opts.memoryManager) {
-        const text = await raceWithSignal(
-          opts.memoryManager.synthesizeRecalled(results, opts.signal),
-          opts.signal,
-        );
-        memoryRecalledCount = results.length;
-        // Insert after existing system messages, before any user messages
-        const lastSystemIdx = opts.messages.findLastIndex((m) => m.role === "system");
-        const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : opts.messages.length;
-        opts.messages.splice(insertIdx, 0, { role: "system", content: text });
-        opts.callbacks.onMemoryRecalled?.(results.length);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      // Non-fatal: session works fine without recalled memories
+  const lastUserPrompt = extractLastUserText(opts.messages);
+
+  // Light + trivially short prompts skip skill routing entirely. These almost
+  // never benefit from injected skills and the embeddings round-trip dominates
+  // their wall-clock time. Threshold is conservative — anything substantive
+  // crosses 40 chars quickly.
+  const skipSkillRouting =
+    opts.intentClassification?.tier === "light" &&
+    lastUserPrompt.length < 40;
+
+  const recallPromise: Promise<{ text: string; count: number } | null> =
+    opts.sessionStartRecall && opts.memoryManager
+      ? (async () => {
+          const results = await opts.sessionStartRecall!;
+          if (results.length === 0 || !opts.memoryManager) return null;
+          const text = await opts.memoryManager.synthesizeRecalled(results, opts.signal);
+          return { text, count: results.length };
+        })()
+      : Promise.resolve(null);
+
+  const skillsPromise: Promise<SemanticSkillRoutingResult | undefined> =
+    opts.skillsDb && opts.skillRoutingConfig && opts.intentClassification && lastUserPrompt && !skipSkillRouting
+      ? selectSkills(
+          {
+            prompt: lastUserPrompt,
+            tier: opts.intentClassification.tier,
+            maxSkillTokens: opts.skillRoutingConfig.maxSkillTokens ?? 250_000 - 10_000,
+          },
+          {
+            db: opts.skillsDb,
+            accountId: opts.skillRoutingConfig.accountId,
+            apiToken: opts.skillRoutingConfig.apiToken,
+            embeddingModel: opts.skillRoutingConfig.embeddingModel,
+            gateway: opts.skillRoutingConfig.gateway,
+            cloudMode: opts.skillRoutingConfig.cloudMode,
+            cloudToken: opts.skillRoutingConfig.cloudToken,
+            cloudDeviceId: opts.skillRoutingConfig.cloudDeviceId,
+          },
+        )
+      : Promise.resolve(undefined);
+
+  const [recallSettled, skillsSettled] = await Promise.allSettled([
+    raceWithSignal(recallPromise, opts.signal),
+    raceWithSignal(skillsPromise, opts.signal),
+  ]);
+
+  // Propagate abort; swallow other failures (both paths are non-fatal).
+  for (const settled of [recallSettled, skillsSettled]) {
+    if (
+      settled.status === "rejected" &&
+      settled.reason instanceof DOMException &&
+      settled.reason.name === "AbortError"
+    ) {
+      throw settled.reason;
     }
   }
 
-  if (opts.signal.aborted) {
-    throw new DOMException("aborted", "AbortError");
+  if (recallSettled.status === "fulfilled" && recallSettled.value) {
+    const { text, count } = recallSettled.value;
+    const lastSystemIdx = opts.messages.findLastIndex((m) => m.role === "system");
+    const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : opts.messages.length;
+    opts.messages.splice(insertIdx, 0, { role: "system", content: text });
+    memoryRecalledCount = count;
+    opts.callbacks.onMemoryRecalled?.(count);
   }
 
-  if (opts.skillsDb && opts.skillRoutingConfig && opts.intentClassification) {
-    try {
-      const lastUserMsg = [...opts.messages].reverse().find((m) => m.role === "user");
-      const prompt =
-        typeof lastUserMsg?.content === "string"
-          ? lastUserMsg.content
-          : Array.isArray(lastUserMsg?.content)
-            ? lastUserMsg.content
-                .filter((p): p is { type: "text"; text: string } => p.type === "text")
-                .map((p) => p.text)
-                .join(" ")
-            : "";
-      if (prompt) {
-        skillResult = await raceWithSignal(
-          selectSkills(
-            {
-              prompt,
-              tier: opts.intentClassification.tier,
-              maxSkillTokens: opts.skillRoutingConfig.maxSkillTokens ?? 250_000 - 10_000,
-            },
-            {
-              db: opts.skillsDb,
-              accountId: opts.skillRoutingConfig.accountId,
-              apiToken: opts.skillRoutingConfig.apiToken,
-              embeddingModel: opts.skillRoutingConfig.embeddingModel,
-              gateway: opts.skillRoutingConfig.gateway,
-              cloudMode: opts.skillRoutingConfig.cloudMode,
-              cloudToken: opts.skillRoutingConfig.cloudToken,
-              cloudDeviceId: opts.skillRoutingConfig.cloudDeviceId,
-            },
-          ),
-          opts.signal,
-        );
-        opts.callbacks.onSkillsSelected?.(skillResult);
+  if (skillsSettled.status === "fulfilled" && skillsSettled.value) {
+    skillResult = skillsSettled.value;
+    opts.callbacks.onSkillsSelected?.(skillResult);
 
-        // Rebuild system prompt with skill context
-        const allTools = opts.tools;
-        if (opts.cacheStable) {
-          // Index 1 = session prefix (index 0 = static prefix)
-          opts.messages[1] = {
-            role: "system",
-            content: buildSessionPrefix({
-              cwd: opts.cwd,
-              tools: allTools,
-              model: opts.model,
-              mode: opts.mode,
-              skillContext: skillResult.skillContext,
-            }),
-          };
-        } else {
-          // Index 0 = single system prompt
-          opts.messages[0] = {
-            role: "system",
-            content: buildSystemPrompt({
-              cwd: opts.cwd,
-              tools: allTools,
-              model: opts.model,
-              mode: opts.mode,
-              skillContext: skillResult.skillContext,
-            }),
-          };
-        }
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      // Non-fatal: skills are optional
+    const allTools = opts.tools;
+    if (opts.cacheStable) {
+      opts.messages[1] = {
+        role: "system",
+        content: buildSessionPrefix({
+          cwd: opts.cwd,
+          tools: allTools,
+          model: opts.model,
+          mode: opts.mode,
+          skillContext: skillResult.skillContext,
+        }),
+      };
+    } else {
+      opts.messages[0] = {
+        role: "system",
+        content: buildSystemPrompt({
+          cwd: opts.cwd,
+          tools: allTools,
+          model: opts.model,
+          mode: opts.mode,
+          skillContext: skillResult.skillContext,
+        }),
+      };
     }
   }
 
