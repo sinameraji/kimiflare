@@ -15,6 +15,17 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M3.2 + M3.3** — LSP per-request timeout and auto-restart on
+  crash — merged in #422 *(adds `LspServerConfig.timeoutMs` and
+  `maxRestartAttempts`; subscribes to the connection's `exit` event;
+  full-jitter exponential backoff capped at 10s, default 3 attempts;
+  ignores clean exits and explicit stops; surfaces `restartAttempts`
+  on `LspServerStatus`; 7 unit tests via an `LspManagerHooks` test
+  seam)*.
+- **M3.1** — MCP per-call timeout for tool invocations — merged in
+  #421 *(wraps `client.callTool` with configurable timeout, default
+  60s; adds `McpServerConfig.timeoutMs` and threads it through
+  `mcpToolToSpec`; local `withTimeout` helper; 5 unit tests)*.
 - **M4.1** — `PermissionController` extracted from `app.tsx` —
   merged in #419 *(app.tsx 4,393 → 4,334 LOC, hook + 11 tests added,
   pure refactor, behavior preserved including the
@@ -192,22 +203,32 @@ test regressions.
 
 **PRs:**
 
-- **M3.1** — `feat(mcp): per-call timeouts` *(OP-15 / RF-16)*
-  - Default 60 s per tool invocation; configurable per server.
-  - On timeout, return `ToolError { code: "TIMEOUT", recoverable: true }`.
-- **M3.2** — `feat(lsp): per-call timeouts` *(OP-15 / RF-16)*
-  - Default 10 s. Faster fallback than MCP because LSP ops are
-    usually local.
-- **M3.3** — `feat(lsp): auto-restart with backoff` *(OP-16 / RF-15)*
-  - Increment `restartAttempts` on exit. Backoff: 1s, 4s, 16s, then
-    surface failure.
-  - Show attempt state in `/lsp status`.
+- ✅ **M3.1** — `feat(mcp): per-call timeouts` *(OP-15 / RF-16)* —
+  *merged in #421*. Default 60 s per tool invocation; configurable
+  per server via `McpServerConfig.timeoutMs`. On timeout, surfaces a
+  labeled `Error` (`MCP request '<server>/<tool>' timed out after
+  Nms`) — the structured `ToolError { code: "TIMEOUT", recoverable:
+  true }` upgrade is deferred to M2.1.
+- ✅ **M3.2** — `feat(lsp): per-call timeouts` *(OP-15 / RF-16)* —
+  *merged in #422*. Default 10 s (existing hardcoded value, now
+  configurable per server via `LspServerConfig.timeoutMs`). Threads
+  into `LspConnection`.
+- ✅ **M3.3** — `feat(lsp): auto-restart with backoff` *(OP-16 /
+  RF-15)* — *merged in #422*. Subscribes to the connection's `exit`
+  event; full-jitter exponential backoff (`500 ms * 2^attempt`,
+  capped at 10 s) up to `maxRestartAttempts` (default 3, set 0 to
+  disable). Clean exits (`code === 0`) and explicit `stopServer` do
+  not trigger restarts. `restartAttempts` now surfaced on
+  `LspServerStatus`. A `/lsp status` slash command remains to be
+  built — deferred because it touches `app.tsx` and would conflict
+  with M4 extractions.
 - **M3.4** — `feat(tools): streaming read for large files`
   *(RF-13, second half)*
   - Stream-read past, say, 1 MB. Check `signal` between chunks.
 
 **Exit criteria:** Hung MCP server scenario from RF-16 verified
 fixed by a regression test (mock server that never responds).
+M3.4 remains; M3.1–M3.3 shipped.
 
 ---
 

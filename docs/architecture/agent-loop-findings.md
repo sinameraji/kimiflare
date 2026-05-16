@@ -205,7 +205,7 @@ After each extraction, the diff against `app.tsx` should shrink and the
 new module should ship with its own tests. Track this as a quarter-long
 effort, not a single PR.
 
-### RF-15 — LSP `restartAttempts` is dead state (S)
+### RF-15 — LSP `restartAttempts` is dead state (S) — ✅ shipped in #422
 
 `src/lsp/manager.ts`. The field exists but is never incremented. There is
 no auto-restart for crashed language servers; the session just shows the
@@ -214,7 +214,13 @@ server as "crashed" and stops offering its tools.
 **Fix:** on `exit` with non-zero code, requeue start with exponential
 backoff up to N attempts (e.g., 3). Surface attempts in `/lsp status`.
 
-### RF-16 — MCP and LSP tool calls have no per-call timeout (M)
+**Status:** Auto-restart with full-jitter exponential backoff (default
+3 attempts, capped at 10s) landed in #422 as M3.3. `restartAttempts`
+is now populated and surfaced on `LspServerStatus`. The `/lsp status`
+slash-command surface itself remains to be built — deferred to avoid
+conflict with the M4 `app.tsx` extractions.
+
+### RF-16 — MCP and LSP tool calls have no per-call timeout (M) — ✅ shipped in #421 and #422
 
 `src/mcp/manager.ts`, `src/lsp/manager.ts`.
 
@@ -224,6 +230,13 @@ waiting on the tool call result until then.
 
 **Fix:** per-tool `timeoutMs` (default 30–60 s for MCP, 10 s for most LSP
 operations). Surface as a `ToolError` so the loop can recover the turn.
+
+**Status:** MCP per-call timeout (default 60s) landed in #421 as
+M3.1; LSP per-request timeout (default 10s) landed in #422 as M3.2.
+Both configurable per server via `timeoutMs`. The structured
+`ToolError` surface is still pending (M2.1) — for now timeouts
+surface as plain labeled `Error` messages flattened to
+`ToolResult.content`.
 
 ### RF-17 — Resume after reducer-config change can misread artifacts (M)
 
