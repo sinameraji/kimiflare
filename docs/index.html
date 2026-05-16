@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>kimiflare — Claude Code alternative on Cloudflare</title>
-  <meta name="description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
+  <meta name="description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://kimiflare.com/">
   <meta name="theme-color" content="#f48120">
 
   <!-- Open Graph -->
   <meta property="og:title" content="kimiflare — Claude Code alternative on Cloudflare">
-  <meta property="og:description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
+  <meta property="og:description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://kimiflare.com/">
   <meta property="og:image" content="https://kimiflare.com/logo.png">
@@ -19,7 +19,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="kimiflare — Claude Code alternative on Cloudflare">
-  <meta name="twitter:description" content="An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.">
+  <meta name="twitter:description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
   <meta name="twitter:image" content="https://kimiflare.com/logo.png">
 
   <!-- Cloudflare Web Analytics -->
@@ -35,7 +35,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "kimiflare",
-    "description": "An open-source terminal coding agent powered by Kimi K2.6, MCP tools, local memory, and direct Workers AI execution — no API middleman.",
+    "description": "An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux, Windows",
     "offers": {
@@ -709,12 +709,12 @@
   </nav>
 
   <section class="hero">
-    <div class="hero-label fade-in">Kimi-K2.6 · Cloudflare Workers AI</div>
+    <div class="hero-label fade-in">Kimi-K2.6 · Cloudflare AI Gateway</div>
     <h1 class="fade-in delay-1">
       Claude Code alternative, on your own Cloudflare account.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      An open-source terminal coding agent powered by Kimi K2.6. Run on your own Cloudflare account (BYOK)<s> or try Kimiflare Cloud — no API key needed</s>.
+      An open-source terminal coding agent powered by Kimi K2.6 and routed through your own Cloudflare AI Gateway — with per-request logs, response caching, and authoritative cost out of the box.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -723,14 +723,8 @@
 
     <div class="fade-in delay-3" style="margin-top: 1.5rem;">
       <a href="https://www.producthunt.com/products/kimiflare?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-kimiflare" target="_blank" rel="noopener noreferrer">
-        <img alt="kimiflare - kimi k2.6 cli code editor hosted on cloudflare workers AI | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1129412&theme=light&t=1776822277935">
+        <img alt="kimiflare - kimi k2.6 cli code editor on cloudflare ai gateway | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1129412&theme=light&t=1776822277935">
       </a>
-    </div>
-
-    <div class="fade-in delay-3" style="margin-top: 1.5rem; padding: 0.75rem 1rem; background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 8px; max-width: 480px;">
-      <p style="font-size: 0.85rem; color: var(--text); margin: 0;">
-        <s><strong>Try Kimiflare Cloud free</strong> — get <strong>5 million tokens</strong> on us until May 14, 2026. After that, bring your own Cloudflare key.</s>
-      </p>
     </div>
 
     <!-- Email Capture -->
@@ -853,7 +847,8 @@
             <li>Extensible JSON themes with WCAG contrast validation</li>
             <li>KIMI.md drift detection with memory-based staleness</li>
             <li>Fuzzy @ file picker with inline filtering</li>
-            <li><s>Kimiflare Cloud mode — device auth, no API key</s></li>
+            <li>AI Gateway as the default backend with per-request logs, caching, and cost reconciliation</li>
+            <li>Per-turn latency and per-feature cost breakdown in <code>/cost</code></li>
             <li>Context-window guardrails</li>
           </ul>
         </div>
@@ -931,7 +926,7 @@
       <div class="feature-item">
         <span class="feature-num">11</span>
         <h3>262K context window</h3>
-        <p>Read entire modules, large configs, and full stack traces without the model losing track. Direct to Cloudflare — no middleman.</p>
+        <p>Read entire modules, large configs, and full stack traces without the model losing track. All on your Cloudflare account.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">12</span>
@@ -940,8 +935,8 @@
       </div>
       <div class="feature-item">
         <span class="feature-num">13</span>
-        <h3><s>Kimiflare Cloud mode</s></h3>
-        <p><s>Device auth — no API key needed. Get started in seconds with a managed proxy and real-time token budget tracking. 5 million free tokens until May 14, 2026.</s></p>
+        <h3>AI Gateway — observability by default</h3>
+        <p>Every request flows through your own Cloudflare AI Gateway. Per-request logs, response caching with configurable TTL, authoritative per-turn cost from the logs API, and a per-feature breakdown in <code>/cost</code>. The status bar shows the gateway-confirmed cost and latency for the last turn.</p>
       </div>
       <div class="feature-item">
         <span class="feature-num">14</span>
@@ -955,8 +950,10 @@
       <div class="arch-flow">
         <strong>kimiflare</strong> <span class="accent">Node.js TUI</span><br>
         <span class="arrow">↓</span> user msg → agent loop → runKimi()<br>
-        <span class="arrow">↓</span> <span class="accent">POST SSE</span> to Workers AI<br>
-        <strong>api.cloudflare.com</strong> <span class="accent">@cf/moonshotai/kimi-k2.6</span><br>
+        <span class="arrow">↓</span> <span class="accent">POST SSE</span> via your AI Gateway<br>
+        <strong>gateway.ai.cloudflare.com</strong> <span class="accent">logs · cache · cost</span><br>
+        <span class="arrow">↓</span><br>
+        <strong>Workers AI</strong> <span class="accent">@cf/moonshotai/kimi-k2.6</span><br>
         <span class="arrow">↑</span> tool result ← tool executor ← tool_calls<br>
         <span class="arrow">↑</span> permission modal for write / edit / bash
       </div>

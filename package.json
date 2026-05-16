@@ -1,7 +1,7 @@
 {
   "name": "kimiflare",
   "version": "0.67.0",
-  "description": "A terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI. BYOK or Cloud mode. Web search, GitHub, headless browser, LSP, MCP, local memory, 262k context.",
+  "description": "A terminal coding agent powered by Kimi-K2.6, routed through your own Cloudflare AI Gateway — per-request logs, response caching, authoritative cost. Web search, GitHub, headless browser, LSP, MCP, local memory, 262k context.",
   "keywords": [
     "ai",
     "cli",
@@ -10,6 +10,7 @@
     "kimi",
     "k2.6",
     "cloudflare",
+    "ai-gateway",
     "workers-ai",
     "vision",
     "image-understanding",

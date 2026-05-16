@@ -12,22 +12,25 @@
 </p>
 
 <p align="center">
-  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a> on Cloudflare Workers AI.</strong><br>
-  Moonshot's 1T-parameter open-source model, running directly in your terminal.
+  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a>, routed through your own <a href="https://developers.cloudflare.com/ai-gateway/">Cloudflare AI Gateway</a>.</strong><br>
+  Moonshot's 1T-parameter open-source model, with first-class observability, caching, and authoritative cost — all on your Cloudflare account.
 </p>
 
 <p align="center">
   <img src="docs/screenshot.png" alt="kimiflare TUI" width="900">
 </p>
 
-## Two ways to run
+## How it works
 
-| Mode | How it works | Best for |
-|------|-------------|----------|
-| **BYOK** | Bring your own Cloudflare Account ID + API Token. Traffic goes straight to Workers AI from your account. | Power users who want full control and direct billing. |
-| ~~**Kimiflare Cloud**~~ | ~~Device auth — no API key needed. We proxy requests through our managed endpoint.~~ | ~~Getting started quickly without a Cloudflare account.~~ |
+You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare provisions (or reuses) an **AI Gateway** in your account and routes every model request through it. Nothing leaves your Cloudflare tenancy.
 
-> ~~🎁 **Try Kimiflare Cloud free** — sign up and get **5 million tokens** on us until May 14, 2026. Run `kimiflare --cloud` or pick "Cloud (managed)" during onboarding.~~
+You get this for free:
+
+- **Per-request logs** with full payload, latency, and status — visible in the Cloudflare dashboard
+- **Response caching** with configurable TTL (`/gateway cache-ttl <seconds>`)
+- **Authoritative per-turn cost** pulled from the Gateway logs API — no estimates
+- **Cache-hit ratio and per-feature cost breakdown** in `/cost`
+- **Auto-tagging** of every request with `feature` / `sessionId` / `turnIdx` metadata for downstream attribution
 
 ## What to remember
 
@@ -39,7 +42,7 @@
 - **Smart permission modal** — Denying a tool opens inline feedback so you can tell the agent what to do instead. Keyboard-native navigation (`↑/↓`, `j/k`, `Alt+1/2/3`).
 - **Loop guardrails** — Agent hard-stops when all tools in a turn are blocked, preventing infinite token-burning cycles.
 - **Persistent all-time cost history** — Append-only `history.jsonl` tracks daily usage forever, so `/cost` shows true all-time and monthly totals that survive across sessions and version updates.
-- **Live cost tracking** — Status bar shows real-time spend based on Cloudflare pricing. Know exactly what each turn costs.
+- **Live, gateway-confirmed cost tracking** — Status bar shows a fast local estimate (`≈$0.12`) that flips to the real, Cloudflare-billed number once the AI Gateway log reconciles. Per-turn latency renders next to cost.
 - **LSP + MCP** — Semantic code intelligence (hover, go-to-definition, references, diagnostics) via Language Server Protocol. Extend with external tools via Model Context Protocol.
 - **Local structured memory** — SQLite + embeddings cross-session memory. The agent recalls facts, instructions, and preferences across sessions via `remember`, `recall`, and `forget` tools.
 - **Web search, GitHub, and headless browser** — Research the web, read GitHub repos, and fetch JavaScript-rendered pages without leaving your terminal.
@@ -66,7 +69,7 @@ npm install -g kimiflare
 kimiflare
 ```
 
-On first run, an interactive onboarding wizard asks how you want to connect — BYOK ~~or Cloud~~. That's it.
+On first run, an interactive onboarding wizard collects your Cloudflare credentials and provisions (or picks) an AI Gateway. That's it.
 
 Or run without installing:
 
@@ -76,16 +79,9 @@ npx kimiflare
 
 Requires Node.js ≥ 20.
 
-### AI Gateway (default)
+### Cloudflare API token
 
-KimiFlare now routes Workers AI requests through your own **Cloudflare AI Gateway**. This unlocks:
-
-- Per-request payload logs in the Cloudflare dashboard
-- Response caching (set TTL with `/gateway cache-ttl <seconds>`)
-- Authoritative cost via the Gateway logs API, replacing local cost heuristics
-- Auto-tagging of every request with `feature` / `sessionId` / `turnIdx` metadata
-
-The onboarding wizard creates or picks an AI Gateway for you. Your Cloudflare API token needs these permissions:
+The onboarding wizard provisions or picks an AI Gateway in your account. Your Cloudflare API token needs:
 
 - `Workers AI:Read`
 - `AI Gateway:Read` (to list gateways)
@@ -93,9 +89,7 @@ The onboarding wizard creates or picks an AI Gateway for you. Your Cloudflare AP
 
 Edit your token at: https://dash.cloudflare.com/profile/api-tokens
 
-Once configured, run `/cost` in the TUI to see a Gateway section with cache hit ratio and direct dashboard links to each request log.
-
-For emergencies, set `KIMIFLARE_DISABLE_AI_GATEWAY=1` to fall back to the direct Workers AI path.
+Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, per-feature breakdown, and direct dashboard links to each request log. `/gateway status` shows the current TTL, skip-cache flag, metadata tags, and live cache-hit ratio.
 
 ### One-shot mode
 
@@ -117,6 +111,7 @@ const { session } = await createAgentSession({
   config: {
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: process.env.CLOUDFLARE_API_TOKEN,
+    aiGatewayId: process.env.CLOUDFLARE_AI_GATEWAY_ID,
     model: "@cf/moonshotai/kimi-k2.6",
   },
 });
@@ -149,7 +144,7 @@ session.dispose();
 
 #### SDK Authentication
 
-The SDK needs a Cloudflare **Account ID** and **API Token** to call Workers AI directly. Credentials are resolved in this priority order:
+The SDK needs a Cloudflare **Account ID**, **API Token**, and AI Gateway ID. Credentials are resolved in this priority order:
 
 1. **Explicit `config` object** (recommended for apps)
 2. **Environment variables**: `CLOUDFLARE_ACCOUNT_ID` / `CF_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` / `CF_API_TOKEN`
@@ -168,8 +163,6 @@ const { session } = await createAgentSession({
   config: { accountId, apiToken },
 });
 ```
-
-~~**For zero-credential onboarding**, use KimiFlare Cloud mode. The user authenticates via GitHub device flow and a Cloudflare Worker proxies AI requests. Your app never sees raw Cloudflare credentials — only a GitHub token and `remoteWorkerUrl`.~~
 
 #### RPC mode (subprocess)
 
@@ -228,7 +221,8 @@ kimiflare
 | `/memory` | Show memory stats and search |
 | `/mcp list` / `/mcp reload` | Manage MCP servers |
 | `/reasoning` | Toggle chain-of-thought display |
-| `/cost` | Show token usage for current turn |
+| `/cost` | Show Gateway-confirmed cost, cache hit ratio, and per-feature breakdown |
+| `/gateway status` | Show AI Gateway config and live cache-hit ratio |
 | `/update` | Check for updates |
 | `/help` | List all commands |
 
