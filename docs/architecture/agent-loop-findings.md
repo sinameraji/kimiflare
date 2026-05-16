@@ -63,7 +63,7 @@ in 10 turns).
 turns**. After firing, the window is cleared so we don't re-nudge on
 every subsequent turn. The end-of-turn decay block is gone.
 
-### RF-3 — Web-fetch spiral guardrail is per-turn only (S)
+### RF-3 — Web-fetch spiral guardrail is per-turn only (S) — ✅ shipped (OP-6)
 
 `src/agent/loop.ts:609–666`.
 
@@ -74,6 +74,14 @@ three turns can re-fetch the same domain ~15 times. Cheap to abuse.
 **Fix:** lift `totalWebFetches` and `domainCounts` to session state. Add a
 soft session cap (e.g., 25 fetches before a "synthesize what you have"
 nudge).
+
+**Status:** Web-fetch history now lives in a module-level
+`Map<sessionId, …>` (same pattern as the drift accumulator). The
+per-turn ceiling (5) stays — a new `webFetchesThisTurn` counter
+guards the burst case — while the domain count and the new
+`SESSION_WEB_FETCH_CAP = 25` are evaluated against the whole session.
+Crossing the session cap returns a "synthesize what you have learned
+from prior fetches" warning as the tool result.
 
 ### RF-4 — Anti-loop signature is sensitive to nonces (M)
 

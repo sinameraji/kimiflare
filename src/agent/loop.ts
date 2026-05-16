@@ -167,6 +167,27 @@ export function _resetMemoryExtractionErrorCountsForTests(): void {
   memoryExtractionErrorCounts.clear();
 }
 
+/** Per-session web-fetch history. Lifted from per-turn so a research spiral
+ *  split across multiple turns still trips the guardrail. */
+const sessionWebFetchHistory = new Map<string, { url: string; domain: string }[]>();
+/** Hard soft-cap of total web fetches per session before we nudge for synthesis. */
+const SESSION_WEB_FETCH_CAP = 25;
+
+function getSessionWebFetchHistory(sessionId: string | undefined): { url: string; domain: string }[] {
+  const key = sessionId ?? "default";
+  let arr = sessionWebFetchHistory.get(key);
+  if (!arr) {
+    arr = [];
+    sessionWebFetchHistory.set(key, arr);
+  }
+  return arr;
+}
+
+/** Test/embed hook: clears session web-fetch state. Not exported in the public API. */
+export function _resetSessionWebFetchHistoryForTests(): void {
+  sessionWebFetchHistory.clear();
+}
+
 function isHighSignalMemory(memory: {
   topicKey: string;
   category: string;
@@ -368,8 +389,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const LOOP_WINDOW = 8;
   const LOOP_THRESHOLD = 2; // 3rd identical call triggers the guardrail
 
-  // Web-fetch anti-loop: track domains and URL patterns to prevent research spirals
-  const webFetchHistory: { url: string; domain: string }[] = [];
+  // Web-fetch anti-loop: domain counts and the total now span the session,
+  // so a research spiral split across turns still trips the guardrail.
+  // (RF-3 / OP-6.) The per-turn ceiling stays in place for hot-path bursts.
+  const webFetchHistory = getSessionWebFetchHistory(opts.sessionId);
+  let webFetchesThisTurn = 0;
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
@@ -658,9 +682,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         try {
           const domain = new URL(url).hostname;
           const domainCount = webFetchHistory.filter((h) => h.domain === domain).length;
-          const totalWebFetches = webFetchHistory.length;
+          const totalSessionFetches = webFetchHistory.length;
 
-          if (totalWebFetches >= MAX_WEB_FETCH_PER_TURN) {
+          if (webFetchesThisTurn >= MAX_WEB_FETCH_PER_TURN) {
             const warning = `Research budget exceeded: you have already made ${MAX_WEB_FETCH_PER_TURN} web requests this turn. Synthesize what you have learned instead of fetching more pages.`;
             const budgetResult: ToolResult = {
               tool_call_id: tc.id,
@@ -676,6 +700,28 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
               name: "web_fetch",
             });
             opts.callbacks.onToolResult?.(budgetResult);
+            recentToolCalls.push(loopSignature);
+            if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+            blockedCount++;
+            continue;
+          }
+
+          if (totalSessionFetches >= SESSION_WEB_FETCH_CAP) {
+            const warning = `Session research budget exceeded: ${totalSessionFetches} web fetches across this session. Synthesize what you have learned from prior fetches instead of starting another page.`;
+            const sessionCapResult: ToolResult = {
+              tool_call_id: tc.id,
+              name: "web_fetch",
+              content: warning,
+              ok: false,
+            };
+            toolResults.push(sessionCapResult);
+            opts.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: sanitizeString(warning),
+              name: "web_fetch",
+            });
+            opts.callbacks.onToolResult?.(sessionCapResult);
             recentToolCalls.push(loopSignature);
             if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
             blockedCount++;
@@ -705,6 +751,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           }
 
           webFetchHistory.push({ url, domain });
+          webFetchesThisTurn++;
         } catch {
           // Invalid URL, let it fail normally
         }
