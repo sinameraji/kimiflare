@@ -15,13 +15,23 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M1.0** — Ctrl+C no longer freezes the session — *(this PR)*.
+  Single-line fix: pass `exitOnCtrlC: false` to Ink's `render()` in
+  `src/app.tsx`. The real root cause was Ink's built-in Ctrl+C
+  handler intercepting the keystroke before `useInput` could see
+  it; `useInput`'s carefully-written abort logic was dead code in
+  raw mode. An earlier attempt (#426) added a SIGINT-handler guard
+  at the wrong layer — it fixed a genuine but rare race for the
+  fallback path and did not address the user-visible symptom; that
+  PR was superseded. Manually verified end-to-end against the
+  screenshot scenario.
 - **M1.10** — Per-session sandbox fallback warning *(OP-10 / RF-19)*
-  — *(this PR)*. Replaces the per-process `fallbackWarningShown`
+  — merged in #425. Replaces the per-process `fallbackWarningShown`
   flag in `src/code-mode/sandbox.ts` with a per-session `Set<string>`
   keyed by `ctx.sessionId`. SDK embeddings that spawn multiple
   sessions in one process now see the warning on each new session.
-- **M1.1** — Full-jitter retry backoff *(OP-1 / RF-8)* — *(this
-  PR)*. `src/agent/client.ts` retries (both the network-error branch
+- **M1.1** — Full-jitter retry backoff *(OP-1 / RF-8)* — merged in
+  #425. `src/agent/client.ts` retries (both the network-error branch
   and the API-error branch) now use
   `Math.random() * (baseDelay * 2 ** attempt)` instead of
   `baseDelay * 2 ** attempt + Math.random() * 250`. Spreads
@@ -50,15 +60,7 @@ re-reading the full roadmap.
 User-reported, jump the queue when convenient. These should be
 finished before their containing milestone is considered done.
 
-- **Ctrl+C abort race → half-dead TUI** *(see [RF-20](./agent-loop-findings.md#rf-20))*.
-  Long-standing bug: when busy, Ctrl+C leaves the TUI in an
-  in-between state where chars print on the screen but Enter doesn't
-  submit. Diagnosed: race between `useInput` Ctrl+C handler
-  (`app.tsx:1508`) and the `process.on("SIGINT")` fallback
-  (`app.tsx:1613`) — both fire, the SIGINT one then hits the
-  fall-through and calls `exit()` mid-cleanup. Fix is a one-line
-  guard at the top of the SIGINT handler: bail if
-  `isAbortingRef.current` is already true. Tracked as M1.0.
+*(None currently. RF-20 / Ctrl+C — fixed in M1.0, see progress log.)*
 
 ## Guiding principles
 
@@ -128,12 +130,14 @@ batching.
 
 **PRs:**
 
-- **M1.0** — `fix(app): SIGINT handler bails when useInput already
-  aborting` *(RF-20)* — **user-flagged urgent**. One-line guard at
-  top of SIGINT handler. Closes the long-standing "Ctrl+C freezes
-  the session" bug. Should land first.
+- ✅ **M1.0** — `fix(app): disable Ink's built-in Ctrl+C handler so
+  useInput can interrupt` *(RF-20)* — *shipped in this PR*. Real
+  root cause was Ink's default `exitOnCtrlC: true` consuming the
+  keystroke before `useInput` could see it; one-line fix passes
+  `exitOnCtrlC: false` to `render()`. The earlier SIGINT-handler
+  guard attempt (#426) was at the wrong layer and was superseded.
 - ✅ **M1.1** — `fix(client): full-jitter retry backoff` *(OP-1 /
-  RF-8)* — *shipped in this PR*. Both retry sites in
+  RF-8)* — merged in #425. Both retry sites in
   `src/agent/client.ts` (network-error and API-error branches) now
   use `Math.random() * (baseDelay * 2 ** attempt)`.
 - **M1.2** — `feat(session-state): size-aware artifact eviction`
