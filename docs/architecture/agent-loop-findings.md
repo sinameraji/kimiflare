@@ -197,7 +197,7 @@ know.
 callback; render an inline hint in the TUI ("output truncated — use
 `expand artifact <id>` to view full").
 
-### RF-13 — Sync FS tools don't honor `ctx.signal` (M)
+### RF-13 — Sync FS tools don't honor `ctx.signal` (M) — ✅ first half shipped (OP-5)
 
 `src/tools/read.ts`, `write.ts`, `edit.ts`, `glob.ts`, `grep.ts`.
 
@@ -211,6 +211,20 @@ fast-glob's `signal` option (already supported upstream). In read on
 large files, switch to a streaming read that checks the signal between
 chunks. Edit and write are usually fast enough that a check-at-start is
 sufficient.
+
+**Status (first half):**
+- `grep`: ripgrep path now forwards `ctx.signal` to `execFile`. The JS
+  fallback checks `signal.aborted` between every file. Errata on the
+  upstream `signal` claim — fast-glob 3.x doesn't accept an AbortSignal
+  natively, so glob support is via streaming + destroy on abort instead.
+- `glob`: switched to `fg.stream()`; we check `signal.aborted` between
+  yielded entries and destroy the stream on abort, so a recursive walk
+  of a giant monorepo terminates promptly.
+- `read`: checks `signal.aborted` at entry, after stat, and forwards
+  `ctx.signal` to `fs.readFile`.
+
+**Still pending (second half):** streaming read for the >MAX_BYTES case
+and explicit `write`/`edit` check-at-start.
 
 ### RF-14 — `src/app.tsx` is a 4,393-line god component (L)
 
@@ -373,7 +387,7 @@ Tracked as M1.0 in the development roadmap.
 - **OP-3.** `onTruncation` callback + TUI hint (fix for RF-12).
 - **OP-4.** Per-call SSE idle timeout knob (fix for RF-7). ✅ shipped
 - **OP-5.** `signal.aborted` checks inside grep/glob/read inner loops
-  (fix for RF-13, first half).
+  (fix for RF-13, first half). ✅ shipped
 - **OP-6.** Cross-turn `webFetchHistory` (fix for RF-3).
 - **OP-7.** Memory extraction error counter + `/memory health` surface
   (fix for RF-1). ✅ counter + onWarning shipped; `/memory health` surface deferred to M4

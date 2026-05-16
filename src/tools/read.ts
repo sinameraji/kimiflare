@@ -27,10 +27,13 @@ export const readTool: ToolSpec<Args> = {
   needsPermission: false,
   render: ({ path }) => ({ title: `read ${collapsePath(path, process.cwd())}` }),
   async run(args, ctx) {
+    if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const abs = resolvePath(ctx.cwd, args.path);
     const st = await stat(abs);
     if (st.size > MAX_BYTES) throw new Error(`file too large: ${st.size} bytes (max ${MAX_BYTES})`);
-    const text = await readFile(abs, "utf8");
+    if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
+    const text = await readFile(abs, { encoding: "utf8", signal: ctx.signal });
+    if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const lines = text.split("\n");
     const start = Math.max(0, (args.offset ?? 1) - 1);
     const end = args.limit ? Math.min(lines.length, start + args.limit) : lines.length;

@@ -50,10 +50,11 @@ export const grepTool: ToolSpec<Args> = {
   needsPermission: false,
   render: (args) => ({ title: `grep ${args.pattern ?? ""}${args.glob ? ` (${args.glob})` : ""}` }),
   async run(args, ctx) {
+    if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
     const mode = args.output_mode ?? "content";
-    if (await hasRipgrep()) return runRipgrep(args, root, mode);
-    return runJsFallback(args, root, mode);
+    if (await hasRipgrep()) return runRipgrep(args, root, mode, ctx.signal);
+    return runJsFallback(args, root, mode, ctx.signal);
   },
 };
 
@@ -61,6 +62,7 @@ async function runRipgrep(
   args: Args,
   root: string,
   mode: "content" | "files",
+  signal?: AbortSignal,
 ): Promise<ToolOutput> {
   const rgArgs = ["--no-heading", "--color=never", "--line-number"];
   if (args.case_insensitive) rgArgs.push("-i");
@@ -68,7 +70,7 @@ async function runRipgrep(
   if (mode === "files") rgArgs.push("-l");
   rgArgs.push("--", args.pattern, root);
   try {
-    const { stdout } = await pExecFile("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await pExecFile("rg", rgArgs, { maxBuffer: 10 * 1024 * 1024, signal });
     const trimmed = stdout.trim();
     if (!trimmed) return { content: "(no matches)", rawBytes: 0, reducedBytes: 0 };
     return {
@@ -87,6 +89,7 @@ async function runJsFallback(
   args: Args,
   root: string,
   mode: "content" | "files",
+  signal?: AbortSignal,
 ): Promise<ToolOutput> {
   const re = new RegExp(args.pattern, args.case_insensitive ? "i" : "");
   const globPattern = args.glob ? `**/${args.glob}` : "**/*";
@@ -98,7 +101,11 @@ async function runJsFallback(
     ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
   });
   const out: string[] = [];
-  for (const file of files.slice(0, 5000)) {
+  for (let fi = 0; fi < Math.min(files.length, 5000); fi++) {
+    // Check abort signal between files — a slow regex over a big monorepo
+    // shouldn't keep running after the user hit Ctrl+C.
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    const file = files[fi]!;
     try {
       const content = await readFile(file, "utf8");
       if (mode === "files") {
