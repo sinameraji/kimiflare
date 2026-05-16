@@ -42,7 +42,7 @@ in `/cost` or a `/memory health` subcommand.
 - `getMemoryExtractionErrorCount(sessionId)` is exported for the eventual
   `/memory health` subcommand (TUI work, M4-adjacent).
 
-### RF-2 — Drift accumulator decays as fast as it fires (S)
+### RF-2 — Drift accumulator decays as fast as it fires (S) — ✅ shipped (OP-8)
 
 `DRIFT_THRESHOLD = 5` at `src/agent/loop.ts:138`, decay −1 per turn at turn
 end (~`loop.ts:825`).
@@ -56,6 +56,12 @@ in the UI.
 **Fix:** either drop the decay to 0.5/turn (rounded fractional accumulator)
 or change the trigger to a sliding window (e.g., 3 high-signal memories
 in 10 turns).
+
+**Status:** Replaced the counter-with-decay with a sliding window —
+`driftEvents` is a `Map<sessionId, number[]>` of turn indices, and
+`onKimiMdStale` fires when **≥ 3 high-signal memories land within 10
+turns**. After firing, the window is cleared so we don't re-nudge on
+every subsequent turn. The end-of-turn decay block is gone.
 
 ### RF-3 — Web-fetch spiral guardrail is per-turn only (S)
 
@@ -388,10 +394,10 @@ Tracked as M1.0 in the development roadmap.
 - **OP-4.** Per-call SSE idle timeout knob (fix for RF-7). ✅ shipped
 - **OP-5.** `signal.aborted` checks inside grep/glob/read inner loops
   (fix for RF-13, first half). ✅ shipped
-- **OP-6.** Cross-turn `webFetchHistory` (fix for RF-3).
+- **OP-6.** Cross-turn `webFetchHistory` (fix for RF-3). ✅ shipped
 - **OP-7.** Memory extraction error counter + `/memory health` surface
   (fix for RF-1). ✅ counter + onWarning shipped; `/memory health` surface deferred to M4
-- **OP-8.** Sliding-window drift detection (fix for RF-2).
+- **OP-8.** Sliding-window drift detection (fix for RF-2). ✅ shipped
 - **OP-9.** Zero-tool-call budget check (fix for RF-5). ✅ shipped
 - **OP-10.** Re-emit isolated-vm fallback warning per session
   (fix for RF-19).

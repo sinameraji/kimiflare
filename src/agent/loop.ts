@@ -140,9 +140,17 @@ export class AgentLoopError extends Error {
 
 const codeModeApiCache = new Map<string, string>();
 
-/** Per-session accumulator for high-signal memories that may indicate KIMI.md drift. */
-const driftAccumulator = new Map<string, number>();
-const DRIFT_THRESHOLD = 5;
+/** Per-session sliding window of turn indices where a high-signal memory landed.
+ *  We fire `onKimiMdStale` when >=DRIFT_THRESHOLD events fall inside
+ *  DRIFT_WINDOW recent turns. Replaces the older count-with-decay scheme
+ *  which almost never fired on long sessions (RF-2 / OP-8). */
+const driftEvents = new Map<string, number[]>();
+const DRIFT_WINDOW = 10;
+const DRIFT_THRESHOLD = 3;
+
+export function _resetDriftEventsForTests(): void {
+  driftEvents.clear();
+}
 
 /** Per-session count of fire-and-forget memory-extraction errors. Exposed via
  *  `getMemoryExtractionErrorCount` for a future `/memory health` surface. */
@@ -801,6 +809,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
           const llmOpts = opts.memoryManager.getExtractionLlmOpts();
 
+          // Capture turn at IIFE creation so the sliding-window drift
+          // detector below is anchored to when the memory was extracted,
+          // not whatever value `turn` has when the await chain settles.
+          const turnAtMemoryCommit = turn;
           for (const extractor of EXTRACTORS) {
             if (extractor.match(tc.function.name, filePath)) {
               void (async () => {
@@ -825,14 +837,21 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
                       memory.topicKey,
                     );
 
-                    // Real-time drift detection (Trigger B)
+                    // Real-time drift detection — sliding window:
+                    // fire `onKimiMdStale` when >=DRIFT_THRESHOLD high-signal
+                    // memories land within DRIFT_WINDOW turns. Clustered
+                    // changes = drift; spread-out changes = incremental work
+                    // and aren't worth nagging about. (RF-2 / OP-8.)
                     if (isHighSignalMemory(memory)) {
                       const sid = opts.sessionId ?? "default";
-                      const current = (driftAccumulator.get(sid) ?? 0) + 1;
-                      driftAccumulator.set(sid, current);
-                      if (current >= DRIFT_THRESHOLD) {
+                      const events = driftEvents.get(sid) ?? [];
+                      events.push(turnAtMemoryCommit);
+                      const cutoff = turnAtMemoryCommit - DRIFT_WINDOW + 1;
+                      const recent = events.filter((t) => t >= cutoff);
+                      driftEvents.set(sid, recent);
+                      if (recent.length >= DRIFT_THRESHOLD) {
                         opts.callbacks.onKimiMdStale?.();
-                        driftAccumulator.set(sid, 0);
+                        driftEvents.set(sid, []);
                       }
                     }
                   }
@@ -874,14 +893,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       loopExhausted = true;
     }
 
-    // Decay drift accumulator at end of turn (clustered changes = drift,
-    // spread-out changes = incremental and not worth nagging)
-    if (opts.sessionId) {
-      const current = driftAccumulator.get(opts.sessionId) ?? 0;
-      if (current > 0) {
-        driftAccumulator.set(opts.sessionId, Math.max(0, current - 1));
-      }
-    }
+    // (Drift accumulator decay was removed in OP-8 — drift detection is
+    // now a sliding window over recent turns, not a decaying counter.)
 
     // Allow external compaction / state management between iterations
     if (opts.onIterationEnd) {
