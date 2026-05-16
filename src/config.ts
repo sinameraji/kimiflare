@@ -156,6 +156,16 @@ function readGatewayMetadataEnv(): Record<string, string | number | boolean> | u
   }
 }
 
+function warnIfBlankGatewayId(value: string | undefined, source: string): void {
+  if (value === undefined) return;
+  if (value.trim().length === 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `kimiflare: ${source} aiGatewayId is set but empty — gateway routing will be skipped.`,
+    );
+  }
+}
+
 export async function loadConfig(): Promise<KimiConfig | null> {
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
@@ -163,6 +173,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envEffort = readReasoningEffortEnv();
   const envCoauthor = readCoauthorEnv();
   const envAiGatewayId = process.env.KIMIFLARE_AI_GATEWAY_ID;
+  warnIfBlankGatewayId(envAiGatewayId, "env");
   const envAiGatewayCacheTtl = readNumberEnv("KIMIFLARE_AI_GATEWAY_CACHE_TTL");
   const envAiGatewaySkipCache = readBooleanEnv("KIMIFLARE_AI_GATEWAY_SKIP_CACHE");
   const envAiGatewayCollectLogPayload = readBooleanEnv(
@@ -280,6 +291,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       };
     }
     if (parsed.accountId && parsed.apiToken) {
+      warnIfBlankGatewayId(parsed.aiGatewayId, "config");
       return {
         accountId: envAccount ?? parsed.accountId,
         apiToken: envToken ?? parsed.apiToken,

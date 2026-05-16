@@ -89,7 +89,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
-import { recordUsage, getCostReport, formatCostReport } from "./usage-tracker.js";
+import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, getSessionGatewayLogs } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
@@ -348,6 +348,7 @@ interface Cfg {
 }
 
 function gatewayFromConfig(cfg: Cfg): AiGatewayOptions | undefined {
+  if (process.env.KIMIFLARE_DISABLE_AI_GATEWAY === "1") return undefined;
   if (!cfg.aiGatewayId) return undefined;
   return {
     id: cfg.aiGatewayId,
@@ -362,6 +363,7 @@ function gatewayUsageLookupFromConfig(
   cfg: Cfg,
   meta: GatewayMeta | null,
 ): GatewayUsageLookup | undefined {
+  if (process.env.KIMIFLARE_DISABLE_AI_GATEWAY === "1") return undefined;
   if (!cfg.aiGatewayId || !meta) return undefined;
   return {
     accountId: cfg.accountId,
@@ -2341,6 +2343,12 @@ function App({
         void getCostReport(sessionIdRef.current ?? undefined)
           .then(async (report) => {
             const lines = [formatCostReport(report)];
+            if (cfg?.aiGatewayId && process.env.KIMIFLARE_DISABLE_AI_GATEWAY !== "1") {
+              const sid = sessionIdRef.current;
+              const logs = sid ? await getSessionGatewayLogs(sid).catch(() => []) : [];
+              const gwSection = formatGatewaySection(report, cfg.accountId, cfg.aiGatewayId, logs);
+              if (gwSection) lines.push("", gwSection);
+            }
             if (cfg?.costAttribution) {
               const { getCategoryReportText } = await import("./cost-attribution/tui-report.js");
               const catReport = await getCategoryReportText(sessionIdRef.current ?? undefined);

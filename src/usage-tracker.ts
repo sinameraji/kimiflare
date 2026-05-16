@@ -346,6 +346,13 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
   return { session, today: todayUsage, month: monthUsage, allTime };
 }
 
+/** Fetch the GatewayUsageSnapshot array recorded against a session, for /cost rendering. */
+export async function getSessionGatewayLogs(sessionId: string): Promise<GatewayUsageSnapshot[]> {
+  const log = await loadLog();
+  const session = log.sessions.find((s) => s.id === sessionId);
+  return session?.gatewayLogs ?? [];
+}
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -357,6 +364,43 @@ function fmtGateway(u: DailyUsage): string {
   const cached = u.gatewayCachedRequests ? `, ${u.gatewayCachedRequests} cached` : "";
   const cost = u.gatewayCost ? `, gateway $${u.gatewayCost.toFixed(4)}` : "";
   return `  gateway: ${u.gatewayRequests} req${cached}${cost}`;
+}
+
+/** Render the AI Gateway section of /cost — cache hit ratio, recent log IDs,
+ *  and a dashboard link. Returns empty string when no Gateway activity. */
+export function formatGatewaySection(
+  report: CostReport,
+  accountId: string,
+  gatewayId: string,
+  recentLogs: GatewayUsageSnapshot[] = [],
+): string {
+  const session = report.session;
+  const today = report.today;
+  if (!session.gatewayRequests && !today.gatewayRequests) return "";
+  const lines: string[] = ["─── AI Gateway ───"];
+  const fmtRatio = (u: DailyUsage) => {
+    const req = u.gatewayRequests ?? 0;
+    if (!req) return "n/a";
+    const cached = u.gatewayCachedRequests ?? 0;
+    const pct = (cached / req) * 100;
+    return `${cached}/${req} (${pct.toFixed(1)}%)`;
+  };
+  lines.push(`  cache hit ratio  session: ${fmtRatio(session)}   today: ${fmtRatio(today)}`);
+  const logs = recentLogs.slice(-5).reverse();
+  if (logs.length > 0) {
+    lines.push("  recent requests:");
+    for (const log of logs) {
+      const id = log.logId ?? log.eventId ?? "?";
+      const cache = log.cacheStatus ? ` [${log.cacheStatus}]` : "";
+      lines.push(
+        `    ${id}${cache}  https://dash.cloudflare.com/${accountId}/ai/ai-gateway/gateways/${gatewayId}/logs/${id}`,
+      );
+    }
+  }
+  lines.push(
+    `  dashboard:  https://dash.cloudflare.com/${accountId}/ai/ai-gateway/gateways/${gatewayId}`,
+  );
+  return lines.join("\n");
 }
 
 export function formatCostReport(report: CostReport): string {

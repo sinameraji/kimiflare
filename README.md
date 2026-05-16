@@ -76,6 +76,27 @@ npx kimiflare
 
 Requires Node.js ≥ 20.
 
+### AI Gateway (default)
+
+KimiFlare now routes Workers AI requests through your own **Cloudflare AI Gateway**. This unlocks:
+
+- Per-request payload logs in the Cloudflare dashboard
+- Response caching (set TTL with `/gateway cache-ttl <seconds>`)
+- Authoritative cost via the Gateway logs API, replacing local cost heuristics
+- Auto-tagging of every request with `feature` / `sessionId` / `turnIdx` metadata
+
+The onboarding wizard creates or picks an AI Gateway for you. Your Cloudflare API token needs these permissions:
+
+- `Workers AI:Read`
+- `AI Gateway:Read` (to list gateways)
+- `AI Gateway:Edit` (to create gateways)
+
+Edit your token at: https://dash.cloudflare.com/profile/api-tokens
+
+Once configured, run `/cost` in the TUI to see a Gateway section with cache hit ratio and direct dashboard links to each request log.
+
+For emergencies, set `KIMIFLARE_DISABLE_AI_GATEWAY=1` to fall back to the direct Workers AI path.
+
 ### One-shot mode
 
 ```sh
