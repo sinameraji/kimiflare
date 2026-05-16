@@ -89,7 +89,7 @@ import {
 import { unlink } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { encodeImageFile, isImagePath, type EncodedImage } from "./util/image.js";
-import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, getSessionGatewayLogs, usageEvents } from "./usage-tracker.js";
+import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, formatFeatureBreakdown, getSessionGatewayLogs, usageEvents } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
 import { RETENTION } from "./storage-limits.js";
@@ -2160,6 +2160,28 @@ function App({
               const logs = sid ? await getSessionGatewayLogs(sid).catch(() => []) : [];
               const gwSection = formatGatewaySection(report, cfg.accountId, cfg.aiGatewayId, logs);
               if (gwSection) lines.push("", gwSection);
+
+              // Pull per-feature cost from the Gateway logs API (1-hour cache),
+              // and surface drift status alongside the local total.
+              try {
+                const { reconcileWithCloudflare } = await import("./cost-attribution/reconcile.js");
+                const today = new Date().toISOString().slice(0, 10);
+                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .slice(0, 10);
+                const recon = await reconcileWithCloudflare({
+                  localCost: report.month.cost,
+                  accountId: cfg.accountId,
+                  apiToken: cfg.apiToken,
+                  gatewayId: cfg.aiGatewayId,
+                  startDate: sevenDaysAgo,
+                  endDate: today,
+                });
+                const breakdown = formatFeatureBreakdown(recon.featureBreakdown);
+                if (breakdown) lines.push("", breakdown);
+              } catch {
+                /* best-effort; /cost still renders without the breakdown */
+              }
             }
             if (cfg?.costAttribution) {
               const { getCategoryReportText } = await import("./cost-attribution/tui-report.js");
@@ -2238,6 +2260,25 @@ function App({
             lines.push(`collect-logs: ${cfg.aiGatewayCollectLogPayload ?? false}`);
             const meta = cfg.aiGatewayMetadata;
             lines.push(`metadata: ${meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : "none"}`);
+            // Tack on the live cache-hit ratio for the current session — derived
+            // from the cf-aig-cache-status headers we've collected so far.
+            const sid = sessionIdRef.current;
+            if (sid) {
+              void getCostReport(sid).then((report) => {
+                const req = report.session.gatewayRequests ?? 0;
+                if (req === 0) return;
+                const cached = report.session.gatewayCachedRequests ?? 0;
+                const pct = ((cached / req) * 100).toFixed(1);
+                setEvents((e) => [
+                  ...e,
+                  {
+                    kind: "info",
+                    key: mkKey(),
+                    text: `cache hits (session): ${cached}/${req} (${pct}%)`,
+                  },
+                ]);
+              }).catch(() => {});
+            }
           } else {
             lines.push("gateway: off (direct Workers AI)");
           }

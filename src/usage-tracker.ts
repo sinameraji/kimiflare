@@ -35,6 +35,10 @@ export interface DailyUsage {
   /** True iff this is a session-scoped DailyUsage with at least one turn whose
    *  Gateway cost has not yet been confirmed. Always undefined for day/month/all-time. */
   reconcilePending?: boolean;
+  /** Most recently confirmed turn duration in ms, sourced from the Gateway log.
+   *  Only set on the session-scoped DailyUsage when at least one turn has been
+   *  reconciled with a duration field. */
+  lastTurnMs?: number;
 }
 
 /** A single agent turn's cost record. `estimatedCost` is the local-pricing
@@ -445,6 +449,7 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
         gatewayCachedRequests: rawSession.gatewayCachedRequests,
         gatewayCost: rawSession.gatewayCost,
         reconcilePending: hasPendingReconcile(rawSession),
+        lastTurnMs: latestConfirmedDurationMs(rawSession),
       }
     : { date, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
 
@@ -498,6 +503,15 @@ function hasPendingReconcile(session: SessionUsage): boolean {
   return session.turns.some(
     (t) => t.logId && t.confirmedCost === undefined && !t.reconcileFailed,
   );
+}
+
+function latestConfirmedDurationMs(session: SessionUsage): number | undefined {
+  if (!session.turns) return undefined;
+  for (let i = session.turns.length - 1; i >= 0; i--) {
+    const ms = session.turns[i]?.durationMs;
+    if (typeof ms === "number") return ms;
+  }
+  return undefined;
 }
 
 /** Fetch the GatewayUsageSnapshot array recorded against a session, for /cost rendering. */
@@ -554,6 +568,22 @@ export function formatGatewaySection(
   lines.push(
     `  dashboard:  https://dash.cloudflare.com/${accountId}/ai/ai-gateway/gateways/${gatewayId}`,
   );
+  return lines.join("\n");
+}
+
+/** Render the per-feature cost breakdown — one row per metadata.feature tag
+ *  observed in the Gateway logs. Skips trivial breakdowns (1 unknown row). */
+export function formatFeatureBreakdown(
+  breakdown: Array<{ feature: string; cost: number; requests: number }> | undefined,
+): string {
+  if (!breakdown || breakdown.length === 0) return "";
+  if (breakdown.length === 1 && breakdown[0]!.feature === "unknown") return "";
+  const lines = ["─── By feature (Gateway-confirmed) ───"];
+  for (const row of breakdown) {
+    lines.push(
+      `  ${row.feature.padEnd(20)} $${row.cost.toFixed(4)}  (${row.requests} req)`,
+    );
+  }
   return lines.join("\n");
 }
 

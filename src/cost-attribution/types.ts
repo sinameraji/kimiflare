@@ -87,6 +87,9 @@ export interface ReconciliationResult {
   cloudflareCost?: number;
   driftPct?: number;
   message?: string;
+  /** Per-feature cost breakdown derived from the `metadata.feature` tag on
+   *  Gateway logs. Only populated when the reconcile call succeeded. */
+  featureBreakdown?: Array<{ feature: string; cost: number; requests: number }>;
 }
 
 export interface CostAttributionReport {
