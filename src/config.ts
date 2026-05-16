@@ -13,6 +13,8 @@ export interface McpServerConfig {
   env?: Record<string, string>;
   headers?: Record<string, string>;
   enabled?: boolean;
+  /** Per-call timeout in milliseconds for tool invocations on this server. Default: 60000. */
+  timeoutMs?: number;
 }
 
 export interface LspServerConfig {

@@ -19,7 +19,12 @@ interface ActiveConnection {
 export class McpManager {
   private connections = new Map<string, ActiveConnection>();
 
-  async addLocalServer(name: string, command: string[], env?: Record<string, string>): Promise<void> {
+  async addLocalServer(
+    name: string,
+    command: string[],
+    env?: Record<string, string>,
+    options?: { timeoutMs?: number },
+  ): Promise<void> {
     if (this.connections.has(name)) {
       await this.removeServer(name);
     }
@@ -35,12 +40,17 @@ export class McpManager {
     await client.connect(transport);
 
     const listResult = await client.listTools();
-    const tools = listResult.tools.map((t) => mcpToolToSpec(name, t, client));
+    const tools = listResult.tools.map((t) => mcpToolToSpec(name, t, client, options));
 
     this.connections.set(name, { client, transport, tools });
   }
 
-  async addRemoteServer(name: string, url: string, headers?: Record<string, string>): Promise<void> {
+  async addRemoteServer(
+    name: string,
+    url: string,
+    headers?: Record<string, string>,
+    options?: { timeoutMs?: number },
+  ): Promise<void> {
     if (this.connections.has(name)) {
       await this.removeServer(name);
     }
@@ -53,7 +63,7 @@ export class McpManager {
     await client.connect(transport);
 
     const listResult = await client.listTools();
-    const tools = listResult.tools.map((t) => mcpToolToSpec(name, t, client));
+    const tools = listResult.tools.map((t) => mcpToolToSpec(name, t, client, options));
 
     this.connections.set(name, { client, transport, tools });
   }
