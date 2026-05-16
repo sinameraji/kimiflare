@@ -15,6 +15,15 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M4.2** — `PickerController` extracted from `app.tsx` — *(this PR)*.
+  Pulled the file-mention `@`, slash-command `/` state machine into
+  `src/ui/use-picker-controller.ts` (~320 LOC) with a pure
+  `decidePickerTransition()` core and 32 unit tests (helpers +
+  transition table). `app.tsx` shrank 4,355 → 4,153 LOC. Pure refactor —
+  observable behavior preserved (open/close triggers, sticky-cancel,
+  selected-index clamping, modal-takeover close, lazy file loading on
+  first `@`, recents-first sort). No call-site asymmetries spotted; the
+  two existing pickers shared the underlying state and lifted cleanly.
 - **M1.0** — Ctrl+C no longer freezes the session — *(this PR)*.
   Single-line fix: pass `exitOnCtrlC: false` to Ink's `render()` in
   `src/app.tsx`. The real root cause was Ink's built-in Ctrl+C
@@ -268,8 +277,12 @@ that touches UI assumes M4 is making steady progress.
   next extraction: the wiring pattern (hook returns `{ pending,
   askPermission, hasPending, decide, denyPending, clearResolveRef }`)
   works well — reuse it for the other controllers.
-- **M4.2** — `refactor(ui): extract PickerController`
-  - File picker, mention picker, slash picker share a state machine.
+- ✅ **M4.2** — `refactor(ui): extract usePickerController hook`
+  *(merged in this PR)*. Pulled the file-mention `@` and slash-command
+  `/` state machine into `src/ui/use-picker-controller.ts` with a pure
+  `decidePickerTransition()` core and 32 unit tests. `app.tsx` shrank
+  4,355 → 4,153 LOC. Pure refactor; the two pickers share state and
+  lifted cleanly with no call-site asymmetries to preserve.
 - **M4.3** — `refactor(ui): extract ModalHost`
   - Limit, loop, command, LSP, theme, remote, inbox modals routed
     through one host.

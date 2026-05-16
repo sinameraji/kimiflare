@@ -3,13 +3,13 @@ import assert from "node:assert";
 import { mkdtempSync, writeFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildFilePickerIgnoreList } from "./app.js";
 import {
-  buildFilePickerIgnoreList,
   filterPickerItems,
   shouldOpenMentionPicker,
   shouldOpenSlashPicker,
   insertSlashCommand,
-} from "./app.js";
+} from "./ui/use-picker-controller.js";
 import type { FilePickerItem } from "./ui/file-picker.js";
 
 describe("buildFilePickerIgnoreList", () => {

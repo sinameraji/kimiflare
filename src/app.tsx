@@ -118,7 +118,7 @@ import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
-import { fuzzyFilter } from "./util/fuzzy.js";
+import { usePickerController } from "./ui/use-picker-controller.js";
 import { readFileSync } from "node:fs";
 
 /**
@@ -246,63 +246,6 @@ export function buildFilePickerIgnoreList(cwd: string): string[] {
 
   return [...hardcoded, ...gitignorePatterns];
 }
-
-export function filterPickerItems(items: FilePickerItem[], query: string): FilePickerItem[] {
-  return fuzzyFilter(items, query, (item) => item.name).slice(0, 50);
-}
-
-export function shouldOpenMentionPicker(
-  input: string,
-  cursorOffset: number,
-  pickerCancelOffset: number | null,
-): boolean {
-  if (pickerCancelOffset === cursorOffset) return false;
-  if (cursorOffset > 0 && input[cursorOffset - 1] === "@") {
-    const beforeAt = cursorOffset - 2;
-    return beforeAt < 0 || /\s/.test(input[beforeAt]!);
-  }
-  return false;
-}
-
-/**
- * Slash picker triggers when:
- *   - the char immediately before the cursor is "/"
- *   - everything before that "/" is whitespace-only
- * This matches handleSlash() dispatch (it only runs on inputs where the
- * trimmed text starts with "/"), so the picker can't surface commands
- * that won't actually fire.
- */
-export function shouldOpenSlashPicker(
-  input: string,
-  cursorOffset: number,
-  cancelOffset: number | null,
-): boolean {
-  if (cancelOffset === cursorOffset) return false;
-  if (cursorOffset === 0 || input[cursorOffset - 1] !== "/") return false;
-  return /^\s*$/.test(input.slice(0, cursorOffset - 1));
-}
-
-/**
- * Insert a picked slash-command name into the input, replacing the entire
- * command token (from `/` through the next whitespace or EOL). Preserves
- * any args the user already typed past the cursor and ensures exactly one
- * separating space.
- */
-export function insertSlashCommand(
-  input: string,
-  anchor: number,
-  name: string,
-): { value: string; cursor: number } {
-  let tokenEnd = anchor + 1;
-  while (tokenEnd < input.length && !/\s/.test(input[tokenEnd]!)) tokenEnd++;
-  const head = input.slice(0, anchor + 1) + name;
-  const tail = " " + input.slice(tokenEnd).replace(/^\s+/, "");
-  return { value: head + tail, cursor: head.length + 1 };
-}
-
-type ActivePicker =
-  | { kind: "file"; anchor: number; selected: number }
-  | { kind: "slash"; anchor: number; selected: number };
 
 interface Cfg {
   accountId: string;
@@ -701,11 +644,9 @@ function App({
     return () => { cancelled = true; };
   }, [cfg?.cloudMode, initialCloudToken]);
 
-  // Picker state — single popup at a time (file mention or slash command).
+  // Cursor offset for the input box. The picker controller owns its own
+  // open/close/selection state — see `usePickerController` below.
   const [cursorOffset, setCursorOffset] = useState(0);
-  const [activePicker, setActivePicker] = useState<ActivePicker | null>(null);
-  const [filePickerItems, setFilePickerItems] = useState<FilePickerItem[]>([]);
-  const filePickerLoadedRef = useRef(false);
   const [customCommandsVersion, setCustomCommandsVersion] = useState(0);
 
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
@@ -756,37 +697,8 @@ function App({
   const pendingTextRef = useRef<Map<number, { text: string; reasoning: string }>>(new Map());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customCommandsRef = useRef<CustomCommand[]>([]);
-  const pickerCancelRef = useRef<number | null>(null);
   const recentFilesRef = useRef<Map<string, number>>(new Map());
   const MAX_RECENT_FILES = 10;
-
-
-
-  // ── Picker logic (file mention `@` and slash command `/`) ──────────────
-  // Depend on stable fields (kind, anchor) — not the activePicker reference,
-  // which churns on every arrow-key press.
-  const pickerAnchor = activePicker?.anchor ?? null;
-  const pickerKind = activePicker?.kind ?? null;
-  const pickerQuery = React.useMemo(() => {
-    if (pickerAnchor === null) return null;
-    return input.slice(pickerAnchor + 1, cursorOffset);
-  }, [input, cursorOffset, pickerAnchor]);
-
-  const filteredFileItems = React.useMemo(() => {
-    if (pickerKind !== "file" || pickerQuery === null) return [];
-    const items = filterPickerItems(filePickerItems, pickerQuery).slice();
-    const now = Date.now();
-    return items.sort((a, b) => {
-      const aRecent = recentFilesRef.current.get(a.name) ?? 0;
-      const bRecent = recentFilesRef.current.get(b.name) ?? 0;
-      if (aRecent && !bRecent) return -1;
-      if (!aRecent && bRecent) return 1;
-      if (aRecent && bRecent) return bRecent - aRecent;
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [pickerKind, filePickerItems, pickerQuery]);
 
   // Custom commands that shadow built-ins are warned about and won't run, so
   // don't surface them in the picker either. customCommandsVersion is bumped
@@ -802,169 +714,55 @@ function App({
     return [...BUILTIN_COMMANDS, ...customs];
   }, [customCommandsVersion]);
 
-  const filteredSlashItems = React.useMemo(() => {
-    if (pickerKind !== "slash" || pickerQuery === null) return [];
-    return fuzzyFilter(allSlashCommands, pickerQuery, (c) => c.name).slice(0, 50);
-  }, [pickerKind, allSlashCommands, pickerQuery]);
+  const modalActive =
+    commandWizard !== null ||
+    commandPicker !== null ||
+    commandToDelete !== null ||
+    showCommandList ||
+    showLspWizard ||
+    resumeSessions !== null ||
+    checkpointSession !== null ||
+    perm !== null ||
+    limitModal !== null ||
+    loopModal !== null ||
+    showInboxModal;
 
-  useEffect(() => {
-    if (activePicker !== null) {
-      const trigger = activePicker.kind === "file" ? "@" : "/";
-      if (cursorOffset < activePicker.anchor) {
-        setActivePicker(null);
-        return;
-      }
-      if (input[activePicker.anchor] !== trigger) {
-        setActivePicker(null);
-        return;
-      }
-      // Whitespace ends the token (start of args for slash, end of mention for @).
-      const query = input.slice(activePicker.anchor + 1, cursorOffset);
-      if (/\s/.test(query)) {
-        setActivePicker(null);
-        return;
-      }
-      return;
-    }
-
-    // Drop sticky-cancel once the cursor moves away from the cancel offset.
-    if (pickerCancelRef.current === cursorOffset) {
-      pickerCancelRef.current = null;
-      return;
-    }
-
-    if (filePickerEnabled && shouldOpenMentionPicker(input, cursorOffset, pickerCancelRef.current)) {
-      setActivePicker({ kind: "file", anchor: cursorOffset - 1, selected: 0 });
-      if (!filePickerLoadedRef.current) {
-        filePickerLoadedRef.current = true;
-        const cwd = process.cwd();
-        void fg("**/*", {
-          cwd,
-          ignore: buildFilePickerIgnoreList(cwd),
-          dot: false,
-          absolute: false,
-          onlyFiles: false,
-          markDirectories: true,
-        } as fg.Options)
-          .then((entries) => {
-            const strings = (entries as string[]).slice(0, 300);
-            const items: FilePickerItem[] = strings.map((e) => ({
-              name: e.endsWith("/") ? e.slice(0, -1) : e,
-              isDirectory: e.endsWith("/"),
-            }));
-            items.sort((a, b) => {
-              if (a.isDirectory && !b.isDirectory) return -1;
-              if (!a.isDirectory && b.isDirectory) return 1;
-              return a.name.localeCompare(b.name);
-            });
-            setFilePickerItems(items);
-          })
-          .catch(() => {
-            setFilePickerItems([]);
-          });
-      }
-      return;
-    }
-
-    if (shouldOpenSlashPicker(input, cursorOffset, pickerCancelRef.current)) {
-      setActivePicker({ kind: "slash", anchor: cursorOffset - 1, selected: 0 });
-      return;
-    }
-  }, [input, cursorOffset, activePicker, filePickerEnabled]);
-
-  // Clamp selected index when filtered list shrinks below the current selection.
-  useEffect(() => {
-    if (activePicker?.kind !== "file") return;
-    const max = Math.max(0, filteredFileItems.length - 1);
-    if (activePicker.selected > max) {
-      setActivePicker({ ...activePicker, selected: max });
-    }
-  }, [filteredFileItems.length, activePicker]);
-
-  useEffect(() => {
-    if (activePicker?.kind !== "slash") return;
-    const max = Math.max(0, filteredSlashItems.length - 1);
-    if (activePicker.selected > max) {
-      setActivePicker({ ...activePicker, selected: max });
-    }
-  }, [filteredSlashItems.length, activePicker]);
-
-  const handlePickerUp = useCallback(() => {
-    setActivePicker((p) => {
-      if (!p) return null;
-      const next = Math.max(0, p.selected - 1);
-      return next === p.selected ? p : { ...p, selected: next };
+  const loadFilePickerItems = useCallback(async (): Promise<FilePickerItem[]> => {
+    const cwd = process.cwd();
+    const entries = await fg("**/*", {
+      cwd,
+      ignore: buildFilePickerIgnoreList(cwd),
+      dot: false,
+      absolute: false,
+      onlyFiles: false,
+      markDirectories: true,
+    } as fg.Options);
+    const strings = (entries as string[]).slice(0, 300);
+    const items: FilePickerItem[] = strings.map((e) => ({
+      name: e.endsWith("/") ? e.slice(0, -1) : e,
+      isDirectory: e.endsWith("/"),
+    }));
+    items.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
     });
+    return items;
   }, []);
 
-  const handlePickerDown = useCallback(() => {
-    setActivePicker((p) => {
-      if (!p) return null;
-      const max = p.kind === "file"
-        ? Math.max(0, filteredFileItems.length - 1)
-        : Math.max(0, filteredSlashItems.length - 1);
-      const next = Math.min(max, p.selected + 1);
-      return next === p.selected ? p : { ...p, selected: next };
-    });
-  }, [filteredFileItems.length, filteredSlashItems.length]);
-
-  const handlePickerSelect = useCallback(() => {
-    if (!activePicker) return;
-    if (activePicker.kind === "file") {
-      const item = filteredFileItems[activePicker.selected];
-      if (!item) return;
-      trackRecentFile(recentFilesRef, item.name, MAX_RECENT_FILES);
-      const insert = item.name + (item.isDirectory ? "/" : " ");
-      const newInput = input.slice(0, activePicker.anchor) + insert + input.slice(cursorOffset);
-      setInput(newInput);
-      setCursorOffset(activePicker.anchor + insert.length);
-      setActivePicker(null);
-      return;
-    }
-    // slash
-    const item = filteredSlashItems[activePicker.selected];
-    if (!item) return;
-    const { value } = insertSlashCommand(input, activePicker.anchor, item.name);
-    setActivePicker(null);
-    submitRef.current(value);
-  }, [activePicker, filteredFileItems, filteredSlashItems, input, cursorOffset]);
-
-  const handlePickerCancel = useCallback(() => {
-    pickerCancelRef.current = cursorOffset;
-    setActivePicker(null);
-  }, [cursorOffset]);
-
-  // Close any open picker when a modal takes over the input. Without this,
-  // picker state would survive the modal and re-render on close.
-  useEffect(() => {
-    const modalActive =
-      commandWizard !== null ||
-      commandPicker !== null ||
-      commandToDelete !== null ||
-      showCommandList ||
-      showLspWizard ||
-      resumeSessions !== null ||
-      checkpointSession !== null ||
-      perm !== null ||
-      limitModal !== null ||
-      loopModal !== null ||
-      showInboxModal;
-    if (modalActive && activePicker !== null) {
-      setActivePicker(null);
-    }
-  }, [
-    commandWizard,
-    commandPicker,
-    commandToDelete,
-    showCommandList,
-    showLspWizard,
-    resumeSessions,
-    perm,
-    limitModal,
-    loopModal,
-    showInboxModal,
-    activePicker,
-  ]);
+  const picker = usePickerController({
+    input,
+    cursorOffset,
+    setInput,
+    setCursorOffset,
+    filePickerEnabled,
+    allSlashCommands,
+    modalActive,
+    loadFilePickerItems,
+    onFileSelected: (name) => trackRecentFile(recentFilesRef, name, MAX_RECENT_FILES),
+    onSlashSelected: (value) => submitRef.current(value),
+    getRecentFiles: () => recentFilesRef.current,
+  });
 
   useEffect(() => {
     if (!cfg) return;
@@ -4248,19 +4046,19 @@ function App({
               gitBranch={gitBranch}
               intentTier={intentTier ?? undefined}
             />
-            {activePicker?.kind === "file" && (
+            {picker.active?.kind === "file" && (
               <FilePicker
-                items={filteredFileItems}
-                selectedIndex={activePicker.selected}
-                query={pickerQuery ?? ""}
+                items={picker.fileItems}
+                selectedIndex={picker.active.selected}
+                query={picker.query}
                 recentFiles={new Set(recentFilesRef.current.keys())}
               />
             )}
-            {activePicker?.kind === "slash" && (
+            {picker.active?.kind === "slash" && (
               <SlashPicker
-                items={filteredSlashItems}
-                selectedIndex={activePicker.selected}
-                query={pickerQuery ?? ""}
+                items={picker.slashItems}
+                selectedIndex={picker.active.selected}
+                query={picker.query}
               />
             )}
           <Box marginTop={1}>
@@ -4272,11 +4070,11 @@ function App({
               enablePaste
               cursorOffset={cursorOffset}
               onCursorChange={setCursorOffset}
-              pickerActive={activePicker !== null}
-              onPickerUp={handlePickerUp}
-              onPickerDown={handlePickerDown}
-              onPickerSelect={handlePickerSelect}
-              onPickerCancel={handlePickerCancel}
+              pickerActive={picker.isActive}
+              onPickerUp={picker.onUp}
+              onPickerDown={picker.onDown}
+              onPickerSelect={picker.onSelect}
+              onPickerCancel={picker.onCancel}
               onHistoryUp={() => {
                 if (history.length === 0) return;
                 if (historyIndex === -1) {
