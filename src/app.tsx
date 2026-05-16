@@ -822,6 +822,24 @@ function App({
       }),
     );
 
+    // Prune old structured logs (M5.1) and surface the current path once.
+    void import("./util/log-sink.js").then(({ pruneOldLogs, logPathFor, isLogSinkEnabled }) => {
+      if (!isLogSinkEnabled()) return;
+      try {
+        pruneOldLogs();
+      } catch {
+        // Non-fatal: log retention is best-effort.
+      }
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: `structured logs: ${logPathFor()} (tail with: tail -f $(kimiflare logs path) | jq)`,
+        },
+      ]);
+    });
+
     // Show creator welcome message once per version
     void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
       if (shouldShow) {

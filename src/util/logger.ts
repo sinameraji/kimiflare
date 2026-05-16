@@ -1,13 +1,23 @@
 /**
  * Structured logger for KimiFlare turn lifecycle events.
- * Writes JSON lines to stderr so stdout remains clean for TUI.
  *
- * Logging is OFF by default. To enable, set the env var:
- *   KIMIFLARE_LOG_LEVEL=info npm run dev
+ * Two sinks:
+ *   1. **stderr** (gated by `KIMIFLARE_LOG_LEVEL`, default `off`) — for
+ *      interactive debugging. Tail with `2>&1 | jq` from a dev shell.
+ *   2. **file** (`~/.config/kimiflare/logs/<date>.jsonl`, default ON;
+ *      disable with `KIMIFLARE_LOG_SINK=off`) — for post-hoc analysis,
+ *      shipped in M5.1. Always-on so the data exists even when the TUI
+ *      is silent.
  *
- * Tail in a second terminal to observe real-time behavior:
- *   npm run dev 2>&1 | jq -r 'select(.event | startswith("turn:"))'
+ * The two sinks are independent: you can leave stderr off and still get
+ * the file logs (the common case), or vice-versa.
+ *
+ * Tail in a second terminal:
+ *   KIMIFLARE_LOG_LEVEL=info npm run dev          # stderr live tail
+ *   tail -f $(kimiflare logs path) | jq           # file tail
  */
+
+import { writeLogLine, getLogSessionId, getLogTurnId } from "./log-sink.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "off";
 
@@ -15,8 +25,9 @@ export interface LogEntry {
   ts: string;
   level: LogLevel;
   event: string;
-  sessionId?: string;
-  requestId?: string;
+  session_id?: string;
+  turn_id?: string;
+  request_id?: string;
   data?: Record<string, unknown>;
 }
 
@@ -57,10 +68,25 @@ export function log(
   event: string,
   data?: Record<string, unknown>,
 ): void {
+  const sessionId = getLogSessionId();
+  const turnId = getLogTurnId();
+  // Accept either snake_case `request_id` (preferred, matches Gateway
+  // log schema) or legacy camelCase `requestId` for backward compat
+  // with existing call sites in src/agent/client.ts.
+  const requestId =
+    typeof data?.request_id === "string"
+      ? (data.request_id as string)
+      : typeof data?.requestId === "string"
+        ? (data.requestId as string)
+        : undefined;
+
   const entry: LogEntry = {
     ts: new Date().toISOString(),
     level,
     event,
+    ...(sessionId ? { session_id: sessionId } : {}),
+    ...(turnId ? { turn_id: turnId } : {}),
+    ...(requestId ? { request_id: requestId } : {}),
     data,
   };
 
@@ -70,10 +96,13 @@ export function log(
     recentLogs.shift();
   }
 
-  // Write to stderr so stdout remains clean for TUI rendering
+  // Stderr sink (gated by KIMIFLARE_LOG_LEVEL).
   if (LEVEL_ORDER[level] >= LEVEL_ORDER[globalMinLevel]) {
     console.error(JSON.stringify(entry));
   }
+
+  // File sink (always-on unless disabled via KIMIFLARE_LOG_SINK=off).
+  writeLogLine(entry);
 }
 
 /** Convenience wrappers */

@@ -77,6 +77,35 @@ program
 
 program.addCommand(createRemoteCommand());
 
+const logsCmd = program
+  .command("logs")
+  .description("Inspect KimiFlare's structured logs (jsonl, one file per day, 7-day retention)");
+
+logsCmd
+  .command("path")
+  .description("Print today's log file path. Useful for tailing: tail -f $(kimiflare logs path) | jq")
+  .action(async () => {
+    const { logPathFor } = await import("./util/log-sink.js");
+    console.log(logPathFor());
+  });
+
+logsCmd
+  .command("dir")
+  .description("Print the log directory")
+  .action(async () => {
+    const { logDir } = await import("./util/log-sink.js");
+    console.log(logDir());
+  });
+
+logsCmd
+  .command("prune")
+  .description("Delete log files older than 7 days")
+  .action(async () => {
+    const { pruneOldLogs } = await import("./util/log-sink.js");
+    const removed = pruneOldLogs();
+    console.log(`pruned ${removed} log files`);
+  });
+
 program
   .command("auth")
   .description("Authenticate with external services")

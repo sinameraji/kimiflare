@@ -21,6 +21,7 @@ import type { MemoryManager } from "../memory/manager.js";
 import { getCostReport } from "../usage-tracker.js";
 import type { DailyUsage } from "../usage-tracker.js";
 import type { ChatEvent } from "./chat.js";
+import { setLogSessionId } from "../util/log-sink.js";
 
 /**
  * Pull the first chunk of user text out of a message list — used to
@@ -108,6 +109,7 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
     if (sessionIdRef.current) return sessionIdRef.current;
     const text = extractFirstUserText(depsRef.current.messagesRef.current);
     sessionIdRef.current = makeSessionId(text);
+    setLogSessionId(sessionIdRef.current);
     return sessionIdRef.current;
   }, []);
 
@@ -153,6 +155,7 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           : await loadSession(filePath);
         d.messagesRef.current = file.messages;
         sessionIdRef.current = file.id;
+        setLogSessionId(file.id);
         sessionCreatedAtRef.current = file.createdAt;
         if (file.sessionState && d.compiledContextRef.current) {
           d.sessionStateRef.current = file.sessionState;
@@ -255,6 +258,7 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
 
   const resetSession = useCallback(() => {
     sessionIdRef.current = null;
+    setLogSessionId(null);
     sessionCreatedAtRef.current = null;
     sessionTitleRef.current = null;
     const d = depsRef.current;

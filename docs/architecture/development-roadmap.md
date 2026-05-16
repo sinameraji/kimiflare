@@ -15,8 +15,27 @@ Most-recent-first. When an item ships, move it here in one line so a
 fresh session can pick up where the last one left off without
 re-reading the full roadmap.
 
+- **M5.1** — Structured JSON logs to disk *(OP-20)* — *(this PR)*.
+  `src/util/log-sink.ts` adds a file sink to the existing structured
+  logger: one JSONL file per day at
+  `~/.config/kimiflare/logs/<date>.jsonl`, 7-day retention pruned at
+  startup. Always-on by default (disable with `KIMIFLARE_LOG_SINK=off`)
+  and independent of `KIMIFLARE_LOG_LEVEL` (which only gates stderr).
+  Correlation IDs lifted to top-level fields: `session_id` (from the
+  M4.4 session manager — set automatically on `ensureSessionId` /
+  resume / reset), `turn_id`, and `request_id` (snake_case preferred,
+  legacy camelCase also lifted for back-compat with existing
+  `src/agent/client.ts` call sites). Cloudflare AI Gateway already
+  has the request/response bodies — we deliberately do NOT replicate
+  them locally; just log thin events and join on `request_id` later.
+  New `kimiflare logs path | dir | prune` CLI subcommands. App emits
+  a one-liner on startup pointing at today's path. README section
+  added. 17 new unit tests cover daily rotation, retention pruning,
+  correlation-ID lifting, and the disable knob. Node test runner is
+  auto-detected so unit tests don't pollute the user's real config
+  dir.
 - **M3.4** — Streaming read for large files *(RF-13 second half)* —
-  *(this PR)*. `src/tools/read.ts` previously refused any file over
+  merged in #454. `src/tools/read.ts` previously refused any file over
   2 MB outright. Files above the cap now require an explicit
   `offset`+`limit` slice and stream line-by-line, checking
   `ctx.signal` between chunks and destroying the underlying read
@@ -405,13 +424,17 @@ driven.
 
 **PRs:**
 
-- **M5.1** — `feat(telemetry): structured JSON logs`
-  *(OP-20)*
-  - Emit `{ timestamp, level, module, event, fields }` to
-    `~/.config/kimiflare/logs/<date>.jsonl`.
-  - All existing `console.log` / `console.warn` migrated.
-  - Log rotation policy (7 days, as the existing constant suggests
-    was intended).
+- ✅ **M5.1** — `feat(telemetry): structured JSON logs`
+  *(OP-20)* — *merged in this PR*. File sink in
+  `src/util/log-sink.ts`; daily rotation, 7-day retention,
+  always-on by default. Correlation IDs (`session_id`, `turn_id`,
+  `request_id`) lifted to top-level so a future `jq` join with
+  Cloudflare AI Gateway's per-request log Just Works. Deliberately
+  omits prompt/completion bodies (Gateway has them).
+  Existing `logger.*` call sites now flow through the file sink
+  automatically — no migration of `console.log` / `console.warn`
+  required since the agent loop was already using `logger`. New
+  `kimiflare logs path | dir | prune` CLI subcommands.
 - **M5.2** — `feat(telemetry): optional OTel export`
   *(OP-20)*
   - `KIMIFLARE_OTEL_ENDPOINT` env var → emit OTLP. No-op if unset.

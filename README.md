@@ -237,6 +237,35 @@ kimiflare
 | `Shift+Tab` | Cycle mode (edit → plan → auto) |
 | `↑` / `↓` | Walk prompt history |
 
+## Logs
+
+KimiFlare writes structured JSON logs of agent-side activity (tool calls,
+permission decisions, MCP/LSP lifecycle, session events, errors) to
+`~/.config/kimiflare/logs/<date>.jsonl`, one file per day, with 7-day
+retention pruned automatically at startup.
+
+The logs deliberately exclude prompts and completions — those live in
+[Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/)
+already, and each log entry includes the Gateway `request_id` so you
+can join them when you need the network side.
+
+```sh
+kimiflare logs path             # today's file
+kimiflare logs dir              # log directory
+kimiflare logs prune            # delete files older than 7 days
+
+# Tail this session's activity, formatted:
+tail -f $(kimiflare logs path) | jq
+
+# Find the slowest tool calls in the last day:
+jq -r 'select(.event == "tool:end") | "\(.data.duration_ms)\t\(.data.tool)"' \
+  $(kimiflare logs path) | sort -rn | head
+```
+
+Disable the file sink entirely with `KIMIFLARE_LOG_SINK=off`. The
+separate `KIMIFLARE_LOG_LEVEL` env var (default `off`) controls stderr
+output — independent of the file sink.
+
 ## Development
 
 ```sh
