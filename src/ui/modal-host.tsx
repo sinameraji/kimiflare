@@ -53,8 +53,10 @@ export interface ModalHostProps {
   onCancelRemoteSession: (session: RemoteSession) => void | Promise<void>;
   // Inbox
   onInboxOpen: (url: string) => void;
-  // M6.1: hooks dashboard data + callback
-  configuredHooks: { event: HookEvent; hook: HookConfig }[];
+  // M6.1: hooks dashboard. Pass `getConfiguredHooks` rather than a
+  // static array so the dashboard re-reads after every mutation
+  // without needing a re-render in the parent.
+  getConfiguredHooks: () => { event: HookEvent; hook: HookConfig }[];
   cwd: string;
   onHooksMutate: () => void;
 }
@@ -126,7 +128,7 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <HooksDashboard
-            configured={props.configuredHooks}
+            getConfigured={props.getConfiguredHooks}
             cwd={props.cwd}
             onMutate={props.onHooksMutate}
             onDone={() => modals.setShowHooksDashboard(false)}

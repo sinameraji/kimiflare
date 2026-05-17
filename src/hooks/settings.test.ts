@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -178,6 +179,49 @@ describe("appendHook + setHookEnabled", () => {
     assert.strictEqual(parsed.hooks.Stop.length, 2);
     assert.strictEqual(parsed.hooks.Stop[0].command, "first");
     assert.strictEqual(parsed.hooks.Stop[1].command, "second");
+  });
+
+  it("is idempotent — repeated appendHook with same id does not duplicate", () => {
+    appendHook("project", projectDir, "Stop", { id: "my-hook", command: "x", enabled: true });
+    appendHook("project", projectDir, "Stop", { id: "my-hook", command: "x", enabled: true });
+    appendHook("project", projectDir, "Stop", { id: "my-hook", command: "x", enabled: true });
+    const parsed = JSON.parse(readFileSync(projectSettingsPath(projectDir), "utf8"));
+    assert.strictEqual(parsed.hooks.Stop.length, 1);
+  });
+
+  it("appendHook updates an existing entry rather than adding a duplicate", () => {
+    appendHook("project", projectDir, "Stop", { id: "my-hook", command: "old", enabled: true });
+    appendHook("project", projectDir, "Stop", { id: "my-hook", command: "new", enabled: false });
+    const parsed = JSON.parse(readFileSync(projectSettingsPath(projectDir), "utf8"));
+    assert.strictEqual(parsed.hooks.Stop.length, 1);
+    assert.strictEqual(parsed.hooks.Stop[0].command, "new");
+    assert.strictEqual(parsed.hooks.Stop[0].enabled, false);
+  });
+
+  it("dedupes leftover duplicates from older bugs on next write", () => {
+    // Simulate a settings.json that already contains 3 copies of the
+    // same id (the pre-fix double-Enter bug). Next mutation should
+    // collapse them.
+    const settingsFile = projectSettingsPath(projectDir);
+    mkdirSync(dirname(settingsFile), { recursive: true });
+    writeFileSync(
+      settingsFile,
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            { id: "dup", command: "x", enabled: true },
+            { id: "dup", command: "x", enabled: true },
+            { id: "dup", command: "x", enabled: true },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    appendHook("project", projectDir, "Stop", { id: "another", command: "y", enabled: true });
+    const parsed = JSON.parse(readFileSync(settingsFile, "utf8"));
+    assert.strictEqual(parsed.hooks.Stop.length, 2);
+    assert.strictEqual(parsed.hooks.Stop[0].id, "dup");
+    assert.strictEqual(parsed.hooks.Stop[1].id, "another");
   });
 
   it("setHookEnabled flips a hook with a matching id", () => {

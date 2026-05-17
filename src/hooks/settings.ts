@@ -109,9 +109,17 @@ export function loadHooksSettings(cwd: string): KimiflareSettings {
 // ── Edit operations used by the `/hooks` slash command ───────────────────
 
 /**
- * Append a hook to the chosen settings file (global or project),
- * creating the file + parent dirs if needed. Returns the path
- * written to. Existing entries are preserved.
+ * Idempotent upsert. Adds the hook to the chosen settings file
+ * UNLESS another entry with the same id (or, if the id was
+ * auto-derived, the same event+command) already exists — in which
+ * case it updates the existing entry's `enabled` flag and its
+ * other writable fields in place.
+ *
+ * Also dedupes any existing identical-id duplicates in the same
+ * event list at write time (one-shot cleanup for users who hit
+ * the pre-fix double-Enter bug).
+ *
+ * Returns the path that was written.
  */
 export function appendHook(
   scope: "global" | "project",
@@ -123,11 +131,33 @@ export function appendHook(
   const existing = readSettingsFile(path) ?? {};
   const hooks = existing.hooks ?? {};
   const list = hooks[event] ?? [];
-  // Drop id/source before writing — id will be re-derived on load if
-  // user wants stability; source is internal-only.
+  // Drop id/source before writing — source is internal-only. We keep
+  // the (possibly auto-derived) id because that's what setHookEnabled
+  // matches against later.
   const { source: _src, ...toWrite } = hook;
-  list.push(toWrite);
-  hooks[event] = list;
+  const newId = toWrite.id ?? deriveHookId(event, toWrite.command);
+
+  // Build a deduped list keyed by id: keep at most one entry per id,
+  // and replace it with `toWrite` if its id matches the new one.
+  // Entries that fail to parse are dropped (best-effort cleanup).
+  const byId = new Map<string, HookConfig>();
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const h = raw as HookConfig;
+    if (typeof h.command !== "string") continue;
+    const id = h.id ?? deriveHookId(event, h.command);
+    if (byId.has(id)) continue; // dedupe leftover dups from older bugs
+    byId.set(id, h);
+  }
+  byId.set(newId, { ...toWrite, id: newId });
+
+  hooks[event] = Array.from(byId.values()).map((h) => {
+    // Don't write the auto-derived id back to disk if the user didn't
+    // provide one — keeps their settings.json clean.
+    if (hook.id) return h;
+    const { id: _id, ...rest } = h;
+    return rest as HookConfig;
+  });
   existing.hooks = hooks;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(existing, null, 2) + "\n", "utf8");

@@ -42,10 +42,17 @@ interface ConfiguredEntry {
 }
 
 export interface HooksDashboardProps {
-  configured: ConfiguredEntry[];
+  /**
+   * Called every render to fetch the current list of configured hooks.
+   * Passed as a callback (rather than a static `configured` array)
+   * so the dashboard sees mutations immediately — when we toggle a
+   * hook or run the wizard, `onMutate` reloads the HooksManager and
+   * the next render calls this getter, picking up the fresh list.
+   */
+  getConfigured: () => ConfiguredEntry[];
   cwd: string;
   /** Called whenever the dashboard mutates settings.json so the
-   *  caller can re-load the HooksManager. */
+   *  caller can reload the HooksManager BEFORE the next render. */
   onMutate: () => void;
   /** Called when the user dismisses the dashboard. */
   onDone: () => void;
@@ -77,11 +84,37 @@ function tag(event: HookEvent): string {
   return `[${event}]`.padEnd(20);
 }
 
+/** Status badge with explicit symbol + word. Symbols are unambiguous
+ *  even in monochrome terminals; the `ColoredRow` component below
+ *  parses these strings and tints the badge segment green / red /
+ *  dimmed for visual scanning. */
 function statusBadge(meta: RowMeta): string {
   if (meta.kind === "configured") {
-    return meta.enabled ? "[ enabled ]" : "[ disabled ]";
+    return meta.enabled ? "[ ✓ enabled  ]" : "[ ✗ disabled ]";
   }
-  return "[ available ]"; // recommended-but-not-installed
+  return "[ + available ]";
+}
+
+/** Custom item renderer for SelectInput. Splits each row's label
+ *  into "body + status badge" and colors the badge (green for
+ *  enabled, red for disabled, dim for available). The whole row is
+ *  highlighted when selected — same convention as the rest of the
+ *  app's pickers. */
+function ColoredRow({ isSelected, label }: { isSelected?: boolean; label: string }): React.ReactElement {
+  // Splits "[Event]   id  [ ✓ enabled  ]" → ["[Event]   id  ", "[ ✓ enabled  ]"]
+  const match = label.match(/^(.+?)(\[ [✓✗+] \w+\s*\])\s*$/);
+  const baseColor = isSelected ? "cyan" : undefined;
+  if (!match) {
+    return <Text color={baseColor} bold={isSelected}>{label}</Text>;
+  }
+  const [, body, badge] = match;
+  const badgeColor = badge!.includes("✓") ? "green" : badge!.includes("✗") ? "red" : undefined;
+  return (
+    <Text color={baseColor} bold={isSelected}>
+      {body}
+      <Text color={badgeColor} dimColor={badgeColor === undefined}>{badge}</Text>
+    </Text>
+  );
 }
 
 export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
@@ -97,14 +130,15 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
     if (key.escape) props.onDone();
   });
 
+  const configured = props.getConfigured();
   const items = useMemo<SelectableRow[]>(() => {
     const out: SelectableRow[] = [];
     const configuredIds = new Set(
-      props.configured.map((c) => c.hook.id ?? deriveHookId(c.event, c.hook.command)),
+      configured.map((c) => c.hook.id ?? deriveHookId(c.event, c.hook.command)),
     );
 
     // Configured first
-    for (const c of props.configured) {
+    for (const c of configured) {
       const id = c.hook.id ?? deriveHookId(c.event, c.hook.command);
       const meta: RowMeta = {
         kind: "configured",
@@ -148,7 +182,7 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
     });
     out.push({ label: "← Done", value: { kind: "done" }, key: "__done__" });
     return out;
-  }, [props.configured, version]);
+  }, [configured, version]);
 
   const handleSelect = (item: SelectableRow): void => {
     const v = item.value;
@@ -213,6 +247,15 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
         Arrow keys to navigate. Enter to toggle. Esc when done.
       </Text>
 
+      {/* Action toast — placed right under the title so the user sees
+          "✓ enabled stop-bell" instantly after pressing Enter without
+          having to scroll past the list. */}
+      {message && (
+        <Box marginTop={1} paddingX={1} borderStyle="single" borderColor="green">
+          <Text color="green" bold>✓ {message}</Text>
+        </Box>
+      )}
+
       {/* Event glossary — makes the [Stop] / [PreToolUse] tags legible. */}
       <Box marginTop={1} flexDirection="column">
         <Text color={theme.info.color} dimColor>Events:</Text>
@@ -223,7 +266,7 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
         <Text>  <Text bold>PreCompact</Text>       — {EVENT_EXPLANATIONS.PreCompact}</Text>
       </Box>
 
-      {props.configured.length === 0 && (
+      {configured.length === 0 && (
         <Box marginTop={1}>
           <Text color={theme.info.color} dimColor>
             No hooks configured yet. Pick a recommended one below — or create your own.
@@ -234,6 +277,7 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
       <Box marginTop={1}>
         <SelectInput
           items={items as never}
+          itemComponent={ColoredRow as never}
           onSelect={(it) => handleSelect(it as SelectableRow)}
           onHighlight={(it) => setHighlighted((it as SelectableRow).value)}
         />
@@ -271,11 +315,6 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
         </Box>
       )}
 
-      {message && (
-        <Box marginTop={1}>
-          <Text color={theme.accent}>✓ {message}</Text>
-        </Box>
-      )}
     </Box>
   );
 }
