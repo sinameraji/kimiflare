@@ -176,11 +176,18 @@ F2 / F3 are mechanical wiring.
 ## Follow-up: standardize TUI menus for slash commands
 
 User review (2026-05-17) pointed out that `/hooks recommended`
-dumping formatted text is hard to read. Fix shipped in this PR:
-`/hooks` (no args) now opens an interactive `<HooksDashboard>`
-component — arrow keys to navigate, Enter to toggle enable/disable,
-Esc to close. Typing path (`/hooks enable <id>`, etc.) still works
-for users who prefer it.
+dumping formatted text is hard to read AND that there was no
+way to create a hook without leaving the TUI. Both fixed in this PR:
+
+- `/hooks` (no args) now opens an interactive `<HooksDashboard>`
+  with arrow-key navigation, per-row details panel, event glossary,
+  and `[ enabled ]` / `[ disabled ]` / `[ available ]` badges.
+- "+ Create a custom hook" opens a 6-step `<HooksWizard>` that
+  picks event → matcher → command → id → description → scope →
+  review, with regex validation on the matcher field and Esc
+  back-stepping between screens.
+- Typing path (`/hooks enable <id>`, etc.) still works for users
+  who prefer it / for scripted use.
 
 The broader pattern the user requested — *every* slash command with a
 sub-arg should offer a TUI selector, not just `/hooks` — is **not**

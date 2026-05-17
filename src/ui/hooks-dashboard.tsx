@@ -8,9 +8,8 @@ import {
   setHookEnabled,
   appendHook,
   deriveHookId,
-  globalSettingsPath,
-  projectSettingsPath,
 } from "../hooks/settings.js";
+import { HooksWizard } from "./hooks-wizard.js";
 
 /**
  * Interactive `/hooks` dashboard. Three sections in one screen:
@@ -90,13 +89,12 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
   const [message, setMessage] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [highlighted, setHighlighted] = useState<RowValue | null>(null);
-  const [showCreateHelp, setShowCreateHelp] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   useInput((_input, key) => {
-    if (key.escape) {
-      if (showCreateHelp) setShowCreateHelp(false);
-      else props.onDone();
-    }
+    // Wizard handles its own Esc (cancel + back-step navigation).
+    if (showWizard) return;
+    if (key.escape) props.onDone();
   });
 
   const items = useMemo<SelectableRow[]>(() => {
@@ -159,7 +157,7 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
       return;
     }
     if (v.kind === "create") {
-      setShowCreateHelp(true);
+      setShowWizard(true);
       return;
     }
     const meta = v.meta;
@@ -184,55 +182,21 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
     }
   };
 
-  // Helper card explaining the schema + pointing at settings.json.
-  if (showCreateHelp) {
+  // Wizard owns the screen while it's open — handles its own Esc /
+  // back-step navigation. Returns here on save (with the new hook
+  // info to surface) or on cancel (silent close).
+  if (showWizard) {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
-        <Text color={theme.accent} bold>
-          Create a custom hook
-        </Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text>
-            For now, custom hooks are added by editing your settings.json directly.
-            A guided wizard is on the roadmap.
-          </Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color} dimColor>Add an entry to one of:</Text>
-          <Text>  project: {projectSettingsPath(props.cwd)}</Text>
-          <Text>  global:  {globalSettingsPath()}</Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color} dimColor>Schema:</Text>
-          <Text>{"{"}</Text>
-          <Text>{"  \"hooks\": {"}</Text>
-          <Text>{"    \"PostToolUse\": ["}</Text>
-          <Text>{"      {"}</Text>
-          <Text>{"        \"id\": \"my-lint\","}</Text>
-          <Text>{"        \"matcher\": \"^(edit|write)$\","}</Text>
-          <Text>{"        \"command\": \"npx eslint --fix \\\"$KIMIFLARE_HOOK_PATH\\\"\""}</Text>
-          <Text>{"      }"}</Text>
-          <Text>{"    ]"}</Text>
-          <Text>{"  }"}</Text>
-          <Text>{"}"}</Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color} dimColor>Fields:</Text>
-          <Text>  command   (required) shell command to run</Text>
-          <Text>  matcher   (optional) regex on tool name (PreToolUse / PostToolUse only)</Text>
-          <Text>  id        (optional) stable handle for /hooks enable|disable</Text>
-          <Text>  enabled   (default true) set false to keep but skip</Text>
-          <Text>  timeoutMs (default 30000) hard-kill if it hangs</Text>
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text color={theme.info.color} dimColor>Env vars available in the command:</Text>
-          <Text>  $KIMIFLARE_HOOK_EVENT / _TOOL / _PATH / _TIER / _SESSION_ID</Text>
-          <Text>  $KIMIFLARE_HOOK_PAYLOAD (full JSON, on stdin too)</Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text color={theme.accent}>After editing: /hooks reload  ·  Esc to go back</Text>
-        </Box>
-      </Box>
+      <HooksWizard
+        cwd={props.cwd}
+        onSaved={(info) => {
+          props.onMutate();
+          setShowWizard(false);
+          setVersion((n) => n + 1);
+          setMessage(`saved ${info.id} (${info.event}) → ${info.path}`);
+        }}
+        onCancel={() => setShowWizard(false)}
+      />
     );
   }
 
