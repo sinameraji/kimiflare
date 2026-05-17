@@ -1,6 +1,6 @@
 {
   "name": "kimiflare",
-  "version": "0.71.0",
+  "version": "0.70.0",
   "description": "A terminal coding agent powered by Kimi-K2.6, routed through your own Cloudflare AI Gateway — per-request logs, response caching, authoritative cost. Web search, GitHub, headless browser, LSP, MCP, local memory, 262k context.",
   "keywords": [
     "ai",
@@ -65,7 +65,6 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^12.1.0",
-    "diff": "^9.0.0",
     "ink": "^7.0.1",
     "ink-select-input": "^6.2.0",
     "ink-spinner": "^5.0.0",
@@ -82,7 +81,6 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/diff": "^7.0.0",
     "@types/node": "^22.9.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.0",

@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { createTwoFilesPatch } from "diff";
+import { createTwoFilesPatch } from "../util/diff.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 
