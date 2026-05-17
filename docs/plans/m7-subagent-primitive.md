@@ -223,9 +223,9 @@ sacrificing the tier gate (Agent still doesn't appear at light tier):
 
 | Piece | Commit |
 |---|---|
-| Concurrency-safe atomic check-and-reserve in fanout counter | (this branch) |
-| `Agent` description includes Promise.all composition example so it lands in the generated TS API docstring | (this branch) |
-| Once-per-session code-mode nudge: heavy + codeMode turns get a user-role message explaining the Promise.all pattern | (this branch) |
+| Concurrency-safe atomic check-and-reserve in fanout counter | `3bea07b` |
+| `Agent` description includes Promise.all composition example so it lands in the generated TS API docstring | `3bea07b` |
+| Once-per-session code-mode nudge: heavy + codeMode turns get a user-role message explaining the Promise.all pattern | `3bea07b` |
 
 **M7.2 ships as a consequence.** Concurrent `Agent` dispatches via
 `Promise.all([api.Agent(...), api.Agent(...), ...])` inside the code-
