@@ -173,6 +173,44 @@ refactor (F1), but that simplifies the loop's wiring code, so net
 is closer to break-even. F4 is a few lines. F5 is a few lines.
 F2 / F3 are mechanical wiring.
 
+## Follow-up: standardize TUI menus for slash commands
+
+User review (2026-05-17) pointed out that `/hooks recommended`
+dumping formatted text is hard to read. Fix shipped in this PR:
+`/hooks` (no args) now opens an interactive `<HooksDashboard>`
+component — arrow keys to navigate, Enter to toggle enable/disable,
+Esc to close. Typing path (`/hooks enable <id>`, etc.) still works
+for users who prefer it.
+
+The broader pattern the user requested — *every* slash command with a
+sub-arg should offer a TUI selector, not just `/hooks` — is **not**
+in this PR. Existing commands already do this for some cases
+(`/checkpoints`, `/resume`, `/theme`, `/command`); others still dump
+text (`/mcp list`, `/lsp list`, `/skills list`, `/cost`).
+
+Tracker for the standardization pass (out of scope here):
+
+- `/mcp` → MCP-servers dashboard (list, reload, manage).
+- `/lsp` → LSP-servers dashboard (overlap with the existing wizard,
+  unify).
+- `/skills list` → skills picker (existing `/skills` already opens
+  the picker for some sub-actions; full audit needed).
+- `/cost` → cost viewer with arrow-key drill-down into sessions /
+  categories.
+- `/memory` → memory browser (search + delete entries
+  interactively).
+
+Each is its own small PR. Pattern is the M4.3 `<ModalHost>` route:
+1. New `Dashboard` component in `src/ui/`.
+2. `showXDashboard` flag in `useModalHost`.
+3. Branch in `<ModalHost>`.
+4. Slash-command handler routes `(no-arg)` to the dashboard, keeps
+   typed sub-args working.
+
+The "typing still works" invariant matters — users who scripted
+against the current `/lsp list` text output (e.g. expect's, tmux
+panes that pipe output) shouldn't break.
+
 ## Out-of-scope follow-ups (will not fix in this PR)
 
 - Hook chaining / dependencies — out of scope, no demand.

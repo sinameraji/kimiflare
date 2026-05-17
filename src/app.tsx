@@ -1127,6 +1127,7 @@ function App({
     setLatestVersion,
     setShowThemePicker,
     setShowInboxModal,
+    setShowHooksDashboard: modals.setShowHooksDashboard,
     setShowLspWizard,
     setShowRemoteDashboard,
     setShowCommandList,
@@ -1970,6 +1971,17 @@ function App({
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
         onInboxOpen={openBrowser}
+        configuredHooks={(() => {
+          const out: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
+          for (const ev of (["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"] as const)) {
+            for (const h of hooksManagerRef.current.hooksFor(ev)) {
+              out.push({ event: ev, hook: h });
+            }
+          }
+          return out;
+        })()}
+        cwd={process.cwd()}
+        onHooksMutate={() => hooksManagerRef.current.reload()}
       />
     );
   }

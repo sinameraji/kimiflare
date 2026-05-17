@@ -108,6 +108,7 @@ export interface SlashContext {
   setShowCommandList: (v: boolean) => void;
   setCommandWizard: (v: { mode: "create" | "edit"; command?: CustomCommand } | null) => void;
   setCommandPicker: (v: { mode: "edit" | "delete" } | null) => void;
+  setShowHooksDashboard: (v: boolean) => void;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -905,7 +906,15 @@ const handleHooks: Handler = (ctx, rest, arg) => {
   const { setEvents, mkKey } = ctx;
   const cwd = process.cwd();
 
-  if (arg === "" || arg === "list") {
+  // M6.1: `/hooks` (no args) opens the interactive dashboard. Typing
+  // `/hooks list` keeps the old text-dump behavior for users who
+  // prefer that.
+  if (arg === "") {
+    ctx.setShowHooksDashboard(true);
+    return true;
+  }
+
+  if (arg === "list") {
     const lines: string[] = [];
     let any = false;
     for (const ev of HOOK_EVENTS) {
@@ -923,10 +932,7 @@ const handleHooks: Handler = (ctx, rest, arg) => {
       }
     }
     if (!any) {
-      lines.push("no hooks configured.");
-      lines.push("");
-      lines.push("- `/hooks recommended` to see ready-made starter hooks");
-      lines.push("- `/hooks path` to print the settings file paths");
+      lines.push("no hooks configured. Type `/hooks` for the interactive dashboard.");
     }
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
     return true;
