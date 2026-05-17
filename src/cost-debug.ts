@@ -75,6 +75,10 @@ export interface CostDebugEntry {
   preTurnMs?: number;
   /** True if at least one memory was recalled and injected this turn. */
   memoryRecalled?: boolean;
+  /** M7.1 — when this entry belongs to a subagent turn, the parent's
+   *  sessionId. Lets analytics roll child rows up under their parent and
+   *  reconstruct subagent lineage from the JSONL stream alone. */
+  parentSessionId?: string;
 }
 
 function debugDir(): string {
@@ -174,6 +178,7 @@ export interface TurnDebugContext {
   userPromptPreview?: string;
   preTurnMs?: number;
   memoryRecalled?: boolean;
+  parentSessionId?: string;
 }
 
 /** Serialize the prompt prefix (all leading system messages) for comparison. */
@@ -286,6 +291,7 @@ export async function logTurnDebug(ctx: TurnDebugContext): Promise<void> {
     userPromptPreview: ctx.userPromptPreview,
     preTurnMs: ctx.preTurnMs,
     memoryRecalled: ctx.memoryRecalled,
+    parentSessionId: ctx.parentSessionId,
   });
 }
 

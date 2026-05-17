@@ -23,6 +23,7 @@ import { ToolExecutor } from "../tools/executor.js";
 import { ToolError } from "../tools/tool-error.js";
 import { isBlockedInPlanMode } from "../mode.js";
 import { logger } from "../util/logger.js";
+import { recordUsage } from "../usage-tracker.js";
 import {
   filterToolsForSubagent,
   getPreset,
@@ -182,6 +183,12 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
           content: result.content,
           name: result.name,
         });
+      },
+      // M7.1: record child token usage with parentSessionId so /cost can
+      // roll children under parents. Gateway-side reconciliation is
+      // skipped for children in v1 (local cost estimate only).
+      onUsageFinal: (usage) => {
+        void recordUsage(childSessionId, usage, undefined, { parentSessionId });
       },
     };
 

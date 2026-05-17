@@ -53,6 +53,10 @@ export interface TurnCost {
   cacheStatus?: string;
   reconciledAt?: number;
   reconcileFailed?: boolean;
+  /** M7.1 — when this turn was a subagent invocation, the parent's
+   *  sessionId. Lets `/cost` roll children under parents instead of
+   *  cluttering the session list. */
+  parentSessionId?: string;
 }
 
 export interface SessionUsage {
@@ -67,6 +71,11 @@ export interface SessionUsage {
   gatewayCost?: number;
   gatewayLogs?: GatewayUsageSnapshot[];
   turns?: TurnCost[];
+  /** M7.1 — when this whole session is a subagent's session
+   *  (`${parent}.subN`), the parent's sessionId. Per-turn parent
+   *  linkage lives in `TurnCost.parentSessionId`; this top-level
+   *  field is the convenience copy populated from the first turn. */
+  parentSessionId?: string;
   // Cost attribution fields
   category?: string;
   confidence?: number;
@@ -281,6 +290,7 @@ export async function recordUsage(
   sessionId: string,
   usage: Usage,
   gateway?: GatewayUsageLookup,
+  opts?: { parentSessionId?: string },
 ): Promise<void> {
   const cost = calculateCost(
     usage.prompt_tokens,
@@ -307,12 +317,17 @@ export async function recordUsage(
     session.completionTokens += usage.completion_tokens;
     session.cachedTokens += cachedTokens;
     session.cost += estimatedCost;
+    // M7.1: stamp parent linkage on first turn; later turns inherit.
+    if (opts?.parentSessionId && !session.parentSessionId) {
+      session.parentSessionId = opts.parentSessionId;
+    }
 
     const turn: TurnCost = {
       turnId,
       logId,
       estimatedCost,
       cacheStatus: gateway?.meta.cacheStatus,
+      parentSessionId: opts?.parentSessionId,
     };
     session.turns = [...(session.turns ?? []), turn].slice(-MAX_TURNS_PER_SESSION);
 

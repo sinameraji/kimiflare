@@ -788,6 +788,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           userPromptPreview,
           preTurnMs,
           memoryRecalled: memoryRecalledCount > 0,
+          parentSessionId: opts.parentSessionId,
         });
       }
       if (budgetExhausted) {
@@ -1171,6 +1172,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         userPromptPreview,
         preTurnMs,
         memoryRecalled: memoryRecalledCount > 0,
+        parentSessionId: opts.parentSessionId,
       });
     }
 
