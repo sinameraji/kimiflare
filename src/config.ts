@@ -1,7 +1,6 @@
 import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { validateModelId } from "./agent/client.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
@@ -93,6 +92,15 @@ export interface KimiConfig {
   cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
+  /** Per-provider API keys forwarded to AI Gateway as cf-aig-authorization for BYOK. */
+  providerKeys?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  /** When true, models marked billingMode="unified" use Cloudflare's Unified Billing (no BYOK header). */
+  unifiedBilling?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -132,6 +140,22 @@ function readNumberEnv(name: string): number | undefined {
   if (!raw) return undefined;
   const parsed = parseInt(raw, 10);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function readProviderKeysEnv():
+  | { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string }
+  | undefined {
+  const anthropic = process.env.ANTHROPIC_API_KEY || process.env.KIMIFLARE_ANTHROPIC_KEY;
+  const openai = process.env.OPENAI_API_KEY || process.env.KIMIFLARE_OPENAI_KEY;
+  const google = process.env.GOOGLE_API_KEY || process.env.KIMIFLARE_GOOGLE_KEY;
+  const generic = process.env.KIMIFLARE_OPENAI_COMPAT_KEY;
+  if (!anthropic && !openai && !google && !generic) return undefined;
+  const out: { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string } = {};
+  if (anthropic) out.anthropic = anthropic;
+  if (openai) out.openai = openai;
+  if (google) out.google = google;
+  if (generic) out["openai-compatible"] = generic;
+  return out;
 }
 
 function readGatewayMetadataEnv(): Record<string, string | number | boolean> | undefined {
@@ -202,6 +226,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
   const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
   const envShell = process.env.KIMIFLARE_SHELL;
+  const envProviderKeys = readProviderKeysEnv();
+  const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
 
   if (envCloudMode) {
     return {
@@ -226,6 +252,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
       shell: envShell,
+      providerKeys: envProviderKeys,
+      unifiedBilling: envUnifiedBilling,
     };
   }
 
@@ -257,6 +285,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
       shell: envShell,
+      providerKeys: envProviderKeys,
+      unifiedBilling: envUnifiedBilling,
     };
   }
 
@@ -288,6 +318,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
+        providerKeys: envProviderKeys ?? parsed.providerKeys,
+        unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
       };
     }
     if (parsed.accountId && parsed.apiToken) {
@@ -323,6 +355,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
+        providerKeys: envProviderKeys ?? parsed.providerKeys,
+        unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
       };
     }
   } catch {

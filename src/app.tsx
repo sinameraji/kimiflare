@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
@@ -85,6 +85,7 @@ import { ThemeProvider } from "./ui/theme-context.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
+import { getModelOrInfer, type ModelEntry } from "./models/registry.js";
 import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
@@ -170,6 +171,13 @@ export interface Cfg {
   cloudMode?: boolean;
   cloudToken?: string;
   shell?: string;
+  providerKeys?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  unifiedBilling?: boolean;
 }
 function App({
   initialCfg,
@@ -188,6 +196,10 @@ function App({
 }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
+  const modelContextLimit = useMemo(
+    () => (cfg ? getModelOrInfer(cfg.model).contextWindow : CONTEXT_LIMIT),
+    [cfg?.model],
+  );
   const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
   const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
   const [cloudToken, setCloudToken] = useState(initialCloudToken);
@@ -267,6 +279,8 @@ function App({
     showCommandList, setShowCommandList,
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
+    setShowModelPicker,
+    keyEntryFor: _keyEntryFor, setKeyEntryFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     hasFullscreenModal,
@@ -1078,6 +1092,84 @@ function App({
     [],
   );
 
+  const handleModelPick = useCallback(
+    (picked: ModelEntry | null) => {
+      setShowModelPicker(false);
+      if (!picked) return;
+      let openKeyEntry = false;
+      let gatewayWarning: string | null = null;
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, model: picked.id };
+        const isByokProvider =
+          picked.provider !== "workers-ai" && picked.billingMode === "byok";
+        const hasKey = !!c.providerKeys?.[
+          picked.provider as "anthropic" | "openai" | "google" | "openai-compatible"
+        ];
+        const usingUnified = !!c.unifiedBilling && picked.billingMode === "unified";
+        if (isByokProvider && !hasKey && !usingUnified) {
+          openKeyEntry = true;
+        }
+        if (picked.provider !== "workers-ai" && !updated.aiGatewayId) {
+          gatewayWarning = `${picked.id} routes through Cloudflare AI Gateway, but no gateway is configured — run /gateway <id>`;
+        }
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => {
+        const msgs: typeof e = [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `model: ${picked.id} · ${picked.contextWindow.toLocaleString()} ctx · ${picked.billingMode}`,
+          },
+        ];
+        if (gatewayWarning) msgs.push({ kind: "info", key: mkKey(), text: gatewayWarning });
+        return msgs;
+      });
+      if (openKeyEntry) setKeyEntryFor(picked);
+    },
+    [],
+  );
+
+  const handleSaveProviderKey = useCallback(
+    (model: ModelEntry, key: string) => {
+      setKeyEntryFor(null);
+      const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+      setCfg((prev) => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          providerKeys: { ...(prev.providerKeys ?? {}), [provider]: key },
+        };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: `${provider} key saved — ${model.id} is ready to use.`,
+        },
+      ]);
+    },
+    [],
+  );
+
+  const handleCancelKeyEntry = useCallback(() => {
+    setKeyEntryFor(null);
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text: "key entry cancelled — run /keys set <provider> <key> when you're ready, or /model to pick a different one.",
+      },
+    ]);
+  }, []);
+
   const buildSlashContext = useCallback((): SlashContext => ({
     exit,
     busy,
@@ -1094,6 +1186,8 @@ function App({
     setHasUpdate,
     setLatestVersion,
     setShowThemePicker,
+    setShowModelPicker,
+    setKeyEntryFor,
     setShowInboxModal,
     setShowLspWizard,
     setShowRemoteDashboard,
@@ -1138,7 +1232,7 @@ function App({
   }), [
     exit, busy, cfg, mode, lspScope, lspProjectPath,
     setCfg, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta,
-    setHasUpdate, setLatestVersion, setShowThemePicker, setShowInboxModal,
+    setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setKeyEntryFor, setShowInboxModal,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -1433,7 +1527,7 @@ function App({
         },
         onUsageFinal: (u: Usage, meta?: GatewayMeta) => {
           const sid = ensureSessionId();
-          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), cfg?.model);
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
           // Refresh cloud budget so remaining tokens update in real time
           if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
@@ -1571,6 +1665,8 @@ function App({
           cloudMode: cfg.cloudMode,
           cloudToken: cloudToken ?? initialCloudToken,
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+          providerKeys: cfg.providerKeys,
+          unifiedBilling: cfg.unifiedBilling,
           onIterationEnd,
           intentClassification: classification,
           sessionStartRecall: sessionStartRecallRef.current ?? undefined,
@@ -1583,7 +1679,7 @@ function App({
             cloudMode: cfg.cloudMode,
             cloudToken: cloudToken ?? initialCloudToken,
             cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-            maxSkillTokens: CONTEXT_LIMIT - 10_000,
+            maxSkillTokens: modelContextLimit - 10_000,
           },
           mode: modeRef.current,
           cacheStable: cacheStableRef.current,
@@ -1816,18 +1912,18 @@ function App({
 
   useEffect(() => {
     if (compactSuggestedRef.current) return;
-    if (usage && usage.prompt_tokens / CONTEXT_LIMIT >= AUTO_COMPACT_SUGGEST_PCT) {
+    if (usage && usage.prompt_tokens / modelContextLimit >= AUTO_COMPACT_SUGGEST_PCT) {
       compactSuggestedRef.current = true;
       setEvents((e) => [
         ...e,
         {
           kind: "info",
           key: mkKey(),
-          text: `context ${Math.round((usage.prompt_tokens / CONTEXT_LIMIT) * 100)}% full — run /compact to summarize older turns`,
+          text: `context ${Math.round((usage.prompt_tokens / modelContextLimit) * 100)}% full — run /compact to summarize older turns`,
         },
       ]);
     }
-  }, [usage]);
+  }, [usage, modelContextLimit]);
 
   if (!cfg) {
     return (
@@ -1885,6 +1981,10 @@ function App({
         onLspSave={handleLspSave}
         themes={themeList()}
         onPickTheme={handleThemePick}
+        currentModel={cfg?.model ?? ""}
+        onPickModel={handleModelPick}
+        onSaveProviderKey={handleSaveProviderKey}
+        onCancelKeyEntry={handleCancelKeyEntry}
         selectedRemoteSession={selectedRemoteSession}
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
@@ -1942,7 +2042,8 @@ function App({
               thinking={busy}
               turnStartedAt={turnStartedAt}
               mode={mode}
-              contextLimit={CONTEXT_LIMIT}
+              contextLimit={modelContextLimit}
+              model={cfg.model}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
               cloudMode={cfg.cloudMode}

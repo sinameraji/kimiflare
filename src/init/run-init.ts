@@ -171,6 +171,8 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
       cloudMode: cfg.cloudMode,
       cloudToken: cloudToken ?? initialCloudToken,
       cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+      providerKeys: cfg.providerKeys,
+      unifiedBilling: cfg.unifiedBilling,
       shell: cfg.shell,
       onIterationEnd,
       onFileChange: (path, content) => {
@@ -263,7 +265,7 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
         },
         onUsageFinal: (u, meta) => {
           const sid = ensureSessionId();
-          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), cfg?.model);
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
           if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
             const token = cloudToken ?? initialCloudToken!;

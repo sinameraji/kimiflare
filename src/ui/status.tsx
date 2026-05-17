@@ -19,6 +19,8 @@ interface Props {
   turnStartedAt: number | null;
   mode: Mode;
   contextLimit: number;
+  /** Active model id (shown in status bar). */
+  model?: string;
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
   cloudMode?: boolean;
@@ -35,7 +37,7 @@ interface Props {
   intentTier?: IntentTier;
 }
 
-export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
+export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, model, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -52,6 +54,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
+  if (model) idleParts.push(shortenModelId(model));
   if (cloudMode) idleParts.push("CLOUD");
   if (codeMode) idleParts.push("CODE");
 
@@ -198,6 +201,19 @@ export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): stri
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Shorten a model id for the status bar: drop the provider prefix and keep
+ *  the recognizable tail. "@cf/moonshotai/kimi-k2.6" → "kimi-k2.6",
+ *  "anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6". */
+export function shortenModelId(id: string): string {
+  if (id.startsWith("@")) {
+    const parts = id.split("/");
+    return parts[parts.length - 1] ?? id;
+  }
+  const slash = id.indexOf("/");
+  if (slash === -1) return id;
+  return id.slice(slash + 1);
 }
 
 function formatElapsed(ms: number): string {

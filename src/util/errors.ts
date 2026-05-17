@@ -54,6 +54,13 @@ export function isCloudQuotaExhaustedError(err: unknown): err is KimiApiError {
 export function humanizeCloudflareError(err: KimiApiError): string {
   const { code, httpStatus, message } = err;
 
+  // If we already threw a friendly multi-line "kimiflare: …" message from the
+  // client (e.g. missing provider key, missing AI Gateway), pass it through
+  // verbatim instead of clobbering it with the generic 401/400 template.
+  if (message.startsWith("kimiflare: ")) {
+    return message.slice("kimiflare: ".length);
+  }
+
   // Cloudflare-specific error codes
   if (code === 3040) {
     return "Cloudflare Workers AI is at capacity (code: 3040). Please wait a moment and try again.";

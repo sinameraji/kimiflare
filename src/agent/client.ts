@@ -4,6 +4,7 @@ import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
 import { logger } from "../util/logger.js";
+import { getModelOrInfer, type ModelProvider } from "../models/registry.js";
 
 export type KimiEvent =
   | { type: "gateway_meta"; meta: GatewayMeta }
@@ -31,6 +32,10 @@ export interface RunKimiOpts {
   cloudToken?: string;
   cloudDeviceId?: string;
   requestId?: string;
+  /** Per-provider API keys (BYOK) forwarded to AI Gateway as cf-aig-authorization headers. */
+  providerKeys?: Partial<Record<ModelProvider, string>>;
+  /** When true and the model's billingMode is "unified", omit BYOK headers and let Gateway bill Cloudflare. */
+  unifiedBilling?: boolean;
   /** Abort the stream if no data arrives for this many milliseconds. Default 60000. */
   idleTimeoutMs?: number;
   /** Once the first byte arrives, tighten the idle timeout to this value.
@@ -76,6 +81,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   }
   const requestId = opts.requestId ?? crypto.randomUUID();
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
+  const isUniversalEndpoint = url.includes("/compat/chat/completions");
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
     ...(opts.tools && opts.tools.length
@@ -84,6 +90,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     stream: true,
     temperature: opts.temperature ?? 0.2,
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
+    // Universal Endpoint routes by the `model` body field (e.g. "anthropic/claude-sonnet-4-6").
+    // Workers AI endpoints route by URL path and ignore body.model.
+    ...(isUniversalEndpoint ? { model: opts.model } : {}),
   };
   if (opts.reasoningEffort) {
     body.reasoning_effort = opts.reasoningEffort;
@@ -139,7 +148,28 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       const err = extractCloudflareError(parsed, text);
       const rawMsg = err?.message ?? `HTTP ${res.status}: ${text.slice(0, 300)}`;
       const msg = cleanErrorMessage(rawMsg);
-      const apiErr = new KimiApiError(`kimiflare: ${msg}`, err?.code, res.status);
+      // For 401/403 on a non-Workers-AI model, the most likely cause is a
+      // bad or missing provider key — not a Cloudflare token problem. Wrap
+      // the upstream error with the actionable "/keys" guidance so the user
+      // isn't sent to the generic cloud-auth message.
+      const modelProvider = (() => {
+        try { return getModelOrInfer(opts.model).provider; } catch { return null; }
+      })();
+      const isProviderAuthError =
+        (res.status === 401 || res.status === 403) &&
+        modelProvider !== null &&
+        modelProvider !== "workers-ai";
+      const wrappedMsg = isProviderAuthError
+        ? [
+            `${opts.model} rejected the request (HTTP ${res.status}): ${msg || "authentication failed"}.`,
+            ``,
+            `Your stored ${modelProvider} key is likely invalid or expired. Fix:`,
+            `  /keys set ${modelProvider} <new-key>   replace the stored key`,
+            `  /keys clear ${modelProvider}           remove it and reopen the picker to paste fresh`,
+            `  /model @cf/moonshotai/kimi-k2.6        switch back to Workers AI (no key needed)`,
+          ].join("\n")
+        : msg;
+      const apiErr = new KimiApiError(`kimiflare: ${wrappedMsg}`, err?.code, res.status);
       if (isRetryable(apiErr, attempt)) {
         const isRateLimit = apiErr.httpStatus === 429;
         const baseDelay = isRateLimit ? 2000 : 500;
@@ -164,8 +194,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     }
     logger.debug("runKimi:stream_end", { requestId });
 
-    // Client-side fallback: report usage to cloud worker for reconciliation
-    if (opts.cloudMode && lastUsage && opts.cloudToken) {
+    // Client-side fallback: report usage to cloud worker for reconciliation.
+    // Only applies to Workers AI models (api.kimiflare.com handles those bills).
+    if (opts.cloudMode && lastUsage && opts.cloudToken && getModelOrInfer(opts.model).provider === "workers-ai") {
       const reportUrl = "https://api.kimiflare.com/v1/usage/report";
       const reportHeaders: Record<string, string> = {
         Authorization: `Bearer ${opts.cloudToken}`,
@@ -189,34 +220,48 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   }
 }
 
-/** Validate that a model ID looks like a legitimate Cloudflare Workers AI model.
+/** Validate that a model ID looks like a legitimate Cloudflare or AI-Gateway-routable model.
+ *
+ *  Accepted shapes:
+ *    - "@namespace/name(/version)?" — Cloudflare Workers AI catalog
+ *    - "<provider>/<model-id>"      — AI Gateway Universal Endpoint (anthropic/, openai/, google-ai-studio/, groq/, deepseek/, …)
+ *
  *  Prevents path traversal via malicious model strings. */
 export function validateModelId(model: string): void {
-  // Cloudflare model IDs: @namespace/name or @namespace/name/version
-  // Allowed chars: @ a-z A-Z 0-9 _ - . /
-  if (!/^@[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(model)) {
-    throw new KimiApiError(`Invalid model ID: ${model}`, 400);
-  }
+  if (!model) throw new KimiApiError(`Invalid model ID: ${model}`, 400);
+  // Workers AI catalog form: @ns/name or @ns/name/version
+  if (/^@[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(model)) return;
+  // Provider-prefixed form: <provider>/<model-id> — no leading @, exactly one path segment after provider.
+  // Provider must be alnum/-/_; model id may contain ./-/_ but no slashes or whitespace.
+  if (/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9._-]+$/.test(model)) return;
+  throw new KimiApiError(`Invalid model ID: ${model}`, 400);
 }
 
-function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
-  validateModelId(opts.model);
-  if (opts.cloudMode) {
-    const headers: Record<string, string> = opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {};
-    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
-    return {
-      url: "https://api.kimiflare.com/v1/chat",
-      headers,
-    };
-  }
-  if (!opts.gateway?.id) {
-    return {
-      url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(opts.accountId)}/ai/run/${opts.model}`,
-      headers: {},
-    };
-  }
+const PROVIDER_DOC: Record<string, { name: string; where: string }> = {
+  anthropic: { name: "Anthropic", where: "https://console.anthropic.com/settings/keys" },
+  openai: { name: "OpenAI", where: "https://platform.openai.com/api-keys" },
+  google: { name: "Google AI Studio", where: "https://aistudio.google.com/app/apikey" },
+  "openai-compatible": { name: "your provider", where: "your provider's dashboard" },
+};
 
+function missingKeyMessage(model: string, provider: string, unifiedAvailable: boolean): string {
+  const doc = PROVIDER_DOC[provider] ?? { name: "your provider", where: "your provider's dashboard" };
+  const lines = [
+    `kimiflare: ${model} needs a ${doc.name} API key.`,
+    ``,
+    `To fix this, do ONE of:`,
+    `  1. Get a key from ${doc.where}, then run:  /keys set ${provider} <your-key>`,
+  ];
+  if (unifiedAvailable) {
+    lines.push(`  2. Enable Cloudflare Unified Billing for this gateway in the CF dashboard, then run:  /keys unified on`);
+  }
+  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`);
+  return lines.join("\n");
+}
+
+function gatewayHeadersFor(opts: RunKimiOpts): Record<string, string> {
   const headers: Record<string, string> = {};
+  if (!opts.gateway) return headers;
   if (opts.gateway.cacheTtl !== undefined) {
     headers["cf-aig-cache-ttl"] = String(opts.gateway.cacheTtl);
   }
@@ -230,12 +275,70 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
     const entries = Object.entries(opts.gateway.metadata).slice(0, 5);
     headers["cf-aig-metadata"] = stableStringify(Object.fromEntries(entries), jsonReplacer);
   }
+  return headers;
+}
 
+function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
+  validateModelId(opts.model);
+
+  if (opts.cloudMode) {
+    const headers: Record<string, string> = opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {};
+    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
+    return { url: "https://api.kimiflare.com/v1/chat", headers };
+  }
+
+  const entry = getModelOrInfer(opts.model);
+
+  // Non-Workers-AI providers must go through the Gateway Universal Endpoint.
+  // The Universal Endpoint translates per-provider request/response shapes
+  // (Anthropic tool_use, Gemini parts, …) into OpenAI chat-completions for us.
+  if (entry.provider !== "workers-ai") {
+    if (!opts.gateway?.id) {
+      throw new KimiApiError(
+        [
+          `kimiflare: ${opts.model} (${entry.provider}) is routed through Cloudflare AI Gateway, but no gateway is configured.`,
+          ``,
+          `To fix: run  /gateway <your-gateway-id>  (create one at https://dash.cloudflare.com/?to=/:account/ai-gateway),`,
+          `or switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`,
+        ].join("\n"),
+        undefined,
+        400,
+      );
+    }
+    const headers = gatewayHeadersFor(opts);
+    // BYOK: forward provider key as cf-aig-authorization header for this provider.
+    // Skip when the model is unified-billed and the user opted into Unified Billing.
+    const useUnified = opts.unifiedBilling && entry.billingMode === "unified";
+    const providerKey = opts.providerKeys?.[entry.provider];
+    if (!useUnified && providerKey) {
+      headers[`cf-aig-authorization`] = `Bearer ${providerKey}`;
+    } else if (!useUnified && !providerKey) {
+      throw new KimiApiError(
+        missingKeyMessage(opts.model, entry.provider, entry.billingMode === "unified"),
+        undefined,
+        401,
+      );
+    }
+    return {
+      url: `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(opts.accountId)}/${encodeURIComponent(
+        opts.gateway.id,
+      )}/compat/chat/completions`,
+      headers,
+    };
+  }
+
+  // Workers AI: direct API when no gateway, otherwise namespaced under workers-ai/.
+  if (!opts.gateway?.id) {
+    return {
+      url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(opts.accountId)}/ai/run/${opts.model}`,
+      headers: {},
+    };
+  }
   return {
     url: `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(opts.accountId)}/${encodeURIComponent(
       opts.gateway.id,
     )}/workers-ai/${opts.model}`,
-    headers,
+    headers: gatewayHeadersFor(opts),
   };
 }
 
