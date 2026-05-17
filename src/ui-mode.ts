@@ -21,6 +21,8 @@
  */
 
 import { execSync } from "node:child_process";
+import { readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { mount } from "camouflage";
 import type { CamouflageHandle } from "camouflage";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
@@ -29,6 +31,7 @@ import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
+import { BUILTIN_COMMANDS } from "./commands/builtins.js";
 
 export interface UiModeOpts {
   accountId: string;
@@ -50,15 +53,19 @@ export interface UiModeOpts {
 }
 
 /** Slash commands registered with the Camouflage renderer's slash picker.
- *  When the user submits a `/cmd …` line, ui-mode intercepts it (instead
- *  of forwarding to the agent loop) and dispatches the matching handler.
- *  This is the minimum set for a usable session; can grow as needed. */
-const SLASH_COMMANDS: { name: string; description: string }[] = [
-  { name: "compact", description: "compact session history (placeholder — wires to runCompact later)" },
-  { name: "clear",   description: "clear the visible transcript" },
-  { name: "help",    description: "show available slash commands" },
-  { name: "quit",    description: "exit the session" },
-];
+ *  We expose KimiFlare's full 31-command catalog (from src/commands/builtins.ts)
+ *  so the `/` picker shows everything the user expects. The dispatcher
+ *  below handles the ones that work today; the rest toast back
+ *  "not yet wired" until their handlers land (tracked in PR #474). */
+const SLASH_COMMANDS = BUILTIN_COMMANDS.map((c) => ({
+  name: c.name,
+  description: c.description,
+  args_hint: c.argHint,
+}));
+
+/** Mode names KimiFlare supports + the order /mode and Shift+Tab cycle through. */
+const MODES = ["edit", "plan", "auto"] as const;
+type Mode = typeof MODES[number];
 
 function gatewayFromOpts(opts: UiModeOpts): AiGatewayOptions | undefined {
   if (!opts.aiGatewayId) return undefined;
@@ -81,23 +88,38 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   }
 
   // Seed status segments + session start.
-  const sessionStartMs = Date.now();
+  // `turnStartMs` is set to null until the user's first message; the
+  // elapsed timer ticks only during an active turn. Previously the
+  // timer started counting as soon as the renderer mounted, which made
+  // the status bar lie ("idle 1m 23s" before the user has typed
+  // anything).
+  let turnStartMs: number | null = null;
   let promptTokens = 0;
   let cachedTokens = 0;
   let currentPhase: "idle" | "thinking" | "streaming" | "tool" = "idle";
+  let currentMode: Mode = "edit";
   const branch = tryGitBranch();
 
   cam.send("SessionStarted", {});
   cam.send("StatusUpdate", {
-    segments: { mode: "edit", phase: currentPhase, elapsed: "0s", branch },
+    segments: { mode: currentMode, phase: currentPhase, branch },
   });
   // Register slash commands with the renderer so the `/` picker lights up.
   cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
+  // @-mention candidates from cwd (files only, max 200, skip dot dirs).
+  void registerMentions(cam).catch(() => { /* best-effort */ });
 
   const setPhase = (next: typeof currentPhase): void => {
     if (next === currentPhase) return;
     currentPhase = next;
     cam.send("StatusUpdate", { segments: { phase: next } });
+  };
+
+  const setMode = (next: Mode): void => {
+    if (next === currentMode) return;
+    currentMode = next;
+    cam.send("StatusUpdate", { segments: { mode: next } });
+    cam.send("ShowToast", { text: `mode: ${next}`, kind: "info", ttl_ms: 1200 });
   };
 
   const setTokens = (prompt: number, cached: number): void => {
@@ -111,7 +133,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   };
 
   const elapsedTimer = setInterval(() => {
-    const secs = Math.floor((Date.now() - sessionStartMs) / 1000);
+    if (turnStartMs === null) return; // idle — no tick
+    const secs = Math.floor((Date.now() - turnStartMs) / 1000);
     cam.send("StatusUpdate", { segments: { elapsed: formatElapsed(secs) } });
   }, 1000);
 
@@ -177,6 +200,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   async function runTurn(text: string): Promise<void> {
     cam.send("UserMessageCreated", { text });
     messages.push({ role: "user", content: text });
+    // Start the elapsed timer for this turn; reset at end (in the
+    // outer finally for the last turn, or implicitly when the next
+    // runTurn re-stamps it).
+    turnStartMs = Date.now();
+    cam.send("StatusUpdate", { segments: { elapsed: "0s" } });
 
     try {
       await runAgentTurn({
@@ -330,9 +358,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   function handleSlashCommand(text: string): boolean {
     if (!text.startsWith("/")) return false;
     const raw = text.slice(1).trim();
-    const [name, ..._rest] = raw.split(/\s+/);
-    // _rest reserved for future slash-command argument parsing
-    // (e.g. /compact <n_messages>); unused today.
+    const [name, ...rest] = raw.split(/\s+/);
+    const args = rest.join(" ").trim();
     switch (name) {
       case "quit":
       case "exit":
@@ -346,16 +373,58 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           items: SLASH_COMMANDS.map((c) => ({ label: `/${c.name}`, value: c.description })),
         });
         return true;
-      case "clear":
-        // Camouflage's renderer doesn't have a "clear transcript" event
-        // yet (rows are append-only by design). For now, signal via toast
-        // + a marker so the user sees acknowledgement. Real clear lands
-        // when SessionCompacted (already in protocol) is wired to truncate.
-        cam.send("ShowToast", { text: "clear: not yet implemented (use SessionCompacted)", kind: "warn", ttl_ms: 2500 });
+      case "edit":
+      case "plan":
+      case "auto":
+        setMode(name as Mode);
         return true;
+      case "mode":
+        if (args && (MODES as readonly string[]).includes(args)) {
+          setMode(args as Mode);
+        } else {
+          // No arg or unknown → cycle to next.
+          const idx = MODES.indexOf(currentMode);
+          const next = MODES[(idx + 1) % MODES.length] ?? "edit";
+          setMode(next);
+        }
+        return true;
+      case "model":
+        cam.send("ShowToast", {
+          text: `model: ${opts.model}`,
+          kind: "info",
+          ttl_ms: 2500,
+        });
+        return true;
+      case "clear":
       case "compact":
-        cam.send("ShowToast", { text: "compact: not yet wired", kind: "warn", ttl_ms: 2500 });
-        // TODO: call into KimiFlare's runCompact equivalent.
+      case "checkpoint":
+      case "checkpoints":
+      case "resume":
+      case "memory":
+      case "cost":
+      case "gateway":
+      case "mcp":
+      case "lsp":
+      case "hooks":
+      case "skills":
+      case "command":
+      case "init":
+      case "remote":
+      case "update":
+      case "hello":
+      case "inbox":
+      case "report":
+      case "shell":
+      case "logout":
+      case "theme":
+      case "reasoning":
+        // Recognised but not yet ported to the Camouflage UI. Toast back
+        // so the user knows it's a real command rather than a typo.
+        cam.send("ShowToast", {
+          text: `/${name}: not yet wired in Camouflage UI (PR #474 follow-up)`,
+          kind: "warn",
+          ttl_ms: 2800,
+        });
         return true;
       case "":
         // bare `/` — picker will show; nothing to dispatch.
@@ -383,11 +452,43 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   } finally {
     clearInterval(elapsedTimer);
     process.off("SIGINT", sigintHandler);
-    cam.send("StatusUpdate", { segments: { phase: "idle", elapsed: formatElapsed(Math.floor((Date.now() - sessionStartMs) / 1000)) } });
+    // Final status sweep. cam.send() is forgiving (no-op after close)
+    // so this is safe even if the user quit the renderer.
+    cam.send("StatusUpdate", { segments: { phase: "idle" } });
     cam.send("SessionEnded", {});
     await cam.close().catch(() => {});
     if (exitCode !== 0) process.exitCode = exitCode;
   }
+}
+
+/** @-mention candidate registration. Walks cwd one level deep (skipping
+ *  dot-prefixed entries + node_modules + common build dirs) and registers
+ *  up to 200 file paths. Best-effort — failures are silent. */
+async function registerMentions(cam: CamouflageHandle): Promise<void> {
+  const SKIP = new Set(["node_modules", "dist", "build", "target", ".git", ".next", ".cache"]);
+  const cwd = process.cwd();
+  const collected: string[] = [];
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > 3 || collected.length >= 200) return;
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); }
+    catch { return; }
+    for (const e of entries) {
+      if (collected.length >= 200) return;
+      if (e.name.startsWith(".") || SKIP.has(e.name)) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) {
+        await walk(full, depth + 1);
+      } else if (e.isFile()) {
+        collected.push(relative(cwd, full));
+      }
+    }
+  }
+  await walk(cwd, 0);
+  if (collected.length === 0) return;
+  cam.send("MentionCandidatesRegistered", {
+    candidates: collected.map((p) => ({ token: p, kind: "file" })),
+  });
 }
 
 function formatK(n: number): string {
