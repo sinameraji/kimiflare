@@ -20,6 +20,7 @@ import { buildSystemPrompt, buildSessionPrefix } from "./system-prompt.js";
 import type { Mode } from "../mode.js";
 import { makeSubagentRunner } from "./subagent.js";
 import { nextStallAction, clearStall } from "./plan-state.js";
+import { recordTurnHealth, consumePendingHealthHint } from "./health.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -292,6 +293,16 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   // budgets keep them shorter.
   let wallClockBase = performance.now();
   let softWarningFired = false;
+
+  // Session health (M7.1 Tier 1). If the prior turn left a hint about
+  // context bloat or cache collapse, inject it as a user-role nudge now
+  // so the model is aware it can delegate to a subagent. Single-shot
+  // per occurrence — the hint clears on consumption.
+  const pendingHealthHint = consumePendingHealthHint(opts.sessionId);
+  if (pendingHealthHint) {
+    opts.messages.push({ role: "user", content: pendingHealthHint });
+    opts.callbacks.onWarning?.(pendingHealthHint);
+  }
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   const preTurnStart = performance.now();
@@ -790,6 +801,17 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           memoryRecalled: memoryRecalledCount > 0,
           parentSessionId: opts.parentSessionId,
         });
+        // M7.1: feed signals into the session health module so the
+        // next turn can be primed with a delegation nudge if we're
+        // observing context bloat or cache collapse.
+        const cachedTokens = lastUsage.prompt_tokens_details?.cached_tokens ?? 0;
+        recordTurnHealth({
+          sessionId: opts.sessionId,
+          tier: opts.intentClassification?.tier,
+          durationMs: Math.round(performance.now() - turnStart),
+          promptTokens: lastUsage.prompt_tokens,
+          cacheHitRatio: lastUsage.prompt_tokens > 0 ? cachedTokens / lastUsage.prompt_tokens : 0,
+        });
       }
       if (budgetExhausted) {
         throw new BudgetExhaustedError();
@@ -1173,6 +1195,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         preTurnMs,
         memoryRecalled: memoryRecalledCount > 0,
         parentSessionId: opts.parentSessionId,
+      });
+      const cachedTokens2 = lastUsage.prompt_tokens_details?.cached_tokens ?? 0;
+      recordTurnHealth({
+        sessionId: opts.sessionId,
+        tier: opts.intentClassification?.tier,
+        durationMs: Math.round(performance.now() - turnStart),
+        promptTokens: lastUsage.prompt_tokens,
+        cacheHitRatio: lastUsage.prompt_tokens > 0 ? cachedTokens2 / lastUsage.prompt_tokens : 0,
       });
     }
 
