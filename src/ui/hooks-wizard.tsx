@@ -42,6 +42,54 @@ const EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   PreCompact: "before auto-compaction shrinks the conversation",
 };
 
+/** Concrete, copy-pasteable command examples per event. Shown in the
+ *  wizard's `command` step so users see exactly what a hook looks like
+ *  instead of having to invent one from first principles. */
+const EVENT_COMMAND_EXAMPLES: Record<HookEvent, string[]> = {
+  PreToolUse: [
+    `# Block edits to secrets / .env files:`,
+    `case "$KIMIFLARE_HOOK_PATH" in *.env|*.pem|*.key) echo blocked; exit 1 ;; esac`,
+    ``,
+    `# Block writes anywhere outside src/:`,
+    `case "$KIMIFLARE_HOOK_PATH" in src/*) exit 0 ;; *) echo "writes restricted to src/"; exit 1 ;; esac`,
+  ],
+  PostToolUse: [
+    `# Auto-format JS/TS files with prettier after every edit:`,
+    `npx --no-install prettier --write "$KIMIFLARE_HOOK_PATH" 2>/dev/null || true`,
+    ``,
+    `# Log every tool call to an audit file:`,
+    `echo "$(date -u +%FT%TZ) $KIMIFLARE_HOOK_TOOL $KIMIFLARE_HOOK_RESULT_OK" >> ~/.local/state/kimiflare/tool-audit.log`,
+  ],
+  UserPromptSubmit: [
+    `# Block prompts that contain "password":`,
+    `echo "$KIMIFLARE_HOOK_PAYLOAD" | jq -r .prompt | grep -qiv password || { echo "no passwords in prompts"; exit 1; }`,
+    ``,
+    `# Log every prompt with its tier:`,
+    `echo "[$KIMIFLARE_HOOK_TIER] $(echo "$KIMIFLARE_HOOK_PAYLOAD" | jq -r .prompt)" >> ~/.local/state/kimiflare/prompts.log`,
+  ],
+  Stop: [
+    `# Terminal bell when the agent finishes:`,
+    `printf '\\a'`,
+    ``,
+    `# macOS desktop notification:`,
+    `osascript -e 'display notification "Turn complete" with title "kimiflare"'`,
+  ],
+  PreCompact: [
+    `# Snapshot the session file before compaction shrinks it:`,
+    `mkdir -p ~/snapshots && cp ~/.config/kimiflare/sessions/$KIMIFLARE_HOOK_SESSION_ID.json ~/snapshots/`,
+  ],
+};
+
+/** Suggested matcher regexes per event. Shown in the matcher step so
+ *  users see the common patterns instead of inventing them. */
+const MATCHER_EXAMPLES = [
+  `"^(edit|write)$"  — only file edits / writes (the common case)`,
+  `"^bash$"          — only bash commands`,
+  `"^mcp_"           — every MCP-server tool`,
+  `"^lsp_"           — every LSP tool`,
+  `""                — match every tool (or just leave blank)`,
+];
+
 export interface HooksWizardProps {
   cwd: string;
   /** Called after the new hook is written so the manager re-loads. */
@@ -125,13 +173,15 @@ export function HooksWizard(props: HooksWizardProps): React.ReactElement {
       <WizardFrame
         title={`Create hook · step 2 of 6: matcher (optional)`}
         hint={
-          `Regex tested against the tool name. Empty = match every tool.\n` +
-          `Examples: "^(edit|write)$" — only file edits / writes\n` +
-          `          "^bash$"          — only bash calls\n` +
-          `          "^mcp_"           — every MCP-server tool`
+          `Regex tested against the tool name. Blank = match every tool.\n\n` +
+          `Common patterns:\n` +
+          MATCHER_EXAMPLES.map((s) => `  ${s}`).join("\n")
         }
         error={error}
       >
+        <Box marginBottom={1}>
+          <Text color={theme.info.color} dimColor>Your matcher: </Text>
+        </Box>
         <CustomTextInput
           value={matcher}
           onChange={setMatcher}
@@ -152,7 +202,7 @@ export function HooksWizard(props: HooksWizardProps): React.ReactElement {
           focus
         />
         <Text color={theme.info.color} dimColor>
-          Enter to continue · Esc to go back
+          Enter (even if blank) to continue · Esc to go back
         </Text>
       </WizardFrame>
     );
@@ -160,24 +210,49 @@ export function HooksWizard(props: HooksWizardProps): React.ReactElement {
 
   if (step === "command") {
     const stepNum = TOOL_EVENTS.has(event!) ? 3 : 2;
+    const examples = EVENT_COMMAND_EXAMPLES[event!];
     return (
       <WizardFrame
         title={`Create hook · step ${stepNum} of 6: shell command`}
         hint={
-          `The shell command to run. Required.\n` +
-          `Available env vars: $KIMIFLARE_HOOK_EVENT, _TOOL, _PATH, _TIER,\n` +
-          `                    _SESSION_ID, _PAYLOAD (full JSON, also on stdin)\n` +
-          `Veto events (PreToolUse / UserPromptSubmit): non-zero exit cancels the action.`
+          `A POSIX shell command (zsh / bash compatible). Required.\n` +
+          `Runs every time the ${event} event fires${matcher ? ` and the tool name matches /${matcher}/` : ""}.\n\n` +
+          `Available env vars in your command:\n` +
+          `  $KIMIFLARE_HOOK_EVENT     — the event name (${event})\n` +
+          (TOOL_EVENTS.has(event!) ? `  $KIMIFLARE_HOOK_TOOL      — the tool being called\n` : "") +
+          (TOOL_EVENTS.has(event!) ? `  $KIMIFLARE_HOOK_PATH      — the path arg, when the tool takes one\n` : "") +
+          `  $KIMIFLARE_HOOK_TIER      — light | medium | heavy (when classified)\n` +
+          `  $KIMIFLARE_HOOK_SESSION_ID — id of the current session\n` +
+          `  $KIMIFLARE_HOOK_PAYLOAD   — the full JSON event payload (also on stdin)` +
+          (event === "PreToolUse" || event === "UserPromptSubmit"
+            ? `\n\nNote: this is a VETO event — exit non-zero (e.g. \`exit 1\`) to cancel\nthe ${event === "PreToolUse" ? "tool call" : "prompt"}. Stdout becomes the rejection reason shown to the user.`
+            : "")
         }
         error={error}
       >
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color={theme.info.color} dimColor>
+            ── Examples (copy / adapt) ─────────────────────────────
+          </Text>
+          {examples.map((line, i) => (
+            <Text key={i} color={line.startsWith("#") ? theme.info.color : undefined} dimColor={line.startsWith("#")}>
+              {line || " "}
+            </Text>
+          ))}
+          <Text color={theme.info.color} dimColor>
+            ────────────────────────────────────────────────────────
+          </Text>
+        </Box>
+        <Box>
+          <Text color={theme.info.color} dimColor>Your command: </Text>
+        </Box>
         <CustomTextInput
           value={command}
           onChange={setCommand}
           onSubmit={(v) => {
             const trimmed = v.trim();
             if (!trimmed) {
-              setError("command is required");
+              setError("command is required — paste / adapt one of the examples above");
               return;
             }
             setCommand(trimmed);
