@@ -19,6 +19,7 @@ import { ArtifactStore, type SessionState } from "./session-state.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import { logger } from "../util/logger.js";
 import { compactEventsVisual, gatewayFromConfig } from "../ui/app-helpers.js";
+import type { HooksManager } from "../hooks/manager.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -41,6 +42,10 @@ export interface RunCompactDeps {
   sessionStateRef: React.MutableRefObject<SessionState>;
   limitResolveRef: React.MutableRefObject<unknown>;
   pendingToolCallsRef: React.MutableRefObject<Map<string, string>>;
+  /** M6.1: fire PreCompact before compaction runs. Optional — if
+   *  omitted, no hooks fire (back-compat for SDK callers). */
+  hooks?: HooksManager;
+  sessionId?: string | null;
 }
 
 export async function runCompact(deps: RunCompactDeps): Promise<void> {
@@ -50,6 +55,7 @@ export async function runCompact(deps: RunCompactDeps): Promise<void> {
     sessionScopeRef, activeScopeRef, compiledContextRef,
     artifactStoreRef, messagesRef, sessionStateRef,
     limitResolveRef, pendingToolCallsRef,
+    hooks, sessionId,
   } = deps;
 
   if (busy) {
@@ -62,6 +68,24 @@ export async function runCompact(deps: RunCompactDeps): Promise<void> {
   beginTurn();
   const turnScope = sessionScopeRef.current.createChild();
   activeScopeRef.current = turnScope;
+
+  // M6.1: PreCompact hook (informational, fire-and-forget). Lets the
+  // user snapshot the conversation before it shrinks.
+  if (hooks?.hasEnabledHooks("PreCompact")) {
+    void hooks
+      .fire(
+        "PreCompact",
+        {
+          event: "PreCompact",
+          session_id: sessionId ?? null,
+          cwd: process.cwd(),
+        },
+        null,
+        turnScope.signal,
+      )
+      .catch(() => {});
+  }
+
   try {
     if (compiledContextRef.current) {
       const store = artifactStoreRef.current;

@@ -28,7 +28,15 @@ export async function createAgentSession(
   const config = await resolveSdkConfig(opts);
   const cwd = resolve(opts.cwd ?? process.cwd());
   const tools = opts.tools ?? ALL_TOOLS;
-  const executor = new ToolExecutor(tools);
+  // M6.1: SDK consumers opt in to hooks via `opts.enableHooks` (default
+  // off — SDK is a primitive, not the TUI). When enabled, load from
+  // the same settings.json files as the TUI / print mode.
+  let hooks: import("../hooks/manager.js").HooksManager | undefined;
+  if (opts.enableHooks) {
+    const { HooksManager } = await import("../hooks/manager.js");
+    hooks = new HooksManager(cwd);
+  }
+  const executor = new ToolExecutor(tools, { hooks });
 
   // Memory
   let memoryManager: MemoryManager | null = null;
@@ -114,6 +122,7 @@ export async function createAgentSession(
     allTools,
     permissionHandler: opts.permissionHandler,
     onKimiMdStale: opts.onKimiMdStale,
+    hooks,
     gateway: opts.gateway,
   });
 
@@ -133,6 +142,9 @@ interface InternalSessionOpts {
   permissionHandler?: import("./types.js").PermissionHandler;
   onKimiMdStale?: () => void;
   gateway?: import("../agent/client.js").AiGatewayOptions;
+  /** M6.1: optional. When provided, the loop fires Stop at end-of-turn.
+   *  PreToolUse / PostToolUse fire via the executor regardless. */
+  hooks?: import("../hooks/manager.js").HooksManager;
 }
 
 class InternalSession implements KimiFlareSession {
@@ -150,6 +162,7 @@ class InternalSession implements KimiFlareSession {
   private permissionHandler: import("./types.js").PermissionHandler;
   private onKimiMdStale?: () => void;
   private gateway?: import("../agent/client.js").AiGatewayOptions;
+  private hooks?: import("../hooks/manager.js").HooksManager;
 
   private listeners = new Set<(event: SessionEvent) => void>();
   private steerQueue: string[] = [];
@@ -184,6 +197,7 @@ class InternalSession implements KimiFlareSession {
     this.reasoningEffort = opts.config.reasoningEffort ?? "medium";
     this.onKimiMdStale = opts.onKimiMdStale;
     this.gateway = opts.gateway;
+    this.hooks = opts.hooks;
 
     this.permissionHandler =
       opts.permissionHandler ??
@@ -497,6 +511,7 @@ class InternalSession implements KimiFlareSession {
       cwd: this.cwd,
       signal,
       callbacks,
+      hooks: this.hooks, // M6.1: Stop fires at end-of-turn when enabled.
       maxToolIterations,
       reasoningEffort: this.reasoningEffort,
       coauthor,

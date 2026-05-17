@@ -19,6 +19,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "gateway", argHint: "[status|off|<id>|cache-ttl|skip-cache|...]", description: "Manage AI Gateway", source: "builtin" },
   { name: "mcp", argHint: "[list|reload]", description: "Manage MCP servers", source: "builtin" },
   { name: "lsp", argHint: "[config|list|reload|scope]", description: "Manage language servers", source: "builtin" },
+  { name: "hooks", argHint: "[list|recommended|enable <id>|disable <id>|path|reload]", description: "Manage lifecycle hooks", source: "builtin" },
   { name: "skills", argHint: "[list|add|edit|delete|enable|disable]", description: "Manage skills", source: "builtin" },
   { name: "command", argHint: "[create|edit|delete|list]", description: "Manage custom slash commands", source: "builtin" },
   { name: "resume", description: "Pick a past conversation to resume", source: "builtin" },

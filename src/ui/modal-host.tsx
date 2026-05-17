@@ -10,11 +10,13 @@ import { LspWizard } from "./lsp-wizard.js";
 import { ThemePicker } from "./theme-picker.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./remote-dashboard.js";
 import { InboxModal } from "./inbox-modal.js";
+import { HooksDashboard } from "./hooks-dashboard.js";
 import type { Theme } from "./theme.js";
 import type { ModalHostController } from "./use-modal-host.js";
 import type { CustomCommand } from "../commands/types.js";
 import type { SaveCustomCommandOptions } from "../commands/save.js";
 import type { RemoteSession } from "../remote/session-store.js";
+import type { HookConfig, HookEvent } from "../hooks/types.js";
 
 interface LspServersConfig {
   [key: string]: {
@@ -51,6 +53,12 @@ export interface ModalHostProps {
   onCancelRemoteSession: (session: RemoteSession) => void | Promise<void>;
   // Inbox
   onInboxOpen: (url: string) => void;
+  // M6.1: hooks dashboard. Pass `getConfiguredHooks` rather than a
+  // static array so the dashboard re-reads after every mutation
+  // without needing a re-render in the parent.
+  getConfiguredHooks: () => { event: HookEvent; hook: HookConfig }[];
+  cwd: string;
+  onHooksMutate: () => void;
 }
 
 /**
@@ -109,6 +117,21 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
           <InboxModal
             onDone={() => modals.setShowInboxModal(false)}
             onOpen={onInboxOpen}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showHooksDashboard) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <HooksDashboard
+            getConfigured={props.getConfiguredHooks}
+            cwd={props.cwd}
+            onMutate={props.onHooksMutate}
+            onDone={() => modals.setShowHooksDashboard(false)}
           />
         </Box>
       </ThemeProvider>
