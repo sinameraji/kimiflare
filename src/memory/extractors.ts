@@ -229,6 +229,52 @@ export const EXTRACTORS: Extractor[] = [
     },
   },
   {
+    // M7.1 — subagent invocations are durable findings; lifting them
+    // into memory lets future sessions recall "we already explored X"
+    // without re-investigating.
+    id: "subagent_finding",
+    match: (tool) => tool === "Agent",
+    extract: (content, _file, ctx) => {
+      // The Agent tool's result is shaped as:
+      //   "[Agent(<type>) · <desc> · <N> tool calls · <ms>ms · transcript=<id>]\n\n<summary>\n\n[Use expand_artifact …]"
+      // We extract the summary text + the description for the topic key.
+      const args = ctx?.toolArgs ?? {};
+      const description = typeof args.description === "string" ? args.description : "";
+      const subagentType = typeof args.subagent_type === "string" ? args.subagent_type : "general";
+      const taskId = typeof args.task_id === "string" ? args.task_id : "";
+
+      // Strip our framing header and footer to get just the summary
+      // body. The header line starts with "[Agent(" and the footer
+      // starts with "\n\n[Use expand_artifact". Best-effort: if the
+      // shape changed we still record the whole content.
+      let summary = content;
+      const headerMatch = summary.match(/^\[Agent\([^\]]+\][^\n]*\n\n/);
+      if (headerMatch) summary = summary.slice(headerMatch[0].length);
+      const footerIdx = summary.lastIndexOf("\n\n[Use expand_artifact");
+      if (footerIdx > 0) summary = summary.slice(0, footerIdx);
+      summary = summary.trim();
+
+      if (summary.length === 0) return null;
+
+      // topic key: prefer task_id; otherwise derive from description.
+      const keySeed = taskId || description || "anon";
+      const safeKey = keySeed.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 60);
+      const topicKey = `child_summary_${safeKey}`;
+
+      // Cap memory content at ~600 chars so long child reports don't
+      // bloat the DB. The full transcript already lives on the parent
+      // executor as an artifact.
+      const trimmed = truncate(summary, 600);
+
+      return {
+        content: `[Subagent(${subagentType})${description ? ` — ${description}` : ""}]\n${trimmed}`,
+        category: "event",
+        importance: 3,
+        topicKey,
+      };
+    },
+  },
+  {
     id: "edit_event",
     match: (tool, file) => (tool === "edit" || tool === "write") && !!file,
     extract: async (_content, file, ctx) => {
