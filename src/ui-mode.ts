@@ -168,6 +168,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   });
 
+  // Shift+Tab / Tab cycles edit → plan → auto (and back).
+  cam.on("modeChangeRequested", ({ direction }: { direction: "next" | "prev" }) => {
+    const idx = MODES.indexOf(currentMode);
+    const len = MODES.length;
+    const nextIdx = direction === "prev"
+      ? (idx - 1 + len) % len
+      : (idx + 1) % len;
+    setMode(MODES[nextIdx] ?? "edit");
+  });
+
   cam.on("exit", ({ code }) => {
     aborted = true;
     // Wake up any pending askPermission with deny.
