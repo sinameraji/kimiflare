@@ -21,7 +21,6 @@ export default defineConfig({
     "react",
     "commander",
     "fast-glob",
-    "diff",
     "turndown",
   ],
 });
