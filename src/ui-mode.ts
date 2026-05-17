@@ -119,16 +119,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // Register slash commands with the renderer so the `/` picker lights up.
   cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
 
-  // Welcome banner — mirrors src/ui/welcome.tsx. Shown once at startup so
-  // the user gets the same "Good morning! Type / for commands" greeting
-  // they had under the Ink TUI.
+  // Welcome banner — mirrors src/ui/welcome.tsx. Shown once at startup
+  // as a non-blocking toast (NOT a modal — modals require Esc to
+  // dismiss, which is the wrong first impression).
   {
     const now = new Date();
     const { headline } = buildWelcome({ hour: now.getHours(), day: now.getDay() });
-    cam.send("ShowKeyValueView", {
-      id: "welcome",
-      title: headline,
-      items: [{ label: "tip", value: "Type / for commands, @ to mention a file, Shift+Tab to cycle modes" }],
+    cam.send("ShowToast", {
+      text: `${headline}  Type / for commands, @ for files, Shift+Tab for modes.`,
+      kind: "info",
+      ttl_ms: 5000,
     });
   }
   // @-mention candidates from cwd (files only, max 200, skip dot dirs).
