@@ -184,6 +184,14 @@ export class ToolExecutor {
     this.artifactStore.clear();
   }
 
+  /** Store raw content in the artifact store and return a stable
+   *  artifact ID. Used by the subagent runner (M7.1) to persist a
+   *  child's full transcript on the parent's session so the model can
+   *  pull it back via the existing `expand_artifact` tool. */
+  storeArtifact(content: string): string {
+    return this.artifactStore.store(content);
+  }
+
   async run(
     call: ToolInvocation,
     askPermission: PermissionAsker,

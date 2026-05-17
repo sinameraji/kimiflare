@@ -26,6 +26,9 @@ export interface ToolContext {
     childSessionId: string;
     toolCallCount: number;
     durationMs: number;
+    /** Artifact ID for the full child transcript, stored on the parent
+     *  executor so the parent model can `expand_artifact` to inspect it. */
+    transcriptArtifactId?: string;
   }>;
 }
 

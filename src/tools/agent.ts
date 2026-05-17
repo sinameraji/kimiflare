@@ -137,9 +137,23 @@ export function makeAgentTool(allowedTypes: SubagentType[] = ALL_TYPES): ToolSpe
       });
 
       // Frame the response so the parent model has clear context that
-      // this output came from a child (not its own tool execution).
-      const header = `[Agent(${args.subagent_type}) — ${args.description} — ${result.toolCallCount} tool calls, ${result.durationMs}ms]`;
-      return `${header}\n\n${result.summary}`;
+      // this output came from a child (not its own tool execution). The
+      // `expand_artifact` hint tells the model how to drill into the
+      // full child transcript if the summary is insufficient.
+      const headerParts = [
+        `Agent(${args.subagent_type})`,
+        args.description,
+        `${result.toolCallCount} tool calls`,
+        `${result.durationMs}ms`,
+      ];
+      if (result.transcriptArtifactId) {
+        headerParts.push(`transcript=${result.transcriptArtifactId}`);
+      }
+      const header = `[${headerParts.join(" · ")}]`;
+      const footer = result.transcriptArtifactId
+        ? `\n\n[Use expand_artifact(${result.transcriptArtifactId}) to see the full child transcript.]`
+        : "";
+      return `${header}\n\n${result.summary}${footer}`;
     },
   };
 }

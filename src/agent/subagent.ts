@@ -68,6 +68,29 @@ export interface SubagentResult {
   toolCallCount: number;
   /** Wall-clock duration in ms. */
   durationMs: number;
+  /** ID of the transcript artifact stored on the parent's executor
+   *  (so the parent model can `expand_artifact` to inspect details).
+   *  Omitted when no parent executor is available (rare; SDK case). */
+  transcriptArtifactId?: string;
+}
+
+function renderTranscript(transcript: ChatMessage[]): string {
+  const lines: string[] = [];
+  for (const msg of transcript) {
+    if (msg.role === "user" && typeof msg.content === "string") {
+      lines.push(`### USER\n${msg.content}`);
+    } else if (msg.role === "assistant") {
+      const text = typeof msg.content === "string" ? msg.content : "";
+      const reasoning = msg.reasoning_content ?? "";
+      const calls = msg.tool_calls?.map((tc) => `→ ${tc.function.name}(${tc.function.arguments})`).join("\n") ?? "";
+      lines.push(
+        `### ASSISTANT${reasoning ? `\n[reasoning]\n${reasoning}\n[/reasoning]` : ""}${text ? `\n${text}` : ""}${calls ? `\n${calls}` : ""}`,
+      );
+    } else if (msg.role === "tool") {
+      lines.push(`### TOOL ${msg.name ?? ""}\n${typeof msg.content === "string" ? msg.content : ""}`);
+    }
+  }
+  return lines.join("\n\n");
 }
 
 /**
@@ -276,6 +299,32 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
         ? lastAssistant.content
         : "(subagent produced no final message)";
 
+    // Persist the full transcript on the parent's executor artifact
+    // store so the parent model can pull it back via `expand_artifact`.
+    // The summary alone is what the parent sees inline; the transcript
+    // is the audit trail. Best-effort: if the parent has no artifact
+    // store (e.g. SDK consumers using a custom executor), we skip this.
+    let transcriptArtifactId: string | undefined;
+    try {
+      const transcriptText =
+        `# Subagent transcript — Agent(${args.subagent_type})\n` +
+        `Description: ${args.description}\n` +
+        `Child session: ${childSessionId}\n` +
+        `Duration: ${durationMs}ms · Tool calls: ${childToolCallCount}\n\n` +
+        renderTranscript(childTranscript);
+      const exec = parent.executor as unknown as {
+        storeArtifact?: (s: string) => string;
+      };
+      if (typeof exec.storeArtifact === "function") {
+        transcriptArtifactId = exec.storeArtifact(transcriptText);
+      }
+    } catch (e) {
+      logger.warn("subagent.transcript_store_failed", {
+        childSessionId,
+        err: (e as Error).message,
+      });
+    }
+
     logger.info("subagent.complete", {
       sessionId: parentSessionId,
       childSessionId,
@@ -285,6 +334,7 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
       toolCallCount: childToolCallCount,
       durationMs,
       summaryChars: summary.length,
+      transcriptArtifactId,
     });
 
     return {
@@ -293,6 +343,7 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
       childSessionId,
       toolCallCount: childToolCallCount,
       durationMs,
+      transcriptArtifactId,
     };
   };
 }
