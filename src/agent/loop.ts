@@ -21,6 +21,10 @@ import type { Mode } from "../mode.js";
 import { makeSubagentRunner } from "./subagent.js";
 import { nextStallAction, clearStall } from "./plan-state.js";
 import { recordTurnHealth, consumePendingHealthHint } from "./health.js";
+import {
+  shouldFireCodeModeNudge,
+  CODE_MODE_NUDGE_TEXT,
+} from "../subagents/code-mode-nudge.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -302,6 +306,20 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   if (pendingHealthHint) {
     opts.messages.push({ role: "user", content: pendingHealthHint });
     opts.callbacks.onWarning?.(pendingHealthHint);
+  }
+
+  // Code-mode + Agent discoverability nudge. Fires once per session
+  // when the model is on a heavy turn AND code mode is enabled AND the
+  // Agent tool is in the per-turn tool list (i.e. tier-gating already
+  // approved it). This is the bridge that prevents code mode from
+  // hiding the subagent surface. M7.1 follow-up.
+  if (
+    opts.codeMode &&
+    opts.intentClassification?.tier === "heavy" &&
+    opts.tools.some((t) => t.name === "Agent") &&
+    shouldFireCodeModeNudge(opts.sessionId)
+  ) {
+    opts.messages.push({ role: "user", content: CODE_MODE_NUDGE_TEXT });
   }
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---

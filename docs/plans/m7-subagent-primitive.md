@@ -185,16 +185,16 @@ once shipped.
 | # | Subject | Status | Commit |
 |---|---|---|---|
 | 1 | Subagent type presets + tool filtering | ✅ done | `bb4e142` |
-| 2 | `runSubagentTurn` helper + `Agent` tool registration | pending | — |
-| 3 | Plan tools (`plan_set` / `plan_update`) load-bearing in loop | pending | — |
-| 4 | Mode + tier-gated tool registration | pending | — |
-| 5 | Wall-clock ceiling + graceful `LimitModal` integration | pending | — |
-| 6 | Telemetry: `parentSessionId` in cost-debug + usage-tracker | pending | — |
-| 7 | Artifact: `subagent_transcript` type + transcript persistence | pending | — |
-| 8 | Memory extractor for `Agent` tool result | pending | — |
-| 9 | Session health diagnosis (Tier 1) | pending | — |
-| 10 | UI: collapsible subagent event in app.tsx | pending | — |
-| 11 | Tests across all the above | pending | — |
+| 2 | `runSubagentTurn` helper + `Agent` tool registration | ✅ done | `4235644` |
+| 3 | Plan tools (`plan_set` / `plan_update`) load-bearing in loop | ✅ done | `9abb7ff` |
+| 4 | Mode + tier-gated tool registration | ✅ done | `985d959` |
+| 5 | Wall-clock ceiling + graceful `LimitModal` integration | ✅ done | `81c4f2c` |
+| 6 | Telemetry: `parentSessionId` in cost-debug + usage-tracker | ✅ done | `4297817` |
+| 7 | Artifact: `subagent_transcript` type + transcript persistence | ✅ done | `f166cbb` |
+| 8 | Memory extractor for `Agent` tool result | ✅ done | `6f6dbfa` |
+| 9 | Session health diagnosis (Tier 1) | ✅ done | `94c6ee6` |
+| 10 | UI: collapsible subagent event in app.tsx | ✅ done | `b9e522c` |
+| 11 | Tests across all the above | ✅ done | `9da4610` |
 
 ## Related plans
 
@@ -210,9 +210,32 @@ once shipped.
 - `docs/architecture/development-roadmap.md` M7.4 — auto-compaction at
   `MAX_PROMPT_TOKENS`, intentionally NOT in this PR.
 
+## Code-mode integration fix (post-review)
+
+The first round of M7.1 had a real architectural miss: heavy tier
+auto-enables code mode, and in code mode the model writes one TS
+script per round-trip — so it never reaches the per-tool-call decision
+point where `Agent` dispatch would feel natural. The Agent tool was
+in the generated TS API but the model defaulted to inline reads.
+
+The fix made Agent a first-class code-mode primitive without
+sacrificing the tier gate (Agent still doesn't appear at light tier):
+
+| Piece | Commit |
+|---|---|
+| Concurrency-safe atomic check-and-reserve in fanout counter | (this branch) |
+| `Agent` description includes Promise.all composition example so it lands in the generated TS API docstring | (this branch) |
+| Once-per-session code-mode nudge: heavy + codeMode turns get a user-role message explaining the Promise.all pattern | (this branch) |
+
+**M7.2 ships as a consequence.** Concurrent `Agent` dispatches via
+`Promise.all([api.Agent(...), api.Agent(...), ...])` inside the code-
+mode sandbox are now atomic-safe at the fanout cap and run truly in
+parallel. The original M7.2 "deferred follow-up" framing was wrong —
+the primitive was already parallel-capable; we just had to lock the
+counters and tell the model the pattern exists.
+
 ## Open follow-ups (track separately, don't expand scope here)
 
-- **M7.2** — Parallel subagent execution (`Promise.all`).
 - **M7.3** — Worktree isolation.
 - **M7.4** — Auto-compaction (RF-6 fix).
 - **M7.5** — Session health Tier 2 (consent prompt) and Tier 3

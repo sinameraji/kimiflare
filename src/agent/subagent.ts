@@ -149,7 +149,13 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
       });
     }
 
-    // Per-turn fanout cap.
+    // Atomic check-and-reserve for both fanout caps. We do this as the
+    // very first thing after validation — BEFORE any setup or await
+    // boundary — so concurrent dispatches from code mode
+    // (`Promise.all([Agent(...), Agent(...), ...])`) cannot race past
+    // the cap. JS single-thread guarantees the check+increment block
+    // is atomic; reserving up-front means future refactors that add an
+    // await before setup don't accidentally break the invariant.
     if (perTurnCount >= PER_TURN_FANOUT_CAP) {
       throw new ToolError({
         code: "policy_rejection",
@@ -157,20 +163,23 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
         suggestion: "stop spawning children and write the final answer",
       });
     }
-
-    // Per-session fanout cap.
-    const sessionCount = sessionSubagentCounts.get(parentSessionId) ?? 0;
-    if (sessionCount >= PER_SESSION_FANOUT_CAP) {
+    const sessionCountBefore = sessionSubagentCounts.get(parentSessionId) ?? 0;
+    if (sessionCountBefore >= PER_SESSION_FANOUT_CAP) {
       throw new ToolError({
         code: "policy_rejection",
         message: `Per-session subagent cap (${PER_SESSION_FANOUT_CAP}) reached.`,
         suggestion: "wrap up this session and start a new one if you need more child work",
       });
     }
+    // Reserve our slot atomically. From here on, even if we abort early,
+    // the counters reflect that this dispatch happened.
+    const childIdx = perTurnCount;
+    perTurnCount++;
+    const sessionCount = sessionCountBefore + 1;
+    sessionSubagentCounts.set(parentSessionId, sessionCount);
 
     const preset = getPreset(args.subagent_type);
-    const childIdx = perTurnCount;
-    const childSessionId = `${parentSessionId}.sub${sessionCount + 1}`;
+    const childSessionId = `${parentSessionId}.sub${sessionCount}`;
 
     // Intersect preset tool filter with mode-imposed blocks.
     const childTools = decideChildTools(parent.tools, args.subagent_type, parent.mode);
@@ -260,9 +269,6 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
       shell: parent.shell,
       cacheStable: parent.cacheStable,
     };
-
-    perTurnCount++;
-    sessionSubagentCounts.set(parentSessionId, sessionCount + 1);
 
     logger.info("subagent.start", {
       sessionId: parentSessionId,
