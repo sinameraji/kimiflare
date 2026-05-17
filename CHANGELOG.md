@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.72.0](https://github.com/sinameraji/kimiflare/compare/v0.71.0...v0.72.0) (2026-05-17)
+
+
+### Features
+
+* **glob:** replace fast-glob with native node:fs implementation ([#470](https://github.com/sinameraji/kimiflare/issues/470)) ([b5f1712](https://github.com/sinameraji/kimiflare/commit/b5f1712fb50e8f5a7311713b591e5bd27bc6e6d4))
+* remove diff npm dependency ([#473](https://github.com/sinameraji/kimiflare/issues/473)) ([c5f3a8f](https://github.com/sinameraji/kimiflare/commit/c5f3a8f3eaa98229be5ca301362f9baef384be85))
+
 ## [0.71.0](https://github.com/sinameraji/kimiflare/compare/v0.70.0...v0.71.0) (2026-05-17)
 
 
