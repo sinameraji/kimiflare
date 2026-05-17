@@ -20,8 +20,24 @@ import { runAgentTurn, BudgetExhaustedError } from "./loop.js";
 import type { AgentTurnOpts, AgentCallbacks } from "./loop.js";
 import type { ChatMessage } from "./messages.js";
 import { ToolExecutor } from "../tools/executor.js";
+import type { ToolSpec } from "../tools/registry.js";
 import { ToolError } from "../tools/tool-error.js";
-import { isBlockedInPlanMode } from "../mode.js";
+import { isBlockedInPlanMode, type Mode } from "../mode.js";
+
+/**
+ * Pure helper exposed for tests + reuse: compute the tool list a child
+ * receives, given the parent's tool list, the chosen subagent type,
+ * and the parent's mode. Mode is the OUTER constraint — preset can
+ * narrow further but never widen past mode.
+ */
+export function decideChildTools(
+  parentTools: ToolSpec[],
+  subagentType: SubagentType,
+  parentMode: Mode | undefined,
+): ToolSpec[] {
+  const modeBlock = parentMode === "plan" ? isBlockedInPlanMode : () => false;
+  return filterToolsForSubagent(subagentType, parentTools, modeBlock);
+}
 import { logger } from "../util/logger.js";
 import { recordUsage } from "../usage-tracker.js";
 import {
@@ -157,8 +173,7 @@ export function makeSubagentRunner(parent: AgentTurnOpts): (args: SubagentArgs) 
     const childSessionId = `${parentSessionId}.sub${sessionCount + 1}`;
 
     // Intersect preset tool filter with mode-imposed blocks.
-    const modeBlock = parent.mode === "plan" ? isBlockedInPlanMode : () => false;
-    const childTools = filterToolsForSubagent(args.subagent_type, parent.tools, modeBlock);
+    const childTools = decideChildTools(parent.tools, args.subagent_type, parent.mode);
 
     // Build child message history: just the system prompt is owned by
     // `runAgentTurn` (it'll add it). We supply the narrow task prompt.
