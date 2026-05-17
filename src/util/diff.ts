@@ -1,26 +1,24 @@
-/**
- * Stand-in for the `diff` npm package's `createTwoFilesPatch`.
- *
- * Re-implements the exact line-diff → unified-patch pipeline used by jsdiff
- * so that the `diff` dependency can be removed from the bundle.
- */
+/* ------------------------------------------------------------------
+   Inline replacement for the `diff` npm package (v7.0.0).
+   Replicates createTwoFilesPatch with byte-for-byte identical output
+   for the call signature used by DiffView:
+     createTwoFilesPatch(path, path, before, after, "", "", { context: 2 })
+   ------------------------------------------------------------------ */
 
-/* ------------------------------------------------------------------ */
-/* 1.  Tokenisation (line.js)                                         */
-/* ------------------------------------------------------------------ */
-
-function tokenize(value: string): string[] {
+/* ---------- tokenize (line.js) ---------- */
+function tokenize(value: string, options: { stripTrailingCr?: boolean; newlineIsToken?: boolean } = {}): string[] {
+  if (options.stripTrailingCr) {
+    value = value.replace(/\r\n/g, "\n");
+  }
   const retLines: string[] = [];
   const linesAndNewlines = value.split(/(\n|\r\n)/);
-  // Ignore the final empty token that occurs if the string ends with a new line
-  const last = linesAndNewlines.at(-1);
-  if (last !== undefined && !last) {
+  // If the last element is empty, pop it (matches jsdiff behaviour)
+  if (!linesAndNewlines[linesAndNewlines.length - 1]) {
     linesAndNewlines.pop();
   }
-  // Merge the content and line separators into single tokens
   for (let i = 0; i < linesAndNewlines.length; i++) {
     const line = linesAndNewlines[i]!;
-    if (i % 2) {
+    if (i % 2 && !options.newlineIsToken) {
       retLines[retLines.length - 1]! += line;
     } else {
       retLines.push(line);
@@ -29,21 +27,18 @@ function tokenize(value: string): string[] {
   return retLines;
 }
 
+/* ---------- removeEmpty (base.js) ---------- */
 function removeEmpty(array: string[]): string[] {
   const ret: string[] = [];
   for (let i = 0; i < array.length; i++) {
-    const item = array[i]!;
-    if (item) {
-      ret.push(item);
+    if (array[i]) {
+      ret.push(array[i]!);
     }
   }
   return ret;
 }
 
-/* ------------------------------------------------------------------ */
-/* 2.  Myers diff (base.js)                                           */
-/* ------------------------------------------------------------------ */
-
+/* ---------- diffLines (base.js Myers algorithm) ---------- */
 interface DiffComponent {
   count: number;
   added?: boolean;
@@ -57,15 +52,23 @@ interface Path {
   lastComponent?: DiffComponent;
 }
 
-function diffLines(oldStr: string, newStr: string): Array<{ value: string; added?: boolean; removed?: boolean }> {
+function diffLines(
+  oldStr: string,
+  newStr: string,
+  options: { maxEditLength?: number; timeout?: number } = {},
+): Array<{ value: string; added?: boolean; removed?: boolean; count?: number }> {
   const oldTokens = removeEmpty(tokenize(oldStr));
   const newTokens = removeEmpty(tokenize(newStr));
 
   const newLen = newTokens.length;
   const oldLen = oldTokens.length;
   let editLength = 1;
-  const maxEditLength = newLen + oldLen;
-  const abortAfterTimestamp = Infinity;
+  let maxEditLength = newLen + oldLen;
+  if (options.maxEditLength != null) {
+    maxEditLength = Math.min(maxEditLength, options.maxEditLength);
+  }
+  const maxExecutionTime = options.timeout ?? Infinity;
+  const abortAfterTimestamp = Date.now() + maxExecutionTime;
 
   const bestPath: (Path | undefined)[] = [{ oldPos: -1, lastComponent: undefined }];
 
@@ -78,7 +81,11 @@ function diffLines(oldStr: string, newStr: string): Array<{ value: string; added
   let maxDiagonalToConsider = Infinity;
 
   while (editLength <= maxEditLength && Date.now() <= abortAfterTimestamp) {
-    for (let diagonalPath = Math.max(minDiagonalToConsider, -editLength); diagonalPath <= Math.min(maxDiagonalToConsider, editLength); diagonalPath += 2) {
+    for (
+      let diagonalPath = Math.max(minDiagonalToConsider, -editLength);
+      diagonalPath <= Math.min(maxDiagonalToConsider, editLength);
+      diagonalPath += 2
+    ) {
       let basePath: Path;
       const removePath = bestPath[diagonalPath - 1];
       const addPath = bestPath[diagonalPath + 1];
@@ -95,6 +102,7 @@ function diffLines(oldStr: string, newStr: string): Array<{ value: string; added
         bestPath[diagonalPath] = undefined;
         continue;
       }
+      // Tie-breaker: prefer addPath when oldPos is smaller (matches jsdiff)
       if (!canRemove || (canAdd && removePath!.oldPos < addPath!.oldPos)) {
         basePath = addToPath(addPath!, true, false, 0);
       } else {
@@ -176,8 +184,7 @@ function buildValues(
   while (lastComponent) {
     components.push(lastComponent);
     nextComponent = lastComponent.previousComponent;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (lastComponent as any).previousComponent;
+    delete lastComponent.previousComponent;
     lastComponent = nextComponent;
   }
   components.reverse();
@@ -187,28 +194,36 @@ function buildValues(
   let oldPos = 0;
   for (const component of components) {
     if (!component.removed) {
-      component.value = newTokens.slice(newPos, newPos + component.count).join('');
+      component.value = newTokens.slice(newPos, newPos + component.count).join("");
       newPos += component.count;
       if (!component.added) {
         oldPos += component.count;
       }
     } else {
-      component.value = oldTokens.slice(oldPos, oldPos + component.count).join('');
+      component.value = oldTokens.slice(oldPos, oldPos + component.count).join("");
       oldPos += component.count;
     }
-    result.push({
-      value: component.value,
-      added: component.added,
-      removed: component.removed,
-    });
+    result.push({ value: component.value!, added: component.added, removed: component.removed });
   }
   return result;
 }
 
-/* ------------------------------------------------------------------ */
-/* 3.  Patch creation (patch/create.js)                               */
-/* ------------------------------------------------------------------ */
+/* ---------- splitLines (create.js) ---------- */
+function splitLines(text: string): string[] {
+  const hasTrailingNl = text.endsWith("\n");
+  const result = text.split("\n").map((line) => line + "\n");
+  if (hasTrailingNl) {
+    result.pop();
+  } else {
+    const last = result.pop();
+    if (last !== undefined) {
+      result.push(last.slice(0, -1));
+    }
+  }
+  return result;
+}
 
+/* ---------- structuredPatch (create.js) ---------- */
 interface Hunk {
   oldStart: number;
   oldLines: number;
@@ -225,17 +240,6 @@ interface StructuredPatchResult {
   hunks: Hunk[];
 }
 
-function splitLines(text: string): string[] {
-  const hasTrailingNl = text.endsWith('\n');
-  const result = text.split('\n').map((line) => line + '\n');
-  if (hasTrailingNl) {
-    result.pop();
-  } else {
-    result.push(result.pop()!.slice(0, -1));
-  }
-  return result;
-}
-
 function structuredPatch(
   oldFileName: string,
   newFileName: string,
@@ -246,7 +250,7 @@ function structuredPatch(
   options?: { context?: number },
 ): StructuredPatchResult | undefined {
   const optionsObj = options ?? {};
-  if (typeof optionsObj.context === 'undefined') {
+  if (typeof optionsObj.context === "undefined") {
     optionsObj.context = 4;
   }
   const context = optionsObj.context;
@@ -255,15 +259,15 @@ function structuredPatch(
   return diffLinesResultToPatch(diff);
 
   function diffLinesResultToPatch(
-    diff: Array<{ value: string; added?: boolean; removed?: boolean }>,
+    diffResult: Array<{ value: string; added?: boolean; removed?: boolean }>,
   ): StructuredPatchResult | undefined {
-    if (!diff) {
+    if (!diffResult) {
       return undefined;
     }
-    diff.push({ value: '', lines: [] as string[] } as unknown as { value: string; added?: boolean; removed?: boolean });
+    diffResult.push({ value: "", lines: [] as string[] } as any);
 
     function contextLines(lines: string[]): string[] {
-      return lines.map((entry) => ' ' + entry);
+      return lines.map((entry) => " " + entry);
     }
 
     const hunks: Hunk[] = [];
@@ -273,24 +277,24 @@ function structuredPatch(
     let oldLine = 1;
     let newLine = 1;
 
-    for (let i = 0; i < diff.length; i++) {
-      const current = diff[i]!;
-      const lines = (current as unknown as { lines?: string[] }).lines || splitLines(current.value);
-      (current as unknown as { lines: string[] }).lines = lines;
+    for (let i = 0; i < diffResult.length; i++) {
+      const current = diffResult[i]!;
+      const lines = (current as any).lines || splitLines(current.value!);
+      (current as any).lines = lines;
 
       if (current.added || current.removed) {
         if (!oldRangeStart) {
-          const prev = diff[i - 1];
+          const prev = diffResult[i - 1];
           oldRangeStart = oldLine;
           newRangeStart = newLine;
           if (prev) {
-            curRange = context > 0 ? contextLines((prev as unknown as { lines: string[] }).lines.slice(-context)) : [];
+            curRange = context > 0 ? contextLines((prev as any).lines.slice(-context)) : [];
             oldRangeStart -= curRange.length;
             newRangeStart -= curRange.length;
           }
         }
         for (const line of lines) {
-          curRange.push((current.added ? '+' : '-') + line);
+          curRange.push((current.added ? "+" : "-") + line);
         }
         if (current.added) {
           newLine += lines.length;
@@ -299,7 +303,7 @@ function structuredPatch(
         }
       } else {
         if (oldRangeStart) {
-          if (lines.length <= context * 2 && i < diff.length - 2) {
+          if (lines.length <= context * 2 && i < diffResult.length - 2) {
             for (const line of contextLines(lines)) {
               curRange.push(line);
             }
@@ -328,11 +332,10 @@ function structuredPatch(
 
     for (const hunk of hunks) {
       for (let i = 0; i < hunk.lines.length; i++) {
-        const line = hunk.lines[i]!;
-        if (line.endsWith('\n')) {
-          hunk.lines[i] = line.slice(0, -1);
+        if (hunk.lines[i]!.endsWith("\n")) {
+          hunk.lines[i] = hunk.lines[i]!.slice(0, -1);
         } else {
-          hunk.lines.splice(i + 1, 0, '\\ No newline at end of file');
+          hunk.lines.splice(i + 1, 0, "\\ No newline at end of file");
           i++;
         }
       }
@@ -348,83 +351,28 @@ function structuredPatch(
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* 4.  Formatting (patch/create.js)                                   */
-/* ------------------------------------------------------------------ */
-
-function needsQuoting(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    if (s[i]! < '\x20' || s[i]! > '\x7e' || s[i]! === '"' || s[i]! === '\\') {
-      return true;
-    }
-  }
-  return false;
-}
-
-function quoteFileNameIfNeeded(s: string): string {
-  if (!needsQuoting(s)) {
-    return s;
-  }
-  let result = '"';
-  const bytes = new TextEncoder().encode(s);
-  let i = 0;
-  while (i < bytes.length) {
-    const b = bytes[i]!;
-    if (b === 0x07) {
-      result += '\\a';
-    } else if (b === 0x08) {
-      result += '\\b';
-    } else if (b === 0x09) {
-      result += '\\t';
-    } else if (b === 0x0a) {
-      result += '\\n';
-    } else if (b === 0x0b) {
-      result += '\\v';
-    } else if (b === 0x0c) {
-      result += '\\f';
-    } else if (b === 0x0d) {
-      result += '\\r';
-    } else if (b === 0x22) {
-      result += '\\"';
-    } else if (b === 0x5c) {
-      result += '\\\\';
-    } else if (b >= 0x20 && b <= 0x7e) {
-      result += String.fromCharCode(b);
-    } else {
-      result += '\\' + b.toString(8).padStart(3, '0');
-    }
-    i++;
-  }
-  result += '"';
-  return result;
-}
-
+/* ---------- formatPatch (create.js) ---------- */
 function formatPatch(patch: StructuredPatchResult): string {
   const ret: string[] = [];
-  if (patch.oldFileName == patch.newFileName && patch.oldFileName !== undefined) {
-    ret.push('Index: ' + patch.oldFileName);
-  }
-  ret.push('===================================================================');
-  ret.push('--- ' + quoteFileNameIfNeeded(patch.oldFileName) + (patch.oldHeader ? '\t' + patch.oldHeader : ''));
-  ret.push('+++ ' + quoteFileNameIfNeeded(patch.newFileName) + (patch.newHeader ? '\t' + patch.newHeader : ''));
+  ret.push("Index: " + patch.oldFileName);
+  ret.push("===================================================================");
+  ret.push("--- " + patch.oldFileName + (typeof patch.oldHeader === "undefined" ? "" : "\t" + patch.oldHeader));
+  ret.push("+++ " + patch.newFileName + (typeof patch.newHeader === "undefined" ? "" : "\t" + patch.newHeader));
 
   for (let i = 0; i < patch.hunks.length; i++) {
     const hunk = patch.hunks[i]!;
     const oldStart = hunk.oldLines === 0 ? hunk.oldStart - 1 : hunk.oldStart;
     const newStart = hunk.newLines === 0 ? hunk.newStart - 1 : hunk.newStart;
-    ret.push('@@ -' + oldStart + ',' + hunk.oldLines + ' +' + newStart + ',' + hunk.newLines + ' @@');
+    ret.push("@@ -" + oldStart + "," + hunk.oldLines + " +" + newStart + "," + hunk.newLines + " @@");
     for (const line of hunk.lines) {
       ret.push(line);
     }
   }
 
-  return ret.join('\n') + '\n';
+  return ret.join("\n") + "\n";
 }
 
-/* ------------------------------------------------------------------ */
-/* 5.  Public API                                                     */
-/* ------------------------------------------------------------------ */
-
+/* ---------- createTwoFilesPatch (create.js) ---------- */
 export function createTwoFilesPatch(
   oldFileName: string,
   newFileName: string,
@@ -436,7 +384,7 @@ export function createTwoFilesPatch(
 ): string {
   const patchObj = structuredPatch(oldFileName, newFileName, oldStr, newStr, oldHeader, newHeader, options);
   if (!patchObj) {
-    return '';
+    return "";
   }
   return formatPatch(patchObj);
 }
