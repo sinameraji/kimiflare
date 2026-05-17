@@ -268,8 +268,11 @@ export function ModalOverlay({
     return (
       <LimitModal
         limit={50}
-        title="Agent stuck in a loop"
-        description="The agent kept calling the same tools with identical arguments. What would you like to do?"
+        title={m.title ?? "Agent stuck in a loop"}
+        description={
+          m.description ??
+          "The agent kept calling the same tools with identical arguments. What would you like to do?"
+        }
         items={[
           { label: "Continue", value: "continue" },
           { label: "Synthesize", value: "synthesize" },

@@ -58,6 +58,18 @@ export interface AgentCallbacks {
   onSkillsSelected?: (result: SemanticSkillRoutingResult) => void;
   /** Called after pre-turn setup (memory + skills) to emit the meta banner. */
   onMetaBanner?: (info: { intentTier: string; skillsActive: number; memoryRecalled: boolean }) => void;
+  /** M7.1 — fired once when a turn crosses the soft wall-clock budget
+   *  (default 5 minutes). The loop also injects a synthesis-nudge
+   *  system message before the next iteration; this callback is a UI
+   *  hook for surfacing the warning subtly. */
+  onWallClockSoftWarning?: (elapsedMs: number) => void;
+  /** M7.1 — fired when a turn crosses the hard wall-clock budget
+   *  (default 10 minutes). The loop awaits the user's decision via
+   *  the graceful TUI prompt (see `LimitModal`). Returning "continue"
+   *  resets the wall-clock budget for another full cycle; "synthesize"
+   *  asks the model to wrap up without further tool calls;
+   *  "stop" ends the turn immediately. */
+  onWallClockHardCap?: (elapsedMs: number) => Promise<"continue" | "synthesize" | "stop">;
 }
 
 export interface AgentTurnOpts {
@@ -217,6 +229,17 @@ function isHighSignalMemory(memory: {
  *  Leaves ~22k tokens of headroom below the 262,144 context window. */
 const MAX_PROMPT_TOKENS = 240_000;
 
+/** Soft wall-clock warning at 5 minutes — inject a one-time synthesis
+ *  nudge and fire `onWallClockSoftWarning`. Empowers the model to wrap
+ *  up gracefully rather than being abruptly killed at the hard cap. */
+export const WALL_CLOCK_SOFT_MS = 5 * 60_000;
+
+/** Hard wall-clock cap at 10 minutes — fire `onWallClockHardCap` to get
+ *  the user's decision (continue / synthesize / stop). When the
+ *  callback is not provided, the cap fires-and-forgets (loop continues)
+ *  so SDK consumers without UI don't deadlock. */
+export const WALL_CLOCK_HARD_MS = 10 * 60_000;
+
 /** Max characters for a single tool result message before truncation.
  *  ~10k chars ≈ 2,500 tokens — generous but prevents runaway growth. */
 const MAX_TOOL_CONTENT_CHARS = 10_000;
@@ -260,6 +283,15 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   // `subagent.ts` at module-init time (it imports `runAgentTurn`).
   // M7.1.
   const runSubagent = makeSubagentRunner(opts);
+
+  // Wall-clock ceilings (M7.1). The soft warning fires once per turn
+  // and injects a synthesis nudge; the hard cap awaits the user's
+  // decision via `onWallClockHardCap`. Both are evaluated at the top of
+  // each iteration. Subagent turns inherit the same caps via their own
+  // `runAgentTurn` invocation, but in practice their `maxInputTokens`
+  // budgets keep them shorter.
+  let wallClockBase = performance.now();
+  let softWarningFired = false;
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   const preTurnStart = performance.now();
@@ -440,6 +472,58 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let loopExhausted = false;
 
   while (true) {
+    // Wall-clock soft warning + hard cap (M7.1). Evaluated at iteration
+    // boundaries so we never interrupt an in-flight API call. The hard
+    // cap callback is awaited — that's how we get the user's decision
+    // via the graceful TUI prompt without coupling the loop to the UI.
+    const wallClockElapsed = performance.now() - wallClockBase;
+    if (!softWarningFired && wallClockElapsed > WALL_CLOCK_SOFT_MS) {
+      softWarningFired = true;
+      opts.callbacks.onWallClockSoftWarning?.(Math.round(wallClockElapsed));
+      opts.messages.push({
+        role: "user",
+        content: `Wall-clock check: this turn has been running for ${Math.round(wallClockElapsed / 1000)}s. If you can synthesize a useful answer from what you have so far, prefer that over additional tool calls. The hard ceiling is at ${WALL_CLOCK_HARD_MS / 60_000} minutes.`,
+      });
+    }
+    if (wallClockElapsed > WALL_CLOCK_HARD_MS) {
+      if (opts.callbacks.onWallClockHardCap) {
+        const decision = await opts.callbacks.onWallClockHardCap(Math.round(wallClockElapsed));
+        logger.info("turn:wall_clock_hard_cap", {
+          sessionId: opts.sessionId,
+          elapsedMs: Math.round(wallClockElapsed),
+          decision,
+        });
+        if (decision === "stop") {
+          // Throw an abort-shaped error so the supervisor and callers
+          // recognize it as intentional termination.
+          throw new DOMException("wall_clock_hard_cap", "AbortError");
+        }
+        if (decision === "synthesize") {
+          // Tell the model to stop calling tools and finalize. The
+          // explicit instruction is generally honored; if the model
+          // ignores it, the budget/iteration caps still terminate.
+          opts.messages.push({
+            role: "user",
+            content: "Wall-clock hard cap reached. Stop making tool calls and produce your final answer now based on what you have.",
+          });
+        }
+        // "continue": reset budgets for another full cycle.
+        if (decision === "continue") {
+          wallClockBase = performance.now();
+          softWarningFired = false;
+        }
+      } else {
+        // No UI hook — silently extend by one more cycle to avoid
+        // deadlocking SDK consumers. Log it for observability.
+        logger.warn("turn:wall_clock_hard_cap_unhandled", {
+          sessionId: opts.sessionId,
+          elapsedMs: Math.round(wallClockElapsed),
+        });
+        wallClockBase = performance.now();
+        softWarningFired = false;
+      }
+    }
+
     // Budget enforcement: before starting a new turn, if we've already hit the
     // limit, run one final synthesis turn and then signal budget exhaustion.
     if (budgetExhausted) {

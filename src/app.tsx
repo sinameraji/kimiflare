@@ -1499,6 +1499,26 @@ function App({
             loopResolveRef.current = resolve;
             setLoopModal({ resolve });
           }),
+        onWallClockSoftWarning: (elapsedMs: number) => {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `Turn has been running for ${Math.round(elapsedMs / 1000)}s — wrap up if you can.`,
+            },
+          ]);
+        },
+        onWallClockHardCap: (elapsedMs: number) =>
+          new Promise<LoopDecision>((resolve) => {
+            loopResolveRef.current = resolve;
+            setLoopModal({
+              resolve,
+              title: `Turn has run for ${Math.round(elapsedMs / 60_000)} minutes`,
+              description:
+                "The turn has crossed its wall-clock budget. Continue (resets the timer), synthesize a final answer from what's gathered, or stop now.",
+            });
+          }),
         onKimiMdStale: () => {
           if (!kimiMdStaleNudgedRef.current) {
             kimiMdStaleNudgedRef.current = true;

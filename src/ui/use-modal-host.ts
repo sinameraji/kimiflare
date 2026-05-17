@@ -9,6 +9,11 @@ export interface LimitModalState {
 
 export interface LoopModalState {
   resolve: (d: LoopDecision) => void;
+  /** Optional override for the modal title. Defaults to "Agent stuck in a loop".
+   *  M7.1 reuses this slot for the wall-clock hard cap. */
+  title?: string;
+  /** Optional override for the modal description. */
+  description?: string;
 }
 
 export interface CommandWizardState {
