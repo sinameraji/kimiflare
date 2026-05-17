@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile } from "node:fs/promises";
-import fg from "fast-glob";
 import type { ToolSpec, ToolOutput } from "./registry.js";
 import { resolvePath } from "../util/paths.js";
+import { glob } from "../util/glob.js";
 
 const pExecFile = promisify(execFile);
 
@@ -93,7 +93,7 @@ async function runJsFallback(
 ): Promise<ToolOutput> {
   const re = new RegExp(args.pattern, args.case_insensitive ? "i" : "");
   const globPattern = args.glob ? `**/${args.glob}` : "**/*";
-  const files = await fg(globPattern, {
+  const files = await glob(globPattern, {
     cwd: root,
     absolute: true,
     dot: false,

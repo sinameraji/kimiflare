@@ -1,8 +1,8 @@
 import { open, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
-import fg from "fast-glob";
 import { MODES, type Mode } from "../mode.js";
+import { glob } from "../util/glob.js";
 import { EFFORTS, type ReasoningEffort } from "../config.js";
 import { isPathOutside } from "../util/paths.js";
 import { parseFrontmatter } from "./frontmatter.js";
@@ -34,11 +34,10 @@ export async function loadCustomCommands(
     sources.map(async ({ dir, source }) => {
       const safeDir = await resolveSafeDir(dir, source, cwd, warnings);
       if (safeDir === null) return [] as Array<CustomCommand | null>;
-      const files = await fg("**/*.md", {
+      const files = await glob("**/*.md", {
         cwd: safeDir,
         absolute: true,
         onlyFiles: true,
-        followSymbolicLinks: false,
         suppressErrors: true,
       });
       return Promise.all(files.map((file) => loadOne(file, safeDir, source, warnings)));

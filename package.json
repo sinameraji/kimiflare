@@ -66,7 +66,6 @@
     "better-sqlite3": "^12.9.0",
     "commander": "^12.1.0",
     "diff": "^9.0.0",
-    "fast-glob": "^3.3.2",
     "gray-matter": "^4.0.3",
     "ink": "^7.0.1",
     "ink-select-input": "^6.2.0",

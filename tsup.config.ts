@@ -20,7 +20,6 @@ export default defineConfig({
     "ink-select-input",
     "react",
     "commander",
-    "fast-glob",
     "diff",
     "turndown",
   ],
