@@ -12,9 +12,11 @@ const INTENT_PATTERNS: Record<string, RegExp> = {
   polish: /\b(rename|refactor|extract|move|clean|lint|format)\b/i,
   small_edit: /\b(add|change|update|fix|remove|delete)\b.+\b(line|here|this|variable|function)\b/i,
   feature_bounded: /\b(add|implement|create|support)\b.+\b(flag|option|param|arg|field)\b/i,
-  feature_exploratory: /\b(add|implement|migrate|integrate|build)\b.+\b(module|system|auth|oauth|framework|service)\b/i,
-  explore: /\b(how.*work|architecture|structure|where.*used|find.*all|understand)\b/i,
-  meta: /\b(plan|design|strategy|ontology|roadmap|approach)\b/i,
+  feature_exploratory:
+    /\b(add|implement|migrate|integrate|build|investigate|analyze|audit|inspect|study)\b.+\b(module|system|auth|oauth|framework|service|codebase|architecture)\b/i,
+  explore:
+    /\b(how.*work|architecture|structure|where.*used|find.*all|understand|investigate|analyze|examine|inspect|audit|map(?:ping)? out|trace.*through)\b/i,
+  meta: /\b(plan|design|strategy|ontology|roadmap|approach|propose)\b/i,
 };
 
 export function classifyIntent(prompt: string): IntentResult {
@@ -33,12 +35,25 @@ export function classifyIntent(prompt: string): IntentResult {
   const hasMutatingVerb = /\b(add|create|write|edit|delete|remove|rename|migrate|implement)\b/i.test(prompt);
   const isQuestion = prompt.trim().endsWith("?") || /\b(what|how|why|is|does|can)\b/i.test(prompt.split(" ")[0] || "");
 
+  // Decomposition signal: numbered list ("1. ... 2. ... 3. ...") or multiple
+  // sentences containing "and then" / "after that" indicates the user is
+  // describing a multi-step task. These benefit strongly from orchestration.
+  const numberedItems = (prompt.match(/(?:^|\n)\s*\d+\.\s/g) || []).length;
+  const hasDecomposition = numberedItems >= 2 || /\band then\b|\bafter that\b|\bsynthesize\b|\bin parallel\b|\bindependent(?:ly)?\b/i.test(prompt);
+
+  // Length signal: prompts above ~400 chars are almost always non-trivial.
+  // This catches detailed research / investigation prompts that don't trip
+  // any other pattern individually.
+  const isLong = prompt.length > 400;
+
   const rawScore = Math.min(
     1.0,
     intentScore * 0.25 +
       (hasFileMentions > 2 ? 0.3 : hasFileMentions * 0.1) +
       (hasMutatingVerb ? 0.25 : 0) +
-      (isQuestion ? 0 : 0.1),
+      (isQuestion ? 0 : 0.1) +
+      (hasDecomposition ? 0.35 : 0) +
+      (isLong ? 0.15 : 0),
   );
 
   const tier = rawScore < 0.3 ? "light" : rawScore < 0.65 ? "medium" : "heavy";

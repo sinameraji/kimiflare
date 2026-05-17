@@ -96,6 +96,19 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
 
   const tools = `Tools available:\n${toolsBlock}`;
 
+  // M7.1: when Agent / plan_* are in the tool list (tier-gated), prepend
+  // a clear instruction so the model treats orchestration as a first-class
+  // move on multi-step / investigation tasks rather than defaulting to
+  // inline grep/read loops.
+  const hasAgent = opts.tools.some((t) => t.name === "Agent");
+  const hasPlan = opts.tools.some((t) => t.name === "plan_set");
+  const orchestrationBlock = hasAgent
+    ? `\n\nOrchestration (preferred for multi-step work):
+- When a task has independent sub-investigations (e.g. "find every X", "investigate Y", "summarize how Z works"), prefer dispatching them via \`Agent({ subagent_type, description, prompt })\` instead of reading files inline yourself. Each subagent runs with isolated context and returns just its summary — your main context stays lean.
+- ${hasPlan ? "On heavy decomposed tasks, call `plan_set` first to lay out the steps, then dispatch one `Agent` per step (or `Promise.all` multiple in code mode). Use `plan_update` to mark tasks complete as children return.\n- " : ""}When you have multiple independent investigations, dispatch them IN PARALLEL via Promise.all inside one execute_code script — do NOT await them sequentially. Example: \`const [a, b, c] = await Promise.all([api.Agent(...), api.Agent(...), api.Agent(...)]);\`
+- Reach for inline grep/read only when the work is small (1-2 files), sequential, or tightly coupled. Anything that decomposes into 2+ independent threads should use \`Agent\`.`
+    : "";
+
   const ctx = loadContextFile(opts.cwd);
   const contextBlock = ctx
     ? `\n\nProject context from ${ctx.name} (${ctx.lineCount} lines, treat as authoritative):\n${ctx.content.trim()}`
@@ -110,7 +123,7 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
           .join("\n\n")}`
       : "";
 
-  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock;
+  return env + "\n\n" + tools + orchestrationBlock + lspBlock + contextBlock + modeBlock + skillsBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */

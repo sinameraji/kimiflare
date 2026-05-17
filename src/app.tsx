@@ -388,7 +388,10 @@ function App({
 
   const cacheStableRef = useRef(initialCfg?.cacheStablePrompts !== false);
   const messagesRef = useRef<ChatMessage[]>(
-    makePrefixMessages(cacheStableRef.current, cfg?.model ?? DEFAULT_MODEL, "edit", ALL_TOOLS),
+    makePrefixMessages(cacheStableRef.current, cfg?.model ?? DEFAULT_MODEL, "edit", [
+      ...ALL_TOOLS,
+      ...getOrchestrationTools("heavy"),
+    ]),
   );
   const executorRef = useRef<ToolExecutor>(new ToolExecutor(ALL_TOOLS));
   const activeAsstIdRef = useRef<number | null>(null);
@@ -1585,7 +1588,15 @@ function App({
           model: overrideModel ?? cfg.model,
           gateway: gatewayFromConfig(cfg),
           messages: messagesRef.current,
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+          // M7.1 fix: per-turn API tool list MUST include the tier-gated
+          // orchestration tools, otherwise the model literally cannot see
+          // Agent/plan_set/plan_update and will say "I don't have those".
+          tools: [
+            ...ALL_TOOLS,
+            ...getOrchestrationTools(classification.tier),
+            ...mcpToolsRef.current,
+            ...lspToolsRef.current,
+          ],
           executor: executorRef.current,
           cwd: process.cwd(),
           signal: turnScope.signal,
