@@ -19,6 +19,7 @@ import type Database from "better-sqlite3";
 import { buildSystemPrompt, buildSessionPrefix } from "./system-prompt.js";
 import type { Mode } from "../mode.js";
 import { makeSubagentRunner } from "./subagent.js";
+import { nextStallAction, clearStall } from "./plan-state.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -670,6 +671,23 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     opts.callbacks.onAssistantFinal?.(assistantMsg);
 
     if (toolCalls.length === 0) {
+      // Load-bearing plan check (M7.1). If the model produced no tool
+      // calls but its plan still has outstanding tasks, nudge it to
+      // continue or to abandon them gracefully. The stall cap inside
+      // `nextStallAction` ensures we never spin forever — after
+      // MAX_PLAN_STALLS empty assistant turns we let the turn end
+      // anyway. Plan tools are tier-gated, so non-heavy turns have
+      // empty plans and this branch returns null immediately.
+      if (!budgetExhausted) {
+        const action = nextStallAction(opts.sessionId);
+        if (action) {
+          opts.messages.push({
+            role: "user",
+            content: action.nudge,
+          });
+          continue;
+        }
+      }
       if (opts.sessionId && lastUsage) {
         void logTurnDebug({
           sessionId: opts.sessionId,
@@ -694,6 +712,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       logger.info("turn:complete", { sessionId: opts.sessionId, durationMs: Math.round(performance.now() - turnStart) });
       return;
     }
+
+    // Model produced tool calls — structural progress. Reset the
+    // plan-stall counter so a future empty-toolcalls iteration is
+    // judged fresh.
+    clearStall(opts.sessionId);
 
     let blockedCount = 0;
     for (const tc of toolCalls) {
