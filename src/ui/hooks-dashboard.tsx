@@ -3,34 +3,39 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 import type { HookEvent, HookConfig } from "../hooks/types.js";
-import { HOOK_EVENTS } from "../hooks/types.js";
-import { RECOMMENDED_HOOKS, type RecommendedHook } from "../hooks/recommended.js";
-import { setHookEnabled, appendHook, deriveHookId } from "../hooks/settings.js";
+import { RECOMMENDED_HOOKS } from "../hooks/recommended.js";
+import {
+  setHookEnabled,
+  appendHook,
+  deriveHookId,
+  globalSettingsPath,
+  projectSettingsPath,
+} from "../hooks/settings.js";
 
 /**
- * Interactive `/hooks` dashboard. Replaces the prior text-dump UX with
- * arrow-key navigation + Enter-to-toggle, matching the existing
- * picker pattern used by `/checkpoints`, `/resume`, `/theme`, etc.
+ * Interactive `/hooks` dashboard. Three sections in one screen:
  *
- * Typing path still works: `/hooks enable <id>`, `/hooks recommended`,
- * etc. are honored by the slash-command dispatcher. The dashboard is
- * what you get when you type `/hooks` with no args.
+ *   1. Event glossary — explains what the five hook events mean,
+ *      so the "Stop" / "PreToolUse" / etc. labels below are legible
+ *      without the user reading the README.
+ *   2. Configured + recommended list — arrow keys navigate, Enter
+ *      toggles. A details panel below the list updates as the cursor
+ *      moves, showing the hook's description + shell command preview.
+ *   3. "Create custom hook" entry — for now opens a help screen that
+ *      explains the schema and points at settings.json (a proper
+ *      wizard is M6.1.x follow-up).
  *
- * Layout:
- *
- *   ╭─ Hooks ─────────────────────────────────────────────╮
- *   │ Configured                                          │
- *   │   PostToolUse  audit-tool-calls          [enabled]  │
- *   │   Stop         stop-bell                 [enabled]  │
- *   │                                                     │
- *   │ Recommended (Enter to enable / disable)             │
- *   │ ▸ Stop         stop-notify-macos         [ ]        │
- *   │   Stop         stop-glass-sound-macos    [ ]        │
- *   │   PreToolUse   block-env-file-writes     [ ]        │
- *   │   ...                                               │
- *   │   ← Done                                            │
- *   ╰─────────────────────────────────────────────────────╯
+ * Typing path still works — `/hooks enable <id>`, `/hooks recommended`,
+ * etc. are honored by the slash-command dispatcher.
  */
+
+const EVENT_EXPLANATIONS: Record<HookEvent, string> = {
+  PreToolUse: "before every tool call — can veto (block) it",
+  PostToolUse: "after every tool call — informational only",
+  UserPromptSubmit: "when you hit Enter — can veto the prompt",
+  Stop: "when the agent finishes a turn — informational only",
+  PreCompact: "before auto-compaction shrinks the conversation",
+};
 
 interface ConfiguredEntry {
   event: HookEvent;
@@ -47,90 +52,193 @@ export interface HooksDashboardProps {
   onDone: () => void;
 }
 
-interface ToggleItem {
+interface RowMeta {
+  kind: "configured" | "recommended";
+  event: HookEvent;
+  id: string;
+  description?: string;
+  command: string;
+  source?: string;
+  enabled: boolean;
+}
+
+type RowValue =
+  | { kind: "row"; meta: RowMeta }
+  | { kind: "create" }
+  | { kind: "done" };
+
+interface SelectableRow {
   label: string;
-  value: { kind: "toggle"; id: string; event: HookEvent; enable: boolean } | { kind: "enable-recommended"; rec: RecommendedHook } | { kind: "done" };
+  value: RowValue;
   key: string;
 }
 
-function fmtRow(eventCol: string, idCol: string, badge: string): string {
-  // Pad columns so the badge column lines up; cheap manual table.
-  const ev = eventCol.padEnd(18);
-  const id = idCol.padEnd(28);
-  return `${ev}${id}${badge}`;
+function tag(event: HookEvent): string {
+  // Right-pad so the next column lines up.
+  return `[${event}]`.padEnd(20);
+}
+
+function statusBadge(meta: RowMeta): string {
+  if (meta.kind === "configured") {
+    return meta.enabled ? "[ enabled ]" : "[ disabled ]";
+  }
+  return "[ available ]"; // recommended-but-not-installed
 }
 
 export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
   const theme = useTheme();
   const [message, setMessage] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
-  void version; // re-render trigger after a mutation
+  const [highlighted, setHighlighted] = useState<RowValue | null>(null);
+  const [showCreateHelp, setShowCreateHelp] = useState(false);
 
   useInput((_input, key) => {
-    if (key.escape) props.onDone();
+    if (key.escape) {
+      if (showCreateHelp) setShowCreateHelp(false);
+      else props.onDone();
+    }
   });
 
-  // What's in the recommended catalog but NOT already in `configured`
-  // by id. Listing those separately keeps the dashboard from showing
-  // "block-env-file-writes" twice when the user already enabled it.
-  const items = useMemo<ToggleItem[]>(() => {
-    const out: ToggleItem[] = [];
+  const items = useMemo<SelectableRow[]>(() => {
+    const out: SelectableRow[] = [];
     const configuredIds = new Set(
       props.configured.map((c) => c.hook.id ?? deriveHookId(c.event, c.hook.command)),
     );
 
-    if (props.configured.length > 0) {
-      for (const c of props.configured) {
-        const id = c.hook.id ?? deriveHookId(c.event, c.hook.command);
-        const enabled = c.hook.enabled !== false;
-        const badge = enabled ? "[enabled]" : "[disabled]";
-        out.push({
-          label: fmtRow(c.event, id, badge),
-          value: { kind: "toggle", id, event: c.event, enable: !enabled },
-          key: `cfg-${id}`,
-        });
-      }
+    // Configured first
+    for (const c of props.configured) {
+      const id = c.hook.id ?? deriveHookId(c.event, c.hook.command);
+      const meta: RowMeta = {
+        kind: "configured",
+        event: c.event,
+        id,
+        description: c.hook.description,
+        command: c.hook.command,
+        source: c.hook.source,
+        enabled: c.hook.enabled !== false,
+      };
+      out.push({
+        label: `${tag(c.event)}${id.padEnd(28)}${statusBadge(meta)}`,
+        value: { kind: "row", meta },
+        key: `cfg-${id}`,
+      });
     }
 
+    // Recommended (skip already-configured)
     for (const r of RECOMMENDED_HOOKS) {
-      if (configuredIds.has(r.id)) continue; // already shown above
+      if (configuredIds.has(r.id)) continue;
+      const meta: RowMeta = {
+        kind: "recommended",
+        event: r.event,
+        id: r.id,
+        description: r.hook.description,
+        command: r.hook.command,
+        source: "recommended",
+        enabled: false,
+      };
       out.push({
-        label: fmtRow(r.event, r.id, "[ recommended ]"),
-        value: { kind: "enable-recommended", rec: r },
+        label: `${tag(r.event)}${r.id.padEnd(28)}${statusBadge(meta)}`,
+        value: { kind: "row", meta },
         key: `rec-${r.id}`,
       });
     }
+
+    out.push({
+      label: "+ Create a custom hook …",
+      value: { kind: "create" },
+      key: "__create__",
+    });
     out.push({ label: "← Done", value: { kind: "done" }, key: "__done__" });
     return out;
   }, [props.configured, version]);
 
-  const handleSelect = (item: ToggleItem): void => {
+  const handleSelect = (item: SelectableRow): void => {
     const v = item.value;
     if (v.kind === "done") {
       props.onDone();
       return;
     }
-    if (v.kind === "toggle") {
-      const path = setHookEnabled(props.cwd, v.id, v.enable);
-      if (path) {
-        props.onMutate();
-        setMessage(`${v.enable ? "enabled" : "disabled"} ${v.id} in ${path}`);
-        setVersion((n) => n + 1);
-      } else {
-        setMessage(`could not find hook ${v.id}`);
-      }
+    if (v.kind === "create") {
+      setShowCreateHelp(true);
       return;
     }
-    if (v.kind === "enable-recommended") {
-      const path = appendHook("project", props.cwd, v.rec.event, {
-        ...v.rec.hook,
+    const meta = v.meta;
+    if (meta.kind === "configured") {
+      const path = setHookEnabled(props.cwd, meta.id, !meta.enabled);
+      if (path) {
+        props.onMutate();
+        setMessage(`${!meta.enabled ? "enabled" : "disabled"} ${meta.id} in ${path}`);
+        setVersion((n) => n + 1);
+      }
+    } else {
+      // recommended → append + enable in project scope
+      const rec = RECOMMENDED_HOOKS.find((r) => r.id === meta.id);
+      if (!rec) return;
+      const path = appendHook("project", props.cwd, rec.event, {
+        ...rec.hook,
         enabled: true,
       });
       props.onMutate();
-      setMessage(`enabled ${v.rec.id} (${v.rec.event}) in ${path}`);
+      setMessage(`enabled ${rec.id} (${rec.event}) → ${path}`);
       setVersion((n) => n + 1);
     }
   };
+
+  // Helper card explaining the schema + pointing at settings.json.
+  if (showCreateHelp) {
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
+        <Text color={theme.accent} bold>
+          Create a custom hook
+        </Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text>
+            For now, custom hooks are added by editing your settings.json directly.
+            A guided wizard is on the roadmap.
+          </Text>
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.info.color} dimColor>Add an entry to one of:</Text>
+          <Text>  project: {projectSettingsPath(props.cwd)}</Text>
+          <Text>  global:  {globalSettingsPath()}</Text>
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.info.color} dimColor>Schema:</Text>
+          <Text>{"{"}</Text>
+          <Text>{"  \"hooks\": {"}</Text>
+          <Text>{"    \"PostToolUse\": ["}</Text>
+          <Text>{"      {"}</Text>
+          <Text>{"        \"id\": \"my-lint\","}</Text>
+          <Text>{"        \"matcher\": \"^(edit|write)$\","}</Text>
+          <Text>{"        \"command\": \"npx eslint --fix \\\"$KIMIFLARE_HOOK_PATH\\\"\""}</Text>
+          <Text>{"      }"}</Text>
+          <Text>{"    ]"}</Text>
+          <Text>{"  }"}</Text>
+          <Text>{"}"}</Text>
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.info.color} dimColor>Fields:</Text>
+          <Text>  command   (required) shell command to run</Text>
+          <Text>  matcher   (optional) regex on tool name (PreToolUse / PostToolUse only)</Text>
+          <Text>  id        (optional) stable handle for /hooks enable|disable</Text>
+          <Text>  enabled   (default true) set false to keep but skip</Text>
+          <Text>  timeoutMs (default 30000) hard-kill if it hangs</Text>
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.info.color} dimColor>Env vars available in the command:</Text>
+          <Text>  $KIMIFLARE_HOOK_EVENT / _TOOL / _PATH / _TIER / _SESSION_ID</Text>
+          <Text>  $KIMIFLARE_HOOK_PAYLOAD (full JSON, on stdin too)</Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text color={theme.accent}>After editing: /hooks reload  ·  Esc to go back</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Description shown under the list for the currently-highlighted row.
+  const focus = highlighted ?? items[0]?.value ?? null;
+  const focusMeta = focus && focus.kind === "row" ? focus.meta : null;
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -138,35 +246,72 @@ export function HooksDashboard(props: HooksDashboardProps): React.ReactElement {
         Hooks
       </Text>
       <Text color={theme.info.color} dimColor>
-        Arrow keys to navigate, Enter to toggle, Esc when done.
+        Arrow keys to navigate. Enter to toggle. Esc when done.
       </Text>
-      {props.configured.length > 0 && (
-        <Box marginTop={1}>
-          <Text color={theme.info.color} dimColor>
-            Configured (in your settings.json):
-          </Text>
-        </Box>
-      )}
+
+      {/* Event glossary — makes the [Stop] / [PreToolUse] tags legible. */}
+      <Box marginTop={1} flexDirection="column">
+        <Text color={theme.info.color} dimColor>Events:</Text>
+        <Text>  <Text bold>PreToolUse</Text>       — {EVENT_EXPLANATIONS.PreToolUse}</Text>
+        <Text>  <Text bold>PostToolUse</Text>      — {EVENT_EXPLANATIONS.PostToolUse}</Text>
+        <Text>  <Text bold>UserPromptSubmit</Text> — {EVENT_EXPLANATIONS.UserPromptSubmit}</Text>
+        <Text>  <Text bold>Stop</Text>             — {EVENT_EXPLANATIONS.Stop}</Text>
+        <Text>  <Text bold>PreCompact</Text>       — {EVENT_EXPLANATIONS.PreCompact}</Text>
+      </Box>
+
       {props.configured.length === 0 && (
         <Box marginTop={1}>
           <Text color={theme.info.color} dimColor>
-            No hooks configured yet. Pick a recommended one below.
+            No hooks configured yet. Pick a recommended one below — or create your own.
           </Text>
         </Box>
       )}
+
       <Box marginTop={1}>
-        <SelectInput items={items as never} onSelect={(it) => handleSelect(it as ToggleItem)} />
+        <SelectInput
+          items={items as never}
+          onSelect={(it) => handleSelect(it as SelectableRow)}
+          onHighlight={(it) => setHighlighted((it as SelectableRow).value)}
+        />
       </Box>
-      {message && (
-        <Box marginTop={1}>
-          <Text color={theme.accent}>{message}</Text>
+
+      {/* Details for the highlighted row — what it does, what it'll run. */}
+      {focusMeta && (
+        <Box marginTop={1} flexDirection="column" borderStyle="single" borderColor={theme.info.color} paddingX={1}>
+          <Text>
+            <Text color={theme.info.color} dimColor>id:    </Text>
+            <Text bold>{focusMeta.id}</Text>
+            <Text color={theme.info.color} dimColor>   event: </Text>
+            <Text>{focusMeta.event}</Text>
+            <Text color={theme.info.color} dimColor>   source: </Text>
+            <Text>{focusMeta.source ?? "—"}</Text>
+          </Text>
+          {focusMeta.description && (
+            <Text>
+              <Text color={theme.info.color} dimColor>what:  </Text>
+              {focusMeta.description}
+            </Text>
+          )}
+          <Text>
+            <Text color={theme.info.color} dimColor>runs:  </Text>
+            <Text>{focusMeta.command.length > 100 ? focusMeta.command.slice(0, 100) + "…" : focusMeta.command}</Text>
+          </Text>
+          <Text>
+            <Text color={theme.info.color} dimColor>action: </Text>
+            <Text color={theme.accent}>
+              Enter to {focusMeta.kind === "configured"
+                ? focusMeta.enabled ? "disable" : "re-enable"
+                : "enable (adds to project settings.json)"}
+            </Text>
+          </Text>
         </Box>
       )}
-      <Box marginTop={1}>
-        <Text color={theme.info.color} dimColor>
-          The {HOOK_EVENTS.length} events: {HOOK_EVENTS.join(" · ")}
-        </Text>
-      </Box>
+
+      {message && (
+        <Box marginTop={1}>
+          <Text color={theme.accent}>✓ {message}</Text>
+        </Box>
+      )}
     </Box>
   );
 }
