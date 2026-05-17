@@ -26,7 +26,7 @@ program
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
-  .option("--ui <name>", "render UI with the given engine (default: ink; supported: ink, camouflage)")
+  .option("--ui <name>", "render UI with the given engine (default: camouflage; pass `ink` for the legacy React/Ink UI as a fallback)")
   .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
@@ -292,36 +292,9 @@ async function main() {
     return;
   }
 
-  if (opts.ui === "camouflage") {
-    if (opts.print === undefined) {
-      console.error(
-        "kimiflare: --ui camouflage requires -p \"<prompt>\" (initial prompt).\n" +
-          "After the first turn, type follow-ups directly into the Camouflage TUI.",
-      );
-      process.exit(2);
-    }
-    if (!cfg) {
-      console.error("kimiflare: --ui camouflage requires credentials (config or --cloud).");
-      process.exit(2);
-    }
-    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    const { runUiMode } = await import("./ui-mode.js");
-    await runUiMode({
-      accountId: cfg.accountId,
-      apiToken: cfg.apiToken,
-      model,
-      prompt: opts.print,
-      allowAll: !!opts.dangerouslyAllowAll,
-      codeMode: cfg.codeMode,
-      continueOnLimit: !!opts.continueOnLimit,
-      maxInputTokens: opts.maxInputTokens,
-      cloudMode,
-      cloudToken,
-      cloudDeviceId,
-      camouflageBin: opts.camouflageBin,
-    });
-    return;
-  }
+  // (`--ui camouflage` is now the default; its branch lives at the bottom
+  // of `main()` next to the legacy Ink fallback so both paths share the
+  // TTY guard + cfg checks.)
 
   if (opts.emitEvents) {
     if (opts.print === undefined) {
@@ -389,6 +362,42 @@ async function main() {
     process.exit(2);
   }
 
+  // CC-1+ — default interactive UI is now Camouflage. The legacy React/Ink
+  // app is still available via `--ui ink` for A/B comparison and as a
+  // fallback while we wire up the remaining surfaces (queue, hooks, mode
+  // switching, MCP UI, etc.). Once Camouflage covers everything, the Ink
+  // path is deleted along with react/ink deps.
+  const uiEngine = (opts.ui ?? "camouflage").toLowerCase();
+  if (uiEngine === "camouflage") {
+    if (!cfg) {
+      console.error(
+        "kimiflare: --ui camouflage requires credentials.\n" +
+          "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or use `kimiflare --cloud` after `kimiflare auth cloud`.\n" +
+          "To fall back to the legacy Ink UI, run with `kimiflare --ui ink`.",
+      );
+      process.exit(2);
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const { runUiMode } = await import("./ui-mode.js");
+    await runUiMode({
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model,
+      // Optional: -p seeds an initial prompt; otherwise the user types into
+      // the renderer's input box.
+      prompt: opts.print,
+      allowAll: !!opts.dangerouslyAllowAll,
+      codeMode: cfg.codeMode,
+      continueOnLimit: !!opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+      cloudMode,
+      cloudToken,
+      cloudDeviceId,
+      camouflageBin: opts.camouflageBin,
+    });
+    return;
+  }
+  // Legacy Ink UI fallback (`--ui ink`).
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
