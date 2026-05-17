@@ -115,11 +115,17 @@ program
   .description("Pick a session to resume via Camouflage's SelectList primitive (CC-1 demo). Prints chosen session id on stdout, exits 1 on cancel.")
   .option("--limit <n>", "max recent sessions to list", (v) => parseInt(v, 10), 20)
   .option("--camouflage-bin <path>", "path to camouflage-tui (defaults to PATH lookup)")
-  .action(async (cmdOpts) => {
+  .action(async (cmdOpts, command) => {
+    // `--camouflage-bin` is also declared at the top-level program (for
+    // `--ui camouflage` mode), so commander parses the flag against the
+    // parent and never stores it on the subcommand's cmdOpts. Fall back
+    // to the parent's value when the subcommand-level one is undefined.
+    const parentOpts = command?.parent?.opts() ?? {};
+    const bin = cmdOpts.camouflageBin ?? parentOpts.camouflageBin;
     const { runCamouflageResume } = await import("./camouflage-resume.js");
     await runCamouflageResume({
       limit: cmdOpts.limit,
-      camouflageBin: cmdOpts.camouflageBin,
+      camouflageBin: bin,
     });
   });
 
