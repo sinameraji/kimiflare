@@ -15,6 +15,7 @@ import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory
 import { ToolArtifactStore } from "./artifact-store.js";
 import { reduceToolOutput, DEFAULT_REDUCER_CONFIG } from "./reducer.js";
 import { makeExpandArtifactTool } from "./expand-artifact.js";
+import { agentTool } from "./agent.js";
 
 export const ALL_TOOLS: ToolSpec[] = [
   readTool,
@@ -33,6 +34,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryRememberTool,
   memoryRecallTool,
   memoryForgetTool,
+  agentTool,
 ];
 
 /**

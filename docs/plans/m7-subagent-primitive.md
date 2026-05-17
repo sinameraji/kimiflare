@@ -184,7 +184,7 @@ once shipped.
 
 | # | Subject | Status | Commit |
 |---|---|---|---|
-| 1 | Subagent type presets + tool filtering | pending | — |
+| 1 | Subagent type presets + tool filtering | ✅ done | `bb4e142` |
 | 2 | `runSubagentTurn` helper + `Agent` tool registration | pending | — |
 | 3 | Plan tools (`plan_set` / `plan_update`) load-bearing in loop | pending | — |
 | 4 | Mode + tier-gated tool registration | pending | — |

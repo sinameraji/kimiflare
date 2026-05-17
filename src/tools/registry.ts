@@ -10,6 +10,23 @@ export interface ToolContext {
   githubToken?: string;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
   shell?: string;
+  /** Spawn a subagent. Injected by the loop when the parent turn has
+   *  subagent capability enabled (heavy/medium tier). The `Agent` tool
+   *  calls this; depth and fanout caps are enforced inside the runner.
+   *  Returns `{ summary }` plus telemetry the tool can render to the
+   *  parent context. See `src/agent/subagent.ts`. */
+  runSubagent?: (args: {
+    description: string;
+    prompt: string;
+    subagent_type: "general" | "explore" | "plan";
+    task_id?: string;
+  }) => Promise<{
+    summary: string;
+    transcript: import("../agent/messages.js").ChatMessage[];
+    childSessionId: string;
+    toolCallCount: number;
+    durationMs: number;
+  }>;
 }
 
 export interface ToolRender {

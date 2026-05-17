@@ -18,6 +18,7 @@ import type { SemanticSkillRoutingResult } from "../skills/types.js";
 import type Database from "better-sqlite3";
 import { buildSystemPrompt, buildSessionPrefix } from "./system-prompt.js";
 import type { Mode } from "../mode.js";
+import { makeSubagentRunner } from "./subagent.js";
 
 export interface AgentCallbacks {
   onAssistantStart?: () => void;
@@ -125,6 +126,14 @@ export interface AgentTurnOpts {
   /** Once the first byte arrives, tighten the idle timeout to this value.
    *  Default 30000 — a live stream stalling mid-flight should surface fast. */
   postFirstByteIdleTimeoutMs?: number;
+  /** When this turn was invoked as a subagent, the parent's sessionId.
+   *  Threaded through telemetry so child cost-debug / usage rows can
+   *  be rolled up under the parent. M7.1. */
+  parentSessionId?: string;
+  /** Depth in the subagent tree. 0 = top-level user-driven turn,
+   *  1 = first-level child, etc. The Agent tool refuses to dispatch
+   *  past `MAX_DEPTH` (currently 2). M7.1. */
+  subagentDepth?: number;
 }
 
 export class BudgetExhaustedError extends Error {
@@ -242,6 +251,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
+
+  // Subagent runner — closure capturing this turn's API config so the
+  // `Agent` tool can dispatch children with the same model, gateway,
+  // memory, and mode. The runner enforces depth and fanout caps itself.
+  // We construct it lazily to avoid the import cycle from loading
+  // `subagent.ts` at module-init time (it imports `runAgentTurn`).
+  // M7.1.
+  const runSubagent = makeSubagentRunner(opts);
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   const preTurnStart = performance.now();
@@ -798,7 +815,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, runSubagent },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -860,7 +877,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell },
+          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell, runSubagent },
           opts.onFileChange,
         );
         let content = result.content;
