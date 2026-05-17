@@ -32,6 +32,13 @@ import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
+import { selectList } from "camouflage";
+import { listSessions, loadSession, addCheckpoint } from "./sessions.js";
+import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
+import { buildWelcome } from "./ui/greetings.js";
+import { themeList, resolveTheme } from "./ui/theme.js";
+import { checkForUpdate } from "./util/update-check.js";
+import { calculateCost } from "./pricing.js";
 
 export interface UiModeOpts {
   accountId: string;
@@ -96,16 +103,34 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let turnStartMs: number | null = null;
   let promptTokens = 0;
   let cachedTokens = 0;
+  let completionTokens = 0;
+  let sessionCostUsd = 0;
   let currentPhase: "idle" | "thinking" | "streaming" | "tool" = "idle";
   let currentMode: Mode = "edit";
+  let reasoningShown = true;
+  let currentThemeName = "everforest-dark";
   const branch = tryGitBranch();
+  let currentSessionFilePath: string | null = null;
 
   cam.send("SessionStarted", {});
   cam.send("StatusUpdate", {
-    segments: { mode: currentMode, phase: currentPhase, branch },
+    segments: { mode: currentMode, phase: currentPhase, branch, cost: "$0.00" },
   });
   // Register slash commands with the renderer so the `/` picker lights up.
   cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
+
+  // Welcome banner — mirrors src/ui/welcome.tsx. Shown once at startup so
+  // the user gets the same "Good morning! Type / for commands" greeting
+  // they had under the Ink TUI.
+  {
+    const now = new Date();
+    const { headline } = buildWelcome({ hour: now.getHours(), day: now.getDay() });
+    cam.send("ShowKeyValueView", {
+      id: "welcome",
+      title: headline,
+      items: [{ label: "tip", value: "Type / for commands, @ to mention a file, Shift+Tab to cycle modes" }],
+    });
+  }
   // @-mention candidates from cwd (files only, max 200, skip dot dirs).
   void registerMentions(cam).catch(() => { /* best-effort */ });
 
@@ -122,14 +147,23 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     cam.send("ShowToast", { text: `mode: ${next}`, kind: "info", ttl_ms: 1200 });
   };
 
-  const setTokens = (prompt: number, cached: number): void => {
-    if (prompt === promptTokens && cached === cachedTokens) return;
+  const setTokens = (prompt: number, cached: number, completion?: number): void => {
+    const completionNext = completion ?? completionTokens;
+    if (
+      prompt === promptTokens
+      && cached === cachedTokens
+      && completionNext === completionTokens
+    ) return;
     promptTokens = prompt;
     cachedTokens = cached;
+    completionTokens = completionNext;
     const txt = cached > 0
       ? `in ${formatK(prompt)} (${formatK(cached)} cached)`
       : `in ${formatK(prompt)}`;
-    cam.send("StatusUpdate", { segments: { tokens: txt } });
+    // Re-derive cost. We treat the latest prompt/completion totals as the
+    // turn's full usage — calculateCost is additive across turns via
+    // sessionCostUsd which we bump at onUsageFinal time.
+    cam.send("StatusUpdate", { segments: { tokens: txt, cost: formatUsd(sessionCostUsd) } });
   };
 
   const elapsedTimer = setInterval(() => {
@@ -302,7 +336,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             setTokens(usage.prompt_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
           },
           onUsageFinal: (usage) => {
-            setTokens(usage.prompt_tokens, usage.prompt_tokens_details?.cached_tokens ?? 0);
+            const completion = usage.completion_tokens ?? 0;
+            const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
+            const cost = calculateCost(usage.prompt_tokens, completion, cached);
+            sessionCostUsd += cost.total;
+            setTokens(usage.prompt_tokens, cached, completion);
           },
           onTasks: (tasks) => {
             for (const t of tasks) {
@@ -385,8 +423,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   }
 
   /** Intercept slash-prefixed input. Returns true if handled (skip agent
-   *  loop); false otherwise (forward to runTurn). */
-  function handleSlashCommand(text: string): boolean {
+   *  loop); false otherwise (forward to runTurn). Async so handlers that
+   *  drive modal overlays (selectList → renderer → response) can await
+   *  the user's pick before returning. */
+  async function handleSlashCommand(text: string): Promise<boolean> {
     if (!text.startsWith("/")) return false;
     const raw = text.slice(1).trim();
     const [name, ...rest] = raw.split(/\s+/);
@@ -413,52 +453,235 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         if (args && (MODES as readonly string[]).includes(args)) {
           setMode(args as Mode);
         } else {
-          // No arg or unknown → cycle to next.
           const idx = MODES.indexOf(currentMode);
           const next = MODES[(idx + 1) % MODES.length] ?? "edit";
           setMode(next);
         }
         return true;
       case "model":
-        cam.send("ShowToast", {
-          text: `model: ${opts.model}`,
-          kind: "info",
-          ttl_ms: 2500,
+        cam.send("ShowToast", { text: `model: ${opts.model}`, kind: "info", ttl_ms: 2500 });
+        return true;
+      case "clear": {
+        // Reset conversation: keep only the leading system prompt(s),
+        // drop everything else. Renderer wipes the visible transcript.
+        const systemMessages = messages.filter((m) => m.role === "system");
+        messages.length = 0;
+        messages.push(...systemMessages);
+        sessionCostUsd = 0;
+        promptTokens = 0;
+        cachedTokens = 0;
+        completionTokens = 0;
+        cam.send("TranscriptCleared", {});
+        cam.send("StatusUpdate", {
+          segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
         });
         return true;
-      case "clear":
-      case "compact":
-      case "checkpoint":
-      case "checkpoints":
-      case "resume":
-      case "memory":
+      }
+      case "compact": {
+        if (currentPhase !== "idle") {
+          cam.send("ShowToast", { text: "can't compact while model is running", kind: "warn", ttl_ms: 2500 });
+          return true;
+        }
+        cam.send("ShowToast", { text: "compacting…", kind: "info", ttl_ms: 1500 });
+        try {
+          const result = await summarizeMessagesViaLlm({
+            accountId: opts.accountId,
+            apiToken: opts.apiToken,
+            model: opts.model,
+            messages,
+            gateway: gatewayFromOpts(opts),
+          });
+          if (result.replacedCount === 0) {
+            cam.send("ShowToast", { text: "nothing to compact yet", kind: "info", ttl_ms: 2000 });
+          } else {
+            messages.length = 0;
+            messages.push(...result.newMessages);
+            cam.send("SessionCompacted", {});
+            cam.send("ShowToast", {
+              text: `compacted ${result.replacedCount} messages`,
+              kind: "success",
+              ttl_ms: 2500,
+            });
+          }
+        } catch (err) {
+          cam.send("ShowToast", {
+            text: `compact failed: ${err instanceof Error ? err.message : String(err)}`,
+            kind: "error", ttl_ms: 3000,
+          });
+        }
+        return true;
+      }
+      case "resume": {
+        const sessions = await listSessions(30, process.cwd());
+        if (sessions.length === 0) {
+          cam.send("ShowToast", { text: "no saved sessions for this cwd", kind: "info", ttl_ms: 2500 });
+          return true;
+        }
+        const choice = await selectList(cam, {
+          id: `resume-${Date.now()}`,
+          prompt: "Resume which session?",
+          options: sessions.map((s) => ({
+            value: s.filePath,
+            label: `${s.title ?? s.firstPrompt} (${s.messageCount} msgs)`,
+            description: s.updatedAt.slice(0, 19).replace("T", " "),
+          })),
+          allow_filter: true,
+          allow_cancel: true,
+        });
+        if (choice.cancelled || !choice.value) return true;
+        try {
+          const file = await loadSession(choice.value);
+          messages.length = 0;
+          messages.push(...file.messages);
+          currentSessionFilePath = choice.value;
+          cam.send("TranscriptCleared", {});
+          cam.send("ShowToast", {
+            text: `resumed: ${file.title ?? file.id} (${file.messages.length} msgs restored, not replayed visually)`,
+            kind: "success", ttl_ms: 3500,
+          });
+        } catch (err) {
+          cam.send("ShowToast", {
+            text: `resume failed: ${err instanceof Error ? err.message : String(err)}`,
+            kind: "error", ttl_ms: 3000,
+          });
+        }
+        return true;
+      }
+      case "checkpoint": {
+        if (!currentSessionFilePath) {
+          cam.send("ShowToast", { text: "no active saved session — type at least one message", kind: "warn", ttl_ms: 2800 });
+          return true;
+        }
+        const label = args || `checkpoint at turn ${messages.length}`;
+        try {
+          await addCheckpoint(currentSessionFilePath, {
+            id: `cp-${Date.now()}`,
+            label,
+            turnIndex: messages.length,
+            timestamp: new Date().toISOString(),
+          });
+          cam.send("ShowToast", { text: `checkpoint saved: ${label}`, kind: "success", ttl_ms: 2500 });
+        } catch (err) {
+          cam.send("ShowToast", { text: `checkpoint failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "checkpoints": {
+        if (!currentSessionFilePath) {
+          cam.send("ShowToast", { text: "no saved session loaded", kind: "warn", ttl_ms: 2500 });
+          return true;
+        }
+        try {
+          const file = await loadSession(currentSessionFilePath);
+          const cps = file.checkpoints ?? [];
+          if (cps.length === 0) {
+            cam.send("ShowToast", { text: "no checkpoints in this session", kind: "info", ttl_ms: 2500 });
+            return true;
+          }
+          cam.send("ShowKeyValueView", {
+            id: `cps-${Date.now()}`,
+            title: `checkpoints (${cps.length})`,
+            items: cps.map((c) => ({
+              label: c.label,
+              value: `turn ${c.turnIndex} · ${c.timestamp.slice(0, 19).replace("T", " ")}`,
+            })),
+          });
+        } catch (err) {
+          cam.send("ShowToast", { text: `checkpoints failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "theme": {
+        const themes = themeList();
+        if (themes.length === 0) {
+          cam.send("ShowToast", { text: "no themes registered", kind: "warn", ttl_ms: 2000 });
+          return true;
+        }
+        const choice = await selectList(cam, {
+          id: `theme-${Date.now()}`,
+          prompt: "Pick a theme (note: applied to Ink only; Camouflage TUI ignores)",
+          options: themes.map((t) => ({
+            value: t.name,
+            label: t.name,
+            description: "",
+          })),
+          default: currentThemeName,
+          allow_filter: true,
+          allow_cancel: true,
+        });
+        if (!choice.cancelled && choice.value) {
+          currentThemeName = choice.value;
+          resolveTheme(choice.value); // validate; throws if missing
+          cam.send("ShowToast", { text: `theme: ${choice.value} (restart to apply globally)`, kind: "info", ttl_ms: 2500 });
+        }
+        return true;
+      }
       case "cost":
+        cam.send("ShowKeyValueView", {
+          id: `cost-${Date.now()}`,
+          title: "session cost",
+          items: [
+            { label: "model", value: opts.model },
+            { label: "prompt tokens", value: String(promptTokens) },
+            { label: "cached prompt", value: String(cachedTokens) },
+            { label: "completion tokens", value: String(completionTokens) },
+            { label: "total $", value: formatUsd(sessionCostUsd) },
+            ...(opts.cloudMode ? [{ label: "billing", value: "Cloud mode (no out-of-pocket)" }] : []),
+          ],
+        });
+        return true;
+      case "reasoning":
+        reasoningShown = !reasoningShown;
+        cam.send("ShowToast", {
+          text: `reasoning: ${reasoningShown ? "shown" : "hidden"} (display-only in Camouflage TUI)`,
+          kind: "info", ttl_ms: 2000,
+        });
+        return true;
+      case "shell":
+        cam.send("ShowToast", {
+          text: args ? `shell: ${args} (config write not yet wired in Camouflage UI)` : "shell: auto (default)",
+          kind: "info", ttl_ms: 2500,
+        });
+        return true;
+      case "update": {
+        cam.send("ShowToast", { text: "checking for updates…", kind: "info", ttl_ms: 1500 });
+        try {
+          const r = await checkForUpdate(true);
+          if (r.hasUpdate && r.latestVersion) {
+            cam.send("ShowToast", {
+              text: `update available: ${r.localVersion} → ${r.latestVersion}. Run: npm i -g kimiflare@latest`,
+              kind: "success", ttl_ms: 5000,
+            });
+          } else {
+            cam.send("ShowToast", { text: `up to date (${r.localVersion ?? "unknown"})`, kind: "info", ttl_ms: 2500 });
+          }
+        } catch (err) {
+          cam.send("ShowToast", { text: `update check failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "init":
+      case "remote":
+      case "memory":
       case "gateway":
       case "mcp":
       case "lsp":
       case "hooks":
       case "skills":
       case "command":
-      case "init":
-      case "remote":
-      case "update":
       case "hello":
       case "inbox":
       case "report":
-      case "shell":
       case "logout":
-      case "theme":
-      case "reasoning":
-        // Recognised but not yet ported to the Camouflage UI. Toast back
-        // so the user knows it's a real command rather than a typo.
+        // Not yet ported. Each of these is a sizeable subsystem with its
+        // own React modal in the Ink UI; porting them properly needs a
+        // Wizard/Form integration per command.
         cam.send("ShowToast", {
-          text: `/${name}: not yet wired in Camouflage UI (PR #474 follow-up)`,
-          kind: "warn",
-          ttl_ms: 2800,
+          text: `/${name}: not yet wired in Camouflage UI (use --ui ink for now)`,
+          kind: "warn", ttl_ms: 2800,
         });
         return true;
       case "":
-        // bare `/` — picker will show; nothing to dispatch.
         return true;
       default:
         cam.send("ShowToast", { text: `unknown command: /${name}`, kind: "error", ttl_ms: 2500 });
@@ -470,14 +693,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     // Initial turn: only run if a prompt was supplied via -p. Otherwise
     // boot to an empty input box and wait for the user's first input.
     if (opts.prompt && opts.prompt.length > 0) {
-      if (!handleSlashCommand(opts.prompt)) {
+      if (!(await handleSlashCommand(opts.prompt))) {
         await runTurn(opts.prompt);
       }
     }
     while (!aborted) {
       const text = await nextFollowUp();
       if (text === null) break;
-      if (handleSlashCommand(text)) continue;
+      if (await handleSlashCommand(text)) continue;
       await runTurn(text);
     }
   } finally {
@@ -520,6 +743,11 @@ async function registerMentions(cam: CamouflageHandle): Promise<void> {
   cam.send("MentionCandidatesRegistered", {
     candidates: collected.map((p) => ({ token: p, kind: "file" })),
   });
+}
+
+function formatUsd(n: number): string {
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 function formatK(n: number): string {
