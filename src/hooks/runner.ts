@@ -5,6 +5,7 @@ import type {
   HookEventOutcome,
   HookOutcome,
   HookPayload,
+  IntentTier,
   PostToolUsePayload,
   PreToolUsePayload,
 } from "./types.js";
@@ -38,11 +39,16 @@ function buildHookEnv(payload: HookPayload): Record<string, string> {
     // Common per-tool path arg — surfaced for ergonomic shell tests.
     const path = (p.args as Record<string, unknown>).path;
     if (typeof path === "string") env.KIMIFLARE_HOOK_PATH = path;
+    if (p.tier) env.KIMIFLARE_HOOK_TIER = p.tier;
     if (p.event === "PostToolUse") {
       env.KIMIFLARE_HOOK_RESULT_OK = String((p as PostToolUsePayload).result.ok);
       const ec = (p as PostToolUsePayload).result.errorCode;
       if (ec) env.KIMIFLARE_HOOK_RESULT_ERROR_CODE = ec;
     }
+  }
+  if (payload.event === "UserPromptSubmit") {
+    const p = payload as { tier?: IntentTier };
+    if (p.tier) env.KIMIFLARE_HOOK_TIER = p.tier;
   }
   return env;
 }

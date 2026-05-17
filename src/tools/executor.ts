@@ -1,5 +1,6 @@
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { wrapAsToolError, type ToolErrorCode } from "./tool-error.js";
+import type { HooksManager } from "../hooks/manager.js";
 import { readTool } from "./read.js";
 import { writeTool } from "./write.js";
 import { editTool } from "./edit.js";
@@ -146,15 +147,42 @@ export interface ToolResult {
   suggestion?: string;
 }
 
+/** Cap on `result.content` bytes carried in the PostToolUse hook
+ *  payload (G7 from the M6.1 audit). Large tool outputs are reduced
+ *  to fit OS env-var limits (`KIMIFLARE_HOOK_PAYLOAD` ~128 KB on
+ *  Linux, less on macOS) and to keep hooks fast. The full output is
+ *  still available via the tool's artifact id if the user needs it. */
+const HOOK_RESULT_CONTENT_CAP_BYTES = 4 * 1024;
+
+function capContentForHook(s: string): string {
+  if (Buffer.byteLength(s, "utf8") <= HOOK_RESULT_CONTENT_CAP_BYTES) return s;
+  let cut = s;
+  while (Buffer.byteLength(cut, "utf8") > HOOK_RESULT_CONTENT_CAP_BYTES) {
+    cut = cut.slice(0, Math.floor(cut.length * 0.9));
+  }
+  return `${cut}\n[…truncated for hook payload]`;
+}
+
 export class ToolExecutor {
   private sessionAllowed = new Set<string>();
   private tools: Map<string, ToolSpec>;
   private artifactStore: ToolArtifactStore;
+  /** M6.1: when set, executor fires PreToolUse/PostToolUse around
+   *  every `run` call regardless of caller (standard agent loop,
+   *  code-mode sandbox, init turn, SDK, CLI print mode). */
+  private hooks: HooksManager | null;
 
-  constructor(tools: ToolSpec[] = ALL_TOOLS) {
+  constructor(tools: ToolSpec[] = ALL_TOOLS, opts?: { hooks?: HooksManager }) {
     this.tools = new Map(tools.map((t) => [t.name, t]));
     this.artifactStore = new ToolArtifactStore();
     this.tools.set("expand_artifact", makeExpandArtifactTool(this.artifactStore));
+    this.hooks = opts?.hooks ?? null;
+  }
+
+  /** Swap or detach the hooks manager. Used by app startup so the
+   *  executor created before the manager exists can pick it up later. */
+  setHooks(hooks: HooksManager | null): void {
+    this.hooks = hooks;
   }
 
   list(): ToolSpec[] {
@@ -210,13 +238,49 @@ export class ToolExecutor {
       };
     }
 
+    // M6.1: PreToolUse hook (veto-able). Fires here — after JSON-args
+    // parsing, BEFORE the permission check — so a hook can block a
+    // call without the user being asked. Hooks live on the executor
+    // so every caller (standard loop, code-mode sandbox, init, SDK,
+    // print mode) gets the same behavior automatically.
+    if (this.hooks?.hasEnabledHooks("PreToolUse")) {
+      const preOutcome = await this.hooks.fire(
+        "PreToolUse",
+        {
+          event: "PreToolUse",
+          session_id: ctx.sessionId ?? null,
+          cwd: ctx.cwd,
+          tool: call.name,
+          args,
+          tier: ctx.intentTier,
+        },
+        call.name,
+        ctx.signal,
+      );
+      if (preOutcome.vetoed) {
+        const reason = preOutcome.vetoReason || "PreToolUse hook blocked the call";
+        const synthetic: ToolResult = {
+          tool_call_id: call.id,
+          name: call.name,
+          content: `Hook blocked this call: ${reason}`,
+          ok: false,
+          errorCode: "policy_rejection",
+          recoverable: false,
+          suggestion: "the user has a hook that blocks this call — try a different approach",
+        };
+        // PostToolUse does NOT fire on a vetoed call. The action never
+        // ran, so "post" is meaningless. Documented behavior.
+        return synthetic;
+      }
+    }
+
     if (tool.needsPermission) {
       const sessionKey = this.permissionKey(tool, args);
       if (!this.sessionAllowed.has(sessionKey)) {
         const raw = await askPermission({ tool, args, sessionKey });
         const result = toPermissionResult(raw);
         if (result.decision === "deny") {
-          return {
+          const denied: ToolResult = {
             tool_call_id: call.id,
             name: call.name,
             content: `Permission denied by user. Do not retry this exact call; ask the user what they want to do differently.`,
@@ -225,6 +289,8 @@ export class ToolExecutor {
             recoverable: false,
             suggestion: "ask the user what they want to do differently",
           };
+          this.firePostToolUse(call, args, denied, ctx);
+          return denied;
         }
         // Only cache when the user said "for this session." `once` is
         // intentionally not cached (we re-ask), and `pattern` allows
@@ -275,7 +341,7 @@ export class ToolExecutor {
         this.artifactStore,
         DEFAULT_REDUCER_CONFIG,
       );
-      return {
+      const success: ToolResult = {
         tool_call_id: call.id,
         name: call.name,
         content: reduced.content,
@@ -284,10 +350,12 @@ export class ToolExecutor {
         reducedBytes: reduced.reducedBytes,
         artifactId: reduced.artifactId,
       };
+      this.firePostToolUse(call, args, success, ctx);
+      return success;
     } catch (e) {
       const err = wrapAsToolError(e);
       const msg = `Error running ${call.name}: ${err.message}`;
-      return {
+      const failure: ToolResult = {
         tool_call_id: call.id,
         name: call.name,
         content: msg,
@@ -298,7 +366,47 @@ export class ToolExecutor {
         recoverable: err.recoverable,
         suggestion: err.suggestion,
       };
+      this.firePostToolUse(call, args, failure, ctx);
+      return failure;
     }
+  }
+
+  /**
+   * Fire-and-forget PostToolUse. Wraps every code path that returns a
+   * `ToolResult` so success / failure / permission-denied all surface
+   * to PostToolUse hooks uniformly. The `content` field is capped via
+   * `capContentForHook` to keep large tool outputs from blowing the OS
+   * env-var limits on `KIMIFLARE_HOOK_PAYLOAD`.
+   */
+  private firePostToolUse(
+    call: ToolInvocation,
+    args: Record<string, unknown>,
+    result: ToolResult,
+    ctx: ToolContext,
+  ): void {
+    if (!this.hooks?.hasEnabledHooks("PostToolUse")) return;
+    void this.hooks
+      .fire(
+        "PostToolUse",
+        {
+          event: "PostToolUse",
+          session_id: ctx.sessionId ?? null,
+          cwd: ctx.cwd,
+          tool: call.name,
+          args,
+          tier: ctx.intentTier,
+          result: {
+            ok: result.ok,
+            content: capContentForHook(result.content),
+            errorCode: result.errorCode,
+          },
+        },
+        call.name,
+        ctx.signal,
+      )
+      .catch(() => {
+        // hooks are best-effort; never crash the tool path
+      });
   }
 
   private permissionKey(tool: ToolSpec, args: Record<string, unknown>): string {

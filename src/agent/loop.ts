@@ -91,9 +91,13 @@ export interface AgentTurnOpts {
   intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
   /** Skills injected into the system prompt for this turn. */
   selectedSkills?: { name: string; body: string }[];
-  /** User-configured lifecycle hooks (M6.1). When provided, the loop
-   *  fires PreToolUse before every tool call (veto-able) and PostToolUse
-   *  after, plus Stop at end-of-turn. Pass `undefined` to disable. */
+  /**
+   * M6.1: lifecycle hooks for events the loop owns (`Stop` at clean
+   * turn end). PreToolUse / PostToolUse hooks live on the
+   * `ToolExecutor` itself, so they fire for every executor caller
+   * (standard loop, code-mode sandbox, init, SDK, print mode)
+   * automatically — no need to thread `hooks` through to those.
+   */
   hooks?: import("../hooks/manager.js").HooksManager;
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
@@ -882,96 +886,36 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.onToolWillExecute?.(tc.id, tc.function.name);
         logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });
 
-        // M6.1: PreToolUse hook (veto-able). Skip the pre-check when no
-        // hook is configured to avoid the JSON.parse on the args path
-        // for the common case.
-        let parsedToolArgs: Record<string, unknown> = {};
-        if (opts.hooks?.hasEnabledHooks("PreToolUse")) {
-          try {
-            parsedToolArgs = tc.function.arguments?.trim()
-              ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
-              : {};
-          } catch {
-            parsedToolArgs = {};
-          }
-          const preOutcome = await opts.hooks.fire(
-            "PreToolUse",
-            {
-              event: "PreToolUse",
-              session_id: opts.sessionId ?? null,
-              cwd: opts.cwd,
-              tool: tc.function.name,
-              args: parsedToolArgs,
-            },
-            tc.function.name,
-            opts.signal,
-          );
-          if (preOutcome.vetoed) {
-            const reason = preOutcome.vetoReason || "PreToolUse hook blocked the call";
-            const synthetic: ToolResult = {
-              tool_call_id: tc.id,
-              name: tc.function.name,
-              content: `Hook blocked this call: ${reason}`,
-              ok: false,
-              errorCode: "policy_rejection",
-              recoverable: false,
-              suggestion: "the user has a hook that blocks this call — try a different approach",
-            };
-            toolResults.push(synthetic);
-            opts.messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: sanitizeString(synthetic.content),
-              name: tc.function.name,
-            });
-            opts.callbacks.onToolResult?.(synthetic);
-            logger.warn("hook:vetoed_tool_call", {
-              sessionId: opts.sessionId,
-              tool: tc.function.name,
-              toolCallId: tc.id,
-              reason,
-            });
-            continue;
-          }
-        }
-
+        // M6.1: PreToolUse / PostToolUse fire inside `executor.run`
+        // (see src/tools/executor.ts). The executor owns them so every
+        // caller — standard loop, code-mode sandbox, init turn, SDK,
+        // CLI print mode — gets the same behavior automatically.
+        // A vetoed PreToolUse returns a synthetic policy_rejection
+        // ToolResult; the loop treats it the same as any other failed
+        // call (pushes the rejection text as a tool message so the
+        // model sees the reason).
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell },
+          {
+            cwd: opts.cwd,
+            signal: opts.signal,
+            onTasks: opts.callbacks.onTasks,
+            coauthor: opts.coauthor,
+            memoryManager: opts.memoryManager,
+            sessionId: opts.sessionId,
+            githubToken: opts.githubToken,
+            shell: opts.shell,
+            intentTier: opts.intentClassification?.tier,
+          },
           opts.onFileChange,
         );
-
-        // M6.1: PostToolUse hook (informational, fire-and-forget). The
-        // exit code is logged but never blocks the loop; the model's
-        // turn moves on regardless.
-        if (opts.hooks?.hasEnabledHooks("PostToolUse")) {
-          // Reuse parsedToolArgs if PreToolUse already parsed; else
-          // parse once here. Cheap enough.
-          if (Object.keys(parsedToolArgs).length === 0 && tc.function.arguments) {
-            try {
-              parsedToolArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
-            } catch {
-              parsedToolArgs = {};
-            }
-          }
-          void opts.hooks.fire(
-            "PostToolUse",
-            {
-              event: "PostToolUse",
-              session_id: opts.sessionId ?? null,
-              cwd: opts.cwd,
-              tool: tc.function.name,
-              args: parsedToolArgs,
-              result: {
-                ok: result.ok,
-                content: result.content,
-                errorCode: result.errorCode,
-              },
-            },
-            tc.function.name,
-            opts.signal,
-          ).catch(() => {});
+        if (!result.ok && result.errorCode === "policy_rejection") {
+          logger.warn("hook:vetoed_tool_call", {
+            sessionId: opts.sessionId,
+            tool: tc.function.name,
+            toolCallId: tc.id,
+          });
         }
         let content = result.content;
         if (content.length > MAX_TOOL_CONTENT_CHARS) {

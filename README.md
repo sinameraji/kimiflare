@@ -366,7 +366,19 @@ Per-hook fields:
 - `description` (optional) — shown by `/hooks list`.
 
 Hooks are always-on infrastructure: they fire whether the TUI is open
-or kimiflare is running in `--print` mode.
+or kimiflare is running in `--print` mode. They also fire for tool
+calls generated from inside the Code Mode sandbox (heavy-tier turns),
+because hook firing lives on the `ToolExecutor` itself — every call
+path uses the same plumbing.
+
+When intent classification has assigned a tier, hook payloads include
+it as `tier: "light" | "medium" | "heavy"` (on `UserPromptSubmit`,
+`PreToolUse`, `PostToolUse`) and as `$KIMIFLARE_HOOK_TIER`. Useful for
+"skip auto-format on light turns" or "audit every heavy-turn write."
+
+SDK consumers opt in to hooks with `enableHooks: true` on
+`createAgentSession`. Default is off because the SDK is a primitive,
+not the TUI.
 
 ## Development
 

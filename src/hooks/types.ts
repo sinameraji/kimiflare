@@ -80,16 +80,26 @@ export interface BaseHookPayload {
   cwd: string;
 }
 
+/** Intent classification tier carried into PreToolUse / PostToolUse /
+ *  UserPromptSubmit payloads when known. Optional because:
+ *    - Code-mode sub-calls don't always have it.
+ *    - SDK / CLI consumers may not run intent classification.
+ *  When absent, the hook command sees no `tier` field in the JSON
+ *  payload and no `KIMIFLARE_HOOK_TIER` env var. */
+export type IntentTier = "light" | "medium" | "heavy";
+
 export interface PreToolUsePayload extends BaseHookPayload {
   event: "PreToolUse";
   tool: string;
   args: Record<string, unknown>;
+  tier?: IntentTier;
 }
 
 export interface PostToolUsePayload extends BaseHookPayload {
   event: "PostToolUse";
   tool: string;
   args: Record<string, unknown>;
+  tier?: IntentTier;
   result: {
     ok: boolean;
     content: string;
@@ -100,6 +110,7 @@ export interface PostToolUsePayload extends BaseHookPayload {
 export interface UserPromptSubmitPayload extends BaseHookPayload {
   event: "UserPromptSubmit";
   prompt: string;
+  tier?: IntentTier;
 }
 
 export interface StopPayload extends BaseHookPayload {
