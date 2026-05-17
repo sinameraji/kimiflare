@@ -111,6 +111,19 @@ logsCmd
   });
 
 program
+  .command("resume")
+  .description("Pick a session to resume via Camouflage's SelectList primitive (CC-1 demo). Prints chosen session id on stdout, exits 1 on cancel.")
+  .option("--limit <n>", "max recent sessions to list", (v) => parseInt(v, 10), 20)
+  .option("--camouflage-bin <path>", "path to camouflage-tui (defaults to PATH lookup)")
+  .action(async (cmdOpts) => {
+    const { runCamouflageResume } = await import("./camouflage-resume.js");
+    await runCamouflageResume({
+      limit: cmdOpts.limit,
+      camouflageBin: cmdOpts.camouflageBin,
+    });
+  });
+
+program
   .command("auth")
   .description("Authenticate with external services")
   .addCommand(
