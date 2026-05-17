@@ -88,7 +88,7 @@ import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
 import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
-import fg from "fast-glob";
+import { glob } from "./util/glob.js";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
@@ -504,15 +504,15 @@ function App({
 
   const loadFilePickerItems = useCallback(async (): Promise<FilePickerItem[]> => {
     const cwd = process.cwd();
-    const entries = await fg("**/*", {
+    const entries = await glob("**/*", {
       cwd,
       ignore: buildFilePickerIgnoreList(cwd),
       dot: false,
       absolute: false,
       onlyFiles: false,
       markDirectories: true,
-    } as fg.Options);
-    const strings = (entries as string[]).slice(0, 300);
+    });
+    const strings = entries.slice(0, 300);
     const items: FilePickerItem[] = strings.map((e) => ({
       name: e.endsWith("/") ? e.slice(0, -1) : e,
       isDirectory: e.endsWith("/"),

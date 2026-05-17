@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, extname } from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../util/frontmatter.js";
 import type { Skill, SkillManifest } from "./types.js";
 
 const DEFAULTS: Required<Pick<SkillManifest, "scope" | "priority" | "enabled" | "match">> = {
@@ -29,8 +29,8 @@ function normalizeManifest(raw: Record<string, unknown>, filePath: string): Skil
 
 export async function loadSkillFile(filePath: string): Promise<Skill> {
   const raw = await readFile(filePath, "utf-8");
-  const parsed = matter(raw);
-  const manifest = normalizeManifest(parsed.data as Record<string, unknown>, filePath);
+  const parsed = parseFrontmatter(raw);
+  const manifest = normalizeManifest(parsed.data, filePath);
 
   const body = parsed.content.trim();
   const estimatedTokens = Math.ceil(body.length / 4);
