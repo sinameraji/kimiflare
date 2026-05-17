@@ -194,9 +194,25 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     if (code != null && code !== 0) exitCode = code;
   });
 
-  const controller = new AbortController();
-  const sigintHandler = () => { aborted = true; controller.abort(); };
+  // Per-turn abort controller; recreated at the top of runTurn() so
+  // cancelling one turn doesn't prevent the next from running. Also
+  // referenced by the cancelRequested handler below + the SIGINT
+  // handler (which still triggers a global abort + aborted flag for
+  // shutdown).
+  let currentController: AbortController | null = null;
+  const sigintHandler = () => { aborted = true; currentController?.abort(); };
   process.on("SIGINT", sigintHandler);
+
+  // Camouflage user pressed Ctrl+C or Esc → interrupt the current turn.
+  // The TUI handles the keystroke and emits this; we abort the
+  // controller. Doesn't set aborted=true so the multi-turn loop
+  // continues — the user can submit a new prompt right after.
+  cam.on("cancelRequested", () => {
+    if (currentController) {
+      currentController.abort();
+      cam.send("ShowToast", { text: "turn interrupted", kind: "info", ttl_ms: 1500 });
+    }
+  });
 
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
@@ -215,6 +231,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     // runTurn re-stamps it).
     turnStartMs = Date.now();
     cam.send("StatusUpdate", { segments: { elapsed: "0s" } });
+    // Per-turn abort controller. The cancelRequested handler from the
+    // renderer (Ctrl+C / Esc) calls currentController.abort(); each new
+    // turn starts with a fresh controller so an interrupt of the
+    // previous turn doesn't poison the next.
+    currentController = new AbortController();
 
     try {
       await runAgentTurn({
@@ -226,7 +247,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         tools: ALL_TOOLS,
         executor,
         cwd,
-        signal: controller.signal,
+        signal: currentController.signal,
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
