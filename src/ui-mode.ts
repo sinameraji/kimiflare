@@ -199,6 +199,13 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       r(text);
     } else {
       followUpQueue.push(text);
+      // Visible confirmation that the prompt was queued — otherwise it
+      // looks like nothing happened while a turn is still in flight.
+      cam.send("ShowToast", {
+        text: `queued (${followUpQueue.length} pending) — will run after current turn`,
+        kind: "info",
+        ttl_ms: 1800,
+      });
     }
   });
 
