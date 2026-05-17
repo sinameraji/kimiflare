@@ -130,6 +130,18 @@ export function humanizeToolTitle(
       });
     }
 
+    // M7.1 — subagent orchestration tools
+    case "Agent":
+      // originalTitle is "Agent(<type>)"; we keep that as-is and let
+      // the body line (set via the tool's render()) carry the per-call
+      // description. A custom prefix would mostly add noise here since
+      // the type is the load-bearing info.
+      return `🤖 ${originalTitle}`;
+
+    case "plan_set":
+    case "plan_update":
+      return originalTitle;
+
     default:
       return originalTitle;
   }
