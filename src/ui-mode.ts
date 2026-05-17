@@ -34,7 +34,9 @@ export interface UiModeOpts {
   accountId: string;
   apiToken: string;
   model: string;
-  prompt: string;
+  /** Initial prompt. When omitted, the renderer boots to an empty input
+   *  box and the user's first keystroke starts the conversation. */
+  prompt?: string;
   allowAll: boolean;
   codeMode?: boolean;
   continueOnLimit?: boolean;
@@ -46,6 +48,17 @@ export interface UiModeOpts {
   /** Optional path to the camouflage-tui binary. Defaults to PATH lookup. */
   camouflageBin?: string;
 }
+
+/** Slash commands registered with the Camouflage renderer's slash picker.
+ *  When the user submits a `/cmd …` line, ui-mode intercepts it (instead
+ *  of forwarding to the agent loop) and dispatches the matching handler.
+ *  This is the minimum set for a usable session; can grow as needed. */
+const SLASH_COMMANDS: { name: string; description: string }[] = [
+  { name: "compact", description: "compact session history (placeholder — wires to runCompact later)" },
+  { name: "clear",   description: "clear the visible transcript" },
+  { name: "help",    description: "show available slash commands" },
+  { name: "quit",    description: "exit the session" },
+];
 
 function gatewayFromOpts(opts: UiModeOpts): AiGatewayOptions | undefined {
   if (!opts.aiGatewayId) return undefined;
@@ -78,6 +91,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   cam.send("StatusUpdate", {
     segments: { mode: "edit", phase: currentPhase, elapsed: "0s", branch },
   });
+  // Register slash commands with the renderer so the `/` picker lights up.
+  cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
 
   const setPhase = (next: typeof currentPhase): void => {
     if (next === currentPhase) return;
@@ -310,11 +325,59 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     return new Promise<string | null>((resolve) => { followUpResolver = resolve; });
   }
 
+  /** Intercept slash-prefixed input. Returns true if handled (skip agent
+   *  loop); false otherwise (forward to runTurn). */
+  function handleSlashCommand(text: string): boolean {
+    if (!text.startsWith("/")) return false;
+    const raw = text.slice(1).trim();
+    const [name, ..._rest] = raw.split(/\s+/);
+    // _rest reserved for future slash-command argument parsing
+    // (e.g. /compact <n_messages>); unused today.
+    switch (name) {
+      case "quit":
+      case "exit":
+        cam.send("ShowToast", { text: "exiting…", kind: "info", ttl_ms: 600 });
+        aborted = true;
+        return true;
+      case "help":
+        cam.send("ShowKeyValueView", {
+          id: `help-${Date.now()}`,
+          title: "slash commands",
+          items: SLASH_COMMANDS.map((c) => ({ label: `/${c.name}`, value: c.description })),
+        });
+        return true;
+      case "clear":
+        // Camouflage's renderer doesn't have a "clear transcript" event
+        // yet (rows are append-only by design). For now, signal via toast
+        // + a marker so the user sees acknowledgement. Real clear lands
+        // when SessionCompacted (already in protocol) is wired to truncate.
+        cam.send("ShowToast", { text: "clear: not yet implemented (use SessionCompacted)", kind: "warn", ttl_ms: 2500 });
+        return true;
+      case "compact":
+        cam.send("ShowToast", { text: "compact: not yet wired", kind: "warn", ttl_ms: 2500 });
+        // TODO: call into KimiFlare's runCompact equivalent.
+        return true;
+      case "":
+        // bare `/` — picker will show; nothing to dispatch.
+        return true;
+      default:
+        cam.send("ShowToast", { text: `unknown command: /${name}`, kind: "error", ttl_ms: 2500 });
+        return true;
+    }
+  }
+
   try {
-    await runTurn(opts.prompt);
+    // Initial turn: only run if a prompt was supplied via -p. Otherwise
+    // boot to an empty input box and wait for the user's first input.
+    if (opts.prompt && opts.prompt.length > 0) {
+      if (!handleSlashCommand(opts.prompt)) {
+        await runTurn(opts.prompt);
+      }
+    }
     while (!aborted) {
       const text = await nextFollowUp();
       if (text === null) break;
+      if (handleSlashCommand(text)) continue;
       await runTurn(text);
     }
   } finally {
