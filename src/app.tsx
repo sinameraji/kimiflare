@@ -18,6 +18,7 @@ import {
   type SessionState,
 } from "./agent/session-state.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
+import { getOrchestrationTools } from "./subagents/tier-gate.js";
 import type { ToolSpec } from "./tools/registry.js";
 import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
@@ -631,12 +632,22 @@ function App({
 
   useEffect(() => {
     modeRef.current = mode;
+    // System-prompt tool listing: show the full orchestration surface so
+    // the model is aware Agent / plan_* exist even on lighter turns
+    // where the per-turn API list won't include them. Per-turn gating
+    // applies at the API call site (see startTurn below).
+    const systemPromptTools = [
+      ...ALL_TOOLS,
+      ...getOrchestrationTools("heavy"),
+      ...mcpToolsRef.current,
+      ...lspToolsRef.current,
+    ];
     if (cacheStableRef.current) {
       messagesRef.current[1] = {
         role: "system",
         content: buildSessionPrefix({
           cwd: process.cwd(),
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+          tools: systemPromptTools,
           model: cfg?.model ?? DEFAULT_MODEL,
           mode,
         }),
@@ -646,7 +657,7 @@ function App({
         role: "system",
         content: buildSystemPrompt({
           cwd: process.cwd(),
-          tools: [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+          tools: systemPromptTools,
           model: cfg?.model ?? DEFAULT_MODEL,
           mode,
         }),

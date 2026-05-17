@@ -15,9 +15,14 @@ import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory
 import { ToolArtifactStore } from "./artifact-store.js";
 import { reduceToolOutput, DEFAULT_REDUCER_CONFIG } from "./reducer.js";
 import { makeExpandArtifactTool } from "./expand-artifact.js";
-import { agentTool } from "./agent.js";
-import { planSetTool, planUpdateTool } from "./plan.js";
 
+/**
+ * Core tools that are always available regardless of tier.
+ *
+ * Orchestration tools (`Agent`, `plan_set`, `plan_update`) are gated by
+ * intent tier and so live in `src/subagents/tier-gate.ts` instead —
+ * callers compose: `[...ALL_TOOLS, ...getOrchestrationTools(tier)]`.
+ */
 export const ALL_TOOLS: ToolSpec[] = [
   readTool,
   writeTool,
@@ -35,9 +40,6 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryRememberTool,
   memoryRecallTool,
   memoryForgetTool,
-  agentTool,
-  planSetTool,
-  planUpdateTool,
 ];
 
 /**
