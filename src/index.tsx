@@ -370,12 +370,20 @@ async function main() {
   const uiEngine = (opts.ui ?? "camouflage").toLowerCase();
   if (uiEngine === "camouflage") {
     if (!cfg) {
-      console.error(
-        "kimiflare: --ui camouflage requires credentials.\n" +
-          "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or use `kimiflare --cloud` after `kimiflare auth cloud`.\n" +
-          "To fall back to the legacy Ink UI, run with `kimiflare --ui ink`.",
-      );
-      process.exit(2);
+      // Run Camouflage-native onboarding (ports the Ink Onboarding flow).
+      // On cancel/exit, the user falls back to the env-var path or
+      // `--ui ink` for the legacy onboarding.
+      const { runCamouflageOnboarding } = await import("./ui-mode.js");
+      const saved = await runCamouflageOnboarding({ camouflageBin: opts.camouflageBin });
+      if (!saved) {
+        console.error(
+          "kimiflare: onboarding cancelled.\n" +
+            "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or run again to retry.\n" +
+            "Legacy onboarding: `kimiflare --ui ink`.",
+        );
+        process.exit(2);
+      }
+      cfg = saved;
     }
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
     const { runUiMode } = await import("./ui-mode.js");

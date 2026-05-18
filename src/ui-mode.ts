@@ -40,7 +40,9 @@ import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
 import { checkForUpdate } from "./util/update-check.js";
 import { calculateCost } from "./pricing.js";
-import { loadConfig, saveConfig } from "./config.js";
+import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
+import type { KimiConfig } from "./config.js";
+import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
 import { clearCloudCredentials } from "./cloud/auth.js";
 import { listAllSkills } from "./skills/manager.js";
 import { loadCustomCommands } from "./commands/loader.js";
@@ -1665,5 +1667,115 @@ function tryGitBranch(): string {
     return out || "—";
   } catch {
     return "—";
+  }
+}
+
+/**
+ * Ports the Onboarding component to the Camouflage TUI.
+ *
+ * Runs in three steps using composed Form + SelectList primitives:
+ *   1) Form: accountId + apiToken
+ *   2) SelectList: pick existing gateway, create a new one, or skip
+ *      (with a fallback Form for the gateway name)
+ *   3) Form: model (with DEFAULT_MODEL prefilled)
+ *
+ * On success, persists to disk via saveConfig and returns the saved
+ * config so the caller can hand it directly to runUiMode. Returns null
+ * if the user cancels at any step.
+ *
+ * Mounts its own Camouflage handle and closes it before returning so
+ * the caller can spawn a fresh handle for runUiMode (the renderer
+ * resets its terminal state cleanly on shutdown).
+ */
+export async function runCamouflageOnboarding(opts: {
+  camouflageBin?: string;
+}): Promise<KimiConfig | null> {
+  const cam = await mount({ bin: opts.camouflageBin, renderToTerminal: true });
+  cam.send("SessionStarted", {});
+  cam.send("StatusUpdate", { segments: { mode: "setup", phase: "onboarding" } });
+  cam.send("ShowToast", {
+    text: "Welcome to kimiflare — let's get you set up.",
+    kind: "info", ttl_ms: 4000,
+  });
+  try {
+    // Step 1: credentials.
+    const creds = await form(cam, {
+      id: "onb-creds",
+      title: "Cloudflare credentials",
+      fields: [
+        { name: "accountId", label: "Cloudflare account ID", required: true },
+        { name: "apiToken",  label: "Cloudflare API token", kind: "password", required: true },
+      ],
+      allow_cancel: true,
+    });
+    if (creds.cancelled || !creds.values) return null;
+    const accountId = (creds.values.accountId ?? "").trim();
+    const apiToken  = (creds.values.apiToken ?? "").trim();
+    if (!accountId || !apiToken) return null;
+
+    // Step 2: gateway. List first; fall back to skip/create on errors.
+    cam.send("ShowToast", { text: "checking AI Gateway…", kind: "info", ttl_ms: 1500 });
+    let aiGatewayId: string | undefined;
+    let gws: { id: string }[] = [];
+    let listErr: string | null = null;
+    try {
+      gws = await listGateways(accountId, apiToken);
+    } catch (err) {
+      listErr = err instanceof AiGatewayError ? err.message
+              : err instanceof Error ? err.message : String(err);
+    }
+    if (listErr) {
+      cam.send("ShowToast", { text: `gateway list failed: ${listErr}  ·  continuing without gateway`, kind: "warn", ttl_ms: 4000 });
+    } else {
+      const opts2 = gws.map((g) => ({ value: g.id, label: g.id }));
+      opts2.push({ value: "__create__", label: "Create a new gateway" });
+      opts2.push({ value: "__skip__",   label: "Skip — direct Workers AI" });
+      const pick = await selectList(cam, {
+        id: "onb-gw",
+        prompt: gws.length > 0 ? `Pick a gateway (${gws.length} available)` : "No gateways yet",
+        options: opts2,
+        allow_cancel: true,
+      });
+      if (pick.cancelled) return null;
+      if (pick.value === "__create__") {
+        const nameForm = await form(cam, {
+          id: "onb-gwname",
+          title: "Create new AI Gateway",
+          fields: [{ name: "name", label: "Gateway name", default: "kimiflare", required: true }],
+          allow_cancel: true,
+        });
+        if (nameForm.cancelled || !nameForm.values) return null;
+        const name = (nameForm.values.name ?? "kimiflare").trim();
+        try {
+          const created = await createGateway(accountId, apiToken, name);
+          aiGatewayId = created.id;
+          cam.send("ShowToast", { text: `created gateway: ${created.id}`, kind: "success", ttl_ms: 2500 });
+        } catch (err) {
+          cam.send("ShowToast", {
+            text: `create failed: ${err instanceof Error ? err.message : String(err)}  ·  continuing without gateway`,
+            kind: "warn", ttl_ms: 4000,
+          });
+        }
+      } else if (pick.value && pick.value !== "__skip__") {
+        aiGatewayId = pick.value;
+      }
+    }
+
+    // Step 3: model.
+    const modelForm = await form(cam, {
+      id: "onb-model",
+      title: "Default model",
+      fields: [{ name: "model", label: "Model", default: DEFAULT_MODEL, required: true }],
+      allow_cancel: true,
+    });
+    if (modelForm.cancelled || !modelForm.values) return null;
+    const model = (modelForm.values.model ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+
+    const cfg: KimiConfig = { accountId, apiToken, model, aiGatewayId };
+    await saveConfig(cfg);
+    cam.send("ShowToast", { text: "configuration saved — welcome!", kind: "success", ttl_ms: 2500 });
+    return cfg;
+  } finally {
+    await cam.close().catch(() => {});
   }
 }
