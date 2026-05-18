@@ -33,7 +33,7 @@ import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
-import { selectList, form } from "camouflage";
+import { selectList, form, confirm } from "camouflage";
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { buildWelcome } from "./ui/greetings.js";
@@ -485,6 +485,48 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           },
           onWarning: (msg) => {
             cam.send("RuntimeError", { message: msg, kind: "generic", severity: "warn" });
+          },
+          // Ports LimitModal — when the agent hits its per-turn tool
+          // call ceiling, show a Confirm dialog and let the user keep
+          // going or stop the turn.
+          onToolLimitReached: async () => {
+            const r = await confirm(cam, {
+              id: `lim-${Date.now()}`,
+              prompt: "Tool-call limit reached (50). Continue running?",
+              yes_label: "Continue",
+              no_label: "Stop turn",
+              default: "no",
+              allow_cancel: false,
+            });
+            return r.value ? "continue" : "stop";
+          },
+          // Ports LimitModal's loop variant — agent detected repeated
+          // tool calls and asks the user how to recover. Three options
+          // surface via SelectList instead of Confirm to keep the
+          // "synthesize" verb visible.
+          onLoopDetected: async () => {
+            const r = await selectList(cam, {
+              id: `loop-${Date.now()}`,
+              prompt: "Tool-call loop detected — pick a recovery",
+              options: [
+                { value: "continue",   label: "Continue",   description: "let the agent keep going" },
+                { value: "synthesize", label: "Synthesize", description: "ask the model to summarize and answer with what it has" },
+                { value: "stop",       label: "Stop",       description: "end this turn" },
+              ],
+              default: "synthesize",
+              allow_cancel: false,
+            });
+            return (r.value as "continue" | "synthesize" | "stop") ?? "stop";
+          },
+          // KIMI.md drift detector — surface as the same warn segment
+          // the /compact threshold uses, so the status bar lights up
+          // until the user runs /init.
+          onKimiMdStale: () => {
+            cam.send("StatusUpdate", { segments: { warn: "⚠ KIMI.md stale · run /init" } });
+            cam.send("ShowToast", {
+              text: "Project context may be stale. Run /init to refresh KIMI.md.",
+              kind: "warn", ttl_ms: 4500,
+            });
           },
           askPermission: async ({ tool, args }) => {
             const reqId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
