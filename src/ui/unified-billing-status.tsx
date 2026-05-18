@@ -24,8 +24,18 @@ interface Props {
 type Phase =
   | { kind: "probing" }
   | { kind: "success" }
-  | { kind: "needs-setup"; message: string }
-  | { kind: "other-error"; message: string };
+  | {
+      kind: "needs-setup";
+      message: string;
+      eventId: string | null;
+      status: number | null;
+    }
+  | {
+      kind: "other-error";
+      message: string;
+      eventId: string | null;
+      status: number | null;
+    };
 
 export function UnifiedBillingStatus({
   model,
@@ -51,12 +61,21 @@ export function UnifiedBillingStatus({
       if (cancelled) return;
       if (r.ok) {
         setPhase({ kind: "success" });
-        // Brief flash of the success state, then resolve.
         setTimeout(() => onResolve("enabled"), 700);
       } else if (r.reason === "needs-setup") {
-        setPhase({ kind: "needs-setup", message: r.message });
+        setPhase({
+          kind: "needs-setup",
+          message: r.message,
+          eventId: r.eventId,
+          status: r.status,
+        });
       } else {
-        setPhase({ kind: "other-error", message: r.message });
+        setPhase({
+          kind: "other-error",
+          message: r.message,
+          eventId: r.eventId,
+          status: r.status,
+        });
       }
     })();
     return () => {
@@ -128,6 +147,22 @@ export function UnifiedBillingStatus({
               page — that's a different feature and will break kimi-code's auth.
             </Text>
           </Box>
+          {phase.eventId ? (
+            <Box marginTop={1} flexDirection="column">
+              <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+                Debug · HTTP {phase.status} · cf-aig-event-id: {phase.eventId}
+              </Text>
+              <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+                Look up the full upstream error at:
+              </Text>
+              <Text color={theme.accent} underline>
+                {`     https://dash.cloudflare.com/${accountId}/ai/ai-gateway/gateways/${gatewayId}/logs`}
+              </Text>
+              <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+                CF response: {phase.message}
+              </Text>
+            </Box>
+          ) : null}
         </Box>
         <Box marginTop={1}>
           <SelectInput
@@ -157,6 +192,19 @@ export function UnifiedBillingStatus({
       <Box marginTop={1}>
         <Text color={theme.info.color}>{phase.message}</Text>
       </Box>
+      {phase.eventId ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+            Debug · HTTP {phase.status} · cf-aig-event-id: {phase.eventId}
+          </Text>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+            Look up the full upstream error at:
+          </Text>
+          <Text color={theme.accent} underline>
+            {`     https://dash.cloudflare.com/${accountId}/ai/ai-gateway/gateways/${gatewayId}/logs`}
+          </Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <SelectInput
           items={items}

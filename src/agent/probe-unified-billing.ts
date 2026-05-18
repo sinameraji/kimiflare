@@ -17,8 +17,18 @@
 import { getUserAgent } from "../util/version.js";
 
 export type ProbeResult =
-  | { ok: true }
-  | { ok: false; reason: "needs-setup" | "network" | "other"; message: string };
+  | { ok: true; eventId: string | null }
+  | {
+      ok: false;
+      reason: "needs-setup" | "network" | "other";
+      message: string;
+      /** Full response body (truncated) so the UI can show it for debugging. */
+      rawBody: string;
+      /** HTTP status if the request reached CF. */
+      status: number | null;
+      /** cf-aig-event-id from the response — look this up in the AI Gateway Logs UI. */
+      eventId: string | null;
+    };
 
 export interface ProbeOptions {
   accountId: string;
@@ -40,6 +50,11 @@ export async function probeUnifiedBilling(opts: ProbeOptions): Promise<ProbeResu
       method: "POST",
       headers: {
         // Gateway-level auth. No provider key on purpose — that's the whole point of UB.
+        // We also send Authorization with the same CF token because the /compat endpoint
+        // is documented to expect it (the gateway uses it as the gateway-level bearer
+        // when no upstream provider auth is provided, and CF then funds the upstream
+        // request from the account's Unified Billing credits).
+        Authorization: `Bearer ${opts.apiToken}`,
         "cf-aig-authorization": `Bearer ${opts.apiToken}`,
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
@@ -48,17 +63,24 @@ export async function probeUnifiedBilling(opts: ProbeOptions): Promise<ProbeResu
         model: opts.model,
         messages: [{ role: "user", content: "." }],
         max_tokens: 1,
-        max_completion_tokens: 1,
         stream: false,
       }),
       signal: opts.signal,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, reason: "network", message: msg };
+    return {
+      ok: false,
+      reason: "network",
+      message: msg,
+      rawBody: "",
+      status: null,
+      eventId: null,
+    };
   }
 
-  if (res.ok) return { ok: true };
+  const eventId = res.headers.get("cf-aig-event-id");
+  if (res.ok) return { ok: true, eventId };
 
   const text = await res.text().catch(() => "");
   const lower = text.toLowerCase();
@@ -95,8 +117,18 @@ export async function probeUnifiedBilling(opts: ProbeOptions): Promise<ProbeResu
       ok: false,
       reason: "needs-setup",
       message: text.slice(0, 300) || `HTTP ${res.status}`,
+      rawBody: text.slice(0, 1000),
+      status: res.status,
+      eventId,
     };
   }
 
-  return { ok: false, reason: "other", message: `HTTP ${res.status}: ${text.slice(0, 300)}` };
+  return {
+    ok: false,
+    reason: "other",
+    message: `HTTP ${res.status}: ${text.slice(0, 300)}`,
+    rawBody: text.slice(0, 1000),
+    status: res.status,
+    eventId,
+  };
 }
