@@ -1,4 +1,4 @@
-import matter from "gray-matter";
+import { parseFrontmatter } from "../util/frontmatter.js";
 import type { ParsedSkill, ParsedSkillSection } from "./types.js";
 import { createHash } from "node:crypto";
 
@@ -88,7 +88,7 @@ function splitIntoSections(markdown: string): ParsedSkillSection[] {
  * Expects YAML frontmatter with at least `name`.
  */
 export function parseSkillFile(filePath: string, rawText: string): ParsedSkill {
-  const parsed = matter(rawText);
+  const parsed = parseFrontmatter(rawText);
   const name = typeof parsed.data.name === "string" ? parsed.data.name : "";
   const description = typeof parsed.data.description === "string" ? parsed.data.description : "";
 

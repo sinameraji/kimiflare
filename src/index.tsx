@@ -356,7 +356,12 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
   }
 
   const cwd = process.cwd();
-  const executor = new ToolExecutor(ALL_TOOLS);
+  // M6.1: print mode loads the same hooks as the TUI. Audit / guard /
+  // notification hooks fire in CI runs too — that's the case where
+  // they matter most.
+  const { HooksManager } = await import("./hooks/manager.js");
+  const hooks = new HooksManager(cwd);
+  const executor = new ToolExecutor(ALL_TOOLS, { hooks });
   const messages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
     { role: "user", content: opts.prompt },
@@ -377,6 +382,7 @@ async function runPrintMode(opts: PrintOpts): Promise<void> {
       messages,
       tools: ALL_TOOLS,
       executor,
+      hooks, // M6.1: Stop fires at end of print-mode turn too.
       cwd,
       signal: controller.signal,
       codeMode: opts.codeMode,

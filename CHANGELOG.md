@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.72.0](https://github.com/sinameraji/kimiflare/compare/v0.71.0...v0.72.0) (2026-05-17)
+
+
+### Features
+
+* **glob:** replace fast-glob with native node:fs implementation ([#470](https://github.com/sinameraji/kimiflare/issues/470)) ([b5f1712](https://github.com/sinameraji/kimiflare/commit/b5f1712fb50e8f5a7311713b591e5bd27bc6e6d4))
+* remove diff npm dependency ([#473](https://github.com/sinameraji/kimiflare/issues/473)) ([c5f3a8f](https://github.com/sinameraji/kimiflare/commit/c5f3a8f3eaa98229be5ca301362f9baef384be85))
+
+## [0.71.0](https://github.com/sinameraji/kimiflare/compare/v0.70.0...v0.71.0) (2026-05-17)
+
+
+### Features
+
+* **hooks:** user-configured lifecycle hooks (M6.1) ([#467](https://github.com/sinameraji/kimiflare/issues/467)) ([56a1c11](https://github.com/sinameraji/kimiflare/commit/56a1c1133bb6e1a47ffeef736df0017d3d1c0686))
+* **skills:** replace gray-matter with custom frontmatter parser ([#469](https://github.com/sinameraji/kimiflare/issues/469)) ([f1ef6c0](https://github.com/sinameraji/kimiflare/commit/f1ef6c0b7d2535a7540ff7ccc58cf171ea73ab4f))
+* **telemetry:** optional OTLP/HTTP log export (M5.2) ([#460](https://github.com/sinameraji/kimiflare/issues/460)) ([d238d68](https://github.com/sinameraji/kimiflare/commit/d238d68535d666b5b3ec92fa17f89ff8aa2749c4))
+
+
+### Bug Fixes
+
+* **status:** suppress 'AI Gateway · cache miss' indicator ([#466](https://github.com/sinameraji/kimiflare/issues/466)) ([7376d3a](https://github.com/sinameraji/kimiflare/commit/7376d3a151fdf6b0d8808e6ce36c7bb90579ef5d))
+
 ## [0.70.0](https://github.com/sinameraji/kimiflare/compare/v0.69.0...v0.70.0) (2026-05-16)
 
 

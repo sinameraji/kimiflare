@@ -22,6 +22,7 @@ import type { ToolSpec } from "./tools/registry.js";
 import { getShellCommand } from "./tools/bash.js";
 import { McpManager } from "./mcp/manager.js";
 import { LspManager } from "./lsp/manager.js";
+import { HooksManager } from "./hooks/manager.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
 import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
@@ -91,7 +92,7 @@ import type { KeyResult } from "./ui/key-entry-modal.js";
 import type { BillingChoice } from "./ui/billing-chooser.js";
 import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
-import fg from "fast-glob";
+import { glob } from "./util/glob.js";
 import { FilePicker, type FilePickerItem } from "./ui/file-picker.js";
 import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
@@ -443,6 +444,17 @@ function App({
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
   const memoryManagerRef = useRef<MemoryManager | null>(null);
+  const hooksManagerRef = useRef<HooksManager>(new HooksManager(process.cwd()));
+  // Wire hooks into the executor so every tool call — including those
+  // generated from inside the code-mode sandbox (heavy-tier turns) —
+  // fires PreToolUse / PostToolUse. The ref-based assignment after
+  // construction is needed because the executor was created in line
+  // with `useRef(new ToolExecutor(...))` above, before HooksManager
+  // existed.
+  useEffect(() => {
+    executorRef.current.setHooks(hooksManagerRef.current);
+    return () => executorRef.current.setHooks(null);
+  }, []);
   const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
 
@@ -518,15 +530,15 @@ function App({
 
   const loadFilePickerItems = useCallback(async (): Promise<FilePickerItem[]> => {
     const cwd = process.cwd();
-    const entries = await fg("**/*", {
+    const entries = await glob("**/*", {
       cwd,
       ignore: buildFilePickerIgnoreList(cwd),
       dot: false,
       absolute: false,
       onlyFiles: false,
       markDirectories: true,
-    } as fg.Options);
-    const strings = (entries as string[]).slice(0, 300);
+    });
+    const strings = entries.slice(0, 300);
     const items: FilePickerItem[] = strings.map((e) => ({
       name: e.endsWith("/") ? e.slice(0, -1) : e,
       isDirectory: e.endsWith("/"),
@@ -768,6 +780,24 @@ function App({
     async (messages: ChatMessage[], signal: AbortSignal): Promise<ChatMessage[]> => {
       if (signal.aborted) return messages;
       if (!shouldCompact({ messages })) return messages;
+
+      // M6.1: fire PreCompact before either compaction path runs.
+      // Best-effort + fire-and-forget — never block compaction on a
+      // user hook. Same shape as the user-triggered /compact path.
+      if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
+        void hooksManagerRef.current
+          .fire(
+            "PreCompact",
+            {
+              event: "PreCompact",
+              session_id: sessionIdRef.current,
+              cwd: process.cwd(),
+            },
+            null,
+            signal,
+          )
+          .catch(() => {});
+      }
 
       if (compiledContextRef.current) {
         const store = artifactStoreRef.current;
@@ -1029,6 +1059,8 @@ function App({
       sessionStateRef,
       limitResolveRef,
       pendingToolCallsRef,
+      hooks: hooksManagerRef.current,
+      sessionId: sessionIdRef.current,
     });
   }, [cfg, busy, saveSessionSafe]);
 
@@ -1276,6 +1308,7 @@ function App({
     setBillingChooserFor,
     setUnifiedProbeFor,
     setShowInboxModal,
+    setShowHooksDashboard: modals.setShowHooksDashboard,
     setShowLspWizard,
     setShowRemoteDashboard,
     setShowCommandList,
@@ -1293,6 +1326,7 @@ function App({
     ensureSessionId,
     lspManagerRef,
     mcpManagerRef,
+    hooksManagerRef,
     cacheStableRef,
     messagesRef,
     flushTimeoutRef,
@@ -1479,6 +1513,38 @@ function App({
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text: nudge }]);
       }
 
+      // M6.1: classify intent EARLY so the tier is available to the
+      // UserPromptSubmit hook payload. Classification is local + cheap
+      // (no network). The result is reused below where the turn is
+      // actually configured, so this isn't a duplicate cost.
+      const classification = classifyIntent(trimmed);
+
+      // UserPromptSubmit hook (veto-able). Fired after we know the
+      // prompt resolves to actual user-message content (post slash /
+      // custom command expansion). A vetoing hook cancels the turn
+      // before any LLM call.
+      if (hooksManagerRef.current.hasEnabledHooks("UserPromptSubmit")) {
+        const promptOutcome = await hooksManagerRef.current.fire(
+          "UserPromptSubmit",
+          {
+            event: "UserPromptSubmit",
+            session_id: sessionIdRef.current,
+            cwd: process.cwd(),
+            prompt: display,
+            tier: classification.tier,
+          },
+          null,
+        );
+        if (promptOutcome.vetoed) {
+          const reason = promptOutcome.vetoReason || "UserPromptSubmit hook blocked the prompt";
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `hook blocked the prompt: ${reason}` },
+          ]);
+          return;
+        }
+      }
+
       messagesRef.current.push({ role: "user", content });
 
       // Pre-turn save: ensure session exists even if user exits mid-turn
@@ -1514,7 +1580,8 @@ function App({
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
 
-      const classification = classifyIntent(trimmed);
+      // Classification already computed above for the UserPromptSubmit
+      // hook payload (M6.1). Reuse it here to avoid re-running.
       setIntentTier(classification.tier);
 
       // Generate a human-readable title on first turn
@@ -1747,6 +1814,7 @@ function App({
               : undefined,
           sessionId: ensureSessionId(),
           memoryManager: memoryManagerRef.current,
+          hooks: hooksManagerRef.current,
           githubToken: cfg.githubOAuthToken,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
@@ -1800,6 +1868,20 @@ function App({
             // context on, use the heuristic compactor; otherwise fall back to the
             // LLM summarizer so users have a safety net regardless of the flag.
             if (shouldCompact({ messages: messagesRef.current })) {
+              // M6.1: same PreCompact fire as the mid-turn site above.
+              if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
+                void hooksManagerRef.current
+                  .fire(
+                    "PreCompact",
+                    {
+                      event: "PreCompact",
+                      session_id: sessionIdRef.current,
+                      cwd: process.cwd(),
+                    },
+                    null,
+                  )
+                  .catch(() => {});
+              }
               if (compiledContextRef.current) {
                 const store = artifactStoreRef.current;
                 const result = compactMessagesViaArtifacts({
@@ -2084,6 +2166,17 @@ function App({
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
         onInboxOpen={openBrowser}
+        getConfiguredHooks={() => {
+          const out: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
+          for (const ev of (["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"] as const)) {
+            for (const h of hooksManagerRef.current.hooksFor(ev)) {
+              out.push({ event: ev, hook: h });
+            }
+          }
+          return out;
+        }}
+        cwd={process.cwd()}
+        onHooksMutate={() => hooksManagerRef.current.reload()}
       />
     );
   }

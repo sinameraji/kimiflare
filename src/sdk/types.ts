@@ -28,6 +28,13 @@ export interface CreateSessionOptions {
   permissionHandler?: PermissionHandler;
   /** Called when the agent detects KIMI.md drift. */
   onKimiMdStale?: () => void;
+  /**
+   * M6.1: enable user-configured lifecycle hooks loaded from
+   * `~/.config/kimiflare/settings.json` + `<cwd>/.kimiflare/settings.json`.
+   * Default `false` (SDK is a primitive; opt in if you want the
+   * TUI's hook behavior).
+   */
+  enableHooks?: boolean;
 }
 
 export interface PromptOptions {

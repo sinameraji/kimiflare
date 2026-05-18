@@ -53,6 +53,9 @@ export interface ModalHostController {
   setShowRemoteDashboard: (v: boolean) => void;
   showInboxModal: boolean;
   setShowInboxModal: (v: boolean) => void;
+  /** M6.1: interactive `/hooks` dashboard (arrow-key picker). */
+  showHooksDashboard: boolean;
+  setShowHooksDashboard: (v: boolean) => void;
 
   /** Any fullscreen modal is active (would trigger an early return). */
   hasFullscreenModal: boolean;
@@ -91,6 +94,7 @@ export function useModalHost(): ModalHostController {
   const [unifiedProbeFor, setUnifiedProbeFor] = useState<ModelEntry | null>(null);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [showInboxModal, setShowInboxModal] = useState(false);
+  const [showHooksDashboard, setShowHooksDashboard] = useState(false);
 
   const flags = useMemo(() => {
     const hasFullscreenModal =
@@ -105,7 +109,8 @@ export function useModalHost(): ModalHostController {
       billingChooserFor !== null ||
       unifiedProbeFor !== null ||
       showRemoteDashboard ||
-      showInboxModal;
+      showInboxModal ||
+      showHooksDashboard;
     const hasOverlayModal = limitModal !== null || loopModal !== null;
     return {
       hasFullscreenModal,
@@ -125,6 +130,7 @@ export function useModalHost(): ModalHostController {
     unifiedProbeFor,
     showRemoteDashboard,
     showInboxModal,
+    showHooksDashboard,
     limitModal,
     loopModal,
   ]);
@@ -144,6 +150,7 @@ export function useModalHost(): ModalHostController {
     unifiedProbeFor, setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
+    showHooksDashboard, setShowHooksDashboard,
     ...flags,
   };
 }

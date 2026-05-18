@@ -1,6 +1,6 @@
 import { mkdir, writeFile, unlink, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../util/frontmatter.js";
 import type { Skill } from "./types.js";
 import { loadSkillsFromDir } from "./loader.js";
 
@@ -84,7 +84,7 @@ export async function setSkillEnabled(
   if (!skill) throw new Error(`skill "${name}" not found`);
 
   const raw = await readFile(skill.filePath, "utf-8");
-  const parsed = matter(raw);
+  const parsed = parseFrontmatter(raw);
   parsed.data.enabled = enabled;
 
   const yaml = Object.entries(parsed.data)

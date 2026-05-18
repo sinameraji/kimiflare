@@ -53,6 +53,15 @@ import type { ToolSpec } from "../tools/registry.js";
 import type { McpManager } from "../mcp/manager.js";
 import type { LspManager } from "../lsp/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
+import type { HooksManager } from "../hooks/manager.js";
+import { RECOMMENDED_HOOKS, getRecommendedHook } from "../hooks/recommended.js";
+import {
+  appendHook,
+  setHookEnabled,
+  globalSettingsPath,
+  projectSettingsPath,
+} from "../hooks/settings.js";
+import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
 import { buildReport, sendReport } from "../cloud/report.js";
@@ -106,6 +115,7 @@ export interface SlashContext {
   setShowCommandList: (v: boolean) => void;
   setCommandWizard: (v: { mode: "create" | "edit"; command?: CustomCommand } | null) => void;
   setCommandPicker: (v: { mode: "edit" | "delete" } | null) => void;
+  setShowHooksDashboard: (v: boolean) => void;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -124,6 +134,7 @@ export interface SlashContext {
   // Refs
   lspManagerRef: React.MutableRefObject<LspManager>;
   mcpManagerRef: React.MutableRefObject<McpManager>;
+  hooksManagerRef: React.MutableRefObject<HooksManager>;
   cacheStableRef: React.MutableRefObject<boolean>;
   messagesRef: React.MutableRefObject<ChatMessage[]>;
   flushTimeoutRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
@@ -1086,6 +1097,140 @@ const handleLsp: Handler = (ctx, _rest, arg) => {
   return true;
 };
 
+const handleHooks: Handler = (ctx, rest, arg) => {
+  const { setEvents, mkKey } = ctx;
+  const cwd = process.cwd();
+
+  // M6.1: `/hooks` (no args) opens the interactive dashboard. Typing
+  // `/hooks list` keeps the old text-dump behavior for users who
+  // prefer that.
+  if (arg === "") {
+    ctx.setShowHooksDashboard(true);
+    return true;
+  }
+
+  if (arg === "list") {
+    const lines: string[] = [];
+    let any = false;
+    for (const ev of HOOK_EVENTS) {
+      const hooks = ctx.hooksManagerRef.current.hooksFor(ev);
+      if (hooks.length === 0) continue;
+      any = true;
+      lines.push(`${ev}:`);
+      for (const h of hooks) {
+        const id = h.id ?? "?";
+        const en = h.enabled === false ? " [disabled]" : "";
+        const src = h.source ? ` (${h.source})` : "";
+        const matcher = h.matcher ? `  matcher=${h.matcher}` : "";
+        const desc = h.description ? `\n      ${h.description}` : "";
+        lines.push(`  ${id}${en}${src}${matcher}\n      $ ${h.command}${desc}`);
+      }
+    }
+    if (!any) {
+      lines.push("no hooks configured. Type `/hooks` for the interactive dashboard.");
+    }
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+    return true;
+  }
+
+  if (arg === "recommended") {
+    const lines = ["Recommended hooks (all disabled by default):"];
+    for (const r of RECOMMENDED_HOOKS) {
+      lines.push(`  ${r.id}  [${r.event}]`);
+      if (r.hook.description) lines.push(`      ${r.hook.description}`);
+    }
+    lines.push("");
+    lines.push("Enable one with: /hooks enable <id> [global|project]");
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+    return true;
+  }
+
+  if (arg === "path") {
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text:
+          `global: ${globalSettingsPath()}\n` +
+          `project: ${projectSettingsPath(cwd)}`,
+      },
+    ]);
+    return true;
+  }
+
+  if (arg === "reload") {
+    ctx.hooksManagerRef.current.reload();
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "hooks reloaded" }]);
+    return true;
+  }
+
+  // `enable <id> [global|project]` — adds a recommended hook to
+  // settings.json with `enabled: true`. If the id refers to an
+  // existing user hook (recommended or otherwise), flips its
+  // `enabled` flag instead.
+  if (arg === "enable" || arg === "disable") {
+    const id = rest[1];
+    if (!id) {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `usage: /hooks ${arg} <id> [global|project]` },
+      ]);
+      return true;
+    }
+    const scope: "global" | "project" = rest[2] === "global" ? "global" : "project";
+
+    if (arg === "enable") {
+      // Existing hook by id → just flip; recommended hook → append.
+      const flipped = setHookEnabled(cwd, id, true);
+      if (flipped) {
+        ctx.hooksManagerRef.current.reload();
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `hook ${id} enabled in ${flipped}` }]);
+        return true;
+      }
+      const rec = getRecommendedHook(id);
+      if (!rec) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `no hook with id ${id}. Try /hooks recommended` },
+        ]);
+        return true;
+      }
+      const path = appendHook(scope, cwd, rec.event, { ...rec.hook, enabled: true });
+      ctx.hooksManagerRef.current.reload();
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `enabled ${rec.id} (${rec.event}) in ${path}` },
+      ]);
+      return true;
+    }
+
+    // disable
+    const flipped = setHookEnabled(cwd, id, false);
+    if (!flipped) {
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `no hook with id ${id} to disable` },
+      ]);
+      return true;
+    }
+    ctx.hooksManagerRef.current.reload();
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `hook ${id} disabled in ${flipped}` }]);
+    return true;
+  }
+
+  setEvents((e) => [
+    ...e,
+    {
+      kind: "info",
+      key: mkKey(),
+      text:
+        "usage: /hooks [list | recommended | path | reload | enable <id> [global|project] | disable <id>]",
+    },
+  ]);
+  return true;
+};
+
 const handleHello: Handler = (ctx) => {
   const { setEvents, mkKey } = ctx;
   const session = crypto.randomUUID();
@@ -1420,6 +1565,7 @@ const handlers: Record<string, Handler> = {
   "/update": handleUpdate,
   "/mcp": handleMcp,
   "/lsp": handleLsp,
+  "/hooks": handleHooks,
   "/hello": handleHello,
   "/inbox": handleInbox,
   "/report": handleReport,

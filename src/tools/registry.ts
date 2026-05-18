@@ -10,6 +10,14 @@ export interface ToolContext {
   githubToken?: string;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
   shell?: string;
+  /**
+   * Intent tier classified for this turn, when known. Carried into
+   * hook payloads (PreToolUse / PostToolUse) so user hooks can branch
+   * on tier — e.g. skip auto-format for light-tier turns, or audit
+   * every heavy-tier action. Optional because code-mode sub-calls
+   * and SDK consumers may not have a tier.
+   */
+  intentTier?: "light" | "medium" | "heavy";
 }
 
 export interface ToolRender {

@@ -1,9 +1,12 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import { isDiffCommand, ToolExecutor, toPermissionResult } from "./executor.js";
 import { ToolError } from "./tool-error.js";
 import type { ToolSpec, ToolContext } from "./registry.js";
 import type { PermissionAsker, PermissionDecisionResult } from "./executor.js";
+import { HooksManager } from "../hooks/manager.js";
+import { setSpawnHookImplForTesting } from "../hooks/runner.js";
+import type { HookEvent } from "../hooks/types.js";
 
 describe("isDiffCommand", () => {
   it("matches `git show` and its argument forms", () => {
@@ -294,3 +297,207 @@ describe("ToolExecutor — typed PermissionDecisionResult handling", () => {
     assert.strictEqual(prompts, 2);
   });
 });
+
+// ── M6.1 amendment: executor-level hooks fire for every caller ──────────
+//
+// These tests cover the audit-driven fix that moves PreToolUse /
+// PostToolUse out of the loop wrapper and into `executor.run`. The
+// guarantee is: every path that calls `executor.run` (standard loop,
+// code-mode sandbox, init turn, SDK, CLI print mode) fires hooks
+// automatically without needing to wrap manually.
+
+interface CapturedFire {
+  event: HookEvent;
+  payload: unknown;
+  toolName: string | null;
+}
+
+class CapturingHooks {
+  fired: CapturedFire[] = [];
+  vetoNext = false;
+
+  hasEnabledHooks(_event: HookEvent): boolean {
+    return true;
+  }
+  hooksFor(_event: HookEvent) {
+    return [];
+  }
+  reload(): void {}
+  async fire(event: HookEvent, payload: unknown, toolName: string | null) {
+    this.fired.push({ event, payload, toolName });
+    if (this.vetoNext && event === "PreToolUse") {
+      this.vetoNext = false;
+      return {
+        outcomes: [],
+        vetoed: true,
+        vetoReason: "test veto",
+      };
+    }
+    return { outcomes: [], vetoed: false, vetoReason: "" };
+  }
+}
+
+describe("ToolExecutor — M6.1 executor-level hooks", () => {
+  function makeTool(): ToolSpec {
+    return {
+      name: "echo",
+      description: "test",
+      parameters: { type: "object", properties: {}, additionalProperties: true },
+      needsPermission: false,
+      run: async () => "ok",
+    };
+  }
+  const allowAll: PermissionAsker = async () => ({ decision: "allow", scope: "once" });
+
+  it("fires PreToolUse + PostToolUse on a successful call", async () => {
+    const hooks = new CapturingHooks();
+    const exec = new ToolExecutor([makeTool()]);
+    exec.setHooks(hooks as never);
+    const res = await exec.run(
+      { id: "c1", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(hooks.fired.length, 2);
+    assert.strictEqual(hooks.fired[0]!.event, "PreToolUse");
+    assert.strictEqual(hooks.fired[1]!.event, "PostToolUse");
+  });
+
+  it("fires PostToolUse on a failing call too", async () => {
+    const hooks = new CapturingHooks();
+    const tool: ToolSpec = {
+      ...makeTool(),
+      run: async () => {
+        throw new ToolError({ code: "unknown", message: "boom" });
+      },
+    };
+    const exec = new ToolExecutor([tool]);
+    exec.setHooks(hooks as never);
+    const res = await exec.run(
+      { id: "c2", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(hooks.fired.length, 2);
+    assert.strictEqual(hooks.fired[1]!.event, "PostToolUse");
+    const post = hooks.fired[1]!.payload as { result: { ok: boolean; errorCode?: string } };
+    assert.strictEqual(post.result.ok, false);
+    assert.strictEqual(post.result.errorCode, "unknown");
+  });
+
+  it("fires PostToolUse when permission is denied", async () => {
+    const hooks = new CapturingHooks();
+    const tool: ToolSpec = { ...makeTool(), needsPermission: true };
+    const exec = new ToolExecutor([tool]);
+    exec.setHooks(hooks as never);
+    const res = await exec.run(
+      { id: "c3", name: "echo", arguments: "{}" },
+      async () => ({ decision: "deny", scope: "once" }),
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(res.errorCode, "permission_denied");
+    // PreToolUse + PostToolUse — confirms hooks fire even on the
+    // permission-denied path so the user can observe denials.
+    assert.strictEqual(hooks.fired.length, 2);
+    const post = hooks.fired[1]!.payload as { result: { errorCode?: string } };
+    assert.strictEqual(post.result.errorCode, "permission_denied");
+  });
+
+  it("vetoed PreToolUse synthesizes a policy_rejection result AND does NOT fire PostToolUse", async () => {
+    const hooks = new CapturingHooks();
+    hooks.vetoNext = true;
+    const exec = new ToolExecutor([makeTool()]);
+    exec.setHooks(hooks as never);
+    const res = await exec.run(
+      { id: "c4", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.errorCode, "policy_rejection");
+    assert.match(res.content, /test veto/);
+    // Only PreToolUse fired — PostToolUse is meaningless when the
+    // action never ran.
+    assert.strictEqual(hooks.fired.length, 1);
+    assert.strictEqual(hooks.fired[0]!.event, "PreToolUse");
+  });
+
+  it("propagates intentTier into PreToolUse + PostToolUse payloads", async () => {
+    const hooks = new CapturingHooks();
+    const exec = new ToolExecutor([makeTool()]);
+    exec.setHooks(hooks as never);
+    await exec.run(
+      { id: "c5", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp", intentTier: "heavy" },
+    );
+    const pre = hooks.fired[0]!.payload as { tier?: string };
+    const post = hooks.fired[1]!.payload as { tier?: string };
+    assert.strictEqual(pre.tier, "heavy");
+    assert.strictEqual(post.tier, "heavy");
+  });
+
+  it("omits tier from payload when not provided", async () => {
+    const hooks = new CapturingHooks();
+    const exec = new ToolExecutor([makeTool()]);
+    exec.setHooks(hooks as never);
+    await exec.run(
+      { id: "c6", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    const pre = hooks.fired[0]!.payload as { tier?: string };
+    assert.strictEqual(pre.tier, undefined);
+  });
+
+  it("caps PostToolUse content at 4 KB to fit env var limits", async () => {
+    const hooks = new CapturingHooks();
+    // 10 KB of payload content
+    const big = "x".repeat(10 * 1024);
+    const tool: ToolSpec = { ...makeTool(), run: async () => big };
+    const exec = new ToolExecutor([tool]);
+    exec.setHooks(hooks as never);
+    await exec.run(
+      { id: "c7", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    const post = hooks.fired[1]!.payload as { result: { content: string } };
+    const capped = post.result.content;
+    assert.ok(
+      Buffer.byteLength(capped, "utf8") <= 5 * 1024,
+      `capped content should be under 5 KB after truncation marker; got ${capped.length}`,
+    );
+    assert.match(capped, /truncated for hook payload/);
+  });
+
+  it("setHooks(null) detaches the manager so no events fire", async () => {
+    const hooks = new CapturingHooks();
+    const exec = new ToolExecutor([makeTool()], { hooks: hooks as never });
+    exec.setHooks(null);
+    await exec.run(
+      { id: "c8", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(hooks.fired.length, 0);
+  });
+
+  it("no hooks attached at all → no firing, no errors", async () => {
+    const exec = new ToolExecutor([makeTool()]);
+    const res = await exec.run(
+      { id: "c9", name: "echo", arguments: "{}" },
+      allowAll,
+      { cwd: "/tmp" },
+    );
+    assert.strictEqual(res.ok, true);
+  });
+});
+
+// Unused now — silence lint
+void beforeEach;
+void afterEach;
+void HooksManager;
+void setSpawnHookImplForTesting;

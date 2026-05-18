@@ -92,6 +92,14 @@ export interface AgentTurnOpts {
   intentClassification?: { intent: string; tier: "light" | "medium" | "heavy"; rawScore: number; confidence: number };
   /** Skills injected into the system prompt for this turn. */
   selectedSkills?: { name: string; body: string }[];
+  /**
+   * M6.1: lifecycle hooks for events the loop owns (`Stop` at clean
+   * turn end). PreToolUse / PostToolUse hooks live on the
+   * `ToolExecutor` itself, so they fire for every executor caller
+   * (standard loop, code-mode sandbox, init, SDK, print mode)
+   * automatically — no need to thread `hooks` through to those.
+   */
+  hooks?: import("../hooks/manager.js").HooksManager;
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
@@ -249,6 +257,24 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
   const max = opts.maxToolIterations ?? 50;
   const codeMode = opts.codeMode ?? false;
+
+  // M6.1: fire the Stop hook on any clean exit (turn ended normally,
+  // user opted to stop on loop/limit). Skipped on abort/throw because
+  // those aren't "the agent finished its turn." Inline at each return
+  // site below — three of them in this function.
+  const fireStopHook = async (): Promise<void> => {
+    if (opts.signal.aborted) return;
+    if (!opts.hooks?.hasEnabledHooks("Stop")) return;
+    try {
+      await opts.hooks.fire(
+        "Stop",
+        { event: "Stop", session_id: opts.sessionId ?? null, cwd: opts.cwd },
+        null,
+      );
+    } catch {
+      // best-effort — must not crash turn cleanup
+    }
+  };
 
   // --- Pre-turn async work (memory recall + skill routing, in parallel) ---
   const preTurnStart = performance.now();
@@ -461,6 +487,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           });
           iter = 0;
         } else {
+          await fireStopHook();
           return;
         }
       } else if (opts.continueOnLimit) {
@@ -687,6 +714,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         throw new BudgetExhaustedError();
       }
       logger.info("turn:complete", { sessionId: opts.sessionId, durationMs: Math.round(performance.now() - turnStart) });
+      await fireStopHook();
       return;
     }
 
@@ -869,12 +897,38 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       } else {
         opts.callbacks.onToolWillExecute?.(tc.id, tc.function.name);
         logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });
+
+        // M6.1: PreToolUse / PostToolUse fire inside `executor.run`
+        // (see src/tools/executor.ts). The executor owns them so every
+        // caller — standard loop, code-mode sandbox, init turn, SDK,
+        // CLI print mode — gets the same behavior automatically.
+        // A vetoed PreToolUse returns a synthetic policy_rejection
+        // ToolResult; the loop treats it the same as any other failed
+        // call (pushes the rejection text as a tool message so the
+        // model sees the reason).
         const result = await opts.executor.run(
           { id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
           opts.callbacks.askPermission,
-          { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken, shell: opts.shell },
+          {
+            cwd: opts.cwd,
+            signal: opts.signal,
+            onTasks: opts.callbacks.onTasks,
+            coauthor: opts.coauthor,
+            memoryManager: opts.memoryManager,
+            sessionId: opts.sessionId,
+            githubToken: opts.githubToken,
+            shell: opts.shell,
+            intentTier: opts.intentClassification?.tier,
+          },
           opts.onFileChange,
         );
+        if (!result.ok && result.errorCode === "policy_rejection") {
+          logger.warn("hook:vetoed_tool_call", {
+            sessionId: opts.sessionId,
+            tool: tc.function.name,
+            toolCallId: tc.id,
+          });
+        }
         let content = result.content;
         if (content.length > MAX_TOOL_CONTENT_CHARS) {
           const rawBytes = content.length;
@@ -1090,6 +1144,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           recentToolCalls.length = 0;
           continue;
         }
+        await fireStopHook();
         return;
       }
       throw new AgentLoopError();

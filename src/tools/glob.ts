@@ -1,6 +1,6 @@
-import fg from "fast-glob";
 import type { ToolSpec } from "./registry.js";
 import { resolvePath, collapsePath } from "../util/paths.js";
+import { globStream } from "../util/glob.js";
 
 interface Args {
   pattern: string;
@@ -26,16 +26,14 @@ export const globTool: ToolSpec<Args> = {
     if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const root = args.path ? resolvePath(ctx.cwd, args.path) : ctx.cwd;
     // Stream results so a Ctrl+C during a recursive walk over a large
-    // monorepo can interrupt promptly. fast-glob doesn't expose an
-    // AbortSignal, so we check between yielded entries and destroy the
-    // stream on abort.
-    const stream = fg.stream(args.pattern, {
+    // monorepo can interrupt promptly.
+    const stream = globStream(args.pattern, {
       cwd: root,
       absolute: true,
       dot: false,
       onlyFiles: false,
       stats: true,
-    }) as NodeJS.ReadableStream & { destroy: (err?: Error) => void };
+    });
     const entries: Array<{ path: string; stats?: { mtimeMs: number } }> = [];
     const onAbort = () => {
       try {
@@ -48,7 +46,7 @@ export const globTool: ToolSpec<Args> = {
     try {
       for await (const entry of stream) {
         if (ctx.signal?.aborted) throw new DOMException("aborted", "AbortError");
-        entries.push(entry as unknown as { path: string; stats?: { mtimeMs: number } });
+        entries.push(entry);
       }
     } finally {
       ctx.signal?.removeEventListener("abort", onAbort);
