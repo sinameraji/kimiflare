@@ -45,6 +45,8 @@ import { clearCloudCredentials } from "./cloud/auth.js";
 import { listAllSkills } from "./skills/manager.js";
 import { loadCustomCommands } from "./commands/loader.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
+import { listRemoteSessions } from "./remote/session-store.js";
+import { getRemoteStatus, cancelRemoteSession } from "./remote/worker-client.js";
 import { BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import type { CustomCommand } from "./commands/types.js";
 import type { LspServerConfig } from "./config.js";
@@ -788,6 +790,100 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   }
 
+  /** Ports RemoteDashboard. SelectList over saved remote sessions with
+   *  worker-side status refresh for running/pending ones. "Refresh" is
+   *  surfaced as a list item (the SelectList primitive doesn't expose
+   *  R-to-refresh today). Picking a session opens a detail KV view with
+   *  optional "Cancel session" action when it's still running. */
+  async function openRemoteDashboard(): Promise<void> {
+    while (true) {
+      cam.send("ShowToast", { text: "loading remote sessions…", kind: "info", ttl_ms: 1500 });
+      let sessions;
+      try {
+        sessions = await listRemoteSessions();
+        // Refresh worker-side status for running/pending in parallel.
+        sessions = await Promise.all(
+          sessions.map(async (s) => {
+            if (s.status !== "running" && s.status !== "pending") return s;
+            try {
+              const st = await getRemoteStatus(s.workerUrl, s.sessionId);
+              return {
+                ...s,
+                status: st.status,
+                prUrl: st.prUrl ?? s.prUrl,
+                tokensUsed: st.tokensUsed ?? s.tokensUsed,
+                tokensBudget: st.tokensBudget ?? s.tokensBudget,
+              };
+            } catch {
+              return s;
+            }
+          }),
+        );
+        sessions.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+      } catch (err) {
+        cam.send("ShowToast", { text: `remote list failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        return;
+      }
+      if (sessions.length === 0) {
+        cam.send("ShowToast", { text: "no remote sessions yet  ·  start with `kimiflare remote <prompt>`", kind: "info", ttl_ms: 3500 });
+        return;
+      }
+      const options = sessions.map((s) => ({
+        value: s.sessionId,
+        label: formatRemoteLine(s),
+      }));
+      options.push({ value: "__refresh__", label: "↻ refresh" });
+      const pick = await selectList(cam, {
+        id: `remote-${Date.now()}`,
+        prompt: `Recent remote tasks (${sessions.length})`,
+        options,
+        allow_cancel: true,
+      });
+      if (pick.cancelled || !pick.value) return;
+      if (pick.value === "__refresh__") continue;
+      const s = sessions.find((x) => x.sessionId === pick.value);
+      if (!s) continue;
+      // Detail view.
+      const items: { label: string; value: string }[] = [
+        { label: "id", value: s.sessionId },
+        { label: "repo", value: s.repo },
+        { label: "status", value: s.status },
+        { label: "prompt", value: s.prompt },
+      ];
+      if (s.prUrl) items.push({ label: "PR", value: s.prUrl });
+      if (s.errorMessage) items.push({ label: "error", value: s.errorMessage });
+      if (s.tokensUsed != null) items.push({ label: "tokens", value: `${formatRemoteTokens(s.tokensUsed)}${s.tokensBudget ? ` / ${formatRemoteTokens(s.tokensBudget)}` : ""}` });
+      items.push({ label: "created", value: new Date(s.createdAt).toLocaleString() });
+      if (s.finishedAt) items.push({ label: "finished", value: new Date(s.finishedAt).toLocaleString() });
+      cam.send("ShowKeyValueView", {
+        id: `remote-${s.sessionId}-${Date.now()}`,
+        title: `Remote session  ·  ${s.status}`,
+        items,
+      });
+      // Optionally offer cancel.
+      if (s.status === "running" || s.status === "pending") {
+        const conf = await selectList(cam, {
+          id: `remote-actions-${Date.now()}`,
+          prompt: "Action?",
+          options: [
+            { value: "back",   label: "← back to list" },
+            { value: "cancel", label: "Cancel this session" },
+          ],
+          allow_cancel: true,
+        });
+        if (!conf.cancelled && conf.value === "cancel") {
+          try {
+            await cancelRemoteSession(s.workerUrl, s.sessionId);
+            cam.send("ShowToast", { text: `cancel requested for ${s.sessionId.slice(0, 8)}…`, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `cancel failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+          }
+        }
+      }
+      // Loop back to list.
+    }
+  }
+
   /** Ports CheckpointPicker. ↑↓ Enter Esc; first option always "resume
    *  from beginning". On pick, truncate messages to the checkpoint's
    *  turnIndex and wipe the visible transcript. */
@@ -1324,12 +1420,19 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         }
         return true;
       }
-      case "remote":
-        cam.send("ShowToast", {
-          text: "/remote: use `kimiflare remote <prompt>` from a separate shell — Cloud orchestrator flow isn't wired into the Camouflage TUI yet.",
-          kind: "warn", ttl_ms: 4500,
-        });
+      case "remote": {
+        if (args) {
+          // Starting a remote session needs the full deploy/auth dance —
+          // route the user to the standalone subcommand for that.
+          cam.send("ShowToast", {
+            text: "to start a remote: `kimiflare remote <prompt>` from a separate shell",
+            kind: "info", ttl_ms: 4000,
+          });
+          return true;
+        }
+        await openRemoteDashboard();
         return true;
+      }
       case "":
         return true;
       default:
@@ -1392,6 +1495,38 @@ async function registerMentions(cam: CamouflageHandle): Promise<void> {
   cam.send("MentionCandidatesRegistered", {
     candidates: collected.map((p) => ({ token: p, kind: "file" })),
   });
+}
+
+/** Ports RemoteDashboard's formatSessionLine — icon + prompt + outcome +
+ *  age + tokens. Kept ASCII-safe so terminals without emoji don't get
+ *  width-misaligned. */
+function formatRemoteLine(s: {
+  status: string; prompt: string; updatedAt: string; prUrl?: string;
+  tokensUsed?: number; tokensBudget?: number;
+}): string {
+  const icon =
+    s.status === "done" ? "✓" :
+    s.status === "error" ? "✗" :
+    s.status === "cancelled" ? "■" :
+    s.status === "running" ? "…" : "·";
+  const prompt = s.prompt.slice(0, 30) + (s.prompt.length > 30 ? "…" : "");
+  const outcome = s.prUrl ? `PR ${s.prUrl.split("/").pop()}` : s.status;
+  const cost = s.tokensUsed != null && s.tokensBudget
+    ? ` (${formatRemoteTokens(s.tokensUsed)}/${formatRemoteTokens(s.tokensBudget)})`
+    : s.tokensUsed != null ? ` (${formatRemoteTokens(s.tokensUsed)})` : "";
+  return `${icon} ${prompt} → ${outcome}  ${formatRemoteAgo(new Date(s.updatedAt))}${cost}`;
+}
+function formatRemoteAgo(d: Date): string {
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (m >= 1440) return `${Math.floor(m / 1440)}d ago`;
+  if (m >= 60) return `${Math.floor(m / 60)}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return "just now";
+}
+function formatRemoteTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 /** Ports the date format used by ResumePicker + CheckpointPicker:
