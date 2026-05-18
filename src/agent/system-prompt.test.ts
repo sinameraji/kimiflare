@@ -29,6 +29,12 @@ describe("buildStaticPrefix", () => {
     assert.ok(!p.includes("Home:"), "should not include home");
     assert.ok(!p.includes("`read`"), "should not include formatted tool names");
   });
+
+  it("does NOT contain the model name (it lives in the session prefix so /model takes effect mid-session)", () => {
+    const p = buildStaticPrefix({ model: "@cf/moonshotai/kimi-k2.6" });
+    assert.ok(!p.includes("kimi-k2.6"), "static prefix must not name a specific model");
+    assert.ok(!p.includes("powered by"), "static prefix must not claim a powering model");
+  });
 });
 
 describe("buildSessionPrefix", () => {
@@ -57,6 +63,22 @@ describe("buildSessionPrefix", () => {
   it("excludes LSP guidance when no LSP tools are present", () => {
     const p = buildSessionPrefix({ cwd: "/tmp", tools: DUMMY_TOOLS, model: "m" });
     assert.ok(!p.includes("LSP tools are available"));
+  });
+
+  it("names the current model so /model switches take effect mid-session", () => {
+    const p = buildSessionPrefix({
+      cwd: "/tmp",
+      tools: DUMMY_TOOLS,
+      model: "anthropic/claude-opus-4-7",
+    });
+    assert.ok(
+      p.includes("anthropic/claude-opus-4-7"),
+      "session prefix must include the current model id verbatim",
+    );
+    assert.ok(
+      p.includes("If the user asks what model you are"),
+      "session prefix must include the override instruction so recalled memory loses the tug-of-war",
+    );
   });
 });
 
