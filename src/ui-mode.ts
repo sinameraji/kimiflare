@@ -80,10 +80,14 @@ export interface UiModeOpts {
  *  so the `/` picker shows everything the user expects. The dispatcher
  *  below handles the ones that work today; the rest toast back
  *  "not yet wired" until their handlers land (tracked in PR #474). */
-const SLASH_COMMANDS = BUILTIN_COMMANDS.map((c) => ({
+/** Builtin slash commands. Custom commands (project/global) are merged
+ *  in at startup via registerSlashCommands() so the picker shows
+ *  shadowing badges. */
+const BUILTIN_SLASH_COMMANDS = BUILTIN_COMMANDS.map((c) => ({
   name: c.name,
   description: c.description,
   args_hint: c.argHint,
+  source: "builtin" as const,
 }));
 
 /** Mode names KimiFlare supports + the order /mode and Shift+Tab cycle through. */
@@ -132,8 +136,27 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   cam.send("StatusUpdate", {
     segments: { mode: currentMode, phase: currentPhase, branch, cost: "$0.00" },
   });
-  // Register slash commands with the renderer so the `/` picker lights up.
-  cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
+  // Register slash commands (builtin + project + global) with the renderer
+  // so the `/` picker lights up. Custom commands carry a source badge
+  // that surfaces in the picker so the user can tell a override apart.
+  await registerSlashCommands();
+  async function registerSlashCommands(): Promise<void> {
+    let customs: { name: string; description?: string; source?: string }[] = [];
+    try {
+      const { commands } = await loadCustomCommands(process.cwd());
+      customs = commands;
+    } catch { /* swallow — picker still works with builtins */ }
+    const combined = [
+      ...BUILTIN_SLASH_COMMANDS,
+      ...customs.map((c) => ({
+        name: c.name,
+        description: c.description ?? "",
+        args_hint: undefined,
+        source: c.source ?? "project",
+      })),
+    ];
+    cam.send("SlashCommandsRegistered", { commands: combined });
+  }
 
   // Background update check (mirrors Ink's persistent "update available"
   // banner). Cached result is fine — no extra network on warm starts.
@@ -164,8 +187,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       ttl_ms: 5000,
     });
   }
-  // @-mention candidates from cwd (files only, max 200, skip dot dirs).
-  void registerMentions(cam).catch(() => { /* best-effort */ });
+  // @-mention candidates from cwd. Recent files (the ones the user has
+  // referenced this session) get a "recent" flag and bubble to the top
+  // of the picker — mirrors Ink's FilePicker recentFilesRef.
+  const recentMentions = new Set<string>();
+  void registerMentions(cam, recentMentions).catch(() => { /* best-effort */ });
 
   const setPhase = (next: typeof currentPhase): void => {
     if (next === currentPhase) return;
@@ -318,6 +344,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
 
   async function runTurn(text: string): Promise<void> {
     cam.send("UserMessageCreated", { text });
+    // Harvest @-mentions from the submitted text into the recent set, so
+    // the next time the user types @ they see those files at the top of
+    // the picker (Ink parity: recentFilesRef). Cheap regex over the
+    // already-validated user input.
+    const before = recentMentions.size;
+    for (const m of text.matchAll(/@([\w./\-]+)/g)) {
+      const tok = m[1];
+      if (tok && tok.length <= 200) recentMentions.add(tok);
+    }
+    if (recentMentions.size !== before) {
+      void registerMentions(cam, recentMentions).catch(() => {});
+    }
     messages.push({ role: "user", content: text });
     repeatedToolSignatures.clear();
     // Start the elapsed timer for this turn; reset at end (in the
@@ -1548,7 +1586,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
 /** @-mention candidate registration. Walks cwd one level deep (skipping
  *  dot-prefixed entries + node_modules + common build dirs) and registers
  *  up to 200 file paths. Best-effort — failures are silent. */
-async function registerMentions(cam: CamouflageHandle): Promise<void> {
+async function registerMentions(cam: CamouflageHandle, recents: Set<string>): Promise<void> {
   const SKIP = new Set(["node_modules", "dist", "build", "target", ".git", ".next", ".cache"]);
   const cwd = process.cwd();
   const collected: string[] = [];
@@ -1571,7 +1609,11 @@ async function registerMentions(cam: CamouflageHandle): Promise<void> {
   await walk(cwd, 0);
   if (collected.length === 0) return;
   cam.send("MentionCandidatesRegistered", {
-    candidates: collected.map((p) => ({ token: p, kind: "file" })),
+    candidates: collected.map((p) => ({
+      token: p,
+      kind: "file",
+      ...(recents.has(p) ? { recent: true } : {}),
+    })),
   });
 }
 
