@@ -4,6 +4,7 @@ import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 import type { ModelEntry, ModelProvider } from "../models/registry.js";
 import { probeUnifiedBilling, type ProbeResult } from "../agent/probe-unified-billing.js";
+import { enableGatewayAuth } from "../cloud/ai-gateway-api.js";
 
 const PROVIDER_NAME: Record<ModelProvider, string> = {
   "workers-ai": "Cloudflare Workers AI",
@@ -116,6 +117,10 @@ export function UnifiedBillingStatus({
 
   if (phase.kind === "needs-setup") {
     const items = [
+      {
+        label: "Enable Authentication on this gateway (fixes UB) — recommended",
+        value: "enable-auth" as const,
+      },
       { label: "I've enabled it — try again", value: "retry" as const },
       { label: `Use my own ${name} API key instead`, value: "byok" as const },
       { label: "Cancel", value: "cancel" as const },
@@ -141,10 +146,11 @@ export function UnifiedBillingStatus({
               the retry will tell you.
             </Text>
           </Box>
-          <Box marginTop={1}>
+          <Box marginTop={1} flexDirection="column">
             <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-              ⚠ Don't toggle "Authenticated Gateway" on the per-gateway Settings
-              page — that's a different feature and will break kimi-code's auth.
+              Hint: if you already have credits, your gateway probably has
+              Authentication turned off. CF needs it ON for Unified Billing to
+              activate. Picking "Enable Authentication" above flips it for you.
             </Text>
           </Box>
           {phase.eventId ? (
@@ -168,9 +174,28 @@ export function UnifiedBillingStatus({
           <SelectInput
             items={items}
             onSelect={(item) => {
-              if (item.value === "retry") setAttempt((a) => a + 1);
-              else if (item.value === "byok") onResolve("fallback-byok");
-              else onResolve("cancelled");
+              if (item.value === "enable-auth") {
+                setPhase({ kind: "probing" });
+                void (async () => {
+                  const r = await enableGatewayAuth(accountId, apiToken, gatewayId);
+                  if (r.ok) {
+                    setAttempt((a) => a + 1);
+                  } else {
+                    setPhase({
+                      kind: "other-error",
+                      message: `Couldn't enable Authentication on this gateway: ${r.message}`,
+                      eventId: null,
+                      status: null,
+                    });
+                  }
+                })();
+              } else if (item.value === "retry") {
+                setAttempt((a) => a + 1);
+              } else if (item.value === "byok") {
+                onResolve("fallback-byok");
+              } else {
+                onResolve("cancelled");
+              }
             }}
           />
         </Box>

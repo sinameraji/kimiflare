@@ -94,8 +94,15 @@ export async function createGateway(
   const res = await doFetch(baseUrl(accountId), {
     method: "POST",
     headers: authHeaders(apiToken),
+    // `authentication: true` is CRITICAL for Unified Billing to work on this
+    // gateway. Without it CF treats requests as anonymous and never enters the
+    // UB code path — every UB call would 401 from the upstream provider with
+    // "missing API key". Auto-created (first-hit) gateways come with auth on
+    // by default; our explicit-create flow used to omit it and shipped many
+    // users a UB-incompatible gateway. Don't remove this without a UB plan.
     body: JSON.stringify({
       id,
+      authentication: true,
       cache_invalidate_on_update: false,
       cache_ttl: 0,
       collect_logs: true,
@@ -116,6 +123,34 @@ export async function createGateway(
     });
   }
   return json.result;
+}
+
+/**
+ * Enable authentication on an existing gateway. This is the prerequisite for
+ * Unified Billing to work on that gateway — without it CF treats requests as
+ * anonymous and never applies UB credits. Idempotent: safe to call on a
+ * gateway that already has auth on.
+ */
+export async function enableGatewayAuth(
+  accountId: string,
+  apiToken: string,
+  gatewayId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const url = `${baseUrl(accountId)}/${encodeURIComponent(gatewayId)}`;
+  try {
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: authHeaders(apiToken),
+      body: JSON.stringify({ authentication: true }),
+    });
+    if (!res.ok) {
+      const err = await parseCloudflareError(res);
+      return { ok: false, message: err.message };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /**
