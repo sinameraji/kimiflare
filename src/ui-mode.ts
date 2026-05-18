@@ -280,9 +280,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let streamCounter = 0;
   let currentStreamId: string | null = null;
 
+  // Per-turn tool-call signature counts for the "[warn] repeated" marker.
+  // Cleared at the top of every runTurn so the warning resets across turns.
+  const repeatedToolSignatures = new Map<string, number>();
+
   async function runTurn(text: string): Promise<void> {
     cam.send("UserMessageCreated", { text });
     messages.push({ role: "user", content: text });
+    repeatedToolSignatures.clear();
     // Start the elapsed timer for this turn; reset at end (in the
     // outer finally for the last turn, or implicitly when the next
     // runTurn re-stamps it).
@@ -336,10 +341,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           },
           onToolCallFinalized: (call) => {
             setPhase("tool");
+            // Repeated-call detection (Ink ToolView "[warn] repeated"): we
+            // count identical tool signatures in the current turn and
+            // flag the third+ invocation. Cheap O(1) lookup; map reset
+            // at the top of runTurn().
+            const sig = `${call.function.name}::${call.function.arguments}`;
+            const prev = repeatedToolSignatures.get(sig) ?? 0;
+            repeatedToolSignatures.set(sig, prev + 1);
             cam.send("ToolExecutionStarted", {
               tool_id: call.id,
               tool: call.function.name,
               command: call.function.arguments,
+              ...(prev >= 2 ? { repeated: true } : {}),
             });
           },
           onToolResult: (result) => {
@@ -349,9 +362,19 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
                 chunk: result.content,
               });
             }
+            // Map KimiFlare's ToolResult to Camouflage's ToolStatus glyph
+            // set so the row prefix matches Ink: ✓/✗/■/!.
+            const status =
+              result.ok ? "done"
+              : result.errorCode === "permission_denied"
+                ? "rejected"
+              : result.errorCode === "aborted"
+                ? "cancelled"
+              : "error";
             cam.send("ToolExecutionFinished", {
               tool_id: result.tool_call_id,
               exit_code: result.ok ? 0 : 1,
+              status,
             });
             setPhase("thinking");
           },
