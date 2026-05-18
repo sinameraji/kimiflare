@@ -34,6 +34,12 @@ export interface ModelCapabilities {
   tools: boolean;
   reasoning: boolean;
   streaming: boolean;
+  /**
+   * Does this model accept the `temperature` field in the request body?
+   * Reasoning models from OpenAI (gpt-5 family) and Anthropic (opus-4-7)
+   * reject or deprecate it. Default: true.
+   */
+  temperature?: boolean;
 }
 
 export interface ModelEntry {
@@ -114,7 +120,7 @@ const SEED: ModelEntry[] = [
     contextWindow: 1_000_000,
     maxOutputTokens: 32_000,
     pricing: { inputPerMtok: 15.0, cachedInputPerMtok: 1.5, outputPerMtok: 75.0 },
-    supports: { tools: true, reasoning: true, streaming: true },
+    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
     billingMode: "byok",
   },
   {
@@ -143,7 +149,7 @@ const SEED: ModelEntry[] = [
     contextWindow: 400_000,
     maxOutputTokens: 16_384,
     pricing: { inputPerMtok: 5.0, cachedInputPerMtok: 0.5, outputPerMtok: 20.0 },
-    supports: { tools: true, reasoning: true, streaming: true },
+    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
     billingMode: "byok",
   },
   {
@@ -152,7 +158,7 @@ const SEED: ModelEntry[] = [
     contextWindow: 400_000,
     maxOutputTokens: 16_384,
     pricing: { inputPerMtok: 0.25, cachedInputPerMtok: 0.025, outputPerMtok: 2.0 },
-    supports: { tools: true, reasoning: true, streaming: true },
+    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
     billingMode: "byok",
   },
 

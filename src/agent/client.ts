@@ -89,19 +89,27 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   const requestId = opts.requestId ?? crypto.randomUUID();
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
   const isUniversalEndpoint = url.includes("/compat/chat/completions");
+  // Per-model capability gates. Some providers reject params they don't
+  // support — gpt-5/gpt-5-mini and claude-opus-4-7 reject any non-default
+  // `temperature`; Groq's llama-3.3 rejects `reasoning_effort`. We look up the
+  // capabilities once and conditionally include each field.
+  const entry = getModelOrInfer(opts.model);
+  const supportsTemperature = entry.supports.temperature !== false;
+  const supportsReasoning = entry.supports.reasoning === true;
+
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
     ...(opts.tools && opts.tools.length
       ? { tools: opts.tools, tool_choice: "auto", parallel_tool_calls: true }
       : {}),
     stream: true,
-    temperature: opts.temperature ?? 0.2,
+    ...(supportsTemperature ? { temperature: opts.temperature ?? 0.2 } : {}),
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
     // Universal Endpoint routes by the `model` body field (e.g. "anthropic/claude-sonnet-4-6").
     // Workers AI endpoints route by URL path and ignore body.model.
     ...(isUniversalEndpoint ? { model: opts.model } : {}),
   };
-  if (opts.reasoningEffort) {
+  if (opts.reasoningEffort && supportsReasoning) {
     body.reasoning_effort = opts.reasoningEffort;
   }
 
