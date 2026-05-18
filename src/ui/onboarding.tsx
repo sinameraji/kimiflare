@@ -2,8 +2,11 @@ import { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { ModelPicker } from "./model-picker.js";
-import type { ModelEntry } from "../models/registry.js";
-import { saveConfig, DEFAULT_MODEL } from "../config.js";
+import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
+import { UnifiedBillingStatus } from "./unified-billing-status.js";
+import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
+import { isUnifiedEligible, type ModelEntry } from "../models/registry.js";
+import { saveConfig, DEFAULT_MODEL, type KimiConfig } from "../config.js";
 import { useTheme } from "./theme-context.js";
 import {
   listGateways,
@@ -28,6 +31,9 @@ type Step =
   | "gatewayManual"
   | "gatewayProbing"
   | "model"
+  | "billingChoice"
+  | "unifiedProbe"
+  | "keyEntry"
   | "confirm";
 
 export function Onboarding({ onDone, onCancel }: Props) {
@@ -45,6 +51,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
   const [gatewayManualId, setGatewayManualId] = useState("");
   const [gatewayError, setGatewayError] = useState<string | null>(null);
   const [gatewayProbeMsg, setGatewayProbeMsg] = useState<string | null>(null);
+
+  // The picked model entry (kept around so the BillingChooser / KeyEntryModal
+  // sub-steps know which provider to set up). Null until step "model" completes.
+  const [pickedEntry, setPickedEntry] = useState<ModelEntry | null>(null);
+  // Setup outcome for the picked provider, persisted into cfg at handleConfirm.
+  const [unifiedBilling, setUnifiedBilling] = useState(false);
+  const [providerKeyAliases, setProviderKeyAliases] = useState<
+    NonNullable<KimiConfig["providerKeyAliases"]>
+  >({});
+  const [providerKeys, setProviderKeys] = useState<
+    NonNullable<KimiConfig["providerKeys"]>
+  >({});
+  const [secretsStoreId, setSecretsStoreId] = useState<string | undefined>(undefined);
 
   useInput(
     useCallback(
@@ -163,13 +182,83 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   const handleModelPick = (picked: ModelEntry | null) => {
-    // Esc / cancel in the picker → keep the current default and move on.
-    if (picked) setModel(picked.id);
+    // Esc / cancel in the picker → keep the current default (a Workers AI
+    // model that needs no setup) and skip straight to confirm.
+    if (!picked) {
+      setStep("confirm");
+      return;
+    }
+    setModel(picked.id);
+    setPickedEntry(picked);
+    // Same routing logic as the runtime `/model` flow:
+    //   workers-ai           → no setup, go to confirm
+    //   unified-eligible     → ask billing mode
+    //   BYOK-only            → straight to key entry
+    if (picked.provider === "workers-ai") {
+      setStep("confirm");
+    } else if (isUnifiedEligible(picked)) {
+      setStep("billingChoice");
+    } else {
+      setStep("keyEntry");
+    }
+  };
+
+  const handleBillingChoice = (choice: BillingChoice | null) => {
+    // Esc / cancel from the chooser → fall back to BYOK (safest default).
+    if (!choice) {
+      setStep("keyEntry");
+      return;
+    }
+    setStep(choice === "unified" ? "unifiedProbe" : "keyEntry");
+  };
+
+  const handleProbeResolve = (r: "enabled" | "fallback-byok" | "cancelled") => {
+    if (r === "enabled") {
+      setUnifiedBilling(true);
+      setStep("confirm");
+    } else if (r === "fallback-byok") {
+      setStep("keyEntry");
+    } else {
+      // Cancelled — back to billing choice so they can retry or pick BYOK.
+      setStep("billingChoice");
+    }
+  };
+
+  const handleSaveProviderKey = (result: KeyResult) => {
+    if (!pickedEntry) return;
+    const provider = pickedEntry.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+    if (result.kind === "alias") {
+      setProviderKeyAliases((prev) => ({ ...prev, [provider]: result.alias }));
+      setSecretsStoreId(result.secretsStoreId);
+    } else {
+      setProviderKeys((prev) => ({ ...prev, [provider]: result.key }));
+    }
     setStep("confirm");
   };
 
+  const handleCancelKeyEntry = () => {
+    // If they bail out of key entry, route back to the chooser so they can
+    // try Unified Billing instead (only meaningful for UB-eligible providers,
+    // but harmless either way — the chooser will skip itself if not eligible).
+    if (pickedEntry && isUnifiedEligible(pickedEntry)) {
+      setStep("billingChoice");
+    } else {
+      // BYOK-only provider with no key → drop them back at the picker.
+      setStep("model");
+    }
+  };
+
   const handleConfirm = async () => {
-    const cfg = { accountId, apiToken, model, aiGatewayId: aiGatewayId || undefined };
+    const cfg: KimiConfig = {
+      accountId,
+      apiToken,
+      model,
+      aiGatewayId: aiGatewayId || undefined,
+      ...(unifiedBilling ? { unifiedBilling: true } : {}),
+      ...(Object.keys(providerKeyAliases).length > 0 ? { providerKeyAliases } : {}),
+      ...(Object.keys(providerKeys).length > 0 ? { providerKeys } : {}),
+      ...(secretsStoreId ? { secretsStoreId } : {}),
+    };
     try {
       const path = await saveConfig(cfg);
       setSavedPath(path);
@@ -334,6 +423,37 @@ export function Onboarding({ onDone, onCancel }: Props) {
           </>
         )}
 
+        {step === "billingChoice" && pickedEntry && (
+          <Box marginTop={1}>
+            <BillingChooser model={pickedEntry} onPick={handleBillingChoice} />
+          </Box>
+        )}
+
+        {step === "unifiedProbe" && pickedEntry && (
+          <Box marginTop={1}>
+            <UnifiedBillingStatus
+              model={pickedEntry}
+              accountId={accountId}
+              apiToken={apiToken}
+              gatewayId={aiGatewayId}
+              onResolve={handleProbeResolve}
+            />
+          </Box>
+        )}
+
+        {step === "keyEntry" && pickedEntry && (
+          <Box marginTop={1}>
+            <KeyEntryModal
+              model={pickedEntry}
+              accountId={accountId}
+              apiToken={apiToken}
+              secretsStoreId={secretsStoreId}
+              onSave={handleSaveProviderKey}
+              onCancel={handleCancelKeyEntry}
+            />
+          </Box>
+        )}
+
         {step === "confirm" && (
           <>
             <Text>Ready to save configuration</Text>
@@ -350,6 +470,21 @@ export function Onboarding({ onDone, onCancel }: Props) {
               <Text color={theme.info.color}>Model: {model}</Text>
               {aiGatewayId && (
                 <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
+              )}
+              {unifiedBilling && (
+                <Text color={theme.info.color}>
+                  Billing: Cloudflare credits (Unified Billing)
+                </Text>
+              )}
+              {Object.keys(providerKeyAliases).length > 0 && (
+                <Text color={theme.info.color}>
+                  Provider keys: {Object.keys(providerKeyAliases).join(", ")} (in Cloudflare Secrets Store)
+                </Text>
+              )}
+              {Object.keys(providerKeys).length > 0 && (
+                <Text color={theme.info.color}>
+                  Provider keys: {Object.keys(providerKeys).join(", ")} (local — do not commit ~/.config/kimiflare/config.json)
+                </Text>
               )}
             </Box>
             <Text>Press Enter to confirm, or Ctrl+C to cancel</Text>
