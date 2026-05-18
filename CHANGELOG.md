@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.73.1](https://github.com/sinameraji/kimiflare/compare/v0.73.0...v0.73.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **onboarding:** route picked model through billing setup before saving ([#476](https://github.com/sinameraji/kimiflare/issues/476)) ([2c9a0be](https://github.com/sinameraji/kimiflare/commit/2c9a0be9c437bece31e6fa6c653cde692fc86a3f))
+
 ## [0.73.0](https://github.com/sinameraji/kimiflare/compare/v0.72.0...v0.73.0) (2026-05-18)
 
 
