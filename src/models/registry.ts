@@ -192,15 +192,12 @@ const SEED: ModelEntry[] = [
     supports: { tools: true, reasoning: false, streaming: true },
     billingMode: "byok",
   },
-  {
-    id: "deepseek/deepseek-chat",
-    provider: "openai-compatible",
-    contextWindow: 128_000,
-    maxOutputTokens: 8_000,
-    pricing: { inputPerMtok: 0.27, cachedInputPerMtok: 0.07, outputPerMtok: 1.1 },
-    supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: "byok",
-  },
+  // NOTE: DeepSeek is intentionally NOT seeded yet.
+  // Our `providerKeys` schema has a single "openai-compatible" slot shared by
+  // every upstream in this category — so a stored Groq key would be sent to
+  // DeepSeek (and rejected with HTTP 401 "Authentication Fails (governor)").
+  // Add DeepSeek back once providerKeys is per-upstream (groq/deepseek/...)
+  // instead of per-provider-category.
 ];
 
 const seedIndex = new Map<string, ModelEntry>(SEED.map((m) => [m.id, m]));
