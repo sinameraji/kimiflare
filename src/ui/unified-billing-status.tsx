@@ -104,19 +104,29 @@ export function UnifiedBillingStatus({
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={2} paddingY={1}>
         <Text color={theme.accent} bold>
-          Unified Billing isn't set up for {name} on your Cloudflare account yet.
+          {name} needs Cloudflare credits before Unified Billing can pay for it.
         </Text>
         <Box marginTop={1} flexDirection="column">
-          <Text>To enable it:</Text>
-          <Text>  1. Open AI Gateway in the Cloudflare dashboard.</Text>
-          <Text>  2. Load credits and enable Unified Billing for {name}.</Text>
+          <Text>Step-by-step (Unified Billing is implicit — adding credits IS enabling it):</Text>
+          <Text>  1. Open this URL in your browser:</Text>
           <Text color={theme.accent} underline>
-            https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
+            {`     https://dash.cloudflare.com/${accountId}/ai/ai-gateway`}
           </Text>
+          <Text>  2. On the AI Gateway page, find the <Text bold>"Credits Available"</Text> card.</Text>
+          <Text>  3. Click <Text bold>"Manage"</Text>, add a payment method if needed.</Text>
+          <Text>  4. Click <Text bold>"Top-up credits"</Text> and confirm.</Text>
+          <Text>  5. Come back here and pick <Text bold>"I've enabled it — try again"</Text>.</Text>
           <Box marginTop={1}>
             <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-              Note: Unified Billing is per-provider — having it on for one
-              provider (e.g. Anthropic) doesn't automatically enable {name}.
+              Credits are one account-wide pool. Confirmed providers: OpenAI &
+              Anthropic. Others (Google, Groq, xAI) may not be supported yet —
+              the retry will tell you.
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+              ⚠ Don't toggle "Authenticated Gateway" on the per-gateway Settings
+              page — that's a different feature and will break kimi-code's auth.
             </Text>
           </Box>
         </Box>
