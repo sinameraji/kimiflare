@@ -34,7 +34,7 @@ import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
 import { selectList } from "camouflage";
-import { listSessions, loadSession, addCheckpoint } from "./sessions.js";
+import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
@@ -437,6 +437,108 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     return new Promise<string | null>((resolve) => { followUpResolver = resolve; });
   }
 
+  /** Ports CheckpointPicker. ↑↓ Enter Esc; first option always "resume
+   *  from beginning". On pick, truncate messages to the checkpoint's
+   *  turnIndex and wipe the visible transcript. */
+  async function openCheckpointPicker(): Promise<void> {
+    if (!currentSessionFilePath) return;
+    let file;
+    try {
+      file = await loadSession(currentSessionFilePath);
+    } catch (err) {
+      cam.send("ShowToast", { text: `load failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+      return;
+    }
+    const cps = file.checkpoints ?? [];
+    const options = [
+      {
+        value: "__start__",
+        label: `Resume from beginning (${file.messages.filter((m) => m.role !== "system").length} msgs)`,
+      },
+      ...cps.map((c) => ({
+        value: c.id,
+        label: `Resume from: "${c.label}" — turn ${c.turnIndex} · ${formatShortDate(c.timestamp)}`,
+      })),
+    ];
+    const choice = await selectList(cam, {
+      id: `cp-${Date.now()}`,
+      prompt: `${(file.title ?? file.id).slice(0, 50)}  (${cps.length} checkpoint${cps.length === 1 ? "" : "s"})`,
+      options,
+      allow_cancel: true,
+    });
+    if (choice.cancelled || !choice.value) return;
+    try {
+      if (choice.value === "__start__") {
+        messages.length = 0;
+        messages.push(...file.messages);
+        cam.send("TranscriptCleared", {});
+        cam.send("ShowToast", { text: `restored to beginning (${file.messages.length} msgs)`, kind: "success", ttl_ms: 2500 });
+      } else {
+        const { file: restored, checkpoint } = await loadSessionFromCheckpoint(currentSessionFilePath, choice.value);
+        messages.length = 0;
+        messages.push(...restored.messages);
+        cam.send("TranscriptCleared", {});
+        cam.send("ShowToast", {
+          text: `restored to "${checkpoint.label}" (turn ${checkpoint.turnIndex})`,
+          kind: "success", ttl_ms: 3000,
+        });
+      }
+    } catch (err) {
+      cam.send("ShowToast", { text: `restore failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+    }
+  }
+
+  /** Ports HelpMenu. Two-level drill-down: main category list → category
+   *  command list → executes the selected slash-command. Esc on the
+   *  child returns to main (re-open); Esc on main closes the menu.
+   *  Cloud mode hides the Gateway category. Trailing single-commands
+   *  and key hints are concatenated into the main prompt since the
+   *  underlying SelectList has only one description line per item. */
+  async function openHelpMenu(): Promise<void> {
+    // Stay on main until the user selects (close) or picks a command.
+    while (true) {
+      const mainOptions = HELP_CATEGORIES
+        .filter((c) => !(opts.cloudMode && c.key === "gateway"))
+        .map((c) => ({ value: c.key, label: c.label, description: c.tagline }));
+      mainOptions.push({ value: "__keys__", label: "Keys & shortcuts", description: "global keybinds" });
+      const choice = await selectList(cam, {
+        id: `help-main-${Date.now()}`,
+        prompt: "Help  ·  ↑↓ select  ·  Enter drill in  ·  Esc close",
+        options: mainOptions,
+        allow_cancel: true,
+      });
+      if (choice.cancelled || !choice.value || choice.value === "__close__") return;
+      if (choice.value === "__keys__") {
+        await selectList(cam, {
+          id: `help-keys-${Date.now()}`,
+          prompt: "Keys & shortcuts  (Esc to go back)",
+          options: HELP_KEYS.map((k) => ({ value: k.key, label: k.key, description: k.desc })),
+          allow_cancel: true,
+        });
+        continue;
+      }
+      const cat = HELP_CATEGORIES.find((c) => c.key === choice.value);
+      if (!cat) continue;
+      const subChoice = await selectList(cam, {
+        id: `help-${cat.key}-${Date.now()}`,
+        prompt: `${cat.label}  ·  Enter execute  ·  Esc back`,
+        options: cat.commands.map((c) => ({
+          value: c.command,
+          label: c.command,
+          description: c.description,
+        })),
+        allow_cancel: true,
+      });
+      if (subChoice.cancelled || !subChoice.value) {
+        // back to main
+        continue;
+      }
+      // Execute the selected command (recurse into handleSlashCommand).
+      await handleSlashCommand(subChoice.value);
+      return;
+    }
+  }
+
   /** Intercept slash-prefixed input. Returns true if handled (skip agent
    *  loop); false otherwise (forward to runTurn). Async so handlers that
    *  drive modal overlays (selectList → renderer → response) can await
@@ -453,11 +555,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         aborted = true;
         return true;
       case "help":
-        cam.send("ShowKeyValueView", {
-          id: `help-${Date.now()}`,
-          title: "slash commands",
-          items: SLASH_COMMANDS.map((c) => ({ label: `/${c.name}`, value: c.description })),
-        });
+        await openHelpMenu();
         return true;
       case "edit":
       case "plan":
@@ -527,18 +625,20 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "resume": {
+        // Ports ResumePicker: list saved sessions for this cwd, fuzzy
+        // filter by typing, ↑↓ navigate, Enter resume, Esc cancel.
+        // Format mirrors Ink: "Mon DD, HH:MM  ·  N msgs  ·  title".
         const sessions = await listSessions(30, process.cwd());
         if (sessions.length === 0) {
-          cam.send("ShowToast", { text: "no saved sessions for this cwd", kind: "info", ttl_ms: 2500 });
+          cam.send("ShowToast", { text: "no saved sessions yet for this cwd", kind: "info", ttl_ms: 2500 });
           return true;
         }
         const choice = await selectList(cam, {
           id: `resume-${Date.now()}`,
-          prompt: "Resume which session?",
+          prompt: `Resume a session  (${sessions.length} total)`,
           options: sessions.map((s) => ({
             value: s.filePath,
-            label: `${s.title ?? s.firstPrompt} (${s.messageCount} msgs)`,
-            description: s.updatedAt.slice(0, 19).replace("T", " "),
+            label: `${formatShortDate(s.updatedAt)}  ·  ${String(s.messageCount).padStart(3)} msgs  ·  ${s.title ?? s.firstPrompt}`,
           })),
           allow_filter: true,
           allow_cancel: true,
@@ -551,7 +651,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           currentSessionFilePath = choice.value;
           cam.send("TranscriptCleared", {});
           cam.send("ShowToast", {
-            text: `resumed: ${file.title ?? file.id} (${file.messages.length} msgs restored, not replayed visually)`,
+            text: `resumed: ${file.title ?? file.id} (${file.messages.length} msgs restored)`,
             kind: "success", ttl_ms: 3500,
           });
         } catch (err) {
@@ -563,47 +663,42 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "checkpoint": {
-        if (!currentSessionFilePath) {
-          cam.send("ShowToast", { text: "no active saved session — type at least one message", kind: "warn", ttl_ms: 2800 });
+        // Two-mode like Ink: with args → save; no args + active session
+        // → open CheckpointPicker to restore.
+        if (args) {
+          if (!currentSessionFilePath) {
+            cam.send("ShowToast", { text: "no active saved session — type at least one message first", kind: "warn", ttl_ms: 2800 });
+            return true;
+          }
+          try {
+            await addCheckpoint(currentSessionFilePath, {
+              id: `cp-${Date.now()}`,
+              label: args,
+              turnIndex: messages.length,
+              timestamp: new Date().toISOString(),
+            });
+            cam.send("ShowToast", { text: `checkpoint saved: ${args}`, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `checkpoint failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+          }
           return true;
         }
-        const label = args || `checkpoint at turn ${messages.length}`;
-        try {
-          await addCheckpoint(currentSessionFilePath, {
-            id: `cp-${Date.now()}`,
-            label,
-            turnIndex: messages.length,
-            timestamp: new Date().toISOString(),
-          });
-          cam.send("ShowToast", { text: `checkpoint saved: ${label}`, kind: "success", ttl_ms: 2500 });
-        } catch (err) {
-          cam.send("ShowToast", { text: `checkpoint failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        if (!currentSessionFilePath) {
+          cam.send("ShowToast", { text: "/checkpoint <label> to save; no saved session loaded so no picker", kind: "info", ttl_ms: 3000 });
+          return true;
         }
+        await openCheckpointPicker();
         return true;
       }
       case "checkpoints": {
+        // Ink behavior: opens the same CheckpointPicker as /checkpoint
+        // with no args. We need a loaded session, otherwise nothing to
+        // pick from.
         if (!currentSessionFilePath) {
           cam.send("ShowToast", { text: "no saved session loaded", kind: "warn", ttl_ms: 2500 });
           return true;
         }
-        try {
-          const file = await loadSession(currentSessionFilePath);
-          const cps = file.checkpoints ?? [];
-          if (cps.length === 0) {
-            cam.send("ShowToast", { text: "no checkpoints in this session", kind: "info", ttl_ms: 2500 });
-            return true;
-          }
-          cam.send("ShowKeyValueView", {
-            id: `cps-${Date.now()}`,
-            title: `checkpoints (${cps.length})`,
-            items: cps.map((c) => ({
-              label: c.label,
-              value: `turn ${c.turnIndex} · ${c.timestamp.slice(0, 19).replace("T", " ")}`,
-            })),
-          });
-        } catch (err) {
-          cam.send("ShowToast", { text: `checkpoints failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
-        }
+        await openCheckpointPicker();
         return true;
       }
       case "theme": {
@@ -924,6 +1019,93 @@ async function registerMentions(cam: CamouflageHandle): Promise<void> {
     candidates: collected.map((p) => ({ token: p, kind: "file" })),
   });
 }
+
+/** Ports the date format used by ResumePicker + CheckpointPicker:
+ *  "Mon DD, HH:MM" in the user's locale, with safe fallback. */
+function formatShortDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/** HelpMenu category catalog. Mirrors src/ui/help-menu.tsx CATEGORIES
+ *  array, lightly compressed so each entry fits on one SelectList line
+ *  (the renderer shows label + one description per row). */
+interface HelpCategory {
+  key: string;
+  label: string;
+  tagline: string;
+  commands: { command: string; description: string }[];
+}
+const HELP_CATEGORIES: HelpCategory[] = [
+  { key: "mode", label: "Mode", tagline: "edit / plan / auto", commands: [
+    { command: "/mode edit", description: "switch to edit mode" },
+    { command: "/mode plan", description: "switch to plan mode (blocks mutating tools)" },
+    { command: "/mode auto", description: "switch to auto mode (auto-approves)" },
+  ]},
+  { key: "session", label: "Session", tagline: "resume, compact, clear", commands: [
+    { command: "/resume", description: "pick a past conversation" },
+    { command: "/compact", description: "summarize old turns to free context" },
+    { command: "/clear", description: "clear current conversation" },
+    { command: "/checkpoint", description: "save a named restore point" },
+    { command: "/checkpoints", description: "browse and restore checkpoints" },
+  ]},
+  { key: "memory", label: "Memory", tagline: "show / configure memory", commands: [
+    { command: "/memory", description: "show memory stats" },
+  ]},
+  { key: "skills", label: "Skills", tagline: "list installed skills", commands: [
+    { command: "/skills", description: "list all skills" },
+  ]},
+  { key: "cost", label: "Cost", tagline: "tokens & USD", commands: [
+    { command: "/cost", description: "show cost report" },
+  ]},
+  { key: "mcp", label: "MCP", tagline: "configured MCP servers", commands: [
+    { command: "/mcp", description: "list configured MCP servers" },
+  ]},
+  { key: "lsp", label: "LSP", tagline: "configured language servers", commands: [
+    { command: "/lsp", description: "list configured LSP servers" },
+  ]},
+  { key: "gateway", label: "Gateway", tagline: "AI Gateway status", commands: [
+    { command: "/gateway", description: "show gateway status" },
+  ]},
+  { key: "info", label: "Info", tagline: "model / update / hello", commands: [
+    { command: "/model", description: "show current model" },
+    { command: "/update", description: "check for updates" },
+    { command: "/hello", description: "send a voice note to the creator" },
+    { command: "/inbox", description: "check for a voice reply from the creator" },
+  ]},
+  { key: "commands", label: "Commands", tagline: "custom slash-commands", commands: [
+    { command: "/command", description: "list custom slash-commands" },
+  ]},
+  { key: "config", label: "Config", tagline: "init / logout / shell", commands: [
+    { command: "/init", description: "scan this repo and write a KIMI.md" },
+    { command: "/logout", description: "clear cloud credentials" },
+    { command: "/shell", description: "show current shell setting" },
+    { command: "/theme", description: "pick a theme" },
+    { command: "/reasoning", description: "toggle reasoning visibility" },
+  ]},
+];
+const HELP_KEYS = [
+  { key: "Ctrl+C", desc: "interrupt current turn (or exit if idle)" },
+  { key: "Esc", desc: "interrupt current turn / dismiss modal" },
+  { key: "Tab / Shift+Tab", desc: "cycle modes (edit → plan → auto)" },
+  { key: "↑ / ↓", desc: "scroll transcript / browse input history" },
+  { key: "Home / End", desc: "scroll to top / jump to latest" },
+  { key: "PageUp / PageDown", desc: "scroll by 10 rows" },
+  { key: "Ctrl+A / Ctrl+E", desc: "cursor to line start / end" },
+  { key: "Ctrl+W / Ctrl+U", desc: "delete word / line before cursor" },
+  { key: "Option+← / →", desc: "jump word left / right" },
+  { key: "/", desc: "open slash-command picker" },
+  { key: "@", desc: "open @-mention file picker" },
+  { key: "Ctrl+F", desc: "search transcript" },
+  { key: "?", desc: "toggle help overlay (when input empty)" },
+  { key: "M", desc: "toggle metrics overlay (when input empty)" },
+  { key: "T", desc: "cycle theme (when input empty)" },
+];
 
 function openBrowser(url: string): void {
   const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
