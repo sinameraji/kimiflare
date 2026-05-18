@@ -52,7 +52,7 @@ import { getRemoteStatus, cancelRemoteSession } from "./remote/worker-client.js"
 import { BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import type { CustomCommand } from "./commands/types.js";
 import type { LspServerConfig } from "./config.js";
-import { loadHooksSettings, globalSettingsPath, projectSettingsPath } from "./hooks/settings.js";
+import { loadHooksSettings, globalSettingsPath, projectSettingsPath, setHookEnabled } from "./hooks/settings.js";
 import { HOOK_EVENTS } from "./hooks/types.js";
 import { buildInitPrompt } from "./init/context-generator.js";
 
@@ -1601,6 +1601,41 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "hooks": {
+        // Sub-actions: list (default) / path / enable <id> / disable <id> /
+        // reload. Recommended catalog is Ink-only.
+        const parts = args.split(/\s+/).filter(Boolean);
+        const sub = parts[0] ?? "list";
+        const id = parts.slice(1).join(" ");
+        if (sub === "path") {
+          cam.send("ShowKeyValueView", {
+            id: `hooks-path-${Date.now()}`,
+            title: "hooks settings paths",
+            items: [
+              { label: "global", value: globalSettingsPath() },
+              { label: "project", value: projectSettingsPath(process.cwd()) },
+            ],
+          });
+          return true;
+        }
+        if (sub === "reload") {
+          cam.send("ShowToast", { text: "hooks reload requires Ink runtime; restart kimiflare to pick up settings", kind: "warn", ttl_ms: 3500 });
+          return true;
+        }
+        if (sub === "enable" || sub === "disable") {
+          if (!id) {
+            cam.send("ShowToast", { text: `usage: /hooks ${sub} <id>`, kind: "info", ttl_ms: 2500 });
+            return true;
+          }
+          const path = setHookEnabled(process.cwd(), id, sub === "enable");
+          if (path) cam.send("ShowToast", { text: `${id}: ${sub}d in ${path}`, kind: "success", ttl_ms: 3000 });
+          else cam.send("ShowToast", { text: `hook id "${id}" not found`, kind: "error", ttl_ms: 2500 });
+          return true;
+        }
+        if (sub === "recommended") {
+          cam.send("ShowToast", { text: "recommended catalog is Ink-only; see docs/hooks.md", kind: "warn", ttl_ms: 3000 });
+          return true;
+        }
+        // list (default)
         const settings = loadHooksSettings(process.cwd());
         const items: { label: string; value: string }[] = [];
         for (const ev of HOOK_EVENTS) {
@@ -1608,8 +1643,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           if (list.length === 0) continue;
           items.push({ label: ev, value: `${list.length} hook${list.length === 1 ? "" : "s"}` });
         }
-        items.push({ label: "global settings", value: globalSettingsPath() });
-        items.push({ label: "project settings", value: projectSettingsPath(process.cwd()) });
+        items.push({ label: "(global settings)", value: globalSettingsPath() });
+        items.push({ label: "(project settings)", value: projectSettingsPath(process.cwd()) });
         cam.send("ShowKeyValueView", {
           id: `hooks-${Date.now()}`,
           title: items.length > 2 ? "hooks" : "no hooks enabled",
