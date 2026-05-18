@@ -52,6 +52,31 @@ export interface ModelEntry {
   billingMode: BillingMode;
 }
 
+/**
+ * Providers Cloudflare AI Gateway supports paying for via Unified Billing
+ * (CF credits, no upstream key). Workers AI is its own track and trivially
+ * "ready" for any account that can reach AI Gateway at all.
+ * Source: developers.cloudflare.com/ai-gateway/features/unified-billing/
+ */
+const UNIFIED_BILLING_PROVIDERS: ReadonlySet<string> = new Set([
+  "anthropic",
+  "openai",
+  "google-ai-studio",
+  "groq",
+  "xai",
+]);
+
+/** True when the user can pay for this model through Cloudflare credits rather than BYOK. */
+export function isUnifiedEligible(entry: ModelEntry): boolean {
+  if (entry.provider === "workers-ai") return false; // own billing track
+  // For openai-compatible upstreams we key off the model-id prefix
+  // (e.g. "groq/llama-3.3-70b-versatile" → "groq").
+  const slashIdx = entry.id.indexOf("/");
+  if (slashIdx < 0) return false;
+  const upstream = entry.id.slice(0, slashIdx).toLowerCase();
+  return UNIFIED_BILLING_PROVIDERS.has(upstream);
+}
+
 const SEED: ModelEntry[] = [
   // ── Workers AI (Cloudflare-hosted, native to kimiflare) ───────────────────
   {

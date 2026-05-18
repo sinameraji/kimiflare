@@ -34,7 +34,14 @@ export interface RunKimiOpts {
   requestId?: string;
   /** Per-provider API keys (BYOK) forwarded to AI Gateway as cf-aig-authorization headers. */
   providerKeys?: Partial<Record<ModelProvider, string>>;
-  /** When true and the model's billingMode is "unified", omit BYOK headers and let Gateway bill Cloudflare. */
+  /**
+   * Per-provider alias names referencing keys stored in Cloudflare Secrets Store
+   * (scope: ai_gateway). When present, kimi-code sends cf-aig-byok-alias instead
+   * of the raw provider key — the key never re-enters this process after the
+   * one-time upload. Takes precedence over `providerKeys`.
+   */
+  providerKeyAliases?: Partial<Record<ModelProvider, string>>;
+  /** When true, omit BYOK headers entirely and let CF Unified Billing pay the upstream provider. */
   unifiedBilling?: boolean;
   /** Abort the stream if no data arrives for this many milliseconds. Default 60000. */
   idleTimeoutMs?: number;
@@ -306,13 +313,23 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
       );
     }
     const headers = gatewayHeadersFor(opts);
-    // BYOK: forward provider key as cf-aig-authorization header for this provider.
-    // Skip when the model is unified-billed and the user opted into Unified Billing.
-    const useUnified = opts.unifiedBilling && entry.billingMode === "unified";
+    // Three BYOK paths, in priority order:
+    //   1. Unified Billing  → no provider auth at all; CF pays the upstream provider
+    //                         using credits attached to the account. Auth is only the
+    //                         gateway-level Authorization: Bearer <CF token>.
+    //   2. Stored Keys      → cf-aig-byok-alias points at a CF Secrets Store secret;
+    //                         CF resolves it server-side. We never read the secret.
+    //   3. Local BYOK       → cf-aig-authorization carries the raw provider key.
+    const useUnified = !!opts.unifiedBilling;
+    const alias = opts.providerKeyAliases?.[entry.provider];
     const providerKey = opts.providerKeys?.[entry.provider];
-    if (!useUnified && providerKey) {
-      headers[`cf-aig-authorization`] = `Bearer ${providerKey}`;
-    } else if (!useUnified && !providerKey) {
+    if (useUnified) {
+      // no provider-auth header
+    } else if (alias) {
+      headers["cf-aig-byok-alias"] = alias;
+    } else if (providerKey) {
+      headers["cf-aig-authorization"] = `Bearer ${providerKey}`;
+    } else {
       throw new KimiApiError(
         missingKeyMessage(opts.model, entry.provider, entry.billingMode === "unified"),
         undefined,

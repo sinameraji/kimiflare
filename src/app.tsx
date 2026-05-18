@@ -86,6 +86,9 @@ import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/th
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
 import { getModelOrInfer, type ModelEntry } from "./models/registry.js";
+import { decideNextStep } from "./models/next-step.js";
+import type { KeyResult } from "./ui/key-entry-modal.js";
+import type { BillingChoice } from "./ui/billing-chooser.js";
 import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import fg from "fast-glob";
@@ -177,6 +180,13 @@ export interface Cfg {
     google?: string;
     "openai-compatible"?: string;
   };
+  providerKeyAliases?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  secretsStoreId?: string;
   unifiedBilling?: boolean;
 }
 function App({
@@ -281,6 +291,8 @@ function App({
     showThemePicker, setShowThemePicker,
     setShowModelPicker,
     keyEntryFor: _keyEntryFor, setKeyEntryFor,
+    setBillingChooserFor,
+    setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     hasFullscreenModal,
@@ -1096,53 +1108,10 @@ function App({
     (picked: ModelEntry | null) => {
       setShowModelPicker(false);
       if (!picked) return;
-      let openKeyEntry = false;
-      let gatewayWarning: string | null = null;
+      // Persist the model selection first (cheap & expected even if onboarding is mid-flight).
       setCfg((c) => {
         if (!c) return c;
         const updated = { ...c, model: picked.id };
-        const isByokProvider =
-          picked.provider !== "workers-ai" && picked.billingMode === "byok";
-        const hasKey = !!c.providerKeys?.[
-          picked.provider as "anthropic" | "openai" | "google" | "openai-compatible"
-        ];
-        const usingUnified = !!c.unifiedBilling && picked.billingMode === "unified";
-        if (isByokProvider && !hasKey && !usingUnified) {
-          openKeyEntry = true;
-        }
-        if (picked.provider !== "workers-ai" && !updated.aiGatewayId) {
-          gatewayWarning = `${picked.id} routes through Cloudflare AI Gateway, but no gateway is configured — run /gateway <id>`;
-        }
-        void saveConfig(updated).catch(() => {});
-        return updated;
-      });
-      setEvents((e) => {
-        const msgs: typeof e = [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `model: ${picked.id} · ${picked.contextWindow.toLocaleString()} ctx · ${picked.billingMode}`,
-          },
-        ];
-        if (gatewayWarning) msgs.push({ kind: "info", key: mkKey(), text: gatewayWarning });
-        return msgs;
-      });
-      if (openKeyEntry) setKeyEntryFor(picked);
-    },
-    [],
-  );
-
-  const handleSaveProviderKey = useCallback(
-    (model: ModelEntry, key: string) => {
-      setKeyEntryFor(null);
-      const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
-      setCfg((prev) => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          providerKeys: { ...(prev.providerKeys ?? {}), [provider]: key },
-        };
         void saveConfig(updated).catch(() => {});
         return updated;
       });
@@ -1151,11 +1120,127 @@ function App({
         {
           kind: "info",
           key: mkKey(),
-          text: `${provider} key saved — ${model.id} is ready to use.`,
+          text: `model: ${picked.id} · ${picked.contextWindow.toLocaleString()} ctx`,
+        },
+      ]);
+      // Route the rest of onboarding through the shared decision table.
+      const next = decideNextStep(cfg, picked);
+      if (next.kind === "ready") return;
+      if (next.kind === "needs-gateway") {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `${picked.id} routes through Cloudflare AI Gateway, but no gateway is configured — run /gateway <id>`,
+          },
+        ]);
+        return;
+      }
+      if (next.kind === "billing-choice") {
+        setBillingChooserFor(picked);
+        return;
+      }
+      // needs-key
+      setKeyEntryFor(picked);
+    },
+    [cfg, mkKey, setShowModelPicker, setBillingChooserFor, setKeyEntryFor],
+  );
+
+  const handlePickBilling = useCallback(
+    (model: ModelEntry, choice: BillingChoice | null) => {
+      setBillingChooserFor(null);
+      if (!choice) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "billing setup cancelled — pick again with /model" },
+        ]);
+        return;
+      }
+      if (choice === "byok") {
+        setKeyEntryFor(model);
+        return;
+      }
+      // choice === "unified" → kick off the probe
+      setUnifiedProbeFor(model);
+    },
+    [mkKey, setBillingChooserFor, setKeyEntryFor, setUnifiedProbeFor],
+  );
+
+  const handleUnifiedProbeResolve = useCallback(
+    (model: ModelEntry, r: "enabled" | "fallback-byok" | "cancelled") => {
+      setUnifiedProbeFor(null);
+      if (r === "enabled") {
+        setCfg((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, unifiedBilling: true };
+          void saveConfig(updated).catch(() => {});
+          return updated;
+        });
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `✓ ${model.id} ready — billed via your Cloudflare credits.`,
+          },
+        ]);
+        return;
+      }
+      if (r === "fallback-byok") {
+        setKeyEntryFor(model);
+        return;
+      }
+      // cancelled
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "unified billing setup cancelled" },
+      ]);
+    },
+    [mkKey, setUnifiedProbeFor, setKeyEntryFor],
+  );
+
+  const handleSaveProviderKey = useCallback(
+    (model: ModelEntry, result: KeyResult) => {
+      setKeyEntryFor(null);
+      const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+      setCfg((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        if (result.kind === "alias") {
+          updated.providerKeyAliases = {
+            ...(prev.providerKeyAliases ?? {}),
+            [provider]: result.alias,
+          };
+          updated.secretsStoreId = result.secretsStoreId;
+          // If we previously stored a local key for this provider, drop it — the
+          // alias supersedes it and we don't want the secret hanging around.
+          if (prev.providerKeys?.[provider]) {
+            const { [provider]: _drop, ...rest } = prev.providerKeys;
+            updated.providerKeys = rest;
+          }
+        } else {
+          updated.providerKeys = {
+            ...(prev.providerKeys ?? {}),
+            [provider]: result.key,
+          };
+        }
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text:
+            result.kind === "alias"
+              ? `✓ ${provider} key stored in Cloudflare Secrets Store — ${model.id} is ready to use.`
+              : `⚠ ${provider} key saved locally at ~/.config/kimiflare/config.json. Do not commit this file.`,
         },
       ]);
     },
-    [],
+    [mkKey, setKeyEntryFor],
   );
 
   const handleCancelKeyEntry = useCallback(() => {
@@ -1165,10 +1250,10 @@ function App({
       {
         kind: "info",
         key: mkKey(),
-        text: "key entry cancelled — run /keys set <provider> <key> when you're ready, or /model to pick a different one.",
+        text: "key entry cancelled — run /model to pick again, or set up your key later.",
       },
     ]);
-  }, []);
+  }, [mkKey, setKeyEntryFor]);
 
   const buildSlashContext = useCallback((): SlashContext => ({
     exit,
@@ -1188,6 +1273,8 @@ function App({
     setShowThemePicker,
     setShowModelPicker,
     setKeyEntryFor,
+    setBillingChooserFor,
+    setUnifiedProbeFor,
     setShowInboxModal,
     setShowLspWizard,
     setShowRemoteDashboard,
@@ -1232,7 +1319,8 @@ function App({
   }), [
     exit, busy, cfg, mode, lspScope, lspProjectPath,
     setCfg, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta,
-    setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setKeyEntryFor, setShowInboxModal,
+    setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setKeyEntryFor,
+    setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -1666,6 +1754,7 @@ function App({
           cloudToken: cloudToken ?? initialCloudToken,
           cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           providerKeys: cfg.providerKeys,
+          providerKeyAliases: cfg.providerKeyAliases,
           unifiedBilling: cfg.unifiedBilling,
           onIterationEnd,
           intentClassification: classification,
@@ -1985,6 +2074,12 @@ function App({
         onPickModel={handleModelPick}
         onSaveProviderKey={handleSaveProviderKey}
         onCancelKeyEntry={handleCancelKeyEntry}
+        onPickBilling={handlePickBilling}
+        onUnifiedProbeResolve={handleUnifiedProbeResolve}
+        accountId={cfg?.accountId ?? ""}
+        apiToken={cfg?.apiToken ?? ""}
+        secretsStoreId={cfg?.secretsStoreId}
+        aiGatewayId={cfg?.aiGatewayId}
         selectedRemoteSession={selectedRemoteSession}
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}

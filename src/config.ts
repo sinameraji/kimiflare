@@ -101,6 +101,15 @@ export interface KimiConfig {
   };
   /** When true, models marked billingMode="unified" use Cloudflare's Unified Billing (no BYOK header). */
   unifiedBilling?: boolean;
+  /** Non-secret names referencing provider keys stored in Cloudflare Secrets Store with scope: ai_gateway. */
+  providerKeyAliases?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  /** Id of the Cloudflare Secrets Store kimi-code uses for provider-key BYOK aliases. */
+  secretsStoreId?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -319,6 +328,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         providerKeys: envProviderKeys ?? parsed.providerKeys,
+        providerKeyAliases: parsed.providerKeyAliases,
+        secretsStoreId: parsed.secretsStoreId,
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
       };
     }
@@ -356,6 +367,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         providerKeys: envProviderKeys ?? parsed.providerKeys,
+        providerKeyAliases: parsed.providerKeyAliases,
+        secretsStoreId: parsed.secretsStoreId,
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
       };
     }

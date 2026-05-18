@@ -45,6 +45,10 @@ export interface ModalHostController {
   setShowModelPicker: (v: boolean) => void;
   keyEntryFor: ModelEntry | null;
   setKeyEntryFor: (v: ModelEntry | null) => void;
+  billingChooserFor: ModelEntry | null;
+  setBillingChooserFor: (v: ModelEntry | null) => void;
+  unifiedProbeFor: ModelEntry | null;
+  setUnifiedProbeFor: (v: ModelEntry | null) => void;
   showRemoteDashboard: boolean;
   setShowRemoteDashboard: (v: boolean) => void;
   showInboxModal: boolean;
@@ -83,6 +87,8 @@ export function useModalHost(): ModalHostController {
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [keyEntryFor, setKeyEntryFor] = useState<ModelEntry | null>(null);
+  const [billingChooserFor, setBillingChooserFor] = useState<ModelEntry | null>(null);
+  const [unifiedProbeFor, setUnifiedProbeFor] = useState<ModelEntry | null>(null);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [showInboxModal, setShowInboxModal] = useState(false);
 
@@ -96,6 +102,8 @@ export function useModalHost(): ModalHostController {
       showThemePicker ||
       showModelPicker ||
       keyEntryFor !== null ||
+      billingChooserFor !== null ||
+      unifiedProbeFor !== null ||
       showRemoteDashboard ||
       showInboxModal;
     const hasOverlayModal = limitModal !== null || loopModal !== null;
@@ -113,6 +121,8 @@ export function useModalHost(): ModalHostController {
     showThemePicker,
     showModelPicker,
     keyEntryFor,
+    billingChooserFor,
+    unifiedProbeFor,
     showRemoteDashboard,
     showInboxModal,
     limitModal,
@@ -130,6 +140,8 @@ export function useModalHost(): ModalHostController {
     showThemePicker, setShowThemePicker,
     showModelPicker, setShowModelPicker,
     keyEntryFor, setKeyEntryFor,
+    billingChooserFor, setBillingChooserFor,
+    unifiedProbeFor, setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     ...flags,

@@ -28,6 +28,7 @@ import {
 } from "../usage-tracker.js";
 import { resolveTheme, themeNames, DEFAULT_THEME_NAME } from "./theme.js";
 import { listModels, getModelOrInfer, type ModelEntry } from "../models/registry.js";
+import { decideNextStep } from "../models/next-step.js";
 import { validateModelId } from "../agent/client.js";
 import { getShellCommand } from "../tools/bash.js";
 import {
@@ -97,6 +98,8 @@ export interface SlashContext {
   setShowThemePicker: (v: boolean) => void;
   setShowModelPicker: (v: boolean) => void;
   setKeyEntryFor: (v: ModelEntry | null) => void;
+  setBillingChooserFor: (v: ModelEntry | null) => void;
+  setUnifiedProbeFor: (v: ModelEntry | null) => void;
   setShowInboxModal: (v: boolean) => void;
   setShowLspWizard: (v: boolean) => void;
   setShowRemoteDashboard: (v: boolean) => void;
@@ -336,7 +339,8 @@ const handleModel: Handler = (ctx, rest, arg) => {
     return true;
   }
 
-  // `/model <id>` → set directly
+  // `/model <id>` → set directly, then route through the same decision table
+  // as the picker (Workers-AI → ready; Unified-eligible → chooser; BYOK-only → key entry).
   try {
     validateModelId(arg);
   } catch {
@@ -347,29 +351,32 @@ const handleModel: Handler = (ctx, rest, arg) => {
     return true;
   }
   const entry = getModelOrInfer(arg);
-  const provider = entry.provider;
-  const keyMissing =
-    provider !== "workers-ai" &&
-    entry.billingMode === "byok" &&
-    !cfg?.providerKeys?.[provider as "anthropic" | "openai" | "google" | "openai-compatible"] &&
-    !cfg?.unifiedBilling;
-  const gatewayMissing = provider !== "workers-ai" && !cfg?.aiGatewayId;
   setCfg((prev) => {
     if (!prev) return prev;
     const updated = { ...prev, model: arg };
     void saveConfig(updated).catch(() => {});
     return updated;
   });
-  const lines: string[] = [
-    `model: ${arg} · ${entry.contextWindow.toLocaleString()} ctx · ${entry.billingMode}`,
-  ];
-  if (gatewayMissing) {
-    lines.push(`⚠ no AI Gateway configured — run /gateway <id>`);
+  setEvents((e) => [
+    ...e,
+    {
+      kind: "info",
+      key: mkKey(),
+      text: `model: ${arg} · ${entry.contextWindow.toLocaleString()} ctx`,
+    },
+  ]);
+
+  const next = decideNextStep(cfg, entry);
+  if (next.kind === "needs-gateway") {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: `⚠ no AI Gateway configured — run /gateway <id>` },
+    ]);
+  } else if (next.kind === "billing-choice") {
+    ctx.setBillingChooserFor(entry);
+  } else if (next.kind === "needs-key") {
+    ctx.setKeyEntryFor(entry);
   }
-  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
-  // Auto-open the key entry modal so the user is guided straight into pasting,
-  // rather than told to come back and run another command.
-  if (keyMissing) ctx.setKeyEntryFor(entry);
   return true;
 };
 

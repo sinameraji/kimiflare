@@ -100,6 +100,8 @@ export interface AgentTurnOpts {
   cloudDeviceId?: string;
   /** Per-provider API keys (BYOK) forwarded to AI Gateway. */
   providerKeys?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "openai-compatible", string>>;
+  /** Per-provider alias names referencing CF Secrets Store entries (fire-and-forget BYOK). */
+  providerKeyAliases?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "openai-compatible", string>>;
   /** Whether to use Cloudflare Unified Billing for models that support it. */
   unifiedBilling?: boolean;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
@@ -573,6 +575,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       cloudToken: opts.cloudToken,
       cloudDeviceId: opts.cloudDeviceId,
       providerKeys: opts.providerKeys,
+      providerKeyAliases: opts.providerKeyAliases,
       unifiedBilling: opts.unifiedBilling,
       idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
       postFirstByteIdleTimeoutMs: opts.postFirstByteIdleTimeoutMs,

@@ -1,7 +1,9 @@
-import { Box, Text } from "ink";
+import { useMemo, useState } from "react";
+import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
-import { listModels, type ModelEntry, type ModelProvider } from "../models/registry.js";
+import { listModels, type ModelEntry, type ModelPricing, type ModelProvider } from "../models/registry.js";
+import { fuzzyFilter } from "../util/fuzzy.js";
 
 interface Props {
   current: string;
@@ -24,62 +26,262 @@ const PROVIDER_LABEL: Record<ModelProvider, string> = {
   "openai-compatible": "Other (OpenAI-compatible)",
 };
 
+const PAGE_SIZE = 30;
+const MIN_ID_WIDTH = 18;
+
 function formatContext(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M ctx`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k ctx`;
-  return `${n} ctx`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
 }
 
-function formatPrice(m: ModelEntry): string {
-  const { inputPerMtok, outputPerMtok } = m.pricing;
-  if (inputPerMtok === 0 && outputPerMtok === 0) return "price n/a";
-  return `$${inputPerMtok}/$${outputPerMtok} per Mtok`;
+function dollar(n: number): string {
+  return `$${n}`;
 }
 
-export function ModelPicker({ current, onPick }: Props) {
-  const theme = useTheme();
-  const models = listModels();
+function formatPrice(p: ModelPricing): string {
+  const head = `${dollar(p.inputPerMtok)} / ${dollar(p.outputPerMtok)}`;
+  return p.cachedInputPerMtok !== undefined ? `${head} / ${dollar(p.cachedInputPerMtok)}` : head;
+}
+
+/** Longest path-segment-aligned common prefix shared by every id. Empty if none. */
+function commonSlashPrefix(ids: string[]): string {
+  const first = ids[0];
+  if (first === undefined) return "";
+  let prefix = first;
+  for (let i = 1; i < ids.length; i++) {
+    const s = ids[i] ?? "";
+    while (!s.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+      if (!prefix) return "";
+    }
+  }
+  const lastSlash = prefix.lastIndexOf("/");
+  return lastSlash < 0 ? "" : prefix.slice(0, lastSlash + 1);
+}
+
+function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s;
+  if (max < 4) return s.slice(0, Math.max(1, max));
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  const tail = Math.floor(keep / 2);
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`;
+}
+
+function padRight(s: string, w: number): string {
+  return s.length >= w ? s : s + " ".repeat(w - s.length);
+}
+
+type Row =
+  | { kind: "header"; label: string; key: string }
+  | {
+      kind: "model";
+      model: ModelEntry;
+      displayId: string;
+      context: string;
+      price: string;
+      isCurrent: boolean;
+    };
+
+interface BuildOpts {
+  models: ModelEntry[];
+  current: string;
+  query: string;
+  /** Total width of the model-id column after marker prefix. */
+  idColWidth: number;
+  /** Width of the context cell. */
+  ctxColWidth: number;
+}
+
+function buildRowsGrouped(opts: BuildOpts): Row[] {
+  const { models, current } = opts;
   const byProvider = new Map<ModelProvider, ModelEntry[]>();
   for (const m of models) {
     const arr = byProvider.get(m.provider) ?? [];
     arr.push(m);
     byProvider.set(m.provider, arr);
   }
-
-  const byId = new Map<string, ModelEntry>(models.map((m) => [m.id, m]));
-  const items: { label: string; value: string }[] = [];
+  const rows: Row[] = [];
   for (const p of PROVIDER_ORDER) {
     const list = byProvider.get(p);
     if (!list || list.length === 0) continue;
-    items.push({ label: `── ${PROVIDER_LABEL[p]} ──`, value: `__hdr_${p}__` });
+    rows.push({ kind: "header", label: PROVIDER_LABEL[p], key: `__hdr_${p}__` });
+    const prefix = commonSlashPrefix(list.map((m) => m.id));
     for (const m of list) {
-      const marker = m.id === current ? "● " : "  ";
-      const bill = m.billingMode === "unified" ? "unified" : "byok";
-      const label = `${marker}${m.id}  ·  ${formatContext(m.contextWindow)}  ·  ${formatPrice(m)}  ·  ${bill}`;
-      items.push({ label, value: m.id });
+      const stripped = prefix && m.id.startsWith(prefix) ? m.id.slice(prefix.length) : m.id;
+      rows.push({
+        kind: "model",
+        model: m,
+        displayId: stripped,
+        context: formatContext(m.contextWindow),
+        price: formatPrice(m.pricing),
+        isCurrent: m.id === current,
+      });
     }
   }
-  items.push({ label: "< Back", value: "__back__" });
+  return rows;
+}
+
+function buildRowsFlat(opts: BuildOpts): Row[] {
+  // When searching, drop section headers — fewer matches survive, headers add noise.
+  const { models, current } = opts;
+  const rows: Row[] = [];
+  for (const m of models) {
+    rows.push({
+      kind: "model",
+      model: m,
+      displayId: m.id, // keep full id during search so query targets the user typed match
+      context: formatContext(m.contextWindow),
+      price: formatPrice(m.pricing),
+      isCurrent: m.id === current,
+    });
+  }
+  return rows;
+}
+
+export function ModelPicker({ current, onPick }: Props) {
+  const theme = useTheme();
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const allModels = useMemo(() => listModels(), []);
+  const filtered = useMemo(() => {
+    if (!query.trim()) return allModels;
+    return fuzzyFilter(allModels, query, (m) => `${m.id} ${m.provider}`);
+  }, [allModels, query]);
+
+  // Build rows first with placeholder widths, then measure & re-pad.
+  const baseOpts: BuildOpts = {
+    models: filtered,
+    current,
+    query,
+    idColWidth: MIN_ID_WIDTH,
+    ctxColWidth: 6,
+  };
+  const rawRows: Row[] = query.trim() ? buildRowsFlat(baseOpts) : buildRowsGrouped(baseOpts);
+
+  // Measure column widths from visible model rows.
+  const modelRows = rawRows.filter((r): r is Extract<Row, { kind: "model" }> => r.kind === "model");
+  const idColWidth = Math.max(
+    MIN_ID_WIDTH,
+    ...modelRows.map((r) => r.displayId.length),
+  );
+  const ctxColWidth = Math.max(6, ...modelRows.map((r) => r.context.length));
+
+  // Pagination — pack rows into pages of up to PAGE_SIZE, but never end a page
+  // on a section header. If a header would land on the last slot, push it (and
+  // any consecutive trailing headers) to the next page so the section's models
+  // stay visible together. Same idea for purely empty section headers.
+  const pages: Row[][] = useMemo(() => {
+    const out: Row[][] = [];
+    let cur: Row[] = [];
+    for (const row of rawRows) {
+      cur.push(row);
+      if (cur.length >= PAGE_SIZE) {
+        // Peel off any trailing headers so the page doesn't end on one.
+        const trailingHeaders: Row[] = [];
+        while (cur.length > 0 && cur[cur.length - 1]!.kind === "header") {
+          trailingHeaders.push(cur.pop()!);
+        }
+        if (cur.length > 0) out.push(cur);
+        cur = trailingHeaders.reverse();
+      }
+    }
+    if (cur.length > 0) out.push(cur);
+    return out.length > 0 ? out : [[]];
+  }, [rawRows]);
+  const totalPages = pages.length;
+  const safePage = Math.min(page, totalPages - 1);
+  const pageRows = pages[safePage] ?? [];
+
+  useInput((input, key) => {
+    if (key.escape || input === "q") {
+      onPick(null);
+      return;
+    }
+    if (key.leftArrow && safePage > 0) {
+      setPage((p) => p - 1);
+      setSelectedIndex(0);
+      return;
+    }
+    if (key.rightArrow && safePage < totalPages - 1) {
+      setPage((p) => p + 1);
+      setSelectedIndex(0);
+      return;
+    }
+    if (key.backspace || key.delete) {
+      setQuery((q) => q.slice(0, -1));
+      setPage(0);
+      setSelectedIndex(0);
+      return;
+    }
+    if (input.length === 1 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+      setQuery((q) => q + input);
+      setPage(0);
+      setSelectedIndex(0);
+      return;
+    }
+  });
+
+  // Truncate ids only if the row would visibly exceed a reasonable width.
+  // Numeric columns are fixed-width; the id column flexes.
+  const maxIdRender = Math.min(idColWidth, 48);
+
+  const items = pageRows.map((row, i) => {
+    if (row.kind === "header") {
+      return { label: `__hdr__::${row.label}`, value: row.key };
+    }
+    const id = truncateMiddle(row.displayId, maxIdRender);
+    const marker = row.isCurrent ? "● " : "  ";
+    const idCell = padRight(`${marker}${id}`, maxIdRender + 2);
+    const ctxCell = padRight(row.context, ctxColWidth);
+    const label = `${idCell}  ${ctxCell}  ${row.price}`;
+    return { label, value: `model::${row.model.id}::${i}` };
+  });
+
+  // Header row alignment: pad each label cell to match the data column widths.
+  const headerIdCell = padRight("", maxIdRender + 2); // model id col — left blank in header
+  const headerCtxCell = padRight("context", ctxColWidth);
+  const headerLine = `${headerIdCell}  ${headerCtxCell}  in / out / cached`;
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
       <Text color={theme.accent} bold>
         Pick a model  ·  current: {current}
       </Text>
+      <Text color={theme.info.color}>
+        {query ? `Search: ${query}▌` : "Type to search…"}
+        {totalPages > 1 ? `  ·  Page ${safePage + 1} of ${totalPages}` : ""}
+        {`  ·  ${modelRows.length} model${modelRows.length === 1 ? "" : "s"}`}
+      </Text>
       <Box marginTop={1}>
+        <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+          {headerLine}
+        </Text>
+      </Box>
+      <Box>
         <SelectInput
           items={items}
+          initialIndex={selectedIndex}
+          onHighlight={(item) => {
+            const idx = items.findIndex((i) => i.value === item.value);
+            if (idx >= 0) setSelectedIndex(idx);
+          }}
           onSelect={(item) => {
-            if (item.value === "__back__") return onPick(null);
-            if (item.value.startsWith("__hdr_")) return; // headers not selectable
-            onPick(byId.get(item.value) ?? null);
+            if (item.value.startsWith("__hdr_")) return; // header — non-selectable
+            if (!item.value.startsWith("model::")) return;
+            const modelId = item.value.slice("model::".length).split("::")[0];
+            const picked = allModels.find((m) => m.id === modelId) ?? null;
+            onPick(picked);
           }}
           itemComponent={({ label, isSelected }) => {
-            const isHeader = label.startsWith("── ");
-            if (isHeader) {
+            if (label.startsWith("__hdr__::")) {
+              const name = label.slice("__hdr__::".length);
               return (
                 <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-                  {label}
+                  {name}
                 </Text>
               );
             }
@@ -93,7 +295,9 @@ export function ModelPicker({ current, onPick }: Props) {
       </Box>
       <Box marginTop={1}>
         <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-          ● = current   ·   byok models need providerKeys configured   ·   restart for full effect
+          {safePage > 0 ? "← prev  " : ""}
+          {safePage < totalPages - 1 ? "→ next  " : ""}
+          ● current  ·  type to search  ·  Enter pick  ·  Esc cancel
         </Text>
       </Box>
     </Box>

@@ -1,12 +1,22 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import SelectInput from "ink-select-input";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
 import type { ModelEntry, ModelProvider } from "../models/registry.js";
+import { aliasFor, ensureStore, pushProviderKey } from "../agent/secrets-store.js";
+
+export type KeyResult =
+  | { kind: "alias"; alias: string; secretsStoreId: string }
+  | { kind: "local"; key: string };
 
 interface Props {
   model: ModelEntry;
-  onSave: (key: string) => void;
+  accountId: string;
+  apiToken: string;
+  /** Existing kimi-code Secrets Store id, if we've created one before. */
+  secretsStoreId?: string;
+  onSave: (result: KeyResult) => void;
   onCancel: () => void;
 }
 
@@ -44,22 +54,74 @@ function maskPreview(value: string): string {
   return `${value.slice(0, 4)}${"•".repeat(Math.max(0, value.length - 8))}${value.slice(-4)}`;
 }
 
-export function KeyEntryModal({ model, onSave, onCancel }: Props) {
+type Phase =
+  | { kind: "collecting" }
+  | { kind: "uploading" }
+  | { kind: "forbidden"; message: string }
+  | { kind: "error"; message: string };
+
+export function KeyEntryModal({
+  model,
+  accountId,
+  apiToken,
+  secretsStoreId,
+  onSave,
+  onCancel,
+}: Props) {
   const theme = useTheme();
   const [value, setValue] = useState("");
   const [reveal, setReveal] = useState(false);
+  const [phase, setPhase] = useState<Phase>({ kind: "collecting" });
   const info = PROVIDER_INFO[model.provider];
 
   useInput((input, key) => {
-    if (key.escape) {
+    if (key.escape && phase.kind === "collecting") {
       onCancel();
       return;
     }
-    if (key.ctrl && input === "r") {
+    if (key.ctrl && input === "r" && phase.kind === "collecting") {
       setReveal((r) => !r);
       return;
     }
   });
+
+  const upload = async (rawKey: string) => {
+    setPhase({ kind: "uploading" });
+
+    // 1. Ensure we have a Secrets Store id.
+    let storeId = secretsStoreId;
+    if (!storeId) {
+      const ensured = await ensureStore(accountId, apiToken);
+      if (!ensured.ok) {
+        if (ensured.reason === "forbidden") {
+          setPhase({ kind: "forbidden", message: ensured.message });
+        } else {
+          setPhase({ kind: "error", message: ensured.message });
+        }
+        return;
+      }
+      storeId = ensured.value;
+    }
+
+    // 2. Push the secret. Provider type narrowed to keys we know about.
+    const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+    const baseName = aliasFor(provider);
+    // Append a short random suffix so re-saves don't 409 on existing-name collision.
+    const name = `${baseName}-${Math.random().toString(36).slice(2, 8)}`;
+    const pushed = await pushProviderKey(accountId, apiToken, storeId, name, rawKey);
+    if (!pushed.ok) {
+      if (pushed.reason === "forbidden") {
+        setPhase({ kind: "forbidden", message: pushed.message });
+      } else {
+        setPhase({ kind: "error", message: pushed.message });
+      }
+      return;
+    }
+
+    // 3. Hand back the alias. The parent will persist
+    //    cfg.providerKeyAliases[provider] + cfg.secretsStoreId.
+    onSave({ kind: "alias", alias: pushed.value, secretsStoreId: storeId });
+  };
 
   const submit = () => {
     const trimmed = value.trim();
@@ -67,19 +129,127 @@ export function KeyEntryModal({ model, onSave, onCancel }: Props) {
       onCancel();
       return;
     }
-    onSave(trimmed);
+    void upload(trimmed);
   };
 
+  if (phase.kind === "uploading") {
+    return (
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={theme.accent}
+        paddingX={2}
+        paddingY={1}
+      >
+        <Text color={theme.accent} bold>
+          Storing in Cloudflare Secrets Store…
+        </Text>
+        <Box marginTop={1}>
+          <Text color={theme.info.color} dimColor>
+            Your key never touches disk — it's being pushed straight to Cloudflare with
+            scope: ai_gateway.
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase.kind === "forbidden") {
+    const fallbackItems = [
+      { label: "Open dashboard to add the Secrets Store Edit scope", value: "scope" as const },
+      { label: "Store the key locally instead (⚠ less safe)", value: "local" as const },
+      { label: "Cancel", value: "cancel" as const },
+    ];
+    return (
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={theme.accent}
+        paddingX={2}
+        paddingY={1}
+      >
+        <Text color={theme.accent} bold>
+          Your Cloudflare token can't write to Secrets Store.
+        </Text>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={theme.info.color}>
+            To keep your key off disk, add the <Text bold>Secrets Store Edit</Text> permission
+            to your token at:
+          </Text>
+          <Text color={theme.accent} underline>
+            https://dash.cloudflare.com/profile/api-tokens
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <SelectInput
+            items={fallbackItems}
+            onSelect={(item) => {
+              if (item.value === "local") {
+                onSave({ kind: "local", key: value.trim() });
+              } else if (item.value === "scope") {
+                setPhase({ kind: "collecting" });
+              } else {
+                onCancel();
+              }
+            }}
+          />
+        </Box>
+        <Box marginTop={1}>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+            Local fallback writes to ~/.config/kimiflare/config.json (mode 600). Do not commit
+            that file.
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase.kind === "error") {
+    return (
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={theme.accent}
+        paddingX={2}
+        paddingY={1}
+      >
+        <Text color={theme.accent} bold>
+          Couldn't store the key.
+        </Text>
+        <Box marginTop={1}>
+          <Text color={theme.info.color}>{phase.message}</Text>
+        </Box>
+        <Box marginTop={1}>
+          <SelectInput
+            items={[
+              { label: "Try again", value: "retry" as const },
+              { label: "Cancel", value: "cancel" as const },
+            ]}
+            onSelect={(item) => {
+              if (item.value === "retry") setPhase({ kind: "collecting" });
+              else onCancel();
+            }}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  // phase === "collecting"
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={2} paddingY={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={theme.accent}
+      paddingX={2}
+      paddingY={1}
+    >
       <Text color={theme.accent} bold>
         Connect {info.name}
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Text>
-          To use <Text bold>{model.id}</Text> ({model.contextWindow.toLocaleString()}-token context,
-          ${model.pricing.inputPerMtok}/${model.pricing.outputPerMtok} per Mtok), kimiflare needs
-          your {info.name} API key.
+          To use <Text bold>{model.id}</Text>, kimi-code needs your {info.name} API key.
         </Text>
         <Box marginTop={1}>
           <Text>
@@ -101,8 +271,6 @@ export function KeyEntryModal({ model, onSave, onCancel }: Props) {
         {reveal ? (
           <CustomTextInput value={value} onChange={setValue} onSubmit={submit} focus />
         ) : (
-          // Show only a masked preview while the user types. The hidden
-          // CustomTextInput still captures input — we just render a mask above it.
           <Box flexDirection="column">
             <Text>{maskPreview(value) || " "}</Text>
             <Box height={0} overflow="hidden">
@@ -113,7 +281,14 @@ export function KeyEntryModal({ model, onSave, onCancel }: Props) {
       </Box>
       <Box marginTop={1}>
         <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-          Enter to save · Ctrl+R to {reveal ? "hide" : "reveal"} · Esc to cancel · stored in your local config (chmod 600)
+          Enter to save  ·  Ctrl+R to {reveal ? "hide" : "reveal"}  ·  Esc to cancel
+        </Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+          Key never touches disk. Pushed to Cloudflare Secrets Store (scope: ai_gateway), then
+          referenced by alias on every request. Audit: src/agent/secrets-store.ts ·
+          src/agent/client.ts
         </Text>
       </Box>
     </Box>

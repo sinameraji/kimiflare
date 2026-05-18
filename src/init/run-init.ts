@@ -172,6 +172,7 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
       cloudToken: cloudToken ?? initialCloudToken,
       cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
       providerKeys: cfg.providerKeys,
+      providerKeyAliases: cfg.providerKeyAliases,
       unifiedBilling: cfg.unifiedBilling,
       shell: cfg.shell,
       onIterationEnd,
