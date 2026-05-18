@@ -108,14 +108,13 @@ export function UnifiedBillingStatus({
         </Text>
         <Box marginTop={1} flexDirection="column">
           <Text>Step-by-step (Unified Billing is implicit — adding credits IS enabling it):</Text>
-          <Text>  1. Open this URL in your browser:</Text>
+          <Text>  1. Open the AI Gateway Credits page:</Text>
           <Text color={theme.accent} underline>
-            {`     https://dash.cloudflare.com/${accountId}/ai/ai-gateway`}
+            {`     https://dash.cloudflare.com/${accountId}/ai/ai-gateway/credits`}
           </Text>
-          <Text>  2. On the AI Gateway page, find the <Text bold>"Credits Available"</Text> card.</Text>
-          <Text>  3. Click <Text bold>"Manage"</Text>, add a payment method if needed.</Text>
-          <Text>  4. Click <Text bold>"Top-up credits"</Text> and confirm.</Text>
-          <Text>  5. Come back here and pick <Text bold>"I've enabled it — try again"</Text>.</Text>
+          <Text>  2. Add a payment method if you don't have one yet.</Text>
+          <Text>  3. Click <Text bold>"Top-up credits"</Text> and confirm the amount.</Text>
+          <Text>  4. Come back here and pick <Text bold>"I've enabled it — try again"</Text>.</Text>
           <Box marginTop={1}>
             <Text color={theme.muted?.color ?? theme.info.color} dimColor>
               Credits are one account-wide pool. Confirmed providers: OpenAI &
