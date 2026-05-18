@@ -44,7 +44,7 @@ import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
 import type { KimiConfig } from "./config.js";
 import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
 import { clearCloudCredentials } from "./cloud/auth.js";
-import { listAllSkills } from "./skills/manager.js";
+import { listAllSkills, setSkillEnabled, deleteSkill } from "./skills/manager.js";
 import { loadCustomCommands } from "./commands/loader.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import { listRemoteSessions } from "./remote/session-store.js";
@@ -1331,7 +1331,21 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         }
         return true;
       }
-      case "cost":
+      case "cost": {
+        // Sub-actions: on / off toggle costAttribution. Bare /cost
+        // shows the KV report.
+        const sub = args.split(/\s+/)[0] ?? "";
+        if (sub === "on" || sub === "off") {
+          const cfg2 = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+          cfg2.costAttribution = sub === "on";
+          try {
+            await saveConfig(cfg2);
+            cam.send("ShowToast", { text: `cost attribution ${sub === "on" ? "enabled" : "disabled"}`, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `save failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+          }
+          return true;
+        }
         cam.send("ShowKeyValueView", {
           id: `cost-${Date.now()}`,
           title: "session cost",
@@ -1345,6 +1359,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           ],
         });
         return true;
+      }
       case "reasoning":
         reasoningShown = !reasoningShown;
         cam.send("ShowToast", {
@@ -1402,6 +1417,31 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "memory": {
+        // Sub-actions match Ink: on / off / clear / search <query>.
+        // Bare /memory shows the stats KV view (recall stats requires
+        // an initialised MemoryManager which the Camouflage path
+        // doesn't construct — we surface the persisted config + a hint
+        // instead).
+        const sub = args.split(/\s+/)[0] ?? "";
+        if (sub === "on" || sub === "off") {
+          const cfg2 = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+          cfg2.memoryEnabled = sub === "on";
+          try {
+            await saveConfig(cfg2);
+            cam.send("ShowToast", { text: `memory ${sub === "on" ? "enabled" : "disabled"} (restart to take effect)`, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `save failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+          }
+          return true;
+        }
+        if (sub === "clear") {
+          cam.send("ShowToast", { text: "memory clear requires Ink runtime; not yet wired in Camouflage UI", kind: "warn", ttl_ms: 3000 });
+          return true;
+        }
+        if (sub === "search") {
+          cam.send("ShowToast", { text: "memory search requires Ink runtime (MemoryManager); not yet wired", kind: "warn", ttl_ms: 3000 });
+          return true;
+        }
         const cfg = await loadConfig();
         cam.send("ShowKeyValueView", {
           id: `mem-${Date.now()}`,
@@ -1412,28 +1452,98 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             { label: "max age (days)", value: String(cfg?.memoryMaxAgeDays ?? 90) },
             { label: "max entries", value: String(cfg?.memoryMaxEntries ?? 1000) },
             { label: "embedding model", value: cfg?.memoryEmbeddingModel ?? "@cf/baai/bge-base-en-v1.5" },
-            { label: "tip", value: "edit via: kimiflare config set memoryEnabled true" },
+            { label: "tip", value: "/memory on|off  ·  /memory search <q> (Ink only)" },
           ],
         });
         return true;
       }
       case "gateway": {
-        const cfg = await loadConfig();
-        const id = cfg?.aiGatewayId ?? opts.aiGatewayId;
-        cam.send("ShowKeyValueView", {
-          id: `gw-${Date.now()}`,
-          title: "ai gateway",
-          items: [
-            { label: "id", value: id ?? "(none — direct Workers AI)" },
-            { label: "cache ttl (s)", value: cfg?.aiGatewayCacheTtl != null ? String(cfg.aiGatewayCacheTtl) : "(default)" },
-            { label: "skip cache", value: cfg?.aiGatewaySkipCache ? "yes" : "no" },
-            { label: "collect logs", value: cfg?.aiGatewayCollectLogPayload ? "yes" : "no" },
-            { label: "metadata", value: cfg?.aiGatewayMetadata ? JSON.stringify(cfg.aiGatewayMetadata) : "(none)" },
-          ],
-        });
+        // Sub-actions mirror Ink: status (no args) / off / <id> /
+        // skip-cache true|false / collect-logs true|false /
+        // cache-ttl <seconds> / metadata clear|<k>=<v>.
+        const parts = args.split(/\s+/).filter(Boolean);
+        const cfg = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+        const save = async (next: typeof cfg, msg: string) => {
+          try {
+            await saveConfig(next);
+            cam.send("ShowToast", { text: msg, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `save failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+          }
+        };
+        if (parts.length === 0 || parts[0] === "status") {
+          const id = cfg.aiGatewayId ?? opts.aiGatewayId;
+          cam.send("ShowKeyValueView", {
+            id: `gw-${Date.now()}`,
+            title: "ai gateway",
+            items: [
+              { label: "id", value: id ?? "(none — direct Workers AI)" },
+              { label: "cache ttl (s)", value: cfg.aiGatewayCacheTtl != null ? String(cfg.aiGatewayCacheTtl) : "(default)" },
+              { label: "skip cache", value: cfg.aiGatewaySkipCache ? "yes" : "no" },
+              { label: "collect logs", value: cfg.aiGatewayCollectLogPayload ? "yes" : "no" },
+              { label: "metadata", value: cfg.aiGatewayMetadata ? JSON.stringify(cfg.aiGatewayMetadata) : "(none)" },
+            ],
+          });
+          return true;
+        }
+        if (parts[0] === "off") {
+          cfg.aiGatewayId = undefined;
+          await save(cfg, "gateway disabled — direct Workers AI");
+          return true;
+        }
+        if (parts[0] === "skip-cache" && (parts[1] === "true" || parts[1] === "false")) {
+          cfg.aiGatewaySkipCache = parts[1] === "true";
+          await save(cfg, `skip-cache: ${parts[1]}`);
+          return true;
+        }
+        if (parts[0] === "collect-logs" && (parts[1] === "true" || parts[1] === "false")) {
+          cfg.aiGatewayCollectLogPayload = parts[1] === "true";
+          await save(cfg, `collect-logs: ${parts[1]}`);
+          return true;
+        }
+        if (parts[0] === "cache-ttl" && parts[1]) {
+          const ttl = Number(parts[1]);
+          if (!Number.isFinite(ttl) || ttl < 0) {
+            cam.send("ShowToast", { text: "cache-ttl must be a non-negative number (seconds)", kind: "error", ttl_ms: 3000 });
+            return true;
+          }
+          cfg.aiGatewayCacheTtl = ttl;
+          await save(cfg, `cache-ttl: ${ttl}s`);
+          return true;
+        }
+        if (parts[0] === "metadata") {
+          if (parts[1] === "clear") {
+            cfg.aiGatewayMetadata = undefined;
+            await save(cfg, "metadata cleared");
+            return true;
+          }
+          // metadata key=value form
+          const kv = parts.slice(1).join(" ");
+          const eq = kv.indexOf("=");
+          if (eq < 0) {
+            cam.send("ShowToast", { text: "usage: /gateway metadata <k>=<v> | clear", kind: "info", ttl_ms: 3000 });
+            return true;
+          }
+          const k = kv.slice(0, eq).trim();
+          const v = kv.slice(eq + 1).trim();
+          cfg.aiGatewayMetadata = { ...(cfg.aiGatewayMetadata ?? {}), [k]: v };
+          await save(cfg, `metadata: ${k}=${v}`);
+          return true;
+        }
+        // Treat anything else as a gateway id to enable.
+        cfg.aiGatewayId = parts[0];
+        await save(cfg, `gateway: ${parts[0]}`);
         return true;
       }
       case "mcp": {
+        const sub = args.split(/\s+/)[0] ?? "";
+        if (sub === "reload") {
+          cam.send("ShowToast", {
+            text: "MCP reload requires a live manager (Ink runtime); restart kimiflare to pick up config changes",
+            kind: "warn", ttl_ms: 4000,
+          });
+          return true;
+        }
         const cfg = await loadConfig();
         const servers = cfg?.mcpServers ?? {};
         const names = Object.keys(servers);
@@ -1508,7 +1618,48 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "skills": {
+        // Sub-actions match Ink: list (default) / enable <n> / disable <n>
+        // / delete <n>. "add" / "edit" need an editor flow we haven't
+        // built yet — surface a hint instead of pretending.
+        const parts = args.split(/\s+/).filter(Boolean);
+        const sub = parts[0] ?? "list";
+        const tail = parts.slice(1).join(" ");
         try {
+          if (sub === "enable" || sub === "disable") {
+            if (!tail) {
+              cam.send("ShowToast", { text: `usage: /skills ${sub} <name>`, kind: "info", ttl_ms: 2500 });
+              return true;
+            }
+            await setSkillEnabled(tail, sub === "enable", process.cwd());
+            cam.send("ShowToast", { text: `${tail}: ${sub}d`, kind: "success", ttl_ms: 2500 });
+            return true;
+          }
+          if (sub === "delete") {
+            if (!tail) {
+              cam.send("ShowToast", { text: "usage: /skills delete <name>", kind: "info", ttl_ms: 2500 });
+              return true;
+            }
+            // Two-step confirmation so a typo doesn't nuke a skill.
+            const conf = await confirm(cam, {
+              id: `skills-del-${Date.now()}`,
+              prompt: `Delete skill "${tail}"? This cannot be undone.`,
+              yes_label: "Delete",
+              no_label: "Cancel",
+              default: "no",
+              allow_cancel: true,
+            });
+            if (!conf.value) return true;
+            const r = await deleteSkill(tail, process.cwd());
+            cam.send("ShowToast", { text: `deleted ${tail} (${r.filepath})`, kind: "success", ttl_ms: 3000 });
+            return true;
+          }
+          if (sub === "add" || sub === "edit") {
+            cam.send("ShowToast", {
+              text: `/skills ${sub} needs an inline editor — Ink only for now. Create the file under skills/ manually.`,
+              kind: "warn", ttl_ms: 4000,
+            });
+            return true;
+          }
           const result = await listAllSkills(process.cwd());
           const all = [...(result.project ?? []), ...(result.global ?? [])];
           if (all.length === 0) {
