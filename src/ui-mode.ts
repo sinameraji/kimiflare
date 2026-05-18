@@ -33,7 +33,7 @@ import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
-import { selectList } from "camouflage";
+import { selectList, form } from "camouflage";
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { buildWelcome } from "./ui/greetings.js";
@@ -44,6 +44,10 @@ import { loadConfig, saveConfig } from "./config.js";
 import { clearCloudCredentials } from "./cloud/auth.js";
 import { listAllSkills } from "./skills/manager.js";
 import { loadCustomCommands } from "./commands/loader.js";
+import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
+import { BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
+import type { CustomCommand } from "./commands/types.js";
+import type { LspServerConfig } from "./config.js";
 import { loadHooksSettings, globalSettingsPath, projectSettingsPath } from "./hooks/settings.js";
 import { HOOK_EVENTS } from "./hooks/types.js";
 import { buildInitPrompt } from "./init/context-generator.js";
@@ -435,6 +439,353 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     if (followUpQueue.length > 0) return followUpQueue.shift()!;
     if (aborted) return null;
     return new Promise<string | null>((resolve) => { followUpResolver = resolve; });
+  }
+
+  /** Ports InboxModal. Ink renders two sequential prompts (handle then
+   *  secret); we collapse to a single Form so the user fills both at
+   *  once. After fetch we either toast the error or open a SelectList
+   *  for the user to pick a message → openBrowser. */
+  async function openInboxModal(): Promise<void> {
+    const URL = "https://hello.kimiflare.com";
+    const f = await form(cam, {
+      id: `inbox-${Date.now()}`,
+      title: "/inbox  ·  check for a voice reply",
+      fields: [
+        { name: "handle", label: "Twitter handle", placeholder: "your @ (no leading @)", required: true },
+        { name: "secret", label: "Secret",        kind: "password", required: true },
+      ],
+      allow_cancel: true,
+    });
+    if (f.cancelled || !f.values) return;
+    const handle = (f.values.handle ?? "").trim();
+    const secret = (f.values.secret ?? "").trim();
+    if (!handle || !secret) return;
+    cam.send("ShowToast", { text: "checking inbox…", kind: "info", ttl_ms: 1500 });
+    let data: { messages?: { id: string; createdAt: number; seen: boolean }[] };
+    try {
+      const res = await fetch(
+        `${URL}/inbox/check?u=${encodeURIComponent(handle)}&s=${encodeURIComponent(secret)}`,
+      );
+      if (!res.ok) throw new Error(`server returned ${res.status}`);
+      data = await res.json();
+    } catch (err) {
+      cam.send("ShowToast", { text: `inbox check failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3500 });
+      return;
+    }
+    const msgs = (data.messages ?? []).sort((a, b) => b.createdAt - a.createdAt);
+    if (msgs.length === 0) {
+      cam.send("ShowToast", { text: `no messages yet for @${handle}`, kind: "info", ttl_ms: 2500 });
+      return;
+    }
+    const pick = await selectList(cam, {
+      id: `inbox-msgs-${Date.now()}`,
+      prompt: `Inbox (${msgs.length} message${msgs.length === 1 ? "" : "s"}${msgs.some((m) => !m.seen) ? ", new!" : ""})  ·  Enter opens in browser`,
+      options: msgs.map((m) => ({
+        value: m.id,
+        label: `${m.seen ? "  " : "● "}${new Date(m.createdAt).toLocaleString()}`,
+        description: m.seen ? "played" : "new",
+      })),
+      allow_cancel: true,
+    });
+    if (pick.cancelled || !pick.value) return;
+    openBrowser(
+      `${URL}/inbox?u=${encodeURIComponent(handle)}&s=${encodeURIComponent(secret)}&m=${encodeURIComponent(pick.value)}`,
+    );
+    cam.send("ShowToast", { text: "opened in browser", kind: "success", ttl_ms: 1500 });
+  }
+
+  /** Ports LspWizard. State machine: main → {add|edit|delete|list}. add →
+   *  preset → confirm-install (toast-only — installation lives outside
+   *  the TUI) → scope → save. edit toggles enabled flag. delete removes.
+   *  Persists via saveConfig so all changes survive across runs. */
+  async function openLspWizard(): Promise<void> {
+    while (true) {
+      const cfg = (await loadConfig()) ?? null;
+      const servers: Record<string, LspServerConfig> = { ...(cfg?.lspServers ?? {}) };
+      const main = await selectList(cam, {
+        id: `lsp-main-${Date.now()}`,
+        prompt: `LSP Servers  ·  ${Object.keys(servers).length} configured`,
+        options: [
+          { value: "add",    label: "Add server",    description: "configure a new language server" },
+          { value: "edit",   label: "Edit server",   description: "toggle enabled/disabled" },
+          { value: "delete", label: "Delete server", description: "remove from config" },
+          { value: "list",   label: "List servers",  description: "show current configuration" },
+        ],
+        allow_cancel: true,
+      });
+      if (main.cancelled || !main.value) return;
+      if (main.value === "list") {
+        const keys = Object.keys(servers);
+        cam.send("ShowKeyValueView", {
+          id: `lsp-list-${Date.now()}`,
+          title: `LSP servers (${keys.length})`,
+          items: keys.length > 0
+            ? keys.map((k) => ({
+                label: `${servers[k]!.enabled === false ? "○" : "●"} ${k}`,
+                value: servers[k]!.command.join(" "),
+              }))
+            : [{ label: "(none)", value: "configure with /lsp" }],
+        });
+        continue;
+      }
+      if (main.value === "add") {
+        const pick = await selectList(cam, {
+          id: `lsp-presets-${Date.now()}`,
+          prompt: "Pick a preset (or Custom)",
+          options: [...LSP_PRESETS, { id: "custom", name: "Custom", description: "enter your own command", command: [] as string[], installCommand: "", installHint: "" }]
+            .map((p) => ({
+              value: p.id,
+              label: p.name,
+              description: `${p.description}${p.id !== "custom" && p.id in servers ? "  · configured" : ""}`,
+            })),
+          allow_cancel: true,
+        });
+        if (pick.cancelled || !pick.value) continue;
+        let name = pick.value;
+        let command: string[];
+        if (pick.value === "custom") {
+          const cust = await form(cam, {
+            id: `lsp-custom-${Date.now()}`,
+            title: "Custom LSP server",
+            fields: [
+              { name: "name", label: "Name (e.g. my-server)", required: true },
+              { name: "command", label: "Command (space-separated)", required: true, placeholder: "my-langserver --stdio" },
+            ],
+            allow_cancel: true,
+          });
+          if (cust.cancelled || !cust.values) continue;
+          name = (cust.values.name ?? "").trim();
+          const cmd = (cust.values.command ?? "").trim();
+          if (!name || !cmd) continue;
+          command = cmd.split(/\s+/);
+        } else {
+          const preset = LSP_PRESETS.find((p) => p.id === pick.value);
+          if (!preset) continue;
+          command = preset.command;
+          if (preset.installCommand) {
+            cam.send("ShowToast", {
+              text: `if not installed: ${preset.installCommand}  (${preset.installHint})`,
+              kind: "info",
+              ttl_ms: 5000,
+            });
+          }
+        }
+        const scope = await selectList(cam, {
+          id: `lsp-scope-${Date.now()}`,
+          prompt: "Where to save this configuration?",
+          options: [
+            { value: "project", label: "This project only" },
+            { value: "global",  label: "Global config (~/.config/kimiflare)" },
+          ],
+          allow_cancel: true,
+        });
+        if (scope.cancelled || !scope.value) continue;
+        // Persist. NB: scope: "project" still goes into the main config
+        // file today — KimiFlare doesn't yet split LSP config per scope
+        // in saveConfig. We mark the field but write the merged map.
+        servers[name] = { command, enabled: true };
+        const nextCfg = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+        nextCfg.lspServers = servers;
+        nextCfg.lspEnabled = true;
+        await saveConfig(nextCfg);
+        cam.send("ShowToast", { text: `LSP saved: ${name}  ·  run /lsp reload to start it`, kind: "success", ttl_ms: 3500 });
+        continue;
+      }
+      if (main.value === "edit" || main.value === "delete") {
+        const keys = Object.keys(servers);
+        if (keys.length === 0) {
+          cam.send("ShowToast", { text: "no servers configured", kind: "info", ttl_ms: 2000 });
+          continue;
+        }
+        const pick = await selectList(cam, {
+          id: `lsp-${main.value}-${Date.now()}`,
+          prompt: main.value === "edit" ? "Toggle which server?" : "Delete which server?",
+          options: keys.map((k) => ({
+            value: k,
+            label: `${servers[k]!.enabled === false ? "○" : "●"} ${k}`,
+            description: servers[k]!.command.join(" "),
+          })),
+          allow_cancel: true,
+        });
+        if (pick.cancelled || !pick.value) continue;
+        if (main.value === "edit") {
+          servers[pick.value] = { ...servers[pick.value]!, enabled: servers[pick.value]!.enabled === false };
+        } else {
+          delete servers[pick.value];
+        }
+        const nextCfg = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+        nextCfg.lspServers = servers;
+        await saveConfig(nextCfg);
+        cam.send("ShowToast", {
+          text: main.value === "edit"
+            ? `${pick.value}: ${servers[pick.value]?.enabled === false ? "disabled" : "enabled"}`
+            : `${pick.value}: removed`,
+          kind: "success", ttl_ms: 2000,
+        });
+        continue;
+      }
+    }
+  }
+
+  /** Ports CommandWizard. Linear chain of Form / SelectList screens.
+   *  Branching (advanced "set" vs "skip") is host-side. Persists via
+   *  saveCustomCommand. Delete uses deleteCustomCommand. */
+  async function openCommandWizard(action: "create" | "edit" | "delete"): Promise<void> {
+    const { commands: existing } = await loadCustomCommands(process.cwd());
+    if (action === "delete") {
+      if (existing.length === 0) {
+        cam.send("ShowToast", { text: "no custom commands to delete", kind: "info", ttl_ms: 2000 });
+        return;
+      }
+      const pick = await selectList(cam, {
+        id: `cmd-del-${Date.now()}`,
+        prompt: "Delete which custom command?",
+        options: existing.map((c: CustomCommand) => ({
+          value: c.name,
+          label: `/${c.name}`,
+          description: c.description ?? "",
+        })),
+        allow_cancel: true,
+      });
+      if (pick.cancelled || !pick.value) return;
+      const target = existing.find((c: CustomCommand) => c.name === pick.value);
+      if (!target) return;
+      try {
+        await deleteCustomCommand(target);
+        cam.send("ShowToast", { text: `deleted /${target.name}`, kind: "success", ttl_ms: 2500 });
+      } catch (err) {
+        cam.send("ShowToast", { text: `delete failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+      }
+      return;
+    }
+    let initial: CustomCommand | undefined;
+    if (action === "edit") {
+      if (existing.length === 0) {
+        cam.send("ShowToast", { text: "no custom commands to edit", kind: "info", ttl_ms: 2000 });
+        return;
+      }
+      const pick = await selectList(cam, {
+        id: `cmd-pick-${Date.now()}`,
+        prompt: "Edit which custom command?",
+        options: existing.map((c: CustomCommand) => ({
+          value: c.name,
+          label: `/${c.name}`,
+          description: c.description ?? "",
+        })),
+        allow_cancel: true,
+      });
+      if (pick.cancelled || !pick.value) return;
+      initial = existing.find((c: CustomCommand) => c.name === pick.value);
+    }
+    // Step 1: name + description + template (single form).
+    const basics = await form(cam, {
+      id: `cmd-basics-${Date.now()}`,
+      title: action === "edit" ? `Edit /${initial?.name}` : "New custom command",
+      fields: [
+        { name: "name", label: "Name (no slash; letters/numbers/_/- allowed)", default: initial?.name ?? "", required: true },
+        { name: "description", label: "One-line description", default: initial?.description ?? "" },
+        { name: "template", label: "Template (prompt sent to model)", default: initial?.template ?? "", required: true, placeholder: "Use $ARGS for the user's args" },
+      ],
+      allow_cancel: true,
+    });
+    if (basics.cancelled || !basics.values) return;
+    const name = (basics.values.name ?? "").trim();
+    const description = (basics.values.description ?? "").trim();
+    const template = (basics.values.template ?? "").trim();
+    const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_\-/]*$/;
+    if (!NAME_RE.test(name)) {
+      cam.send("ShowToast", { text: "invalid name: letters/numbers/_/-, must start with a letter", kind: "error", ttl_ms: 3000 });
+      return;
+    }
+    if (BUILTIN_COMMAND_NAMES.has(name.toLowerCase())) {
+      cam.send("ShowToast", { text: `/${name} is a built-in command`, kind: "error", ttl_ms: 3000 });
+      return;
+    }
+    if (existing.some((c: CustomCommand) => c.name === name) && name !== initial?.name) {
+      cam.send("ShowToast", { text: `/${name} already exists`, kind: "error", ttl_ms: 3000 });
+      return;
+    }
+    if (!template) {
+      cam.send("ShowToast", { text: "template cannot be empty", kind: "error", ttl_ms: 3000 });
+      return;
+    }
+    // Step 2: advanced — set or skip?
+    const adv = await selectList(cam, {
+      id: `cmd-adv-${Date.now()}`,
+      prompt: "Advanced options (mode / effort / model)?",
+      options: [
+        { value: "skip", label: "Skip — use defaults" },
+        { value: "set",  label: "Set advanced options" },
+      ],
+      allow_cancel: true,
+    });
+    if (adv.cancelled) return;
+    let cmdMode: "edit" | "plan" | "auto" | undefined = initial?.mode;
+    let cmdEffort: "low" | "medium" | "high" | undefined = initial?.effort;
+    let cmdModel: string | undefined = initial?.model;
+    if (adv.value === "set") {
+      const modePick = await selectList(cam, {
+        id: `cmd-mode-${Date.now()}`,
+        prompt: "Default mode for this command?",
+        options: [
+          { value: "none", label: "None (use session mode)" },
+          { value: "edit", label: "edit" },
+          { value: "plan", label: "plan" },
+          { value: "auto", label: "auto" },
+        ],
+        default: cmdMode ?? "none",
+        allow_cancel: true,
+      });
+      if (modePick.cancelled) return;
+      cmdMode = modePick.value === "none" ? undefined : (modePick.value as "edit" | "plan" | "auto");
+      const effortPick = await selectList(cam, {
+        id: `cmd-effort-${Date.now()}`,
+        prompt: "Reasoning effort?",
+        options: [
+          { value: "none",   label: "None (use default)" },
+          { value: "low",    label: "low" },
+          { value: "medium", label: "medium" },
+          { value: "high",   label: "high" },
+        ],
+        default: cmdEffort ?? "none",
+        allow_cancel: true,
+      });
+      if (effortPick.cancelled) return;
+      cmdEffort = effortPick.value === "none" ? undefined : (effortPick.value as "low" | "medium" | "high");
+      const modelForm = await form(cam, {
+        id: `cmd-model-${Date.now()}`,
+        title: "Override model?",
+        fields: [{ name: "model", label: "Model (blank = session default)", default: cmdModel ?? "" }],
+        allow_cancel: true,
+      });
+      if (modelForm.cancelled) return;
+      const m = (modelForm.values?.model ?? "").trim();
+      cmdModel = m || undefined;
+    }
+    // Step 3: location (skip on edit — keep current source).
+    let source: "project" | "global" = initial?.source ?? "project";
+    if (action === "create") {
+      const loc = await selectList(cam, {
+        id: `cmd-loc-${Date.now()}`,
+        prompt: "Where to save?",
+        options: [
+          { value: "project", label: "This project (.kimiflare/commands/)" },
+          { value: "global",  label: "Global (~/.config/kimiflare/commands/)" },
+        ],
+        allow_cancel: true,
+      });
+      if (loc.cancelled || !loc.value) return;
+      source = loc.value as "project" | "global";
+    }
+    // Save.
+    try {
+      const r = await saveCustomCommand({
+        name, description, template, source, mode: cmdMode, model: cmdModel, effort: cmdEffort, cwd: process.cwd(),
+      });
+      cam.send("ShowToast", { text: `saved /${name} → ${r.filepath}`, kind: "success", ttl_ms: 3500 });
+    } catch (err) {
+      cam.send("ShowToast", { text: `save failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+    }
   }
 
   /** Ports CheckpointPicker. ↑↓ Enter Esc; first option always "resume
@@ -847,12 +1198,30 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "lsp": {
+        // /lsp config → wizard; /lsp list → KV view; /lsp scope → toast.
+        // Bare /lsp opens the wizard (Ink behaviour: bare /lsp shows status,
+        // but the wizard's main menu already shows the same listing).
+        const sub = args.split(/\s+/)[0] ?? "";
+        if (sub === "" || sub === "config") {
+          await openLspWizard();
+          return true;
+        }
+        if (sub === "scope") {
+          cam.send("ShowToast", { text: "LSP config persists to ~/.config/kimiflare/config.json (global)", kind: "info", ttl_ms: 3000 });
+          return true;
+        }
         const cfg = await loadConfig();
         const servers = cfg?.lspServers ?? {};
         const names = Object.keys(servers);
+        if (sub === "list" || sub === "reload") {
+          if (sub === "reload") {
+            cam.send("ShowToast", { text: "LSP reload requires Ink runtime; restart kimiflare for now", kind: "warn", ttl_ms: 3000 });
+            return true;
+          }
+        }
         if (names.length === 0) {
           cam.send("ShowToast", {
-            text: cfg?.lspEnabled === false ? "LSP disabled in config" : "no LSP servers configured",
+            text: cfg?.lspEnabled === false ? "LSP disabled in config" : "no LSP servers configured — try /lsp config",
             kind: "info", ttl_ms: 2500,
           });
           return true;
@@ -861,8 +1230,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           id: `lsp-${Date.now()}`,
           title: `lsp servers (${names.length})`,
           items: names.map((n) => {
-            const s = (servers as Record<string, { command?: string[] }>)[n]!;
-            return { label: n, value: (s.command ?? []).join(" ") };
+            const s = (servers as Record<string, { command?: string[]; enabled?: boolean }>)[n]!;
+            return { label: `${s.enabled === false ? "○" : "●"} ${n}`, value: (s.command ?? []).join(" ") };
           }),
         });
         return true;
@@ -906,10 +1275,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "command": {
+        // Sub-actions match Ink: create / edit / delete (wizard) and list.
+        const sub = args.split(/\s+/)[0] ?? "";
+        if (sub === "create") { await openCommandWizard("create"); return true; }
+        if (sub === "edit")   { await openCommandWizard("edit");   return true; }
+        if (sub === "delete") { await openCommandWizard("delete"); return true; }
+        // list / bare → KV view
         try {
           const { commands: cmds } = await loadCustomCommands(process.cwd());
           if (cmds.length === 0) {
-            cam.send("ShowToast", { text: "no custom commands; create one in .claude/commands/", kind: "info", ttl_ms: 3000 });
+            cam.send("ShowToast", { text: "no custom commands; /command create to make one", kind: "info", ttl_ms: 3000 });
             return true;
           }
           cam.send("ShowKeyValueView", {
@@ -930,8 +1305,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("ShowToast", { text: "opened hello.kimiflare.com — leave the creator a voice note", kind: "info", ttl_ms: 3500 });
         return true;
       case "inbox":
-        openBrowser("https://hello.kimiflare.com/inbox");
-        cam.send("ShowToast", { text: "opened hello.kimiflare.com/inbox", kind: "info", ttl_ms: 2500 });
+        await openInboxModal();
         return true;
       case "report":
         cam.send("ShowToast", {
@@ -1089,6 +1463,24 @@ const HELP_CATEGORIES: HelpCategory[] = [
     { command: "/reasoning", description: "toggle reasoning visibility" },
   ]},
 ];
+/** Mirrors LspWizard's PRESETS array. install commands surface as a toast
+ *  because we don't run installers from the TUI (Ink did; we keep the
+ *  decision in the user's hands instead). */
+const LSP_PRESETS = [
+  { id: "typescript", name: "TypeScript",         description: "TS + JS",                 command: ["typescript-language-server", "--stdio"], installCommand: "npm i -g typescript-language-server typescript", installHint: "Node + npm" },
+  { id: "python",     name: "Python (Pyright)",   description: "Python type checking",    command: ["pyright-langserver", "--stdio"],         installCommand: "npm i -g pyright",                              installHint: "Node + npm (or pip install pyright)" },
+  { id: "rust",       name: "Rust",               description: "rust-analyzer",           command: ["rust-analyzer"],                          installCommand: "rustup component add rust-analyzer",            installHint: "Rust toolchain" },
+  { id: "go",         name: "Go",                 description: "gopls",                   command: ["gopls"],                                  installCommand: "go install golang.org/x/tools/gopls@latest",    installHint: "Go toolchain" },
+  { id: "json",       name: "JSON",               description: "JSON LSP",                command: ["vscode-json-language-server", "--stdio"], installCommand: "npm i -g vscode-langservers-extracted",         installHint: "Node + npm" },
+  { id: "css",        name: "CSS",                description: "CSS / SCSS / Less",       command: ["vscode-css-language-server", "--stdio"],  installCommand: "npm i -g vscode-langservers-extracted",         installHint: "Node + npm" },
+  { id: "html",       name: "HTML",               description: "HTML LSP",                command: ["vscode-html-language-server", "--stdio"], installCommand: "npm i -g vscode-langservers-extracted",         installHint: "Node + npm" },
+  { id: "eslint",     name: "ESLint",             description: "JS / TS linting",         command: ["vscode-eslint-language-server", "--stdio"], installCommand: "npm i -g vscode-langservers-extracted",       installHint: "Node + npm" },
+  { id: "yaml",       name: "YAML",               description: "YAML LSP",                command: ["yaml-language-server", "--stdio"],        installCommand: "npm i -g yaml-language-server",                 installHint: "Node + npm" },
+  { id: "bash",       name: "Bash",               description: "shell scripts",           command: ["bash-language-server", "start"],          installCommand: "npm i -g bash-language-server",                 installHint: "Node + npm" },
+  { id: "lua",        name: "Lua",                description: "Lua LSP",                 command: ["lua-language-server"],                    installCommand: "brew install lua-language-server",              installHint: "varies — see https://luals.github.io" },
+  { id: "docker",     name: "Dockerfile",         description: "Dockerfile LSP",          command: ["docker-langserver", "--stdio"],           installCommand: "npm i -g dockerfile-language-server-nodejs",    installHint: "Node + npm" },
+];
+
 const HELP_KEYS = [
   { key: "Ctrl+C", desc: "interrupt current turn (or exit if idle)" },
   { key: "Esc", desc: "interrupt current turn / dismiss modal" },
