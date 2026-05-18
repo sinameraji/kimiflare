@@ -135,6 +135,23 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // Register slash commands with the renderer so the `/` picker lights up.
   cam.send("SlashCommandsRegistered", { commands: SLASH_COMMANDS });
 
+  // Background update check (mirrors Ink's persistent "update available"
+  // banner). Cached result is fine — no extra network on warm starts.
+  void (async () => {
+    try {
+      const r = await checkForUpdate();
+      if (r.hasUpdate && r.latestVersion) {
+        cam.send("ShowToast", {
+          text: `update available: ${r.localVersion} → ${r.latestVersion}  ·  run /update`,
+          kind: "info",
+          ttl_ms: 6000,
+        });
+      }
+    } catch {
+      /* offline / DNS / 503 — silent, retried next startup */
+    }
+  })();
+
   // Welcome banner — mirrors src/ui/welcome.tsx. Shown once at startup
   // as a non-blocking toast (NOT a modal — modals require Esc to
   // dismiss, which is the wrong first impression).
@@ -163,6 +180,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     cam.send("ShowToast", { text: `mode: ${next}`, kind: "info", ttl_ms: 1200 });
   };
 
+  // Default context-window heuristic for the /compact recommended banner.
+  // Override via opts.maxInputTokens; otherwise fall back to a Kimi-default
+  // ~200k window. Matches Ink's app.tsx which uses prompt / contextLimit.
+  const CTX_LIMIT = opts.maxInputTokens && opts.maxInputTokens > 0 ? opts.maxInputTokens : 200_000;
+  let lastCompactWarn = false;
   const setTokens = (prompt: number, cached: number, completion?: number): void => {
     const completionNext = completion ?? completionTokens;
     if (
@@ -176,10 +198,20 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     const txt = cached > 0
       ? `in ${formatK(prompt)} (${formatK(cached)} cached)`
       : `in ${formatK(prompt)}`;
-    // Re-derive cost. We treat the latest prompt/completion totals as the
-    // turn's full usage — calculateCost is additive across turns via
-    // sessionCostUsd which we bump at onUsageFinal time.
-    cam.send("StatusUpdate", { segments: { tokens: txt, cost: formatUsd(sessionCostUsd) } });
+    const segments: Record<string, string> = {
+      tokens: txt,
+      cost: formatUsd(sessionCostUsd),
+    };
+    // Surface the /compact recommended hint as a warn segment when the
+    // prompt has eaten more than 80% of the context window. Toggles back
+    // to empty (cleared by the renderer) when the user compacts.
+    const ratio = prompt / CTX_LIMIT;
+    const shouldWarn = ratio >= 0.8;
+    if (shouldWarn !== lastCompactWarn) {
+      segments.warn = shouldWarn ? "/compact recommended" : "";
+      lastCompactWarn = shouldWarn;
+    }
+    cam.send("StatusUpdate", { segments });
   };
 
   const elapsedTimer = setInterval(() => {
