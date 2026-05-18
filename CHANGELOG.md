@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.73.0](https://github.com/sinameraji/kimiflare/compare/v0.72.0...v0.73.0) (2026-05-18)
+
+
+### Features
+
+* **models:** multi-provider routing via AI Gateway Universal Endpoint ([#468](https://github.com/sinameraji/kimiflare/issues/468)) ([a319976](https://github.com/sinameraji/kimiflare/commit/a319976611d91deb84585b362b1a759583c7acec))
+
 ## [0.72.0](https://github.com/sinameraji/kimiflare/compare/v0.71.0...v0.72.0) (2026-05-17)
 
 
