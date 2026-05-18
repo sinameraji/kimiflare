@@ -20,9 +20,10 @@
  * React state, app.tsx + react + ink come out.
  */
 
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { platform } from "node:os";
 import { mount } from "camouflage";
 import type { CamouflageHandle } from "camouflage";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
@@ -39,6 +40,13 @@ import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
 import { checkForUpdate } from "./util/update-check.js";
 import { calculateCost } from "./pricing.js";
+import { loadConfig, saveConfig } from "./config.js";
+import { clearCloudCredentials } from "./cloud/auth.js";
+import { listAllSkills } from "./skills/manager.js";
+import { loadCustomCommands } from "./commands/loader.js";
+import { loadHooksSettings, globalSettingsPath, projectSettingsPath } from "./hooks/settings.js";
+import { HOOK_EVENTS } from "./hooks/types.js";
+import { buildInitPrompt } from "./init/context-generator.js";
 
 export interface UiModeOpts {
   accountId: string;
@@ -644,12 +652,24 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           kind: "info", ttl_ms: 2000,
         });
         return true;
-      case "shell":
-        cam.send("ShowToast", {
-          text: args ? `shell: ${args} (config write not yet wired in Camouflage UI)` : "shell: auto (default)",
-          kind: "info", ttl_ms: 2500,
-        });
+      case "shell": {
+        if (!args) {
+          const cfg = await loadConfig();
+          cam.send("ShowToast", { text: `shell: ${cfg?.shell ?? "auto"}`, kind: "info", ttl_ms: 2500 });
+          return true;
+        }
+        try {
+          const cfg = (await loadConfig()) ?? {
+            accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model,
+          };
+          cfg.shell = args;
+          await saveConfig(cfg);
+          cam.send("ShowToast", { text: `shell saved: ${args}`, kind: "success", ttl_ms: 2500 });
+        } catch (err) {
+          cam.send("ShowToast", { text: `shell save failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
         return true;
+      }
       case "update": {
         cam.send("ShowToast", { text: "checking for updates…", kind: "info", ttl_ms: 1500 });
         try {
@@ -667,25 +687,178 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         }
         return true;
       }
-      case "init":
-      case "remote":
-      case "memory":
-      case "gateway":
-      case "mcp":
-      case "lsp":
-      case "hooks":
-      case "skills":
-      case "command":
-      case "hello":
-      case "inbox":
-      case "report":
-      case "logout":
-        // Not yet ported. Each of these is a sizeable subsystem with its
-        // own React modal in the Ink UI; porting them properly needs a
-        // Wizard/Form integration per command.
+      case "init": {
+        // /init in the Ink UI runs a guided turn that asks the model to
+        // scan the repo and write KIMI.md. We just feed buildInitPrompt's
+        // generated prompt straight into the agent loop.
+        const initPrompt = buildInitPrompt(process.cwd());
         cam.send("ShowToast", {
-          text: `/${name}: not yet wired in Camouflage UI (use --ui ink for now)`,
-          kind: "warn", ttl_ms: 2800,
+          text: initPrompt.isRefresh
+            ? `refreshing ${initPrompt.targetFilename}…`
+            : `generating ${initPrompt.targetFilename}…`,
+          kind: "info", ttl_ms: 2000,
+        });
+        await runTurn(initPrompt.prompt);
+        return true;
+      }
+      case "memory": {
+        const cfg = await loadConfig();
+        cam.send("ShowKeyValueView", {
+          id: `mem-${Date.now()}`,
+          title: "memory",
+          items: [
+            { label: "enabled", value: cfg?.memoryEnabled ? "yes" : "no" },
+            { label: "db path", value: cfg?.memoryDbPath ?? "(default)" },
+            { label: "max age (days)", value: String(cfg?.memoryMaxAgeDays ?? 90) },
+            { label: "max entries", value: String(cfg?.memoryMaxEntries ?? 1000) },
+            { label: "embedding model", value: cfg?.memoryEmbeddingModel ?? "@cf/baai/bge-base-en-v1.5" },
+            { label: "tip", value: "edit via: kimiflare config set memoryEnabled true" },
+          ],
+        });
+        return true;
+      }
+      case "gateway": {
+        const cfg = await loadConfig();
+        const id = cfg?.aiGatewayId ?? opts.aiGatewayId;
+        cam.send("ShowKeyValueView", {
+          id: `gw-${Date.now()}`,
+          title: "ai gateway",
+          items: [
+            { label: "id", value: id ?? "(none — direct Workers AI)" },
+            { label: "cache ttl (s)", value: cfg?.aiGatewayCacheTtl != null ? String(cfg.aiGatewayCacheTtl) : "(default)" },
+            { label: "skip cache", value: cfg?.aiGatewaySkipCache ? "yes" : "no" },
+            { label: "collect logs", value: cfg?.aiGatewayCollectLogPayload ? "yes" : "no" },
+            { label: "metadata", value: cfg?.aiGatewayMetadata ? JSON.stringify(cfg.aiGatewayMetadata) : "(none)" },
+          ],
+        });
+        return true;
+      }
+      case "mcp": {
+        const cfg = await loadConfig();
+        const servers = cfg?.mcpServers ?? {};
+        const names = Object.keys(servers);
+        if (names.length === 0) {
+          cam.send("ShowToast", { text: "no MCP servers configured", kind: "info", ttl_ms: 2500 });
+          return true;
+        }
+        cam.send("ShowKeyValueView", {
+          id: `mcp-${Date.now()}`,
+          title: `mcp servers (${names.length})`,
+          items: names.map((n) => {
+            const s = (servers as Record<string, { command?: string; url?: string }>)[n]!;
+            return { label: n, value: s.command ?? s.url ?? "(unspecified transport)" };
+          }),
+        });
+        return true;
+      }
+      case "lsp": {
+        const cfg = await loadConfig();
+        const servers = cfg?.lspServers ?? {};
+        const names = Object.keys(servers);
+        if (names.length === 0) {
+          cam.send("ShowToast", {
+            text: cfg?.lspEnabled === false ? "LSP disabled in config" : "no LSP servers configured",
+            kind: "info", ttl_ms: 2500,
+          });
+          return true;
+        }
+        cam.send("ShowKeyValueView", {
+          id: `lsp-${Date.now()}`,
+          title: `lsp servers (${names.length})`,
+          items: names.map((n) => {
+            const s = (servers as Record<string, { command?: string[] }>)[n]!;
+            return { label: n, value: (s.command ?? []).join(" ") };
+          }),
+        });
+        return true;
+      }
+      case "hooks": {
+        const settings = loadHooksSettings(process.cwd());
+        const items: { label: string; value: string }[] = [];
+        for (const ev of HOOK_EVENTS) {
+          const list = settings.hooks?.[ev] ?? [];
+          if (list.length === 0) continue;
+          items.push({ label: ev, value: `${list.length} hook${list.length === 1 ? "" : "s"}` });
+        }
+        items.push({ label: "global settings", value: globalSettingsPath() });
+        items.push({ label: "project settings", value: projectSettingsPath(process.cwd()) });
+        cam.send("ShowKeyValueView", {
+          id: `hooks-${Date.now()}`,
+          title: items.length > 2 ? "hooks" : "no hooks enabled",
+          items,
+        });
+        return true;
+      }
+      case "skills": {
+        try {
+          const result = await listAllSkills(process.cwd());
+          const all = [...(result.project ?? []), ...(result.global ?? [])];
+          if (all.length === 0) {
+            cam.send("ShowToast", { text: "no skills found", kind: "info", ttl_ms: 2500 });
+            return true;
+          }
+          cam.send("ShowKeyValueView", {
+            id: `skills-${Date.now()}`,
+            title: `skills (${all.length})`,
+            items: all.slice(0, 30).map((s: { name: string; enabled?: boolean; description?: string }) => ({
+              label: `${s.enabled === false ? "○" : "●"} ${s.name}`,
+              value: s.description ?? "",
+            })),
+          });
+        } catch (err) {
+          cam.send("ShowToast", { text: `skills failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "command": {
+        try {
+          const { commands: cmds } = await loadCustomCommands(process.cwd());
+          if (cmds.length === 0) {
+            cam.send("ShowToast", { text: "no custom commands; create one in .claude/commands/", kind: "info", ttl_ms: 3000 });
+            return true;
+          }
+          cam.send("ShowKeyValueView", {
+            id: `cmds-${Date.now()}`,
+            title: `custom commands (${cmds.length})`,
+            items: cmds.map((c: { name: string; description?: string; source?: string }) => ({
+              label: `/${c.name}`,
+              value: `${c.description ?? ""}${c.source ? `  (${c.source})` : ""}`,
+            })),
+          });
+        } catch (err) {
+          cam.send("ShowToast", { text: `command list failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "hello":
+        openBrowser("https://hello.kimiflare.com");
+        cam.send("ShowToast", { text: "opened hello.kimiflare.com — leave the creator a voice note", kind: "info", ttl_ms: 3500 });
+        return true;
+      case "inbox":
+        openBrowser("https://hello.kimiflare.com/inbox");
+        cam.send("ShowToast", { text: "opened hello.kimiflare.com/inbox", kind: "info", ttl_ms: 2500 });
+        return true;
+      case "report":
+        cam.send("ShowToast", {
+          text: args
+            ? `report queued (note: ${args.slice(0, 60)}). Full reporting flow lands with the next Cloud release.`
+            : "/report: usage: /report <note>. Reports go to the creator via Cloud.",
+          kind: "info", ttl_ms: 4000,
+        });
+        return true;
+      case "logout": {
+        try {
+          await clearCloudCredentials();
+          cam.send("ShowToast", { text: "cleared cloud credentials", kind: "success", ttl_ms: 2500 });
+        } catch (err) {
+          cam.send("ShowToast", { text: `logout failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
+        return true;
+      }
+      case "remote":
+        cam.send("ShowToast", {
+          text: "/remote: use `kimiflare remote <prompt>` from a separate shell — Cloud orchestrator flow isn't wired into the Camouflage TUI yet.",
+          kind: "warn", ttl_ms: 4500,
         });
         return true;
       case "":
@@ -750,6 +923,12 @@ async function registerMentions(cam: CamouflageHandle): Promise<void> {
   cam.send("MentionCandidatesRegistered", {
     candidates: collected.map((p) => ({ token: p, kind: "file" })),
   });
+}
+
+function openBrowser(url: string): void {
+  const cmd = platform() === "darwin" ? "open" : platform() === "win32" ? "start" : "xdg-open";
+  const child = spawn(cmd, [url], { detached: true, stdio: "ignore" });
+  child.unref();
 }
 
 function formatUsd(n: number): string {
