@@ -49,12 +49,12 @@ export async function probeUnifiedBilling(opts: ProbeOptions): Promise<ProbeResu
     res = await fetch(url, {
       method: "POST",
       headers: {
-        // Gateway-level auth. No provider key on purpose — that's the whole point of UB.
-        // We also send Authorization with the same CF token because the /compat endpoint
-        // is documented to expect it (the gateway uses it as the gateway-level bearer
-        // when no upstream provider auth is provided, and CF then funds the upstream
-        // request from the account's Unified Billing credits).
-        Authorization: `Bearer ${opts.apiToken}`,
+        // CRITICAL: for Unified Billing, we ONLY send cf-aig-authorization.
+        // Do NOT send Authorization — CF Gateway treats the value of Authorization
+        // as the upstream provider's BYOK key and forwards it as-is. Sending the
+        // CF token there makes Google return "API_KEY_INVALID" (HTTP 400), making
+        // UB look broken when the real issue is that the request never entered
+        // the UB code path at all.
         "cf-aig-authorization": `Bearer ${opts.apiToken}`,
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
