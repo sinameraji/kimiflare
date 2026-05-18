@@ -105,7 +105,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
       {usage && (
         <Box>
           <Text color={theme.info.color} >
-            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget).join("  ·  ")}
+            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget, model).join("  ·  ")}
           </Text>
           {sessionUsage?.reconcilePending ? (
             <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
@@ -143,6 +143,7 @@ export function buildRightParts(
   gatewayMeta?: GatewayMeta | null,
   cloudMode?: boolean,
   cloudBudget?: { remaining: number; limit: number } | null,
+  model?: string,
 ): string[] {
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
   const parts: string[] = [];
@@ -163,7 +164,10 @@ export function buildRightParts(
     }
   } else {
     const cached = usage.prompt_tokens_details?.cached_tokens ?? 0;
-    const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached);
+    // Pass the current model so pricing.ts uses that provider's rates instead
+    // of falling back to Kimi K2.6's hardcoded constants — otherwise an Opus
+    // turn (\$15 in / \$75 out per Mtok) shows up as if it cost Kimi rates.
+    const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached, model);
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`ctx ${pct}%`);
     if (cloudMode) {

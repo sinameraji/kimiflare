@@ -108,6 +108,14 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     // Universal Endpoint routes by the `model` body field (e.g. "anthropic/claude-sonnet-4-6").
     // Workers AI endpoints route by URL path and ignore body.model.
     ...(isUniversalEndpoint ? { model: opts.model } : {}),
+    // OpenAI's streaming API omits `usage` by default — you have to explicitly
+    // opt in via stream_options. Without this, the status bar's token /
+    // context-% / cost columns stay blank for every model that routes through
+    // the Universal Endpoint (verified empirically by curling /compat with and
+    // without this flag — see PR #468 discussion). CF docs don't mention
+    // stream_options but accept it transparently and forward it upstream;
+    // providers that don't recognize the field ignore it.
+    ...(isUniversalEndpoint ? { stream_options: { include_usage: true } } : {}),
   };
   if (opts.reasoningEffort && supportsReasoning) {
     body.reasoning_effort = opts.reasoningEffort;
