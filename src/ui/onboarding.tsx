@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
+import { ModelPicker } from "./model-picker.js";
+import type { ModelEntry } from "../models/registry.js";
 import { saveConfig, DEFAULT_MODEL } from "../config.js";
 import { useTheme } from "./theme-context.js";
 import {
@@ -160,9 +162,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
     void runProbe(trimmed);
   };
 
-  const handleModelSubmit = (value: string) => {
-    const trimmed = value.trim() || DEFAULT_MODEL;
-    setModel(trimmed);
+  const handleModelPick = (picked: ModelEntry | null) => {
+    // Esc / cancel in the picker → keep the current default and move on.
+    if (picked) setModel(picked.id);
     setStep("confirm");
   };
 
@@ -315,20 +317,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
 
         {step === "model" && (
           <>
-            <Text>Model ID (press Enter for default)</Text>
-            <Text color={theme.info.color}>default: {DEFAULT_MODEL}</Text>
+            <Text>Pick a model to start with (you can change it anytime with /model)</Text>
             {aiGatewayId && (
               <Text color={theme.palette.success}>
                 Gateway: {aiGatewayId} ✓
               </Text>
             )}
             <Box marginTop={1}>
-              <Text color={theme.palette.primary}>› </Text>
-              <CustomTextInput
-                value={model}
-                onChange={setModel}
-                onSubmit={handleModelSubmit}
-              />
+              <ModelPicker current={model} onPick={handleModelPick} />
+            </Box>
+            <Box marginTop={1}>
+              <Text color={theme.info.color} dimColor>
+                Tip: Esc keeps the default ({DEFAULT_MODEL}) and continues.
+              </Text>
             </Box>
           </>
         )}
