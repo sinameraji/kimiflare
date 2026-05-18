@@ -395,17 +395,38 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           },
           askPermission: async ({ tool, args }) => {
             const reqId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            cam.send("PermissionRequested", {
+            // Mirror Ink's PermissionModal: prefer tool.render's title for
+            // human-readable action, and pass diff if available so the
+            // renderer can paint a colored ± preview.
+            let title: string | undefined;
+            let diff: { path: string; before: string; after: string } | undefined;
+            try {
+              const rendered = tool.render?.(args as Record<string, unknown>);
+              if (rendered) {
+                title = rendered.title;
+                if (rendered.diff) {
+                  diff = {
+                    path: rendered.diff.path,
+                    before: rendered.diff.before ?? "",
+                    after: rendered.diff.after ?? "",
+                  };
+                }
+              }
+            } catch {
+              // Malformed args from the model can crash typed render functions;
+              // fall back to JSON action — same recovery Ink uses.
+            }
+            const payload: Record<string, unknown> = {
               request_id: reqId,
               tool: tool.name,
-              action: JSON.stringify(args),
-            });
+              action: title ?? JSON.stringify(args),
+            };
+            if (diff) payload.diff = diff;
+            cam.send("PermissionRequested", payload);
             if (opts.allowAll) {
               cam.send("PermissionGranted", { request_id: reqId });
               return "allow";
             }
-            // Wait for the renderer's PermissionResponse via the
-            // "permissionResponse" event subscribed above.
             const choice = await new Promise<"allow" | "allow_session" | "deny">((resolve) => {
               pendingPermissions.set(reqId, resolve);
             });
