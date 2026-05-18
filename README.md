@@ -22,7 +22,7 @@
 
 ## How it works
 
-You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare provisions (or reuses) an **AI Gateway** in your account and routes every model request through it. Nothing leaves your Cloudflare tenancy.
+You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare provisions (or reuses) an **AI Gateway** in your account and routes every model request through it via the [AI Gateway Universal Endpoint](https://developers.cloudflare.com/ai-gateway/universal/) — one URL, eleven models across five providers, with automatic fallback. Nothing leaves your Cloudflare tenancy.
 
 You get this for free:
 
@@ -34,8 +34,9 @@ You get this for free:
 
 ## What to remember
 
-- **262k context window** — Read entire modules, large configs, and full stack traces without the model losing track.
-- **Image understanding** — Drop image paths (PNG, JPG, WebP, GIF, BMP up to 5 MB) into any prompt. Great for UI reviews, diagrams, and screenshots.
+- **Coding agent, not a chat box** — Tool-using agent loop with read, write, edit, glob, grep, bash, web search, GitHub, headless browser, LSP, and MCP. Multi-step tasks publish a live task panel with progress, elapsed time, and token deltas. Mid-flight steering, graceful preemption, and a hard-stop loop guardrail keep long turns under control.
+- **11 models across 5 providers, one router** — Kimi K2.6, Claude (Opus 4.7 / Sonnet 4.6 / Haiku 4.5), GPT-5 / GPT-5-mini, Gemini 2.5 Pro / Flash, Llama 3.3 / 4 Scout, and Groq Llama, all reached through the [Cloudflare AI Gateway Universal Endpoint](https://developers.cloudflare.com/ai-gateway/universal/). Swap mid-conversation with `/model`; context windows range from 24k up to 1M.
+- **Image understanding** — Drop image paths (PNG, JPG, WebP, GIF, BMP up to 5 MB) into any prompt. Great for UI reviews, diagrams, and screenshots (model-dependent).
 - **Plan / Edit / Auto modes** — `plan` is a whitelist-only research mode: only read-only tools (read, glob, grep, web search, GitHub read-only, browser fetch) are allowed. Writes, edits, mutating bash, MCP tools, and LSP renames are all blocked. `edit` (default) prompts per mutating call. `auto` approves everything for trusted tasks.
 - **Windows support** — OS-aware shell auto-detects `cmd.exe` / PowerShell on Windows, `bash` on Unix. The `bash` tool works out of the box on all platforms.
 - **Message queuing** — Submit multiple messages while the agent is busy; they queue and auto-drain. Escape interrupts the current turn but preserves the queue.
@@ -93,7 +94,7 @@ Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, pe
 
 ### Model selection
 
-KimiFlare supports **11 models** across multiple providers, all routed through Cloudflare AI Gateway:
+KimiFlare supports **11 models** across five providers, all routed through Cloudflare AI Gateway's [Universal Endpoint](https://developers.cloudflare.com/ai-gateway/universal/) (one URL, automatic provider fallback):
 
 **Cloudflare Workers AI** (default, no API key needed):
 - `@cf/moonshotai/kimi-k2.6` — 262k context, reasoning, tools
