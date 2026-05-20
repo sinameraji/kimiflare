@@ -20,6 +20,7 @@ program
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
   .option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
+  .option("--no-cloud", "force-disable cloud mode for this run (overrides cloudMode in config.json)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
