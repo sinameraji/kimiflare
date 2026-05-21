@@ -88,7 +88,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   }
   const requestId = opts.requestId ?? crypto.randomUUID();
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
-  const isUniversalEndpoint = url.includes("/compat/chat/completions");
+  const isCloudEndpoint = url.startsWith("https://api.kimiflare.com");
   // Per-model capability gates. Some providers reject params they don't
   // support — gpt-5/gpt-5-mini and claude-opus-4-7 reject any non-default
   // `temperature`; Groq's llama-3.3 rejects `reasoning_effort`. We look up the
@@ -96,6 +96,12 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   const entry = getModelOrInfer(opts.model);
   const supportsTemperature = entry.supports.temperature !== false;
   const supportsReasoning = entry.supports.reasoning === true;
+
+  // Universal Endpoint routes by the `model` body field. For Workers AI we
+  // prefix with "workers-ai/" so /compat dispatches to the Workers AI provider
+  // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.6"). Cloud mode uses its own
+  // shape and ignores this field.
+  const compatModel = entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
 
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
@@ -105,17 +111,13 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     stream: true,
     ...(supportsTemperature ? { temperature: opts.temperature ?? 0.2 } : {}),
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
-    // Universal Endpoint routes by the `model` body field (e.g. "anthropic/claude-sonnet-4-6").
-    // Workers AI endpoints route by URL path and ignore body.model.
-    ...(isUniversalEndpoint ? { model: opts.model } : {}),
+    ...(isCloudEndpoint ? {} : { model: compatModel }),
     // OpenAI's streaming API omits `usage` by default — you have to explicitly
     // opt in via stream_options. Without this, the status bar's token /
-    // context-% / cost columns stay blank for every model that routes through
-    // the Universal Endpoint (verified empirically by curling /compat with and
-    // without this flag — see PR #468 discussion). CF docs don't mention
+    // context-% / cost columns stay blank. CF docs don't mention
     // stream_options but accept it transparently and forward it upstream;
     // providers that don't recognize the field ignore it.
-    ...(isUniversalEndpoint ? { stream_options: { include_usage: true } } : {}),
+    ...(isCloudEndpoint ? {} : { stream_options: { include_usage: true } }),
   };
   if (opts.reasoningEffort && supportsReasoning) {
     body.reasoning_effort = opts.reasoningEffort;
@@ -310,25 +312,26 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
     return { url: "https://api.kimiflare.com/v1/chat", headers };
   }
 
-  const entry = getModelOrInfer(opts.model);
+  // Every chat model — Workers AI included — goes through the AI Gateway
+  // Universal Endpoint. There is intentionally no api.cloudflare.com/.../ai/run/
+  // fallback: kimiflare standardised on one path so behaviour (auth, billing
+  // visibility, observability) is identical across providers.
+  if (!opts.gateway?.id) {
+    throw new KimiApiError(
+      [
+        `kimiflare: ${opts.model} routes through Cloudflare AI Gateway, but no gateway is configured.`,
+        ``,
+        `To fix: run  /gateway <your-gateway-id>  (create one at https://dash.cloudflare.com/?to=/:account/ai-gateway).`,
+      ].join("\n"),
+      undefined,
+      400,
+    );
+  }
 
-  // Non-Workers-AI providers must go through the Gateway Universal Endpoint.
-  // The Universal Endpoint translates per-provider request/response shapes
-  // (Anthropic tool_use, Gemini parts, …) into OpenAI chat-completions for us.
+  const entry = getModelOrInfer(opts.model);
+  const headers = gatewayHeadersFor(opts);
+
   if (entry.provider !== "workers-ai") {
-    if (!opts.gateway?.id) {
-      throw new KimiApiError(
-        [
-          `kimiflare: ${opts.model} (${entry.provider}) is routed through Cloudflare AI Gateway, but no gateway is configured.`,
-          ``,
-          `To fix: run  /gateway <your-gateway-id>  (create one at https://dash.cloudflare.com/?to=/:account/ai-gateway),`,
-          `or switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`,
-        ].join("\n"),
-        undefined,
-        400,
-      );
-    }
-    const headers = gatewayHeadersFor(opts);
     // Three BYOK paths, in priority order:
     //   1. Unified Billing  → no provider auth at all; CF pays the upstream provider
     //                         using credits attached to the account. Auth is only the
@@ -352,26 +355,16 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
         401,
       );
     }
-    return {
-      url: `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(opts.accountId)}/${encodeURIComponent(
-        opts.gateway.id,
-      )}/compat/chat/completions`,
-      headers,
-    };
   }
+  // For workers-ai there is no upstream key to set: Workers AI bills against
+  // the same Cloudflare account whose token signs the request, so the
+  // gateway-level Authorization header is the only auth needed.
 
-  // Workers AI: direct API when no gateway, otherwise namespaced under workers-ai/.
-  if (!opts.gateway?.id) {
-    return {
-      url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(opts.accountId)}/ai/run/${opts.model}`,
-      headers: {},
-    };
-  }
   return {
     url: `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(opts.accountId)}/${encodeURIComponent(
       opts.gateway.id,
-    )}/workers-ai/${opts.model}`,
-    headers: gatewayHeadersFor(opts),
+    )}/compat/chat/completions`,
+    headers,
   };
 }
 

@@ -67,6 +67,7 @@ describe("runAgentTurn", () => {
           executor,
           cwd: "/tmp",
           signal: controller.signal,
+          gateway: { id: "my-gw" },
           callbacks: {
             askPermission: async () => "allow",
           },
@@ -129,6 +130,7 @@ describe("runAgentTurn", () => {
           executor,
           cwd: "/tmp",
           signal: controller.signal,
+          gateway: { id: "my-gw" },
           callbacks: {
             // Abort as soon as the assistant message is finalized (after streaming,
             // before tool execution starts).

@@ -241,7 +241,7 @@ describe("runKimi: Workers AI plumbing routes through gateway when configured", 
     globalThis.fetch = originalFetch;
   });
 
-  it("hits gateway.ai.cloudflare.com (not api.cloudflare.com) for @cf/* models when gateway.id is set", async () => {
+  it("routes @cf/* models through the Universal Endpoint with a workers-ai/ model prefix", async () => {
     for await (const _ of runKimi({
       accountId: "acct",
       apiToken: "cf-token",
@@ -252,11 +252,12 @@ describe("runKimi: Workers AI plumbing routes through gateway when configured", 
       /* drain */
     }
     assert.ok(lastRequest);
-    const url = lastRequest!.url;
-    assert.ok(
-      url.startsWith("https://gateway.ai.cloudflare.com/v1/acct/my-gw/workers-ai/"),
-      `expected gateway-prefixed URL, got: ${url}`,
+    assert.strictEqual(
+      lastRequest!.url,
+      "https://gateway.ai.cloudflare.com/v1/acct/my-gw/compat/chat/completions",
     );
+    const body = await lastRequest!.clone().json();
+    assert.strictEqual(body.model, "workers-ai/@cf/meta/llama-3.2-3b-instruct");
     // Plumbing tags ride along via cf-aig-metadata so the dashboard can filter.
     const meta = lastRequest!.headers.get("cf-aig-metadata");
     assert.ok(meta && meta.includes("extraction"));
