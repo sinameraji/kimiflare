@@ -163,6 +163,13 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     // for transient capacity errors. It also returns HTTP 5xx or OpenAI-style error objects
     // for transient internal failures. Retry those; surface everything else.
     if (!contentType.includes("text/event-stream")) {
+      if (res.bodyUsed) {
+        throw new KimiApiError(
+          `kimiflare: Received HTTP ${res.status} but could not read the response body. Please try again.`,
+          undefined,
+          res.status,
+        );
+      }
       const text = await res.text();
       let parsed: unknown = null;
       try {

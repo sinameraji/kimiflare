@@ -34,7 +34,12 @@ export function isKillSwitchError(err: unknown): err is KillSwitchError {
  *  Throws KillSwitchError when matched; otherwise returns silently. */
 export async function detectKillSwitch(res: Response): Promise<void> {
   if (res.status === 503) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    let data: Record<string, unknown> = {};
+    try {
+      data = (await res.clone().json()) as Record<string, unknown>;
+    } catch {
+      /* ignore parse/clone errors */
+    }
     if (data.error === "SERVICE_ENDED") {
       throw new KillSwitchError(typeof data.ended_at === "string" ? data.ended_at : undefined);
     }
