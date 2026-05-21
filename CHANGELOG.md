@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.73.2](https://github.com/sinameraji/kimiflare/compare/v0.73.1...v0.73.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **routing:** route every chat model through AI Gateway /compat ([#480](https://github.com/sinameraji/kimiflare/issues/480)) ([16ac852](https://github.com/sinameraji/kimiflare/commit/16ac852ef2775027a87f7d09ff10293edb845eb6))
+
 ## [0.73.1](https://github.com/sinameraji/kimiflare/compare/v0.73.0...v0.73.1) (2026-05-18)
 
 
