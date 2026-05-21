@@ -70,7 +70,7 @@ describe("runKimi session affinity header", () => {
     assert.ok(lastRequest);
     assert.strictEqual(
       lastRequest!.url,
-      "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/%40cf%2Ftest%2Fmodel",
+      "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/test/model",
     );
     assert.strictEqual(lastRequest!.headers.get("Authorization"), "Bearer token");
   });

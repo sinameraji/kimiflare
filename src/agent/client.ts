@@ -119,7 +119,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     // context-% / cost columns stay blank. CF docs don't mention
     // stream_options but accept it transparently and forward it upstream;
     // providers that don't recognize the field ignore it.
-    ...(isCloudEndpoint ? {} : { stream_options: { include_usage: true } }),
+    // Only relevant for the AI Gateway /compat path; direct Workers AI and
+    // cloud mode use their own response shapes.
+    ...(isCloudEndpoint || isDirectWorkersAi ? {} : { stream_options: { include_usage: true } }),
   };
   if (opts.reasoningEffort && supportsReasoning) {
     body.reasoning_effort = opts.reasoningEffort;
@@ -324,7 +326,7 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
       return {
         url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
           opts.accountId,
-        )}/ai/run/${encodeURIComponent(opts.model)}`,
+        )}/ai/run/${opts.model}`,
         headers: {
           Authorization: `Bearer ${opts.apiToken}`,
           "Content-Type": "application/json",
