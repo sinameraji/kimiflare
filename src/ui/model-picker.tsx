@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 import { listModels, type ModelEntry, type ModelPricing, type ModelProvider } from "../models/registry.js";
 import { fuzzyFilter } from "../util/fuzzy.js";
@@ -196,6 +195,12 @@ export function ModelPicker({ current, onPick }: Props) {
   const safePage = Math.min(page, totalPages - 1);
   const pageRows = pages[safePage] ?? [];
 
+  const firstSelectable = useMemo(() => pageRows.findIndex((r) => r.kind === "model"), [pageRows]);
+
+  useEffect(() => {
+    setSelectedIndex(Math.max(0, firstSelectable));
+  }, [firstSelectable]);
+
   useInput((input, key) => {
     if (key.escape || input === "q") {
       onPick(null);
@@ -209,6 +214,25 @@ export function ModelPicker({ current, onPick }: Props) {
     if (key.rightArrow && safePage < totalPages - 1) {
       setPage((p) => p + 1);
       setSelectedIndex(0);
+      return;
+    }
+    if (key.upArrow) {
+      let idx = selectedIndex - 1;
+      while (idx >= 0 && pageRows[idx]?.kind !== "model") idx--;
+      if (idx >= 0) setSelectedIndex(idx);
+      return;
+    }
+    if (key.downArrow) {
+      let idx = selectedIndex + 1;
+      while (idx < pageRows.length && pageRows[idx]?.kind !== "model") idx++;
+      if (idx < pageRows.length) setSelectedIndex(idx);
+      return;
+    }
+    if (key.return) {
+      const row = pageRows[selectedIndex];
+      if (row?.kind === "model") {
+        onPick(row.model);
+      }
       return;
     }
     if (key.backspace || key.delete) {
@@ -228,18 +252,6 @@ export function ModelPicker({ current, onPick }: Props) {
   // Truncate ids only if the row would visibly exceed a reasonable width.
   // Numeric columns are fixed-width; the id column flexes.
   const maxIdRender = Math.min(idColWidth, 48);
-
-  const items = pageRows.map((row, i) => {
-    if (row.kind === "header") {
-      return { label: `__hdr__::${row.label}`, value: row.key };
-    }
-    const id = truncateMiddle(row.displayId, maxIdRender);
-    const marker = row.isCurrent ? "● " : "  ";
-    const idCell = padRight(`${marker}${id}`, maxIdRender + 2);
-    const ctxCell = padRight(row.context, ctxColWidth);
-    const label = `${idCell}  ${ctxCell}  ${row.price}`;
-    return { label, value: `model::${row.model.id}::${i}` };
-  });
 
   // Header row alignment: pad each label cell to match the data column widths.
   const headerIdCell = padRight("", maxIdRender + 2); // model id col — left blank in header
@@ -261,37 +273,31 @@ export function ModelPicker({ current, onPick }: Props) {
           {headerLine}
         </Text>
       </Box>
-      <Box>
-        <SelectInput
-          items={items}
-          initialIndex={selectedIndex}
-          onHighlight={(item) => {
-            const idx = items.findIndex((i) => i.value === item.value);
-            if (idx >= 0) setSelectedIndex(idx);
-          }}
-          onSelect={(item) => {
-            if (item.value.startsWith("__hdr_")) return; // header — non-selectable
-            if (!item.value.startsWith("model::")) return;
-            const modelId = item.value.slice("model::".length).split("::")[0];
-            const picked = allModels.find((m) => m.id === modelId) ?? null;
-            onPick(picked);
-          }}
-          itemComponent={({ label, isSelected }) => {
-            if (label.startsWith("__hdr__::")) {
-              const name = label.slice("__hdr__::".length);
-              return (
-                <Text color={theme.muted?.color ?? theme.info.color} dimColor>
-                  {name}
-                </Text>
-              );
-            }
+      <Box flexDirection="column">
+        {pageRows.map((row, i) => {
+          if (row.kind === "header") {
             return (
-              <Text color={isSelected ? theme.accent : theme.info.color} bold={isSelected}>
-                {label}
-              </Text>
+              <Box key={row.key}>
+                <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+                  {row.label}
+                </Text>
+              </Box>
             );
-          }}
-        />
+          }
+          const isSelected = i === selectedIndex;
+          const id = truncateMiddle(row.displayId, maxIdRender);
+          const marker = row.isCurrent ? "● " : "  ";
+          const idCell = padRight(`${marker}${id}`, maxIdRender + 2);
+          const ctxCell = padRight(row.context, ctxColWidth);
+          const label = `${idCell}  ${ctxCell}  ${row.price}`;
+          return (
+            <Box key={row.model.id}>
+              <Text color={isSelected ? theme.accent : theme.info.color} bold={isSelected}>
+                {isSelected ? "› " : "  "}{label}
+              </Text>
+            </Box>
+          );
+        })}
       </Box>
       <Box marginTop={1}>
         <Text color={theme.muted?.color ?? theme.info.color} dimColor>
