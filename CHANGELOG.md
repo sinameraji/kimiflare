@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.74.0](https://github.com/sinameraji/kimiflare/compare/v0.73.2...v0.74.0) (2026-05-21)
+
+
+### Features
+
+* **routing:** dual-path Workers AI direct + AI Gateway ([#484](https://github.com/sinameraji/kimiflare/issues/484)) ([7ee9db3](https://github.com/sinameraji/kimiflare/commit/7ee9db3f7d15ac091d3eeafa575842356c9382c3))
+
+
+### Bug Fixes
+
+* **agent:** prevent 'Body is unusable' error and handle it gracefully ([#482](https://github.com/sinameraji/kimiflare/issues/482)) ([4f33f08](https://github.com/sinameraji/kimiflare/commit/4f33f080fd15d4314fb2a4fbb985bf4565b5a509))
+
 ## [0.73.2](https://github.com/sinameraji/kimiflare/compare/v0.73.1...v0.73.2) (2026-05-21)
 
 
