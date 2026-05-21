@@ -425,6 +425,13 @@ function App({
   const limitResolveRef = useRef<((d: LimitDecision) => void) | null>(null);
   const loopResolveRef = useRef<((d: LoopDecision) => void) | null>(null);
   const pendingToolCallsRef = useRef<Map<string, string>>(new Map());
+  /** Most-recent (text, displayText) submitted via processMessage. Used by the
+   *  TokenUpdateModal to auto-retry the failed turn after the user supplies a
+   *  new apiToken. Cleared on success. */
+  const lastPromptRef = useRef<{ text: string; display?: string } | null>(null);
+  /** Forward-ref handle to processMessage so handleTokenUpdateSave can call it
+   *  without a useCallback dependency cycle. */
+  const processMessageRef = useRef<((text: string, display?: string) => Promise<void>) | null>(null);
   const modeRef = useRef<Mode>(mode);
   const effortRef = useRef<ReasoningEffort>(effort);
   const usageRef = useRef<Usage | null>(null);
@@ -1287,6 +1294,58 @@ function App({
     ]);
   }, [mkKey, setKeyEntryFor]);
 
+  /** Modal verified a fresh Cloudflare API token. Persist it, drop the failed
+   *  user message from history so the retry doesn't duplicate it, then re-fire
+   *  the original prompt. */
+  const handleTokenUpdateSave = useCallback(
+    (newToken: string) => {
+      modals.setTokenUpdateFor(null);
+      let updated: typeof cfg = null;
+      setCfg((prev) => {
+        if (!prev) return prev;
+        updated = { ...prev, apiToken: newToken };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      // Drop the user message + matching event from the failed turn so the
+      // retry doesn't show the prompt twice.
+      const last = messagesRef.current[messagesRef.current.length - 1];
+      if (last?.role === "user") messagesRef.current.pop();
+      setEvents((e) => {
+        const idx = [...e].reverse().findIndex((ev) => ev.kind === "user");
+        if (idx === -1) return e;
+        const realIdx = e.length - 1 - idx;
+        return [...e.slice(0, realIdx), ...e.slice(realIdx + 1)];
+      });
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "Cloudflare token updated. Retrying…" },
+      ]);
+      const pending = lastPromptRef.current;
+      if (pending) {
+        // Defer to next tick so the cfg update commits before processMessage
+        // reads it.
+        setTimeout(() => {
+          void processMessageRef.current?.(pending.text, pending.display);
+        }, 0);
+      }
+    },
+    [modals, setCfg, mkKey],
+  );
+
+  const handleTokenUpdateCancel = useCallback(() => {
+    modals.setTokenUpdateFor(null);
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text:
+          "token update cancelled — Workers AI calls will keep failing until you update the apiToken in ~/.config/kimiflare/config.json.",
+      },
+    ]);
+  }, [modals, mkKey]);
+
   const buildSlashContext = useCallback((): SlashContext => ({
     exit,
     busy,
@@ -1422,6 +1481,11 @@ function App({
       if (!cfg) return;
       let trimmed = text.trim();
       if (!trimmed) return;
+
+      // Remember this submission so the TokenUpdateModal can auto-retry on
+      // successful token update. Slash commands record too — they'll just be
+      // re-dispatched and short-circuit if irrelevant.
+      lastPromptRef.current = { text, display: displayText };
 
       let overrideModel: string | undefined;
       let overrideEffort: ReasoningEffort | undefined;
@@ -2020,6 +2084,21 @@ function App({
               ]);
             } else if (
               e instanceof KimiApiError &&
+              !cfg?.cloudMode &&
+              (e.httpStatus === 401 || e.httpStatus === 403 || e.code === 10000) &&
+              cfg &&
+              getModelOrInfer(cfg.model).provider === "workers-ai"
+            ) {
+              // Workers AI auth failure: the saved apiToken was rejected by
+              // Cloudflare. Open the TokenUpdateModal so the user can paste
+              // an updated token without leaving the TUI. Don't pop the user
+              // message — the retry handler will pop it just before re-firing
+              // processMessage so the prompt isn't duplicated.
+              const codeStr = e.code !== undefined ? ` (code ${e.code})` : "";
+              const reason = `Cloudflare returned HTTP ${e.httpStatus ?? "?"}${codeStr}. The saved Cloudflare API token can't talk to Workers AI.`;
+              modals.setTokenUpdateFor(reason);
+            } else if (
+              e instanceof KimiApiError &&
               (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
             ) {
               const err = { httpStatus: e.httpStatus, code: e.code, message: humanizeCloudflareError(e) };
@@ -2045,6 +2124,12 @@ function App({
     },
     [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
   );
+
+  // Expose the latest processMessage via ref so the TokenUpdateModal retry
+  // path can invoke it without joining the useCallback dependency graph.
+  useEffect(() => {
+    processMessageRef.current = (t, d) => processMessage(t, d);
+  }, [processMessage]);
 
   useEffect(() => {
     if (!busy && queue.length > 0 && supervisorRef.current.phase === "idle") {
@@ -2158,6 +2243,8 @@ function App({
         onCancelKeyEntry={handleCancelKeyEntry}
         onPickBilling={handlePickBilling}
         onUnifiedProbeResolve={handleUnifiedProbeResolve}
+        onTokenUpdateSave={handleTokenUpdateSave}
+        onTokenUpdateCancel={handleTokenUpdateCancel}
         accountId={cfg?.accountId ?? ""}
         apiToken={cfg?.apiToken ?? ""}
         secretsStoreId={cfg?.secretsStoreId}

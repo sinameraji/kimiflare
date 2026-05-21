@@ -49,6 +49,10 @@ export interface ModalHostController {
   setBillingChooserFor: (v: ModelEntry | null) => void;
   unifiedProbeFor: ModelEntry | null;
   setUnifiedProbeFor: (v: ModelEntry | null) => void;
+  /** Reactive: shown when a Workers AI call fails with 401/403/code 10000.
+   *  String is the human-friendly reason rendered above the input. */
+  tokenUpdateFor: string | null;
+  setTokenUpdateFor: (v: string | null) => void;
   showRemoteDashboard: boolean;
   setShowRemoteDashboard: (v: boolean) => void;
   showInboxModal: boolean;
@@ -92,6 +96,7 @@ export function useModalHost(): ModalHostController {
   const [keyEntryFor, setKeyEntryFor] = useState<ModelEntry | null>(null);
   const [billingChooserFor, setBillingChooserFor] = useState<ModelEntry | null>(null);
   const [unifiedProbeFor, setUnifiedProbeFor] = useState<ModelEntry | null>(null);
+  const [tokenUpdateFor, setTokenUpdateFor] = useState<string | null>(null);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [showInboxModal, setShowInboxModal] = useState(false);
   const [showHooksDashboard, setShowHooksDashboard] = useState(false);
@@ -108,6 +113,7 @@ export function useModalHost(): ModalHostController {
       keyEntryFor !== null ||
       billingChooserFor !== null ||
       unifiedProbeFor !== null ||
+      tokenUpdateFor !== null ||
       showRemoteDashboard ||
       showInboxModal ||
       showHooksDashboard;
@@ -128,6 +134,7 @@ export function useModalHost(): ModalHostController {
     keyEntryFor,
     billingChooserFor,
     unifiedProbeFor,
+    tokenUpdateFor,
     showRemoteDashboard,
     showInboxModal,
     showHooksDashboard,
@@ -148,6 +155,7 @@ export function useModalHost(): ModalHostController {
     keyEntryFor, setKeyEntryFor,
     billingChooserFor, setBillingChooserFor,
     unifiedProbeFor, setUnifiedProbeFor,
+    tokenUpdateFor, setTokenUpdateFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     showHooksDashboard, setShowHooksDashboard,
