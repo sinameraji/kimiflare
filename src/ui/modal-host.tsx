@@ -12,7 +12,6 @@ import { ModelPicker } from "./model-picker.js";
 import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
 import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
 import { UnifiedBillingStatus } from "./unified-billing-status.js";
-import { TokenUpdateModal } from "./token-update-modal.js";
 import type { ModelEntry } from "../models/registry.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./remote-dashboard.js";
 import { InboxModal } from "./inbox-modal.js";
@@ -63,13 +62,6 @@ export interface ModalHostProps {
   onPickBilling: (model: ModelEntry, choice: BillingChoice | null) => void;
   // Unified Billing probe — result is one of "enabled" | "fallback-byok" | "cancelled"
   onUnifiedProbeResolve: (model: ModelEntry, r: "enabled" | "fallback-byok" | "cancelled") => void;
-  // Token update modal — fires on Workers AI 401/403/code 10000.
-  onTokenUpdateSave: (newToken: string) => void;
-  /** User indicated the gateway-side issue is fixed (e.g. they toggled
-   *  Authenticated Gateway off). Retry the failed turn without changing the
-   *  saved token. */
-  onTokenUpdateRetry: () => void;
-  onTokenUpdateCancel: () => void;
   // Cloudflare credentials needed by the key entry and probe flows
   accountId: string;
   apiToken: string;
@@ -115,9 +107,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     onCancelKeyEntry,
     onPickBilling,
     onUnifiedProbeResolve,
-    onTokenUpdateSave,
-    onTokenUpdateRetry,
-    onTokenUpdateCancel,
     accountId,
     apiToken,
     secretsStoreId,
@@ -321,24 +310,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
             apiToken={apiToken}
             gatewayId={aiGatewayId ?? ""}
             onResolve={(r) => onUnifiedProbeResolve(model, r)}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (modals.tokenUpdateFor) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <TokenUpdateModal
-            accountId={accountId}
-            currentToken={apiToken}
-            gatewayId={aiGatewayId}
-            reason={modals.tokenUpdateFor}
-            onSave={onTokenUpdateSave}
-            onRetryWithCurrentToken={onTokenUpdateRetry}
-            onCancel={onTokenUpdateCancel}
           />
         </Box>
       </ThemeProvider>

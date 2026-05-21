@@ -3,13 +3,17 @@
  * and routing decisions across providers reachable via Cloudflare AI Gateway.
  *
  * Routing taxonomy:
- *   - "workers-ai": @cf/* models on Cloudflare Workers AI. Reached either
- *     directly (api.cloudflare.com/.../ai/run/<model>) or via the Workers AI
- *     namespace on AI Gateway (/v1/{acct}/{gw}/workers-ai/<model>).
- *   - "anthropic" | "openai" | "google" | "openai-compatible": reached through
- *     the AI Gateway Universal Endpoint (/v1/{acct}/{gw}/compat/chat/completions)
- *     which accepts an OpenAI chat-completions payload with a "<provider>/<id>"
- *     model field and translates per-provider request/response shapes.
+ *   - Every chat model — Workers AI included — goes through the AI Gateway
+ *     Universal Endpoint (/v1/{acct}/{gw}/compat/chat/completions). The
+ *     payload is OpenAI chat-completions shape with a "<provider>/<id>" model
+ *     field; CF translates per-provider request/response shapes and routes
+ *     internally. Workers AI requests use the "workers-ai/" prefix.
+ *   - The "workers-ai" provider tag stays on the entry so billing/auth code
+ *     can branch (Workers AI bills its own track, no BYOK/UB key needed).
+ *   - Embeddings (bge-base-en-v1.5 etc.) still use /workers-ai/{model} since
+ *     the Universal Endpoint doesn't speak embeddings, but go through the
+ *     same gateway host — there is no api.cloudflare.com/.../ai/run path
+ *     anywhere in this codebase.
  */
 
 export type ModelProvider =

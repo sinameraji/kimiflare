@@ -69,23 +69,28 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     if (opts.cloudToken) headers.Authorization = `Bearer ${opts.cloudToken}`;
     if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
   } else {
-    url = opts.gateway
-      ? `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`
-      : `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${model}`;
+    // Every Workers AI call goes through the AI Gateway. The Universal
+    // Endpoint (/compat/chat/completions) doesn't speak embeddings, so the
+    // request still uses /workers-ai/{model}, but it is always the
+    // gateway-namespaced URL — no api.cloudflare.com/.../ai/run fallback.
+    if (!opts.gateway) {
+      throw new Error(
+        "embeddings require an AI Gateway to be configured (run /gateway <id> or set aiGatewayId in config)",
+      );
+    }
+    url = `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`;
     headers.Authorization = `Bearer ${opts.apiToken}`;
 
-    if (opts.gateway) {
-      const merged: Record<string, string | number | boolean> = {
-        ...(opts.gateway.metadata ?? {}),
-        feature: "embedding",
-      };
-      const entries = Object.entries(merged).slice(0, 5);
-      headers["cf-aig-metadata"] = JSON.stringify(Object.fromEntries(entries));
-    }
-    if (opts.gateway?.cacheTtl !== undefined) {
+    const merged: Record<string, string | number | boolean> = {
+      ...(opts.gateway.metadata ?? {}),
+      feature: "embedding",
+    };
+    const entries = Object.entries(merged).slice(0, 5);
+    headers["cf-aig-metadata"] = JSON.stringify(Object.fromEntries(entries));
+    if (opts.gateway.cacheTtl !== undefined) {
       headers["cf-aig-cache-ttl"] = String(opts.gateway.cacheTtl);
     }
-    if (opts.gateway?.skipCache !== undefined) {
+    if (opts.gateway.skipCache !== undefined) {
       headers["cf-aig-skip-cache"] = String(opts.gateway.skipCache);
     }
   }
