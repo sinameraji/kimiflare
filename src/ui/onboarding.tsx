@@ -24,6 +24,7 @@ interface Props {
 type Step =
   | "accountId"
   | "apiToken"
+  | "routingMode"
   | "gatewayLoading"
   | "gatewayPick"
   | "gatewayCreate"
@@ -43,6 +44,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
   const [apiToken, setApiToken] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+
+  const [useGateway, setUseGateway] = useState<boolean | null>(null);
+  const [routingPickIdx, setRoutingPickIdx] = useState(0);
 
   const [gateways, setGateways] = useState<Gateway[]>([]);
   const [gatewayPickIdx, setGatewayPickIdx] = useState(0);
@@ -76,7 +80,28 @@ export function Onboarding({ onDone, onCancel }: Props) {
     ),
   );
 
-  // Arrow-key navigation on the picker.
+  // Arrow-key navigation on the routing-mode picker.
+  useInput(
+    (_input, key) => {
+      if (step !== "routingMode") return;
+      const total = 2;
+      if (key.upArrow) {
+        setRoutingPickIdx((i) => (i - 1 + total) % total);
+      } else if (key.downArrow) {
+        setRoutingPickIdx((i) => (i + 1) % total);
+      } else if (key.return) {
+        if (routingPickIdx === 0) {
+          setUseGateway(false);
+          setStep("model");
+        } else {
+          setUseGateway(true);
+          setStep("gatewayLoading");
+        }
+      }
+    },
+  );
+
+  // Arrow-key navigation on the gateway picker.
   useInput(
     (_input, key) => {
       if (step !== "gatewayPick") return;
@@ -155,7 +180,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setApiToken(trimmed);
-    setStep("gatewayLoading");
+    setStep("routingMode");
   };
 
   const handleGatewayCreateSubmit = async (value: string) => {
@@ -269,7 +294,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   // Step numbering: keep simple linear count for visible steps.
-  const visibleSteps: Step[] = ["accountId", "apiToken", "gatewayLoading", "model", "confirm"];
+  const visibleSteps: Step[] = ["accountId", "apiToken", "routingMode", "model", "confirm"];
   const stepIndex = Math.max(1, visibleSteps.indexOf(step) === -1 ? 3 : visibleSteps.indexOf(step) + 1);
   const totalSteps = visibleSteps.length;
 
@@ -318,6 +343,32 @@ export function Onboarding({ onDone, onCancel }: Props) {
                 onSubmit={handleApiTokenSubmit}
                 mask="•"
               />
+            </Box>
+          </>
+        )}
+
+        {step === "routingMode" && (
+          <>
+            <Text>Choose how to route AI requests</Text>
+            <Text color={theme.info.color}>
+              Use ↑/↓ to navigate, Enter to select.
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={routingPickIdx === 0 ? theme.palette.primary : undefined}>
+                {routingPickIdx === 0 ? "› " : "  "}
+                Workers AI (direct) — fastest, no gateway overhead
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Recommended for the best terminal experience. Uses Cloudflare Workers AI directly.
+              </Text>
+              <Text> </Text>
+              <Text color={routingPickIdx === 1 ? theme.palette.primary : undefined}>
+                {routingPickIdx === 1 ? "› " : "  "}
+                AI Gateway — logs, caching, multi-provider support
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Slightly higher latency, but gives you a dashboard, request logs, and the ability to use non-Workers-AI models later.
+              </Text>
             </Box>
           </>
         )}
@@ -412,6 +463,11 @@ export function Onboarding({ onDone, onCancel }: Props) {
                 Gateway: {aiGatewayId} ✓
               </Text>
             )}
+            {!aiGatewayId && useGateway === false && (
+              <Text color={theme.palette.success}>
+                Routing: Workers AI (direct) ✓
+              </Text>
+            )}
             <Box marginTop={1}>
               <ModelPicker current={model} onPick={handleModelPick} />
             </Box>
@@ -468,8 +524,10 @@ export function Onboarding({ onDone, onCancel }: Props) {
               <Text color={theme.info.color}>Account ID: {accountId}</Text>
               <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
               <Text color={theme.info.color}>Model: {model}</Text>
-              {aiGatewayId && (
+              {aiGatewayId ? (
                 <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
+              ) : (
+                <Text color={theme.info.color}>Routing: Workers AI (direct)</Text>
               )}
               {unifiedBilling && (
                 <Text color={theme.info.color}>

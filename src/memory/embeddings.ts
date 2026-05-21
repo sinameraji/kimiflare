@@ -68,16 +68,8 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     url = "https://api.kimiflare.com/v1/embeddings";
     if (opts.cloudToken) headers.Authorization = `Bearer ${opts.cloudToken}`;
     if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
-  } else {
-    // Every Workers AI call goes through the AI Gateway. The Universal
-    // Endpoint (/compat/chat/completions) doesn't speak embeddings, so the
-    // request still uses /workers-ai/{model}, but it is always the
-    // gateway-namespaced URL — no api.cloudflare.com/.../ai/run fallback.
-    if (!opts.gateway) {
-      throw new Error(
-        "embeddings require an AI Gateway to be configured (run /gateway <id> or set aiGatewayId in config)",
-      );
-    }
+  } else if (opts.gateway) {
+    // Gateway path: embeddings go through the AI Gateway for observability.
     url = `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`;
     headers.Authorization = `Bearer ${opts.apiToken}`;
 
@@ -93,6 +85,10 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     if (opts.gateway.skipCache !== undefined) {
       headers["cf-aig-skip-cache"] = String(opts.gateway.skipCache);
     }
+  } else {
+    // Direct Workers AI path: lower latency, no gateway overhead.
+    url = `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${model}`;
+    headers.Authorization = `Bearer ${opts.apiToken}`;
   }
 
   // Workers AI embeddings endpoint accepts single text or batch

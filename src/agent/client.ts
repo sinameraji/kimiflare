@@ -100,7 +100,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   // Universal Endpoint routes by the `model` body field. For Workers AI we
   // prefix with "workers-ai/" so /compat dispatches to the Workers AI provider
   // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.6"). Cloud mode uses its own
-  // shape and ignores this field.
+  // shape and ignores this field. The direct Workers AI path (api.cloudflare.com)
+  // also ignores the body model field because the model is already in the URL.
+  const isDirectWorkersAi = url.startsWith("https://api.cloudflare.com/client/v4/accounts/");
   const compatModel = entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
 
   const body: Record<string, unknown> = {
@@ -111,7 +113,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     stream: true,
     ...(supportsTemperature ? { temperature: opts.temperature ?? 0.2 } : {}),
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
-    ...(isCloudEndpoint ? {} : { model: compatModel }),
+    ...(isCloudEndpoint || isDirectWorkersAi ? {} : { model: compatModel }),
     // OpenAI's streaming API omits `usage` by default — you have to explicitly
     // opt in via stream_options. Without this, the status bar's token /
     // context-% / cost columns stay blank. CF docs don't mention
@@ -312,14 +314,26 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
     return { url: "https://api.kimiflare.com/v1/chat", headers };
   }
 
-  // Every chat model — Workers AI included — goes through the AI Gateway
-  // Universal Endpoint. There is intentionally no api.cloudflare.com/.../ai/run/
-  // fallback: kimiflare standardised on one path so behaviour (auth, billing
-  // visibility, observability) is identical across providers.
+  const entry = getModelOrInfer(opts.model);
+
+  // If no gateway is configured, Workers AI models can use the direct
+  // api.cloudflare.com path for lower latency. Non-Workers-AI models still
+  // require AI Gateway (there is no direct path for Anthropic, OpenAI, etc.).
   if (!opts.gateway?.id) {
+    if (entry.provider === "workers-ai") {
+      return {
+        url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
+          opts.accountId,
+        )}/ai/run/${encodeURIComponent(opts.model)}`,
+        headers: {
+          Authorization: `Bearer ${opts.apiToken}`,
+          "Content-Type": "application/json",
+        },
+      };
+    }
     throw new KimiApiError(
       [
-        `kimiflare: ${opts.model} routes through Cloudflare AI Gateway, but no gateway is configured.`,
+        `kimiflare: ${opts.model} requires Cloudflare AI Gateway, but no gateway is configured.`,
         ``,
         `To fix: run  /gateway <your-gateway-id>  (create one at https://dash.cloudflare.com/?to=/:account/ai-gateway).`,
       ].join("\n"),
@@ -328,7 +342,7 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
     );
   }
 
-  const entry = getModelOrInfer(opts.model);
+  // Gateway path: AI Gateway Universal Endpoint handles all providers.
   const headers = gatewayHeadersFor(opts);
 
   if (entry.provider !== "workers-ai") {
