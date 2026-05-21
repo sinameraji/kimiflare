@@ -30,7 +30,7 @@ export async function classifyWithLlm(
   input: ClassifyWithLlmInput,
   deps: LlmClassifierDeps,
 ): Promise<TaskCategorization> {
-  const model = deps.model ?? "@cf/meta/llama-4-scout-17b-16e-instruct";
+  const model = deps.model ?? "@cf/moonshotai/kimi-k2.5";
 
   const toolSummary = Object.entries(input.toolCounts)
     .map(([k, v]) => `${k}=${v}`)

@@ -1,19 +1,23 @@
 /**
  * Model registry: single source of truth for per-model capabilities, pricing,
- * and routing decisions across providers reachable via Cloudflare AI Gateway.
+ * and routing decisions.
+ *
+ * KimiFlare is built around Kimi models served through Cloudflare Workers AI.
+ * All seeded models are Workers AI models. AI Gateway is optional — when
+ * configured it provides observability, caching, and unified billing for
+ * multi-provider setups, but Workers AI models work fine without it via the
+ * direct api.cloudflare.com path.
  *
  * Routing taxonomy:
- *   - Every chat model — Workers AI included — goes through the AI Gateway
- *     Universal Endpoint (/v1/{acct}/{gw}/compat/chat/completions). The
- *     payload is OpenAI chat-completions shape with a "<provider>/<id>" model
- *     field; CF translates per-provider request/response shapes and routes
- *     internally. Workers AI requests use the "workers-ai/" prefix.
- *   - The "workers-ai" provider tag stays on the entry so billing/auth code
- *     can branch (Workers AI bills its own track, no BYOK/UB key needed).
- *   - Embeddings (bge-base-en-v1.5 etc.) still use /workers-ai/{model} since
- *     the Universal Endpoint doesn't speak embeddings, but go through the
- *     same gateway host — there is no api.cloudflare.com/.../ai/run path
- *     anywhere in this codebase.
+ *   - Workers AI chat models go through EITHER:
+ *     a) Direct path:  api.cloudflare.com/client/v4/accounts/{acct}/ai/run/{model}
+ *     b) Gateway path: gateway.ai.cloudflare.com/v1/{acct}/{gw}/compat/chat/completions
+ *     The choice is made at runtime based on whether aiGatewayId is configured.
+ *   - Embeddings use the same dual-path logic:
+ *     a) Direct:  api.cloudflare.com/client/v4/accounts/{acct}/ai/run/{model}
+ *     b) Gateway: gateway.ai.cloudflare.com/v1/{acct}/{gw}/workers-ai/{model}
+ *   - User-registered models (via ~/.kimiflare/models.json) can be any provider,
+ *     but they require AI Gateway since only Workers AI has a direct path.
  */
 
 export type ModelProvider =
@@ -47,7 +51,7 @@ export interface ModelCapabilities {
 }
 
 export interface ModelEntry {
-  /** Canonical model id, e.g. "@cf/moonshotai/kimi-k2.6", "anthropic/claude-sonnet-4-7", "openai/gpt-5". */
+  /** Canonical model id, e.g. "@cf/moonshotai/kimi-k2.6". */
   id: string;
   provider: ModelProvider;
   contextWindow: number;
@@ -56,7 +60,7 @@ export interface ModelEntry {
   supports: ModelCapabilities;
   /**
    * "unified" — Cloudflare's Unified Billing can pay this provider on the user's behalf.
-   * "byok"    — user must supply their own provider API key (sent via cf-aig-authorization).
+   * "byok"    — user must supply their own provider API key.
    * Note: "unified" availability is provider/gateway-specific; "byok" always works.
    */
   billingMode: BillingMode;
@@ -88,7 +92,7 @@ export function isUnifiedEligible(entry: ModelEntry): boolean {
 }
 
 const SEED: ModelEntry[] = [
-  // ── Workers AI (Cloudflare-hosted, native to kimiflare) ───────────────────
+  // ── Kimi models (Cloudflare Workers AI, native to kimiflare) ──────────────
   {
     id: "@cf/moonshotai/kimi-k2.6",
     provider: "workers-ai",
@@ -99,109 +103,14 @@ const SEED: ModelEntry[] = [
     billingMode: "unified",
   },
   {
-    id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    id: "@cf/moonshotai/kimi-k2.5",
     provider: "workers-ai",
-    contextWindow: 24_000,
-    maxOutputTokens: 4_096,
-    pricing: { inputPerMtok: 0.29, outputPerMtok: 2.25 },
-    supports: { tools: true, reasoning: false, streaming: true },
+    contextWindow: 262_144,
+    maxOutputTokens: 16_384,
+    pricing: { inputPerMtok: 0.55, cachedInputPerMtok: 0.11, outputPerMtok: 2.19 },
+    supports: { tools: true, reasoning: true, streaming: true },
     billingMode: "unified",
   },
-  {
-    id: "@cf/meta/llama-4-scout-17b-16e-instruct",
-    provider: "workers-ai",
-    contextWindow: 131_000,
-    maxOutputTokens: 4_096,
-    pricing: { inputPerMtok: 0.27, outputPerMtok: 0.85 },
-    supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: "unified",
-  },
-
-  // ── Anthropic (via Gateway Universal Endpoint) ────────────────────────────
-  {
-    id: "anthropic/claude-opus-4-7",
-    provider: "anthropic",
-    contextWindow: 1_000_000,
-    maxOutputTokens: 32_000,
-    pricing: { inputPerMtok: 15.0, cachedInputPerMtok: 1.5, outputPerMtok: 75.0 },
-    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
-    billingMode: "byok",
-  },
-  {
-    id: "anthropic/claude-sonnet-4-6",
-    provider: "anthropic",
-    contextWindow: 1_000_000,
-    maxOutputTokens: 32_000,
-    pricing: { inputPerMtok: 3.0, cachedInputPerMtok: 0.3, outputPerMtok: 15.0 },
-    supports: { tools: true, reasoning: true, streaming: true },
-    billingMode: "byok",
-  },
-  {
-    id: "anthropic/claude-haiku-4-5",
-    provider: "anthropic",
-    contextWindow: 200_000,
-    maxOutputTokens: 16_000,
-    pricing: { inputPerMtok: 1.0, cachedInputPerMtok: 0.1, outputPerMtok: 5.0 },
-    supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: "byok",
-  },
-
-  // ── OpenAI (via Gateway Universal Endpoint) ───────────────────────────────
-  {
-    id: "openai/gpt-5",
-    provider: "openai",
-    contextWindow: 400_000,
-    maxOutputTokens: 16_384,
-    pricing: { inputPerMtok: 5.0, cachedInputPerMtok: 0.5, outputPerMtok: 20.0 },
-    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
-    billingMode: "byok",
-  },
-  {
-    id: "openai/gpt-5-mini",
-    provider: "openai",
-    contextWindow: 400_000,
-    maxOutputTokens: 16_384,
-    pricing: { inputPerMtok: 0.25, cachedInputPerMtok: 0.025, outputPerMtok: 2.0 },
-    supports: { tools: true, reasoning: true, streaming: true, temperature: false },
-    billingMode: "byok",
-  },
-
-  // ── Google (via Gateway Universal Endpoint) ───────────────────────────────
-  {
-    id: "google-ai-studio/gemini-2.5-pro",
-    provider: "google",
-    contextWindow: 1_000_000,
-    maxOutputTokens: 8_192,
-    pricing: { inputPerMtok: 1.25, outputPerMtok: 10.0 },
-    supports: { tools: true, reasoning: true, streaming: true },
-    billingMode: "byok",
-  },
-  {
-    id: "google-ai-studio/gemini-2.5-flash",
-    provider: "google",
-    contextWindow: 1_000_000,
-    maxOutputTokens: 8_192,
-    pricing: { inputPerMtok: 0.075, outputPerMtok: 0.3 },
-    supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: "byok",
-  },
-
-  // ── Other OpenAI-compatible providers via Gateway ─────────────────────────
-  {
-    id: "groq/llama-3.3-70b-versatile",
-    provider: "openai-compatible",
-    contextWindow: 128_000,
-    maxOutputTokens: 8_000,
-    pricing: { inputPerMtok: 0.59, outputPerMtok: 0.79 },
-    supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: "byok",
-  },
-  // NOTE: DeepSeek is intentionally NOT seeded yet.
-  // Our `providerKeys` schema has a single "openai-compatible" slot shared by
-  // every upstream in this category — so a stored Groq key would be sent to
-  // DeepSeek (and rejected with HTTP 401 "Authentication Fails (governor)").
-  // Add DeepSeek back once providerKeys is per-upstream (groq/deepseek/...)
-  // instead of per-provider-category.
 ];
 
 const seedIndex = new Map<string, ModelEntry>(SEED.map((m) => [m.id, m]));

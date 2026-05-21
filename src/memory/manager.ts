@@ -170,7 +170,7 @@ export class MemoryManager {
     return {
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.plumbingModel ?? "@cf/meta/llama-4-scout-17b-16e-instruct",
+      model: this.opts.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
       gateway: this.opts.gateway,
     };
   }
@@ -179,7 +179,7 @@ export class MemoryManager {
     return {
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.extractionModel ?? "@cf/meta/llama-3.2-3b-instruct",
+      model: this.opts.extractionModel ?? "@cf/moonshotai/kimi-k2.5",
       gateway: this.opts.gateway,
     };
   }

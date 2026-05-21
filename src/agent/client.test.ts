@@ -57,11 +57,29 @@ describe("runKimi session affinity header", () => {
     assert.strictEqual(lastRequest!.headers.get("x-session-affinity"), null);
   });
 
-  it("throws when no gateway is configured (everything routes through AI Gateway)", async () => {
+  it("uses direct Workers AI path when no gateway is configured for a Workers AI model", async () => {
     const gen = runKimi({
       accountId: "acct",
       apiToken: "token",
       model: "@cf/test/model",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    for await (const _ of gen) {
+      /* noop */
+    }
+    assert.ok(lastRequest);
+    assert.strictEqual(
+      lastRequest!.url,
+      "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/test/model",
+    );
+    assert.strictEqual(lastRequest!.headers.get("Authorization"), "Bearer token");
+  });
+
+  it("throws when no gateway is configured for a non-Workers-AI model", async () => {
+    const gen = runKimi({
+      accountId: "acct",
+      apiToken: "token",
+      model: "anthropic/claude-test",
       messages: [{ role: "user", content: "hi" }],
     });
     await assert.rejects(
