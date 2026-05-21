@@ -65,6 +65,10 @@ export interface ModalHostProps {
   onUnifiedProbeResolve: (model: ModelEntry, r: "enabled" | "fallback-byok" | "cancelled") => void;
   // Token update modal — fires on Workers AI 401/403/code 10000.
   onTokenUpdateSave: (newToken: string) => void;
+  /** User indicated the gateway-side issue is fixed (e.g. they toggled
+   *  Authenticated Gateway off). Retry the failed turn without changing the
+   *  saved token. */
+  onTokenUpdateRetry: () => void;
   onTokenUpdateCancel: () => void;
   // Cloudflare credentials needed by the key entry and probe flows
   accountId: string;
@@ -112,6 +116,7 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     onPickBilling,
     onUnifiedProbeResolve,
     onTokenUpdateSave,
+    onTokenUpdateRetry,
     onTokenUpdateCancel,
     accountId,
     apiToken,
@@ -328,8 +333,11 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
         <Box flexDirection="column">
           <TokenUpdateModal
             accountId={accountId}
+            currentToken={apiToken}
+            gatewayId={aiGatewayId}
             reason={modals.tokenUpdateFor}
             onSave={onTokenUpdateSave}
+            onRetryWithCurrentToken={onTokenUpdateRetry}
             onCancel={onTokenUpdateCancel}
           />
         </Box>

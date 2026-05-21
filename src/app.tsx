@@ -1294,21 +1294,12 @@ function App({
     ]);
   }, [mkKey, setKeyEntryFor]);
 
-  /** Modal verified a fresh Cloudflare API token. Persist it, drop the failed
-   *  user message from history so the retry doesn't duplicate it, then re-fire
-   *  the original prompt. */
-  const handleTokenUpdateSave = useCallback(
-    (newToken: string) => {
-      modals.setTokenUpdateFor(null);
-      let updated: typeof cfg = null;
-      setCfg((prev) => {
-        if (!prev) return prev;
-        updated = { ...prev, apiToken: newToken };
-        void saveConfig(updated).catch(() => {});
-        return updated;
-      });
-      // Drop the user message + matching event from the failed turn so the
-      // retry doesn't show the prompt twice.
+  /** Common retry tail for the TokenUpdateModal: drop the failed user
+   *  message + matching event so the retry doesn't duplicate them, push an
+   *  info banner, and re-fire the saved prompt on the next tick (so any
+   *  pending cfg update has committed). */
+  const retryAfterTokenFix = useCallback(
+    (banner: string) => {
       const last = messagesRef.current[messagesRef.current.length - 1];
       if (last?.role === "user") messagesRef.current.pop();
       setEvents((e) => {
@@ -1317,21 +1308,39 @@ function App({
         const realIdx = e.length - 1 - idx;
         return [...e.slice(0, realIdx), ...e.slice(realIdx + 1)];
       });
-      setEvents((e) => [
-        ...e,
-        { kind: "info", key: mkKey(), text: "Cloudflare token updated. Retrying…" },
-      ]);
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: banner }]);
       const pending = lastPromptRef.current;
       if (pending) {
-        // Defer to next tick so the cfg update commits before processMessage
-        // reads it.
         setTimeout(() => {
           void processMessageRef.current?.(pending.text, pending.display);
         }, 0);
       }
     },
-    [modals, setCfg, mkKey],
+    [mkKey],
   );
+
+  /** Modal verified a fresh Cloudflare API token. Persist it, then retry. */
+  const handleTokenUpdateSave = useCallback(
+    (newToken: string) => {
+      modals.setTokenUpdateFor(null);
+      setCfg((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, apiToken: newToken };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      retryAfterTokenFix("Cloudflare token updated. Retrying…");
+    },
+    [modals, setCfg, retryAfterTokenFix],
+  );
+
+  /** User toggled off Authenticated Gateway in the CF dashboard and pressed
+   *  Enter to retry. No config write — the existing token is fine, the
+   *  gateway just stops rejecting it. */
+  const handleTokenUpdateRetry = useCallback(() => {
+    modals.setTokenUpdateFor(null);
+    retryAfterTokenFix("Retrying with the existing token…");
+  }, [modals, retryAfterTokenFix]);
 
   const handleTokenUpdateCancel = useCallback(() => {
     modals.setTokenUpdateFor(null);
@@ -1341,7 +1350,7 @@ function App({
         kind: "info",
         key: mkKey(),
         text:
-          "token update cancelled — Workers AI calls will keep failing until you update the apiToken in ~/.config/kimiflare/config.json.",
+          "token update cancelled — Workers AI calls will keep failing until the underlying auth issue is fixed.",
       },
     ]);
   }, [modals, mkKey]);
@@ -2244,6 +2253,7 @@ function App({
         onPickBilling={handlePickBilling}
         onUnifiedProbeResolve={handleUnifiedProbeResolve}
         onTokenUpdateSave={handleTokenUpdateSave}
+        onTokenUpdateRetry={handleTokenUpdateRetry}
         onTokenUpdateCancel={handleTokenUpdateCancel}
         accountId={cfg?.accountId ?? ""}
         apiToken={cfg?.apiToken ?? ""}

@@ -36,14 +36,36 @@ describe("verifyApiTokenForWorkersAi", () => {
     calls.length = 0;
   });
 
-  it("returns ok when /tokens/verify is active and the Workers AI probe succeeds", async () => {
+  it("returns ok when /tokens/verify is active and the Workers AI probe succeeds (no gateway)", async () => {
     stubs = [
       { url: "/user/tokens/verify", status: 200, body: { success: true, result: { status: "active" } } },
-      { url: "/ai/run/", status: 200, body: { result: { data: [[0]] }, success: true } },
+      { url: "api.cloudflare.com/client/v4/accounts/acct/ai/run/", status: 200, body: { result: { data: [[0]] }, success: true } },
     ];
     const r = await verifyApiTokenForWorkersAi("acct", "tok");
     assert.deepStrictEqual(r, { ok: true });
     assert.strictEqual(calls.length, 2);
+  });
+
+  it("returns ok when /tokens/verify + direct probe + gateway probe all succeed", async () => {
+    stubs = [
+      { url: "/user/tokens/verify", status: 200, body: { success: true, result: { status: "active" } } },
+      { url: "api.cloudflare.com/client/v4/accounts/acct/ai/run/", status: 200, body: { result: { data: [[0]] }, success: true } },
+      { url: "gateway.ai.cloudflare.com", status: 200, body: { result: { data: [[0]] }, success: true } },
+    ];
+    const r = await verifyApiTokenForWorkersAi("acct", "tok", "gw-1");
+    assert.deepStrictEqual(r, { ok: true });
+    assert.strictEqual(calls.length, 3);
+  });
+
+  it("returns reason=authenticated-gateway when direct succeeds but gateway 401s", async () => {
+    stubs = [
+      { url: "/user/tokens/verify", status: 200, body: { success: true, result: { status: "active" } } },
+      { url: "api.cloudflare.com/client/v4/accounts/acct/ai/run/", status: 200, body: { result: { data: [[0]] }, success: true } },
+      { url: "gateway.ai.cloudflare.com", status: 401, body: { success: false, errors: [{ code: 10000, message: "Authentication error" }] } },
+    ];
+    const r = await verifyApiTokenForWorkersAi("acct", "tok", "gw-1");
+    assert.strictEqual(r.ok, false);
+    if (!r.ok) assert.strictEqual(r.reason, "authenticated-gateway");
   });
 
   it("returns reason=invalid when /tokens/verify rejects the token", async () => {
