@@ -1723,6 +1723,14 @@ function App({
       // Clear the one-shot session-start recall so it is not reused.
       sessionStartRecallRef.current = null;
 
+      // Last-resort guard against race conditions (e.g. queued messages draining
+      // while a slash-command-initiated turn like /compact is still winding down).
+      // If the supervisor is already running, undo beginTurn() and bail out.
+      if (supervisorRef.current.isRunning) {
+        endTurn();
+        return;
+      }
+
       supervisorRef.current.startTurn(
         {
           accountId: cfg.accountId,
@@ -1948,7 +1956,7 @@ function App({
 
       const historyEntry = trimmedDisplay;
 
-      if (busyRef.current) {
+      if (busyRef.current || supervisorRef.current.isRunning) {
         const key = mkKey();
         setEvents((e) => [...e, { kind: "user", key, text: trimmedDisplay, queued: true }]);
         setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay, key }]);
