@@ -25,11 +25,9 @@ import { LspManager } from "./lsp/manager.js";
 import { HooksManager } from "./hooks/manager.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
-import { buildReport, sendReport } from "./cloud/report.js";
-import type { CloudCredentials } from "./cloud/auth.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -172,8 +170,6 @@ export interface Cfg {
   githubRefreshToken?: string;
   githubTokenExpiry?: number;
   githubRepo?: string;
-  cloudMode?: boolean;
-  cloudToken?: string;
   shell?: string;
   providerKeys?: {
     anthropic?: string;
@@ -195,15 +191,11 @@ function App({
   initialUpdateResult,
   initialLspScope,
   initialLspProjectPath,
-  initialCloudToken,
-  initialCloudDeviceId,
 }: {
   initialCfg: Cfg | null;
   initialUpdateResult?: UpdateCheckResult;
   initialLspScope: "project" | "global";
   initialLspProjectPath: string | null;
-  initialCloudToken?: string;
-  initialCloudDeviceId?: string;
 }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
@@ -213,8 +205,6 @@ function App({
   );
   const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
   const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
-  const [cloudToken, setCloudToken] = useState(initialCloudToken);
-  const [cloudDeviceId, setCloudDeviceId] = useState(initialCloudDeviceId);
   const [events, setRawEvents] = useState<ChatEvent[]>([]);
   const setEvents = useCallback(
     (updater: React.SetStateAction<ChatEvent[]>) => {
@@ -243,7 +233,6 @@ function App({
     };
   }, []);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
-  const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const turn = useTurnController();
   const {
     busy, busyRef,
@@ -379,33 +368,6 @@ function App({
     });
     return () => { cancelled = true; };
   }, []);
-
-  // Fetch cloud token budget on startup
-  useEffect(() => {
-    if (!cfg?.cloudMode || !initialCloudToken) return;
-    let cancelled = false;
-    const fetchBudget = async () => {
-      try {
-        const { fetchCloudUsage } = await import("./cloud/auth.js");
-        const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
-        if (usage && !cancelled) {
-          setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-        }
-      } catch (err) {
-        if (isKillSwitchError(err) && !cancelled) {
-          setCloudToken(undefined);
-          setCloudDeviceId(undefined);
-          setEvents((es) => [
-            ...es,
-            { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-          ]);
-        }
-        // Other errors are non-fatal
-      }
-    };
-    fetchBudget();
-    return () => { cancelled = true; };
-  }, [cfg?.cloudMode, initialCloudToken]);
 
   // Cursor offset for the input box. The picker controller owns its own
   // open/close/selection state — see `usePickerController` below.
@@ -576,10 +538,6 @@ function App({
       setKimiMdStale,
       customCommandsRef,
       setCustomCommandsVersion,
-      cloudToken,
-      initialCloudToken,
-      cloudDeviceId,
-      initialCloudDeviceId,
     });
   }, [cfg, setEvents]);
 
@@ -1071,19 +1029,12 @@ function App({
       busy,
       mkKey,
       setEvents,
-      cloudToken,
-      initialCloudToken,
-      cloudDeviceId,
-      initialCloudDeviceId,
       setCodeMode,
       setTurnPhase,
       setCurrentToolName,
       setLastActivityAt,
       setUsage,
       setSessionUsage,
-      setCloudBudget,
-      setCloudToken,
-      setCloudDeviceId,
       setKimiMdStale,
       setLoopModal,
       beginTurn,
@@ -1684,30 +1635,6 @@ function App({
           const sid = ensureSessionId();
           void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), cfg?.model);
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
-          // Refresh cloud budget so remaining tokens update in real time
-          if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-            const token = cloudToken ?? initialCloudToken!;
-            const did = cloudDeviceId ?? initialCloudDeviceId;
-            void (async () => {
-              try {
-                const { fetchCloudUsage } = await import("./cloud/auth.js");
-                const usage = await fetchCloudUsage(token, did);
-                if (usage) {
-                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-                }
-              } catch (err) {
-                if (isKillSwitchError(err)) {
-                  setCloudToken(undefined);
-                  setCloudDeviceId(undefined);
-                  setEvents((es) => [
-                    ...es,
-                    { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-                  ]);
-                }
-                // Other errors are non-fatal
-              }
-            })();
-          }
         },
         onGatewayMeta: updateGatewayMeta,
         onTasks: (nextTasks: Task[]) => {
@@ -1818,9 +1745,6 @@ function App({
           githubToken: cfg.githubOAuthToken,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
-          cloudMode: cfg.cloudMode,
-          cloudToken: cloudToken ?? initialCloudToken,
-          cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
           providerKeys: cfg.providerKeys,
           providerKeyAliases: cfg.providerKeyAliases,
           unifiedBilling: cfg.unifiedBilling,
@@ -1833,9 +1757,6 @@ function App({
             apiToken: cfg.apiToken,
             embeddingModel: cfg.memoryEmbeddingModel,
             gateway: gatewayFromConfig(cfg),
-            cloudMode: cfg.cloudMode,
-            cloudToken: cloudToken ?? initialCloudToken,
-            cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
             maxSkillTokens: modelContextLimit - 10_000,
           },
           mode: modeRef.current,
@@ -1983,41 +1904,6 @@ function App({
               setEvents((evts) =>
                 evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
               );
-            } else if (isKillSwitchError(e)) {
-              setCloudToken(undefined);
-              setCloudDeviceId(undefined);
-              setEvents((es) => [
-                ...es,
-                { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
-              ]);
-            } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-              const token = cloudToken ?? initialCloudToken;
-              const did = cloudDeviceId ?? initialCloudDeviceId;
-              let used = 0;
-              let limit = 0;
-              let expiresAt = "";
-              if (token) {
-                try {
-                  const { fetchCloudUsage } = await import("./cloud/auth.js");
-                  const usage = await fetchCloudUsage(token, did);
-                  if (usage) {
-                    used = usage.input_tokens_used;
-                    limit = usage.input_token_limit;
-                    expiresAt = usage.expires_at;
-                  }
-                } catch { /* ignore */ }
-              }
-              if (!limit) {
-                const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
-                if (m && m[1] && m[2]) {
-                  used = parseInt(m[1].replace(/,/g, ""), 10);
-                  limit = parseInt(m[2].replace(/,/g, ""), 10);
-                }
-              }
-              setEvents((es) => [
-                ...es,
-                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
-              ]);
             } else if (
               e instanceof KimiApiError &&
               (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
@@ -2234,8 +2120,6 @@ function App({
               model={cfg.model}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
-              cloudMode={cfg.cloudMode}
-              cloudBudget={cloudBudget}
               skillsActive={skillsActive}
               memoryRecalled={memoryRecalled}
               phase={turnPhase}
@@ -2323,8 +2207,6 @@ export async function renderApp(
   updateResult?: UpdateCheckResult,
   lspScope: "project" | "global" = "global",
   lspProjectPath: string | null = null,
-  cloudToken?: string,
-  cloudDeviceId?: string,
 ) {
   const instance = render(
     <App
@@ -2332,8 +2214,6 @@ export async function renderApp(
       initialUpdateResult={updateResult}
       initialLspScope={lspScope}
       initialLspProjectPath={lspProjectPath}
-      initialCloudToken={cloudToken}
-      initialCloudDeviceId={cloudDeviceId}
     />,
     {
       incrementalRendering: true,
