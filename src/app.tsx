@@ -300,7 +300,6 @@ function App({
     showHelpMenu, setShowHelpMenu,
     showMemoryPicker, setShowMemoryPicker,
     showGatewayPicker, setShowGatewayPicker,
-    showKeysPicker, setShowKeysPicker,
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
     hasFullscreenModal,
@@ -538,7 +537,6 @@ function App({
     showModePicker ||
     showMemoryPicker ||
     showGatewayPicker ||
-    showKeysPicker ||
     showSkillsPicker ||
     showShellPicker;
 
@@ -1332,7 +1330,6 @@ function App({
     setCommandPicker,
     setShowMemoryPicker,
     setShowGatewayPicker,
-    setShowKeysPicker,
     setShowSkillsPicker,
     setShowShellPicker,
     lspScope,
@@ -1376,7 +1373,7 @@ function App({
     setCfg, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta,
     setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setShowModePicker, setKeyEntryFor,
     setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal, setShowHelpMenu,
-    setShowMemoryPicker, setShowGatewayPicker, setShowKeysPicker, setShowSkillsPicker, setShowShellPicker,
+    setShowMemoryPicker, setShowGatewayPicker, setShowSkillsPicker, setShowShellPicker,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -2268,25 +2265,6 @@ function App({
           }
         }}
         onGatewayDone={() => setShowGatewayPicker(false)}
-        providerKeys={cfg?.providerKeys ?? {}}
-        unifiedBilling={cfg?.unifiedBilling ?? false}
-        onKeysAction={(action, provider) => {
-          setShowKeysPicker(false);
-          if (action === "set" && provider) {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /keys set ${provider} <key> to set the key.` }]);
-            return;
-          }
-          if (action === "clear" && provider) {
-            setTimeout(() => handleSlash(`/keys clear ${provider}`), 0);
-            return;
-          }
-          if (action === "toggle_unified") {
-            const next = !(cfg?.unifiedBilling ?? false);
-            setTimeout(() => handleSlash(`/keys unified ${next ? "on" : "off"}`), 0);
-            return;
-          }
-        }}
-        onKeysDone={() => setShowKeysPicker(false)}
         onSkillsAction={(action) => {
           setShowSkillsPicker(false);
           if (action === "list") {

@@ -65,8 +65,6 @@ export interface ModalHostController {
   setShowMemoryPicker: (v: boolean) => void;
   showGatewayPicker: boolean;
   setShowGatewayPicker: (v: boolean) => void;
-  showKeysPicker: boolean;
-  setShowKeysPicker: (v: boolean) => void;
   showSkillsPicker: boolean;
   setShowSkillsPicker: (v: boolean) => void;
   showShellPicker: boolean;
@@ -114,7 +112,6 @@ export function useModalHost(): ModalHostController {
   const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [showMemoryPicker, setShowMemoryPicker] = useState(false);
   const [showGatewayPicker, setShowGatewayPicker] = useState(false);
-  const [showKeysPicker, setShowKeysPicker] = useState(false);
   const [showSkillsPicker, setShowSkillsPicker] = useState(false);
   const [showShellPicker, setShowShellPicker] = useState(false);
 
@@ -137,7 +134,6 @@ export function useModalHost(): ModalHostController {
       showHelpMenu ||
       showMemoryPicker ||
       showGatewayPicker ||
-      showKeysPicker ||
       showSkillsPicker ||
       showShellPicker;
     const hasOverlayModal = limitModal !== null || loopModal !== null;
@@ -164,7 +160,6 @@ export function useModalHost(): ModalHostController {
     showHelpMenu,
     showMemoryPicker,
     showGatewayPicker,
-    showKeysPicker,
     showSkillsPicker,
     showShellPicker,
     limitModal,
@@ -191,7 +186,6 @@ export function useModalHost(): ModalHostController {
     showHelpMenu, setShowHelpMenu,
     showMemoryPicker, setShowMemoryPicker,
     showGatewayPicker, setShowGatewayPicker,
-    showKeysPicker, setShowKeysPicker,
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
     ...flags,
@@ -215,7 +209,6 @@ export interface ModalFlagsInput {
   showHelpMenu: boolean;
   showMemoryPicker: boolean;
   showGatewayPicker: boolean;
-  showKeysPicker: boolean;
   showSkillsPicker: boolean;
   showShellPicker: boolean;
 }
@@ -240,7 +233,6 @@ export function computeModalFlags(s: ModalFlagsInput): ModalFlags {
     s.showHelpMenu ||
     s.showMemoryPicker ||
     s.showGatewayPicker ||
-    s.showKeysPicker ||
     s.showSkillsPicker ||
     s.showShellPicker;
   const hasOverlayModal = s.limitModal !== null || s.loopModal !== null;
@@ -266,7 +258,6 @@ export const EMPTY_MODAL_STATE: ModalFlagsInput = {
   showHelpMenu: false,
   showMemoryPicker: false,
   showGatewayPicker: false,
-  showKeysPicker: false,
   showSkillsPicker: false,
   showShellPicker: false,
 };

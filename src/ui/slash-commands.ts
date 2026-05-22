@@ -120,7 +120,6 @@ export interface SlashContext {
   setShowHelpMenu: (v: boolean) => void;
   setShowMemoryPicker: (v: boolean) => void;
   setShowGatewayPicker: (v: boolean) => void;
-  setShowKeysPicker: (v: boolean) => void;
   setShowSkillsPicker: (v: boolean) => void;
   setShowShellPicker: (v: boolean) => void;
 
@@ -399,129 +398,6 @@ const handleModel: Handler = (ctx, rest, arg) => {
   } else if (next.kind === "needs-key") {
     ctx.setKeyEntryFor(entry);
   }
-  return true;
-};
-
-type ProviderKeyName = "anthropic" | "openai" | "google" | "openai-compatible";
-const PROVIDER_KEY_NAMES: ProviderKeyName[] = ["anthropic", "openai", "google", "openai-compatible"];
-
-function maskKey(k: string): string {
-  if (k.length <= 8) return "***";
-  return `${k.slice(0, 4)}…${k.slice(-4)}`;
-}
-
-const handleKeys: Handler = (ctx, rest) => {
-  const { cfg, setCfg, setEvents, mkKey } = ctx;
-  if (!cfg) {
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no config loaded" }]);
-    return true;
-  }
-
-  const sub = rest[0]?.toLowerCase() ?? "";
-
-  if (sub === "") {
-    ctx.setShowKeysPicker(true);
-    return true;
-  }
-
-  if (sub === "list" || sub === "status") {
-    const lines: string[] = ["provider keys:"];
-    for (const name of PROVIDER_KEY_NAMES) {
-      const v = cfg.providerKeys?.[name];
-      lines.push(`  ${name}: ${v ? maskKey(v) : "(not set)"}`);
-    }
-    lines.push(`unifiedBilling: ${cfg.unifiedBilling ? "on" : "off"}`);
-    lines.push("");
-    lines.push("usage:");
-    lines.push("  /keys set <provider> <key>     set or replace a provider key");
-    lines.push("  /keys clear <provider>         remove a provider key");
-    lines.push("  /keys unified on|off           toggle Cloudflare Unified Billing");
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
-    return true;
-  }
-
-  if (sub === "unified") {
-    const val = rest[1]?.toLowerCase();
-    if (val !== "on" && val !== "off") {
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /keys unified on|off" }]);
-      return true;
-    }
-    const on = val === "on";
-    setCfg((prev) => {
-      if (!prev) return prev;
-      const updated = { ...prev, unifiedBilling: on };
-      void saveConfig(updated).catch(() => {});
-      return updated;
-    });
-    setEvents((e) => [
-      ...e,
-      {
-        kind: "info",
-        key: mkKey(),
-        text: on
-          ? "unifiedBilling: on — make sure Unified Billing is enabled for this gateway in the Cloudflare dashboard"
-          : "unifiedBilling: off",
-      },
-    ]);
-    return true;
-  }
-
-  if (sub === "set") {
-    const provider = rest[1]?.toLowerCase() as ProviderKeyName | undefined;
-    const value = rest.slice(2).join(" ").trim();
-    if (!provider || !PROVIDER_KEY_NAMES.includes(provider) || !value) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `usage: /keys set <${PROVIDER_KEY_NAMES.join("|")}> <key>`,
-        },
-      ]);
-      return true;
-    }
-    setCfg((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        providerKeys: { ...(prev.providerKeys ?? {}), [provider]: value },
-      };
-      void saveConfig(updated).catch(() => {});
-      return updated;
-    });
-    setEvents((e) => [
-      ...e,
-      { kind: "info", key: mkKey(), text: `${provider} key: ${maskKey(value)} (saved)` },
-    ]);
-    return true;
-  }
-
-  if (sub === "clear") {
-    const provider = rest[1]?.toLowerCase() as ProviderKeyName | undefined;
-    if (!provider || !PROVIDER_KEY_NAMES.includes(provider)) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: `usage: /keys clear <${PROVIDER_KEY_NAMES.join("|")}>`,
-        },
-      ]);
-      return true;
-    }
-    setCfg((prev) => {
-      if (!prev?.providerKeys) return prev;
-      const next = { ...prev.providerKeys };
-      delete next[provider];
-      const updated = { ...prev, providerKeys: next };
-      void saveConfig(updated).catch(() => {});
-      return updated;
-    });
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `${provider} key cleared` }]);
-    return true;
-  }
-
-  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "unknown subcommand — try /keys list" }]);
   return true;
 };
 
@@ -1538,7 +1414,6 @@ const handlers: Record<string, Handler> = {
   "/cost": handleCost,
   "/shell": handleShell,
   "/model": handleModel,
-  "/keys": handleKeys,
   "/gateway": handleGateway,
   "/mode": handleMode,
   "/theme": handleTheme,

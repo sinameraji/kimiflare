@@ -13,7 +13,6 @@ import { ModePicker } from "./mode-picker.js";
 import { ShellPicker } from "./shell-picker.js";
 import { MemoryPicker } from "./memory-picker.js";
 import { GatewayPicker } from "./gateway-picker.js";
-import { KeysPicker } from "./keys-picker.js";
 import { SkillsPicker } from "./skills-picker.js";
 import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
 import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
@@ -109,11 +108,6 @@ export interface ModalHostProps {
   gatewayMetadataCount: number;
   onGatewayAction: (action: string) => void;
   onGatewayDone: () => void;
-  // Keys picker
-  providerKeys: Record<string, string | undefined>;
-  unifiedBilling: boolean;
-  onKeysAction: (action: string, provider?: string) => void;
-  onKeysDone: () => void;
   // Skills picker
   onSkillsAction: (action: string) => void;
   onSkillsDone: () => void;
@@ -261,21 +255,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
             metadataCount={props.gatewayMetadataCount}
             onAction={props.onGatewayAction}
             onDone={props.onGatewayDone}
-          />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (modals.showKeysPicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <KeysPicker
-            providerKeys={props.providerKeys}
-            unifiedBilling={props.unifiedBilling}
-            onAction={props.onKeysAction}
-            onDone={props.onKeysDone}
           />
         </Box>
       </ThemeProvider>
