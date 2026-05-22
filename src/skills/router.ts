@@ -19,9 +19,6 @@ export interface RouterDeps {
   apiToken: string;
   embeddingModel?: string;
   gateway?: AiGatewayOptions;
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
 }
 
 /**
@@ -37,9 +34,6 @@ export async function selectSkills(
     apiToken: deps.apiToken,
     model: deps.embeddingModel,
     gateway: deps.gateway,
-    cloudMode: deps.cloudMode,
-    cloudToken: deps.cloudToken,
-    cloudDeviceId: deps.cloudDeviceId,
   });
 
   return buildSkillContext(sections, opts.tier, opts.maxSkillTokens);

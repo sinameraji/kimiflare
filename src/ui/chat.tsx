@@ -6,9 +6,7 @@ import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
-import { CloudQuotaMessage } from "./cloud-quota-message.js";
 import { ApiErrorMessage } from "./api-error-message.js";
-import { ServiceEndedMessage } from "./service-ended-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -32,23 +30,11 @@ export type ChatEvent =
       memoryRecalled?: boolean;
     }
   | {
-      kind: "cloud_quota_exhausted";
-      key: string;
-      used: number;
-      limit: number;
-      expiresAt: string;
-    }
-  | {
       kind: "api_error";
       key: string;
       httpStatus?: number;
       code?: number;
       message: string;
-    }
-  | {
-      kind: "service_ended";
-      key: string;
-      endedAt?: string;
     }
   | {
       kind: "qrcode";
@@ -197,15 +183,6 @@ const EventView = React.memo(function EventView({
       </Text>
     );
   }
-  if (evt.kind === "cloud_quota_exhausted") {
-    return (
-      <CloudQuotaMessage
-        used={evt.used}
-        limit={evt.limit}
-        expiresAt={evt.expiresAt}
-      />
-    );
-  }
   if (evt.kind === "meta") {
     const metaParts: { label: string; value?: string | number }[] = [];
     if (evt.skillsActive !== undefined && evt.skillsActive > 0) {
@@ -230,9 +207,6 @@ const EventView = React.memo(function EventView({
         message={evt.message}
       />
     );
-  }
-  if (evt.kind === "service_ended") {
-    return <ServiceEndedMessage endedAt={evt.endedAt} />;
   }
   if (evt.kind === "qrcode") {
     return (

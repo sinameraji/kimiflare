@@ -64,7 +64,6 @@ import {
 import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
-import { buildReport, sendReport } from "../cloud/report.js";
 import { checkForUpdate } from "../util/update-check.js";
 import { getAppVersion } from "../util/version.js";
 import {
@@ -513,10 +512,6 @@ const handleGateway: Handler = (ctx, rest) => {
   const { cfg, setCfg, setEvents, mkKey, sessionIdRef } = ctx;
   if (!cfg) {
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no config loaded" }]);
-    return true;
-  }
-  if (cfg.cloudMode) {
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "AI Gateway is managed by Kimiflare Cloud" }]);
     return true;
   }
   const sub = rest[0]?.toLowerCase() ?? "";
@@ -1269,50 +1264,6 @@ const handleInbox: Handler = (ctx) => {
   return true;
 };
 
-const handleReport: Handler = (ctx, rest) => {
-  const { setEvents, mkKey, cfg, lastApiErrorRef, sessionIdRef } = ctx;
-  const err = lastApiErrorRef.current;
-  if (!err) {
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "No recent API error to report." }]);
-    return true;
-  }
-  const note = rest.join(" ").trim();
-  const isSend = note.toLowerCase() === "send" || note.toLowerCase().startsWith("send ");
-  if (!isSend) {
-    const preview = [
-      "Report preview:",
-      `  Error: ${err.message}`,
-      err.httpStatus !== undefined ? `  HTTP ${err.httpStatus}` : "",
-      err.code !== undefined ? `  Code: ${err.code}` : "",
-      note ? `  Note: ${note}` : "",
-      "",
-      "Type `/report send` to submit or `/report send <note>` to add context.",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: preview }]);
-    return true;
-  }
-  const userNote = note.slice(4).trim() || undefined;
-  const payload = buildReport({
-    errorMessage: err.message,
-    httpStatus: err.httpStatus,
-    errorCode: err.code,
-    sessionId: sessionIdRef.current ?? undefined,
-    userNote,
-    model: cfg?.model,
-    cloudMode: cfg?.cloudMode,
-  });
-  void sendReport(payload, cfg?.cloudToken).then((result) => {
-    setEvents((e) => [...e, { kind: result.ok ? "info" : "error", key: mkKey(), text: result.message }]);
-    if (result.ok) {
-      lastApiErrorRef.current = null;
-    }
-  });
-  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Sending report…" }]);
-  return true;
-};
-
 const handleLogout: Handler = (ctx) => {
   unlink(configPath()).catch(() => {});
   ctx.setEvents((e) => [
@@ -1568,7 +1519,6 @@ const handlers: Record<string, Handler> = {
   "/hooks": handleHooks,
   "/hello": handleHello,
   "/inbox": handleInbox,
-  "/report": handleReport,
   "/logout": handleLogout,
   "/command": handleCommand,
   "/remote": handleRemote,
