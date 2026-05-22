@@ -91,7 +91,6 @@ export interface ModalHostProps {
   onHooksMutate: () => void;
   // Help menu
   costAttributionEnabled: boolean;
-  cloudMode: boolean;
   onRunCommand: (cmd: string) => void;
   // Shell picker
   currentShell: string | undefined;
@@ -207,7 +206,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
           <HelpMenu
             customCommands={customCommands.map((c) => ({ name: c.name, description: c.description }))}
             costAttributionEnabled={props.costAttributionEnabled}
-            cloudMode={props.cloudMode}
             onDone={() => modals.setShowHelpMenu(false)}
             onCommand={(cmd) => {
               modals.setShowHelpMenu(false);

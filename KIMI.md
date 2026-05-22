@@ -55,7 +55,7 @@
 | `src/code-mode/` | TypeScript sandbox for safe tool execution (`runInSandbox`, `generateTypeScriptApi`). |
 | `src/skills/` | Skill routing system: load, select, and inject domain-specific skill files into prompts. |
 | `src/commands/` | Slash command system: builtins, loader, renderer, frontmatter parsing. |
-| `src/cloud/` | Kimiflare Cloud mode: device auth, quota messages, diagnostic reporting. |
+| `src/cloud/` | Cloudflare AI Gateway management (gateway list/create/show via `api.cloudflare.com`). |
 | `src/cost-attribution/` | Token cost tracking, heuristic classification, and TUI reporting. |
 | `src/intent/` | Intent classification for routing user input. |
 | `src/util/` | Shared utilities: errors, SSE parsing, fuzzy search, abort scopes, logger, update check. |
@@ -212,7 +212,6 @@ node --inspect-brk bin/kimiflare.mjs
 ### External Integrations
 - **Cloudflare AI Gateway** — the spine. All Workers AI traffic is routed through the user's own Gateway by default: this gives us per-request logs, caching, and authoritative cost attribution via `cf-aig-metadata` tagging (`feature`, `sessionId`, `turnIdx`). Gateway logs are the source of truth for `/cost`; local heuristics are demoted to a brief fallback used only until logs catch up. Emergency opt-out: `KIMIFLARE_DISABLE_AI_GATEWAY=1`.
 - **Cloudflare Workers AI** — LLM backend (Kimi-K2.6). Reached via the Gateway in normal operation; direct path remains in code as fallback only.
-- **KimiFlare Cloud** — optional proxy mode with device auth.
 - **MCP Servers** — external tools via Model Context Protocol.
 - **LSP Servers** — language servers for code intelligence.
 - **GitHub API** — PR/issue/code reading via `src/tools/github.ts`.

@@ -88,8 +88,6 @@ export interface KimiConfig {
   githubTokenExpiry?: number;
   /** Default GitHub repo for remote sessions (owner/repo). */
   githubRepo?: string;
-  /** Enable cloud mode: use api.kimiflare.com instead of direct Workers AI. */
-  cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
   /** Per-provider API keys forwarded to AI Gateway as cf-aig-authorization for BYOK. */
@@ -233,38 +231,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
-  const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
   const envShell = process.env.KIMIFLARE_SHELL;
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
-
-  if (envCloudMode) {
-    return {
-      accountId: "",
-      apiToken: "",
-      model: envModel,
-      cloudMode: true,
-      reasoningEffort: envEffort,
-      coauthor: envCoauthor?.enabled ?? true,
-      coauthorName: envCoauthor?.name,
-      coauthorEmail: envCoauthor?.email,
-      cacheStablePrompts,
-      compiledContext,
-      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
-      memoryEnabled: envMemoryEnabled ?? false,
-      memoryDbPath: envMemoryDbPath,
-      memoryMaxAgeDays: envMemoryMaxAgeDays,
-      memoryMaxEntries: envMemoryMaxEntries,
-      memoryEmbeddingModel: envMemoryEmbeddingModel,
-      plumbingModel: envPlumbingModel,
-      codeMode: envCodeMode,
-      costAttribution: envCostAttribution ?? false,
-      filePicker: envFilePicker ?? true,
-      shell: envShell,
-      providerKeys: envProviderKeys,
-      unifiedBilling: envUnifiedBilling,
-    };
-  }
 
   if (envAccount && envToken) {
     return {
@@ -302,37 +271,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   try {
     const raw = await readFile(configPath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<KimiConfig>;
-    if (parsed.cloudMode) {
-      return {
-        accountId: envAccount ?? parsed.accountId ?? "",
-        apiToken: envToken ?? parsed.apiToken ?? "",
-        model: envModel ?? parsed.model ?? DEFAULT_MODEL,
-        cloudMode: true,
-        reasoningEffort: envEffort ?? parsed.reasoningEffort,
-        coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
-        coauthorName: envCoauthor?.name ?? parsed.coauthorName,
-        coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
-        mcpServers: parsed.mcpServers,
-        cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
-        compiledContext: parsed.compiledContext ?? compiledContext,
-        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
-        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? false,
-        memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
-        memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
-        memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
-        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
-        plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
-        codeMode: envCodeMode ?? parsed.codeMode,
-        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
-        filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        theme: parsed.theme,
-        shell: envShell ?? parsed.shell,
-        providerKeys: envProviderKeys ?? parsed.providerKeys,
-        providerKeyAliases: parsed.providerKeyAliases,
-        secretsStoreId: parsed.secretsStoreId,
-        unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
-      };
-    }
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
       return {
@@ -363,7 +301,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         providerKeys: envProviderKeys ?? parsed.providerKeys,

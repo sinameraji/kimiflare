@@ -19,9 +19,6 @@ export interface IndexerOpts {
   apiToken: string;
   gateway?: AiGatewayOptions;
   embeddingModel?: string;
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
 }
 
 /**
@@ -97,9 +94,6 @@ export async function indexSkills(opts: IndexerOpts): Promise<{
           model: opts.embeddingModel,
           texts: inputs,
           gateway: opts.gateway,
-          cloudMode: opts.cloudMode,
-          cloudToken: opts.cloudToken,
-          cloudDeviceId: opts.cloudDeviceId,
         });
         insertSections(opts.db, skillId, skill.sections, embeddings);
       } catch (err) {
