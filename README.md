@@ -8,12 +8,12 @@
   <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sinameraji/kimiflare?style=flat-square&color=2ea44f" alt="license"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js >= 20">
   <img src="https://img.shields.io/badge/typescript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
-  <a href="https://developers.cloudflare.com/ai-gateway/"><img src="https://img.shields.io/badge/powered%20by-Multiple%20Models-f59e0b?style=flat-square" alt="Powered by Multiple Models"></a>
+  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2"><img src="https://img.shields.io/badge/powered%20by-Kimi%20K2.6-f59e0b?style=flat-square" alt="Powered by Kimi K2.6"></a>
 </p>
 
 <p align="center">
-  <strong>A terminal coding agent powered by multiple models (Kimi-K2.6, Claude, GPT-5, Gemini, Llama, and more), routed through your own <a href="https://developers.cloudflare.com/ai-gateway/">Cloudflare AI Gateway</a>.</strong><br>
-  Switch models anytime with <code>/model</code>. First-class observability, caching, and authoritative cost — all on your Cloudflare account.
+  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2">Kimi K2.6</a> on <a href="https://developers.cloudflare.com/workers-ai/">Cloudflare Workers AI</a> — with optional routing through your own <a href="https://developers.cloudflare.com/ai-gateway/">AI Gateway</a> for first-class observability, caching, and authoritative cost.</strong><br>
+  All on your Cloudflare account.
 </p>
 
 <p align="center">
@@ -22,9 +22,9 @@
 
 ## How it works
 
-You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare provisions (or reuses) an **AI Gateway** in your account and routes every model request through it. Nothing leaves your Cloudflare tenancy.
+You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare calls **Workers AI** directly by default — fastest path, fewest moving parts. You can optionally turn on routing through an **AI Gateway** in your account (provisioned or reused on first run) for observability, caching, and cost reporting. Either way, nothing leaves your Cloudflare tenancy.
 
-You get this for free:
+With AI Gateway enabled you get this for free:
 
 - **Per-request logs** with full payload, latency, and status — visible in the Cloudflare dashboard
 - **Response caching** with configurable TTL (`/gateway cache-ttl <seconds>`)
@@ -91,32 +91,13 @@ Edit your token at: https://dash.cloudflare.com/profile/api-tokens
 
 Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, per-feature breakdown, and direct dashboard links to each request log. `/gateway status` shows the current TTL, skip-cache flag, metadata tags, and live cache-hit ratio.
 
-### Model selection
+### Model
 
-KimiFlare supports **11 models** across multiple providers, all routed through Cloudflare AI Gateway:
+KimiFlare runs on **Kimi K2.6** via Cloudflare Workers AI — no API key needed beyond your Cloudflare token:
 
-**Cloudflare Workers AI** (default, no API key needed):
 - `@cf/moonshotai/kimi-k2.6` — 262k context, reasoning, tools
-- `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — 24k context, tools
-- `@cf/meta/llama-4-scout-17b-16e-instruct` — 131k context, tools
 
-**Anthropic** (requires API key):
-- `anthropic/claude-opus-4-7` — 1M context, reasoning, tools
-- `anthropic/claude-sonnet-4-6` — 1M context, reasoning, tools
-- `anthropic/claude-haiku-4-5` — 200k context, tools
-
-**OpenAI** (requires API key):
-- `openai/gpt-5` — 400k context, reasoning, tools
-- `openai/gpt-5-mini` — 400k context, reasoning, tools
-
-**Google** (requires API key):
-- `google-ai-studio/gemini-2.5-pro` — 1M context, reasoning, tools
-- `google-ai-studio/gemini-2.5-flash` — 1M context, tools
-
-**Other OpenAI-compatible** (requires API key):
-- `groq/llama-3.3-70b-versatile` — 128k context, tools
-
-Switch models anytime in the TUI with `/model`, or set at startup with `--model <id>` or the config file.
+`@cf/moonshotai/kimi-k2.5` is also available for older sessions.
 
 ### One-shot mode
 

@@ -37,6 +37,8 @@ import type { LspManager } from "../lsp/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { ChatEvent } from "../ui/chat.js";
 import type { Cfg } from "../app.js";
+import type { LoopDecision } from "../ui/limit-modal.js";
+import type { LoopModalState } from "../ui/use-modal-host.js";
 import { gatewayFromConfig, gatewayUsageLookupFromConfig, mkAssistantId, trackRecentFile } from "../ui/app-helpers.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
@@ -56,7 +58,7 @@ export interface RunInitDeps {
   setUsage: React.Dispatch<React.SetStateAction<Usage | null>>;
   setSessionUsage: React.Dispatch<React.SetStateAction<DailyUsage | null>>;
   setKimiMdStale: (v: boolean) => void;
-  setLoopModal: (v: null) => void;
+  setLoopModal: (v: LoopModalState | null) => void;
 
   // Turn-lifecycle hooks
   beginTurn: () => void;
@@ -89,7 +91,7 @@ export interface RunInitDeps {
   cacheStableRef: React.MutableRefObject<boolean>;
   lastApiErrorRef: React.MutableRefObject<{ httpStatus?: number; code?: number; message: string } | null>;
   limitResolveRef: React.MutableRefObject<unknown>;
-  loopResolveRef: React.MutableRefObject<unknown>;
+  loopResolveRef: React.MutableRefObject<((d: LoopDecision) => void) | null>;
 }
 
 export async function runInit(deps: RunInitDeps): Promise<void> {
@@ -255,6 +257,11 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
         },
         onGatewayMeta: updateGatewayMeta,
         askPermission: (req) => askForPermission(req, { promptOnBlockedBash: true }),
+        onLoopDetected: () =>
+          new Promise<LoopDecision>((resolve) => {
+            loopResolveRef.current = resolve;
+            setLoopModal({ resolve });
+          }),
         onKimiMdStale: () => {
           if (!kimiMdStaleNudgedRef.current) {
             kimiMdStaleNudgedRef.current = true;
@@ -326,7 +333,10 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
         {
           kind: "error",
           key: mkKey(),
-          text: "The agent got stuck repeating the same actions. Here's what we know so far.",
+          text:
+            "/init stopped: the agent kept repeating the same tool calls and couldn't finish writing KIMI.md. " +
+            "Try /init again — if it loops in the same place, the repo may be too large for a single pass; " +
+            "you can write KIMI.md manually or scope it by deleting noisy paths from your .gitignore-style ignore list.",
         },
       ]);
     } else if (
