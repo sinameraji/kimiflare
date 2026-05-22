@@ -11,9 +11,6 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "keys", argHint: "[list|set|clear|unified] ...", description: "Manage provider API keys for AI Gateway BYOK", source: "builtin" },
   { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
-  { name: "plan", description: "Switch to plan mode", source: "builtin" },
-  { name: "auto", description: "Switch to auto mode", source: "builtin" },
-  { name: "edit", description: "Switch to edit mode", source: "builtin" },
   { name: "reasoning", description: "Toggle reasoning visibility", source: "builtin" },
   { name: "memory", argHint: "[on|off|clear|search ...]", description: "Manage memory", source: "builtin" },
   { name: "cost", argHint: "[on|off]", description: "Show cost report or toggle attribution", source: "builtin" },
@@ -32,12 +29,10 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "remote", argHint: "<prompt>", description: "Run a remote session on Cloudflare", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
-  { name: "inbox", description: "Check for a voice reply from the creator", source: "builtin" },
   { name: "report", argHint: "[send] [note]", description: "Report the last API error with diagnostic logs", source: "builtin" },
   { name: "shell", argHint: "[auto|bash|cmd|powershell|<path>]", description: "Show or set shell for bash tool", source: "builtin" },
   { name: "logout", description: "Clear stored credentials", source: "builtin" },
   { name: "exit", description: "Exit kimiflare", source: "builtin" },
-  { name: "quit", description: "Alias for /exit", source: "builtin" },
 ];
 
 export const BUILTIN_COMMAND_NAMES = new Set(

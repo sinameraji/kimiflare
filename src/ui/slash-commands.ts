@@ -106,6 +106,7 @@ export interface SlashContext {
   // Modal setters
   setShowThemePicker: (v: boolean) => void;
   setShowModelPicker: (v: boolean) => void;
+  setShowModePicker: (v: boolean) => void;
   setKeyEntryFor: (v: ModelEntry | null) => void;
   setBillingChooserFor: (v: ModelEntry | null) => void;
   setUnifiedProbeFor: (v: ModelEntry | null) => void;
@@ -116,6 +117,12 @@ export interface SlashContext {
   setCommandWizard: (v: { mode: "create" | "edit"; command?: CustomCommand } | null) => void;
   setCommandPicker: (v: { mode: "edit" | "delete" } | null) => void;
   setShowHooksDashboard: (v: boolean) => void;
+  setShowHelpMenu: (v: boolean) => void;
+  setShowMemoryPicker: (v: boolean) => void;
+  setShowGatewayPicker: (v: boolean) => void;
+  setShowKeysPicker: (v: boolean) => void;
+  setShowSkillsPicker: (v: boolean) => void;
+  setShowShellPicker: (v: boolean) => void;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -286,6 +293,10 @@ const handleCost: Handler = (ctx, _rest, arg) => {
 const handleShell: Handler = (ctx, _rest, arg) => {
   const { cfg, setCfg, setEvents, mkKey } = ctx;
   if (!cfg) return true;
+  if (!arg) {
+    ctx.setShowShellPicker(true);
+    return true;
+  }
   if (arg === "auto" || arg === "bash" || arg === "cmd" || arg === "powershell") {
     const next = { ...cfg, shell: arg === "auto" ? undefined : arg };
     setCfg(next);
@@ -406,7 +417,12 @@ const handleKeys: Handler = (ctx, rest) => {
     return true;
   }
 
-  const sub = rest[0]?.toLowerCase() ?? "list";
+  const sub = rest[0]?.toLowerCase() ?? "";
+
+  if (sub === "") {
+    ctx.setShowKeysPicker(true);
+    return true;
+  }
 
   if (sub === "list" || sub === "status") {
     const lines: string[] = ["provider keys:"];
@@ -522,7 +538,12 @@ const handleGateway: Handler = (ctx, rest) => {
   const sub = rest[0]?.toLowerCase() ?? "";
   const subArg = rest.slice(1).join(" ").trim();
 
-  if (!sub || sub === "status") {
+  if (!sub) {
+    ctx.setShowGatewayPicker(true);
+    return true;
+  }
+
+  if (sub === "status") {
     const lines: string[] = [];
     if (cfg.aiGatewayId) {
       lines.push(`gateway: ${cfg.aiGatewayId}`);
@@ -645,10 +666,7 @@ const handleGateway: Handler = (ctx, rest) => {
 const handleMode: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
   if (!arg) {
-    setEvents((e) => [
-      ...e,
-      { kind: "info", key: mkKey(), text: `current mode: ${ctx.mode}  ·  use /mode edit|plan|auto or shift+tab` },
-    ]);
+    ctx.setShowModePicker(true);
     return true;
   }
   if (arg === "edit" || arg === "plan" || arg === "auto") {
@@ -684,30 +702,17 @@ const handleTheme: Handler = (ctx, _rest, arg) => {
   return true;
 };
 
-const handlePlan: Handler = (ctx) => {
-  ctx.setMode("plan");
-  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: plan" }]);
-  return true;
-};
-
-const handleAuto: Handler = (ctx) => {
-  ctx.setMode("auto");
-  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: auto" }]);
-  return true;
-};
-
-const handleEdit: Handler = (ctx) => {
-  ctx.setMode("edit");
-  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: edit" }]);
-  return true;
-};
-
 const handleSkills: Handler = (ctx, rest) => {
   const { setEvents, mkKey } = ctx;
   const sub = rest[0]?.toLowerCase() ?? "";
   const subRest = rest.slice(1).join(" ").trim();
 
-  if (sub === "list" || sub === "") {
+  if (sub === "") {
+    ctx.setShowSkillsPicker(true);
+    return true;
+  }
+
+  if (sub === "list") {
     void listAllSkills(process.cwd())
       .then((all) => {
         const lines: string[] = [];
@@ -842,6 +847,10 @@ const handleSkills: Handler = (ctx, rest) => {
 const handleMemory: Handler = (ctx, _rest, arg) => {
   const { cfg, setCfg, setEvents, mkKey, memoryManagerRef } = ctx;
   if (!cfg) return true;
+  if (!arg) {
+    ctx.setShowMemoryPicker(true);
+    return true;
+  }
   if (arg === "on") {
     const next = { ...cfg, memoryEnabled: true };
     setCfg(next);
@@ -905,8 +914,48 @@ const handleResume: Handler = (ctx) => {
   return true;
 };
 
-const handleCheckpoint: Handler = (ctx, rest) => {
-  const { setEvents, mkKey } = ctx;
+const handleCheckpoint: Handler = (ctx, rest, arg) => {
+  const { setEvents, mkKey, sessionIdRef } = ctx;
+
+  // `/checkpoint list` → list checkpoints (replaces old `/checkpoints`)
+  if (arg === "list") {
+    const currentId = sessionIdRef.current;
+    if (!currentId) {
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no active session" }]);
+      return true;
+    }
+    void (async () => {
+      try {
+        const { sessionsDir } = await import("../sessions.js");
+        const file = await loadSession(join(sessionsDir(), `${currentId}.json`));
+        const cps = file.checkpoints ?? [];
+        if (cps.length === 0) {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no checkpoints in this session" }]);
+          return;
+        }
+        const lines = [
+          "checkpoints:",
+          ...cps.map(
+            (cp, i) =>
+              `  ${i + 1}. "${cp.label}" — turn ${cp.turnIndex} · ${new Date(cp.timestamp).toLocaleString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`,
+          ),
+        ];
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+      } catch (e) {
+        setEvents((es) => [
+          ...es,
+          { kind: "error", key: mkKey(), text: `failed to list checkpoints: ${(e as Error).message}` },
+        ]);
+      }
+    })();
+    return true;
+  }
+
   const label = rest.join(" ").trim() || `checkpoint ${new Date().toLocaleString()}`;
   const turnIndex = ctx.messagesRef.current.length;
   if (turnIndex === 0) {
@@ -932,45 +981,6 @@ const handleCheckpoint: Handler = (ctx, rest) => {
       setEvents((es) => [
         ...es,
         { kind: "error", key: mkKey(), text: `checkpoint failed: ${(e as Error).message}` },
-      ]);
-    }
-  })();
-  return true;
-};
-
-const handleCheckpoints: Handler = (ctx) => {
-  const { setEvents, mkKey, sessionIdRef } = ctx;
-  const currentId = sessionIdRef.current;
-  if (!currentId) {
-    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no active session" }]);
-    return true;
-  }
-  void (async () => {
-    try {
-      const { sessionsDir } = await import("../sessions.js");
-      const file = await loadSession(join(sessionsDir(), `${currentId}.json`));
-      const cps = file.checkpoints ?? [];
-      if (cps.length === 0) {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "no checkpoints in this session" }]);
-        return;
-      }
-      const lines = [
-        "checkpoints:",
-        ...cps.map(
-          (cp, i) =>
-            `  ${i + 1}. "${cp.label}" — turn ${cp.turnIndex} · ${new Date(cp.timestamp).toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}`,
-        ),
-      ];
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
-    } catch (e) {
-      setEvents((es) => [
-        ...es,
-        { kind: "error", key: mkKey(), text: `failed to list checkpoints: ${(e as Error).message}` },
       ]);
     }
   })();
@@ -1264,11 +1274,6 @@ const handleHello: Handler = (ctx) => {
   return true;
 };
 
-const handleInbox: Handler = (ctx) => {
-  ctx.setShowInboxModal(true);
-  return true;
-};
-
 const handleReport: Handler = (ctx, rest) => {
   const { setEvents, mkKey, cfg, lastApiErrorRef, sessionIdRef } = ctx;
   const err = lastApiErrorRef.current;
@@ -1326,6 +1331,11 @@ const handleLogout: Handler = (ctx) => {
 const handleCommand: Handler = (ctx, rest) => {
   const { setEvents, mkKey } = ctx;
   const sub = rest[0]?.toLowerCase() ?? "";
+  // `/command` (no args) opens the interactive list — same as `/command list`
+  if (sub === "" || sub === "list") {
+    ctx.setShowCommandList(true);
+    return true;
+  }
   if (sub === "create") {
     ctx.setCommandWizard({ mode: "create" });
     return true;
@@ -1336,10 +1346,6 @@ const handleCommand: Handler = (ctx, rest) => {
   }
   if (sub === "delete") {
     ctx.setCommandPicker({ mode: "delete" });
-    return true;
-  }
-  if (sub === "list") {
-    ctx.setShowCommandList(true);
     return true;
   }
   setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /command create | edit | delete | list" }]);
@@ -1519,22 +1525,7 @@ const handleRemote: Handler = (ctx, rest, arg) => {
 };
 
 const handleHelp: Handler = (ctx) => {
-  const lines = [
-    "commands:",
-    "  /mode edit|plan|auto     switch agent mode",
-    "  /skills list|add|edit|... manage skills",
-    "  /memory on|off|clear      manage memory",
-    "  /cost                     show cost report",
-    "  /compact                  summarize old turns",
-    "  /resume                   pick a past session",
-    "  /checkpoint [label]       save current point in session",
-    "  /checkpoints              list checkpoints in session",
-    "  /clear                    clear conversation",
-    "  /init                     scan repo and write KIMI.md",
-    "  /update                   check for updates",
-    "  /exit                     exit kimiflare",
-  ];
-  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: lines.join("\n") }]);
+  ctx.setShowHelpMenu(true);
   return true;
 };
 
@@ -1542,7 +1533,6 @@ const handleHelp: Handler = (ctx) => {
 
 const handlers: Record<string, Handler> = {
   "/exit": handleExit,
-  "/quit": handleExit,
   "/clear": handleClear,
   "/reasoning": handleReasoning,
   "/cost": handleCost,
@@ -1552,14 +1542,10 @@ const handlers: Record<string, Handler> = {
   "/gateway": handleGateway,
   "/mode": handleMode,
   "/theme": handleTheme,
-  "/plan": handlePlan,
-  "/auto": handleAuto,
-  "/edit": handleEdit,
   "/skills": handleSkills,
   "/memory": handleMemory,
   "/resume": handleResume,
   "/checkpoint": handleCheckpoint,
-  "/checkpoints": handleCheckpoints,
   "/compact": handleCompact,
   "/init": handleInit,
   "/update": handleUpdate,
@@ -1567,7 +1553,6 @@ const handlers: Record<string, Handler> = {
   "/lsp": handleLsp,
   "/hooks": handleHooks,
   "/hello": handleHello,
-  "/inbox": handleInbox,
   "/report": handleReport,
   "/logout": handleLogout,
   "/command": handleCommand,
