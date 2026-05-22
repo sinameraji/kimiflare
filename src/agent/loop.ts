@@ -212,9 +212,15 @@ function isHighSignalMemory(memory: {
   );
 }
 
-/** Fraction of the model's context window we'll let the prompt occupy before
- *  refusing the call. Leaves headroom for the response. */
-const PROMPT_TOKEN_SOFT_LIMIT_RATIO = 0.92;
+/** Default completion budget if the caller doesn't pin one. Mirrors
+ *  client.ts. The API counts `input + max_completion_tokens` against the
+ *  context window, so this must be subtracted from the soft limit. */
+const DEFAULT_MAX_COMPLETION_TOKENS = 16_384;
+
+/** Extra headroom on top of `max_completion_tokens` to absorb estimator
+ *  drift (we estimate prompt tokens via chars-per-token, which under-counts
+ *  for code- and JSON-heavy content vs. the server-side tokenizer). */
+const BUDGET_SAFETY_MARGIN_TOKENS = 8_192;
 
 /** Max characters for a single tool result message before truncation.
  *  ~10k chars ≈ 2,500 tokens — generous but prevents runaway growth. */
@@ -551,7 +557,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
     const promptTokens = estimatePromptTokens(apiMessages);
     const ctxWindow = getModelOrInfer(opts.model).contextWindow;
-    const maxPromptTokens = Math.floor(ctxWindow * PROMPT_TOKEN_SOFT_LIMIT_RATIO);
+    // The API rejects when `input + max_completion_tokens > ctxWindow`,
+    // so compute the budget from those exact terms (plus a safety margin
+    // for estimator drift) rather than a flat percentage.
+    const completionBudget = opts.maxCompletionTokens ?? DEFAULT_MAX_COMPLETION_TOKENS;
+    const maxPromptTokens = ctxWindow - completionBudget - BUDGET_SAFETY_MARGIN_TOKENS;
     if (promptTokens > maxPromptTokens) {
       throw new Error(
         `kimiflare: context window exceeded (~${promptTokens.toLocaleString()} / ${ctxWindow.toLocaleString()} tokens). ` +

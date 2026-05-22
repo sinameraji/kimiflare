@@ -115,7 +115,7 @@ import {
   handleRemoteCancel as handleRemoteCancelImpl,
 } from "./ui/command-handlers.js";
 import {
-  AUTO_COMPACT_SUGGEST_PCT,
+  AUTO_COMPACT_THRESHOLD,
   buildFilePickerIgnoreList,
   capEvents,
   compactEventsVisual,
@@ -1968,19 +1968,33 @@ function App({
   submitRef.current = submit;
 
   useEffect(() => {
+    if (usage && usage.prompt_tokens / modelContextLimit < AUTO_COMPACT_THRESHOLD * 0.7) {
+      compactSuggestedRef.current = false;
+    }
     if (compactSuggestedRef.current) return;
-    if (usage && usage.prompt_tokens / modelContextLimit >= AUTO_COMPACT_SUGGEST_PCT) {
-      compactSuggestedRef.current = true;
+    if (busy) return;
+    if (!usage || usage.prompt_tokens / modelContextLimit < AUTO_COMPACT_THRESHOLD) return;
+    compactSuggestedRef.current = true;
+    const pct = Math.round((usage.prompt_tokens / modelContextLimit) * 100);
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text: `context ${pct}% full — auto-compacting older turns`,
+      },
+    ]);
+    void runCompact().catch((err) => {
       setEvents((e) => [
         ...e,
         {
-          kind: "info",
+          kind: "error",
           key: mkKey(),
-          text: `context ${Math.round((usage.prompt_tokens / modelContextLimit) * 100)}% full — run /compact to summarize older turns`,
+          text: `auto-compact failed: ${(err as Error).message} — run /compact manually`,
         },
       ]);
-    }
-  }, [usage, modelContextLimit]);
+    });
+  }, [usage, modelContextLimit, busy, runCompact]);
 
   if (!cfg) {
     return (
