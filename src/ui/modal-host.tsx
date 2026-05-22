@@ -29,6 +29,7 @@ import type { CustomCommand } from "../commands/types.js";
 import type { SaveCustomCommandOptions } from "../commands/save.js";
 import type { RemoteSession } from "../remote/session-store.js";
 import type { HookConfig, HookEvent } from "../hooks/types.js";
+import type { MemoryManager } from "../memory/manager.js";
 
 interface LspServersConfig {
   [key: string]: {
@@ -98,6 +99,7 @@ export interface ModalHostProps {
   onPickShell: (shell: string | null) => void;
   // Memory picker
   memoryEnabled: boolean;
+  memoryManager: MemoryManager | null;
   onMemoryAction: (action: string) => void;
   onMemoryDone: () => void;
   // Gateway picker
@@ -239,6 +241,7 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
         <Box flexDirection="column">
           <MemoryPicker
             enabled={props.memoryEnabled}
+            memoryManager={props.memoryManager}
             onAction={props.onMemoryAction}
             onDone={props.onMemoryDone}
           />

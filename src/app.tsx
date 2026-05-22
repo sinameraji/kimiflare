@@ -2224,12 +2224,9 @@ function App({
           setShowShellPicker(false);
         }}
         memoryEnabled={memoryManagerRef.current !== null}
+        memoryManager={memoryManagerRef.current}
         onMemoryAction={(action) => {
           setShowMemoryPicker(false);
-          if (action === "search") {
-            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Type /memory search <query> to search memories." }]);
-            return;
-          }
           setTimeout(() => handleSlash(`/memory ${action}`), 0);
         }}
         onMemoryDone={() => setShowMemoryPicker(false)}
