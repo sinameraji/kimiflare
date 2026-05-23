@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.74.1](https://github.com/sinameraji/kimiflare/compare/v0.74.0...v0.74.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **agent:** close race window in processMessage and harden runInit/runCompact ([#491](https://github.com/sinameraji/kimiflare/issues/491)) ([0994e80](https://github.com/sinameraji/kimiflare/commit/0994e807065a705b840b33053d4388d82d4204ff))
+* **agent:** prevent TurnSupervisor crash on race-conditioned turn starts ([#487](https://github.com/sinameraji/kimiflare/issues/487)) ([104691b](https://github.com/sinameraji/kimiflare/commit/104691b4f20b3f01f95f7ce41aba6e0d7f978f84))
+* **context:** prevent API overflow at high context utilization ([#489](https://github.com/sinameraji/kimiflare/issues/489)) ([83cbe79](https://github.com/sinameraji/kimiflare/commit/83cbe7945c1d22ce308ec193c913c63445ee177b))
+
 ## [0.74.0](https://github.com/sinameraji/kimiflare/compare/v0.73.2...v0.74.0) (2026-05-21)
 
 
