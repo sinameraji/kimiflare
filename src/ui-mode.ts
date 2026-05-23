@@ -658,7 +658,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         },
       });
     } catch (err) {
-      if (err instanceof BudgetExhaustedError) {
+      // Esc / Ctrl+C aborts surface as DOMException AbortError. Swallow
+      // it cleanly — the cancelRequested handler already showed a
+      // "turn interrupted" toast; surfacing a duplicate RuntimeError
+      // row is noise.
+      if (err instanceof Error && err.name === "AbortError") {
+        // Nothing to surface; the multi-turn loop continues so the user
+        // can immediately submit a new prompt.
+      } else if (err instanceof BudgetExhaustedError) {
         cam.send("RuntimeError", { message: "cumulative input token budget exhausted", kind: "quota_exhausted", severity: "error" });
         exitCode = 42; aborted = true;
       } else if (err instanceof AgentLoopError) {
