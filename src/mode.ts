@@ -59,7 +59,7 @@ const READONLY_COMMANDS = new Set([
   "file", "stat", "readlink", "realpath", "dirname", "basename",
   "wc", "sort", "uniq", "diff", "cmp",
   // Search
-  "grep", "rg", "ag", "fd",
+  "grep", "rg", "ag", "fd", "locate",
   // System info
   "ps", "df", "du", "env", "printenv", "which", "whereis",
   "uname", "hostname", "uptime", "free", "date", "id", "whoami", "groups",
@@ -101,6 +101,15 @@ function isReadOnlySegment(seg: string): boolean {
   if (toks.length === 0) return false;
 
   const [cmd, sub, ...rest] = toks;
+  if (cmd === "find") {
+    // `find` is read-only EXCEPT for the action primaries that mutate or
+    // run arbitrary commands: -delete, -exec, -execdir, -ok, -okdir, -fprint*.
+    // Anything else (-name, -path, -type, -print, -size, …) is safe.
+    const all = [sub ?? "", ...rest];
+    const DENY = new Set(["-delete", "-exec", "-execdir", "-ok", "-okdir"]);
+    if (all.some((t) => DENY.has(t) || /^-fprint/.test(t))) return false;
+    return true;
+  }
   if (cmd === "git") {
     const allowed = GIT_READONLY_SUBCOMMANDS[sub ?? ""];
     if (allowed === undefined) return false;

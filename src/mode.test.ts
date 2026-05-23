@@ -65,6 +65,17 @@ describe("isReadOnlyBash", () => {
     assert.strictEqual(isReadOnlyBash("   "), false);
   });
 
+  it("validates find with deny-list of mutating primaries", () => {
+    assert.strictEqual(isReadOnlyBash("find . -name '*.ts'"), true);
+    assert.strictEqual(isReadOnlyBash("find node_modules/camouflage -type f"), true);
+    assert.strictEqual(isReadOnlyBash("find . -type f | head"), true);
+    assert.strictEqual(isReadOnlyBash("find . -name '*.tmp' -delete"), false);
+    assert.strictEqual(isReadOnlyBash("find . -exec rm {} +"), false);
+    assert.strictEqual(isReadOnlyBash("find . -execdir touch x \\;"), false);
+    assert.strictEqual(isReadOnlyBash("find . -ok rm {} \\;"), false);
+    assert.strictEqual(isReadOnlyBash("find . -fprint /tmp/out"), false);
+  });
+
   it("validates git subcommands", () => {
     assert.strictEqual(isReadOnlyBash("git branch"), true);
     assert.strictEqual(isReadOnlyBash("git branch -d foo"), false);

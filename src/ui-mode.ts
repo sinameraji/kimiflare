@@ -69,6 +69,7 @@ import type { LspServerConfig } from "./config.js";
 import { loadHooksSettings, globalSettingsPath, projectSettingsPath, setHookEnabled } from "./hooks/settings.js";
 import { HOOK_EVENTS } from "./hooks/types.js";
 import { buildInitPrompt } from "./init/context-generator.js";
+import { isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
 
 export interface UiModeOpts {
   accountId: string;
@@ -580,12 +581,31 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             // for permissions in auto. We check `currentMode` at the
             // moment the question is asked (not at turn start), so
             // mid-turn mode switches take effect on the very next tool
-            // call. Note: void the args here so the linter doesn't yell
-            // about the unused destructure when we early-return.
-            void args;
+            // call.
             if (currentMode === "auto") {
+              void args;
               return "allow";
             }
+            // Plan mode: blocked tools never reach the user as a prompt.
+            // Read-only bash (find, grep, ls …) auto-allows; anything else
+            // mutating auto-denies with an info row so the user sees what
+            // got blocked instead of being interrogated for it.
+            if (currentMode === "plan" && isBlockedInPlanMode(tool.name)) {
+              if (
+                tool.name === "bash" &&
+                typeof (args as { command?: unknown }).command === "string" &&
+                isReadOnlyBash((args as { command: string }).command)
+              ) {
+                return "allow";
+              }
+              cam.send("ShowToast", {
+                text: `plan mode blocked ${tool.name}`,
+                kind: "warn",
+                ttl_ms: 3500,
+              });
+              return "deny";
+            }
+            void args;
             const reqId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             // Mirror Ink's PermissionModal: prefer tool.render's title for
             // human-readable action, and pass diff if available so the
