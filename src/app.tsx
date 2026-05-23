@@ -1031,6 +1031,7 @@ function App({
       pendingToolCallsRef,
       hooks: hooksManagerRef.current,
       sessionId: sessionIdRef.current,
+      supervisorRef,
     });
   }, [cfg, busy, saveSessionSafe]);
 
@@ -1078,6 +1079,7 @@ function App({
       lastApiErrorRef,
       limitResolveRef,
       loopResolveRef,
+      supervisorRef,
     });
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
@@ -1393,14 +1395,25 @@ function App({
       let trimmed = text.trim();
       if (!trimmed) return;
 
+      // Mark busy immediately so no other path can race into processMessage
+      // while async setup (image encoding, hooks, etc.) is in flight.
+      beginTurn();
+
       let overrideModel: string | undefined;
       let overrideEffort: ReasoningEffort | undefined;
       let display = displayText?.trim() || trimmed;
 
       if (trimmed.startsWith("/")) {
-        if (handleSlash(trimmed)) return;
-        const head = trimmed.split(/\s+/)[0]!.slice(1);
-        const custom = customCommandsRef.current.find((c) => c.name === head);
+        const head = trimmed.split(/\s+/)[0]!.toLowerCase();
+        const selfManaged = ["/compact", "/init"].includes(head);
+        if (handleSlash(trimmed)) {
+          if (!selfManaged) {
+            endTurn();
+          }
+          return;
+        }
+        const cmdName = head.slice(1);
+        const custom = customCommandsRef.current.find((c) => c.name === cmdName);
         if (custom) {
           const info = (text: string) =>
             setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
@@ -1411,7 +1424,10 @@ function App({
           if (custom.shell) {
             info(`/${custom.name}: executing shell code from template`);
           }
-          if (!rendered.trim()) return;
+          if (!rendered.trim()) {
+            endTurn();
+            return;
+          }
           const parts: string[] = [];
           if (custom.model) {
             overrideModel = custom.model;
@@ -1511,6 +1527,7 @@ function App({
             ...e,
             { kind: "info", key: mkKey(), text: `hook blocked the prompt: ${reason}` },
           ]);
+          endTurn();
           return;
         }
       }
@@ -1546,7 +1563,6 @@ function App({
         ]);
       }
 
-      beginTurn();
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
 

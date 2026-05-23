@@ -25,6 +25,7 @@ import { classifyIntent } from "../intent/classify.js";
 import type { ReasoningEffort } from "../config.js";
 import type { TurnPhase } from "../ui/status.js";
 import type { DailyUsage } from "../usage-tracker.js";
+import type { TurnSupervisor } from "../agent/supervisor.js";
 import {
   KimiApiError,
   humanizeCloudflareError,
@@ -92,6 +93,7 @@ export interface RunInitDeps {
   lastApiErrorRef: React.MutableRefObject<{ httpStatus?: number; code?: number; message: string } | null>;
   limitResolveRef: React.MutableRefObject<unknown>;
   loopResolveRef: React.MutableRefObject<((d: LoopDecision) => void) | null>;
+  supervisorRef: React.MutableRefObject<TurnSupervisor>;
 }
 
 export async function runInit(deps: RunInitDeps): Promise<void> {
@@ -108,9 +110,10 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
     pendingToolCallsRef, recentFilesRef, usageRef, activeAsstIdRef,
     gatewayMetaRef, kimiMdStaleNudgedRef, lspManagerRef, modeRef,
     cacheStableRef, lastApiErrorRef, limitResolveRef, loopResolveRef,
+    supervisorRef,
   } = deps;
 
-  if (busy) {
+  if (busy || supervisorRef.current.isRunning) {
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /init while model is running" }]);
     return;
   }
