@@ -576,6 +576,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             });
           },
           askPermission: async ({ tool, args }) => {
+            // Auto mode is "trust the agent" — Ink parity: never prompt
+            // for permissions in auto. We check `currentMode` at the
+            // moment the question is asked (not at turn start), so
+            // mid-turn mode switches take effect on the very next tool
+            // call. Note: void the args here so the linter doesn't yell
+            // about the unused destructure when we early-return.
+            void args;
+            if (currentMode === "auto") {
+              return "allow";
+            }
             const reqId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             // Mirror Ink's PermissionModal: prefer tool.render's title for
             // human-readable action, and pass diff if available so the
