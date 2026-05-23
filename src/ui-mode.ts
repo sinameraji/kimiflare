@@ -21,10 +21,24 @@
  */
 
 import { execSync, spawn } from "node:child_process";
+import { appendFileSync, openSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { platform } from "node:os";
 import { mount } from "camouflage";
+
+/** File logger gated by KIMIFLARE_EVENT_LOG. One JSON object per line. */
+const KIMI_LOG_PATH = process.env.KIMIFLARE_EVENT_LOG ?? null;
+if (KIMI_LOG_PATH) {
+  try { openSync(KIMI_LOG_PATH, "a"); } catch { /* best-effort */ }
+}
+function kimiLog(payload: Record<string, unknown>): void {
+  if (!KIMI_LOG_PATH) return;
+  try {
+    const line = JSON.stringify({ ts: Date.now() / 1000, ...payload }) + "\n";
+    appendFileSync(KIMI_LOG_PATH, line);
+  } catch { /* swallow — diagnostic only */ }
+}
 import type { CamouflageHandle } from "camouflage";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import type { AiGatewayOptions } from "./agent/client.js";
@@ -113,6 +127,24 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     process.exitCode = 2;
     return;
   }
+
+  // Wrap cam.send so every outbound event lands in the log too. Useful
+  // for debugging "I didn't see X" — we can confirm whether kimiflare
+  // actually emitted it and what the payload looked like.
+  if (KIMI_LOG_PATH) {
+    const origSend = cam.send.bind(cam);
+    cam.send = ((event_type: Parameters<typeof origSend>[0], payload?: Parameters<typeof origSend>[1]) => {
+      try {
+        kimiLog({
+          dir: "out",
+          event_type: event_type as unknown as string,
+          payload_preview: JSON.stringify(payload ?? {}).slice(0, 160),
+        });
+      } catch { /* swallow */ }
+      return origSend(event_type, payload as never);
+    }) as typeof cam.send;
+  }
+  kimiLog({ dir: "boot", note: "ui-mode mounted" });
 
   // Seed status segments + session start.
   // `turnStartMs` is set to null until the user's first message; the
@@ -267,14 +299,27 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let exitCode = 0;
 
   cam.on("userInput", (text: string) => {
+    kimiLog({
+      dir: "in",
+      event_type: "userInput",
+      text_len: text.length,
+      text_preview: text.slice(0, 80),
+      followUpResolver_set: followUpResolver !== null,
+      queue_depth: followUpQueue.length,
+    });
+    // Echo the user's message into the transcript immediately, no
+    // matter whether we'll run it now or queue it behind an in-flight
+    // turn. Previously runTurn was the only place that sent
+    // UserMessageCreated, so queued messages were invisible until the
+    // previous turn finished — users typed something, hit Enter, and
+    // saw nothing.
+    cam.send("UserMessageCreated", { text });
     if (followUpResolver) {
       const r = followUpResolver;
       followUpResolver = null;
       r(text);
     } else {
       followUpQueue.push(text);
-      // Visible confirmation that the prompt was queued — otherwise it
-      // looks like nothing happened while a turn is still in flight.
       cam.send("ShowToast", {
         text: `queued (${followUpQueue.length} pending) — will run after current turn`,
         kind: "info",
@@ -343,8 +388,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   const repeatedToolSignatures = new Map<string, number>();
 
   async function runTurn(text: string): Promise<void> {
-    cam.send("UserMessageCreated", { text });
-    // Harvest @-mentions from the submitted text into the recent set, so
+    kimiLog({ dir: "turn", phase: "start", text_preview: text.slice(0, 80) });
+    // UserMessageCreated is sent in the `userInput` handler now —
+    // sending it here too would render the prompt twice for queued
+    // turns. Harvest @-mentions from the submitted text into the recent set, so
     // the next time the user types @ they see those files at the top of
     // the picker (Ink parity: recentFilesRef). Cheap regex over the
     // already-validated user input.
@@ -592,6 +639,17 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       } else {
         cam.send("RuntimeError", { message: err instanceof Error ? err.message : String(err), kind: "generic", severity: "error" });
       }
+    } finally {
+      // Stop the elapsed timer + spinner the moment the turn ends, by
+      // any path (success / error / abort). Without this the timer
+      // ticks forever between turns and the spinner glyph keeps
+      // animating with no actual work happening — what users
+      // (correctly) read as "stuck". Empty-string segment values
+      // remove the segment in the renderer.
+      turnStartMs = null;
+      setPhase("idle");
+      cam.send("StatusUpdate", { segments: { elapsed: "" } });
+      kimiLog({ dir: "turn", phase: "end" });
     }
   }
 
