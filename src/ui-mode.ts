@@ -376,9 +376,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // controller. Doesn't set aborted=true so the multi-turn loop
   // continues — the user can submit a new prompt right after.
   cam.on("cancelRequested", () => {
+    const debug = !!process.env.CAMOUFLAGE_DEBUG_ESC;
+    if (debug) process.stderr.write(`[adapter:esc] cancelRequested received, currentController=${currentController ? "set" : "null"}\n`);
     if (currentController) {
       currentController.abort();
+      if (debug) process.stderr.write(`[adapter:esc] currentController.abort() called\n`);
       cam.send("ShowToast", { text: "turn interrupted", kind: "info", ttl_ms: 1500 });
+    } else if (debug) {
+      process.stderr.write(`[adapter:esc] WARN: no controller to abort — Esc had no effect on the turn\n`);
     }
   });
 
