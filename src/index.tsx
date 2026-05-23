@@ -363,8 +363,12 @@ async function main() {
     process.exit(2);
   }
 
-  // Print the ANSI logo on every startup.
-  console.log(renderLogo(getAppVersion()));
+  // ANSI logo. For the Ink path we still console.log it as part of the
+  // pre-render output. For the Camouflage path we hand it to the
+  // renderer as a Splash event so it stays visible until the user's
+  // first prompt — console.log here would get swallowed by Camouflage's
+  // alt-screen and flash for a fraction of a second.
+  const logoText = renderLogo(getAppVersion());
 
   // CC-1+ — default interactive UI is now Camouflage. The legacy React/Ink
   // app is still available via `--ui ink` for A/B comparison and as a
@@ -372,6 +376,9 @@ async function main() {
   // switching, MCP UI, etc.). Once Camouflage covers everything, the Ink
   // path is deleted along with react/ink deps.
   const uiEngine = (opts.ui ?? "camouflage").toLowerCase();
+  if (uiEngine !== "camouflage") {
+    console.log(logoText);
+  }
   if (uiEngine === "camouflage") {
     if (!cfg) {
       // Run Camouflage-native onboarding (ports the Ink Onboarding flow).
@@ -406,6 +413,7 @@ async function main() {
       cloudToken,
       cloudDeviceId,
       camouflageBin: opts.camouflageBin,
+      splash: logoText,
     });
     return;
   }

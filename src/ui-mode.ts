@@ -88,6 +88,10 @@ export interface UiModeOpts {
   aiGatewayId?: string;
   /** Optional path to the camouflage-tui binary. Defaults to PATH lookup. */
   camouflageBin?: string;
+  /** Optional multi-line ANSI text (e.g. the CLI logo) to pin above the
+   *  transcript until the user submits their first prompt. Sent as a
+   *  `Splash` event right after the renderer mounts. */
+  splash?: string;
 }
 
 /** Slash commands registered with the Camouflage renderer's slash picker.
@@ -165,6 +169,9 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   const branch = tryGitBranch();
   let currentSessionFilePath: string | null = null;
 
+  if (opts.splash && opts.splash.length > 0) {
+    cam.send("Splash", { text: opts.splash });
+  }
   cam.send("SessionStarted", {});
   cam.send("StatusUpdate", {
     segments: { mode: currentMode, phase: currentPhase, branch, cost: "$0.00" },
