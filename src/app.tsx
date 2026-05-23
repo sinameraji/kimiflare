@@ -1616,6 +1616,13 @@ function App({
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));
           setTurnPhase("waiting");
+
+          // If no tool calls were finalized, the turn is effectively done.
+          // Reset busy immediately so the UI returns to idle without waiting
+          // for the supervisor's onDone hook.
+          if (pendingToolCallsRef.current.size === 0) {
+            endTurn();
+          }
         },
         onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
           pendingToolCallsRef.current.set(call.id, call.function.name);
@@ -1834,6 +1841,7 @@ function App({
               // Auto-compact after turn when thresholds are met. With compiled
               // context on, use the heuristic compactor; otherwise fall back to the
               // LLM summarizer so users have a safety net regardless of the flag.
+              let didCompact = false;
               if (shouldCompact({ messages: messagesRef.current })) {
                 // M6.1: same PreCompact fire as the mid-turn site above.
                 if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
@@ -1868,6 +1876,7 @@ function App({
                       },
                     ]);
                     await saveSessionSafe();
+                    didCompact = true;
                   }
                 } else {
                   try {
@@ -1890,6 +1899,7 @@ function App({
                         },
                       ]);
                       await saveSessionSafe();
+                      didCompact = true;
                     }
                   } catch (compactErr) {
                     if ((compactErr as Error).name !== "AbortError") {
@@ -1905,30 +1915,35 @@ function App({
                   }
                 }
 
-                // After compaction, recall memories so the model retains durable anchors
-                const manager = memoryManagerRef.current;
-                if (manager) {
-                  try {
-                    const cwd = process.cwd();
-                    const queryText = sessionStateRef.current.task || cwd;
-                    const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-                    if (results.length > 0) {
-                      const text = await manager.synthesizeRecalled(results);
-                      const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-                      const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-                      messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-                      setEvents((e) => [
-                        ...e,
-                        {
-                          kind: "memory",
-                          key: mkKey(),
-                          text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                        },
-                      ]);
-                      await saveSessionSafe();
+                // After compaction, recall memories so the model retains durable anchors.
+                // Only surface the recall event when compaction actually happened —
+                // otherwise the message is noise on turns that merely crossed the
+                // threshold without removing anything.
+                if (didCompact) {
+                  const manager = memoryManagerRef.current;
+                  if (manager) {
+                    try {
+                      const cwd = process.cwd();
+                      const queryText = sessionStateRef.current.task || cwd;
+                      const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                      if (results.length > 0) {
+                        const text = await manager.synthesizeRecalled(results);
+                        const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                        const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                        messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                        setEvents((e) => [
+                          ...e,
+                          {
+                            kind: "memory",
+                            key: mkKey(),
+                            text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                          },
+                        ]);
+                        await saveSessionSafe();
+                      }
+                    } catch {
+                      // Non-fatal
                     }
-                  } catch {
-                    // Non-fatal
                   }
                 }
               }
