@@ -11,6 +11,7 @@ import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { getAppVersion } from "./util/version.js";
 import { createRemoteCommand } from "./remote/cli.js";
+import { renderLogo } from "./ui/logo.js";
 
 const program = new Command();
 program
@@ -361,6 +362,9 @@ async function main() {
     );
     process.exit(2);
   }
+
+  // Print the ANSI logo on every startup.
+  console.log(renderLogo(getAppVersion()));
 
   // CC-1+ — default interactive UI is now Camouflage. The legacy React/Ink
   // app is still available via `--ui ink` for A/B comparison and as a
