@@ -1904,32 +1904,32 @@ function App({
                     }
                   }
                 }
-              }
 
-              // After compaction, recall memories so the model retains durable anchors
-              const manager = memoryManagerRef.current;
-              if (manager) {
-                try {
-                  const cwd = process.cwd();
-                  const queryText = sessionStateRef.current.task || cwd;
-                  const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-                  if (results.length > 0) {
-                    const text = await manager.synthesizeRecalled(results);
-                    const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-                    const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-                    messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-                    setEvents((e) => [
-                      ...e,
-                      {
-                        kind: "memory",
-                        key: mkKey(),
-                        text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                      },
-                    ]);
-                    await saveSessionSafe();
+                // After compaction, recall memories so the model retains durable anchors
+                const manager = memoryManagerRef.current;
+                if (manager) {
+                  try {
+                    const cwd = process.cwd();
+                    const queryText = sessionStateRef.current.task || cwd;
+                    const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                    if (results.length > 0) {
+                      const text = await manager.synthesizeRecalled(results);
+                      const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                      const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                      messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                      setEvents((e) => [
+                        ...e,
+                        {
+                          kind: "memory",
+                          key: mkKey(),
+                          text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                        },
+                      ]);
+                      await saveSessionSafe();
+                    }
+                  } catch {
+                    // Non-fatal
                   }
-                } catch {
-                  // Non-fatal
                 }
               }
             })();
