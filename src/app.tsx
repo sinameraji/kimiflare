@@ -1818,117 +1818,121 @@ function App({
           callbacks: sharedCallbacks,
         },
         {
-          onDone: async () => {
-            await saveSessionSafe();
+          onDone: () => {
+            // Fire-and-forget all post-turn housekeeping so the UI returns to
+            // idle immediately and the user can type the next message without
+            // waiting for compaction, memory recall, or session persistence.
+            void (async () => {
+              await saveSessionSafe();
 
-            // If the turn was killed (preempted or aborted), skip expensive
-            // post-turn work so the next turn can start immediately.
-            if (turnScope.signal.aborted) {
-              cleanupTurn();
-              return;
-            }
-
-            // Auto-compact after turn when thresholds are met. With compiled
-            // context on, use the heuristic compactor; otherwise fall back to the
-            // LLM summarizer so users have a safety net regardless of the flag.
-            if (shouldCompact({ messages: messagesRef.current })) {
-              // M6.1: same PreCompact fire as the mid-turn site above.
-              if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
-                void hooksManagerRef.current
-                  .fire(
-                    "PreCompact",
-                    {
-                      event: "PreCompact",
-                      session_id: sessionIdRef.current,
-                      cwd: process.cwd(),
-                    },
-                    null,
-                  )
-                  .catch(() => {});
+              // If the turn was killed (preempted or aborted), skip expensive
+              // post-turn work so the next turn can start immediately.
+              if (turnScope.signal.aborted) {
+                return;
               }
-              if (compiledContextRef.current) {
-                const store = artifactStoreRef.current;
-                const result = compactMessagesViaArtifacts({
-                  messages: messagesRef.current,
-                  state: sessionStateRef.current,
-                  store,
-                });
-                if (result.metrics.rawTurnsRemoved > 0) {
-                  messagesRef.current = result.newMessages;
-                  sessionStateRef.current = result.newState;
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "info",
-                      key: mkKey(),
-                      text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-                    },
-                  ]);
-                  await saveSessionSafe();
+
+              // Auto-compact after turn when thresholds are met. With compiled
+              // context on, use the heuristic compactor; otherwise fall back to the
+              // LLM summarizer so users have a safety net regardless of the flag.
+              if (shouldCompact({ messages: messagesRef.current })) {
+                // M6.1: same PreCompact fire as the mid-turn site above.
+                if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
+                  void hooksManagerRef.current
+                    .fire(
+                      "PreCompact",
+                      {
+                        event: "PreCompact",
+                        session_id: sessionIdRef.current,
+                        cwd: process.cwd(),
+                      },
+                      null,
+                    )
+                    .catch(() => {});
                 }
-              } else {
-                try {
-                  const result = await summarizeMessagesViaLlm({
-                    accountId: cfg.accountId,
-                    apiToken: cfg.apiToken,
-                    model: cfg.model,
+                if (compiledContextRef.current) {
+                  const store = artifactStoreRef.current;
+                  const result = compactMessagesViaArtifacts({
                     messages: messagesRef.current,
-                    signal: turnScope.signal,
-                    gateway: gatewayFromConfig(cfg),
+                    state: sessionStateRef.current,
+                    store,
                   });
-                  if (result.replacedCount > 0) {
+                  if (result.metrics.rawTurnsRemoved > 0) {
                     messagesRef.current = result.newMessages;
+                    sessionStateRef.current = result.newState;
                     setEvents((e) => [
                       ...e,
                       {
                         kind: "info",
                         key: mkKey(),
-                        text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                        text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
                       },
                     ]);
                     await saveSessionSafe();
                   }
-                } catch (compactErr) {
-                  if ((compactErr as Error).name !== "AbortError") {
-                    setEvents((es) => [
-                      ...es,
-                      {
-                        kind: "info",
-                        key: mkKey(),
-                        text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
-                      },
-                    ]);
+                } else {
+                  try {
+                    const result = await summarizeMessagesViaLlm({
+                      accountId: cfg.accountId,
+                      apiToken: cfg.apiToken,
+                      model: cfg.model,
+                      messages: messagesRef.current,
+                      signal: turnScope.signal,
+                      gateway: gatewayFromConfig(cfg),
+                    });
+                    if (result.replacedCount > 0) {
+                      messagesRef.current = result.newMessages;
+                      setEvents((e) => [
+                        ...e,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                        },
+                      ]);
+                      await saveSessionSafe();
+                    }
+                  } catch (compactErr) {
+                    if ((compactErr as Error).name !== "AbortError") {
+                      setEvents((es) => [
+                        ...es,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                        },
+                      ]);
+                    }
                   }
                 }
               }
-            }
 
-            // After compaction, recall memories so the model retains durable anchors
-            const manager = memoryManagerRef.current;
-            if (manager) {
-              try {
-                const cwd = process.cwd();
-                const queryText = sessionStateRef.current.task || cwd;
-                const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-                if (results.length > 0) {
-                  const text = await manager.synthesizeRecalled(results);
-                  const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-                  const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-                  messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "memory",
-                      key: mkKey(),
-                      text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                    },
-                  ]);
-                  await saveSessionSafe();
+              // After compaction, recall memories so the model retains durable anchors
+              const manager = memoryManagerRef.current;
+              if (manager) {
+                try {
+                  const cwd = process.cwd();
+                  const queryText = sessionStateRef.current.task || cwd;
+                  const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                  if (results.length > 0) {
+                    const text = await manager.synthesizeRecalled(results);
+                    const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                    const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                    messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                    setEvents((e) => [
+                      ...e,
+                      {
+                        kind: "memory",
+                        key: mkKey(),
+                        text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                      },
+                    ]);
+                    await saveSessionSafe();
+                  }
+                } catch {
+                  // Non-fatal
                 }
-              } catch {
-                // Non-fatal
               }
-            }
+            })();
 
             cleanupTurn();
           },
