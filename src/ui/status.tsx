@@ -70,12 +70,20 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
       : phase === "waiting"
         ? humanizePhase("waiting", intentTier)
         : humanizePhase("generating", intentTier);
+
+  // If we're still busy but the phase has flipped to "waiting" (e.g. between
+  // assistant final output and turn cleanup, or while waiting for the next
+  // model response after tools), don't show "ready" — it makes the spinner
+  // appear next to a "ready" label which looks broken.
+  const activePhaseLabel = thinking && phase === "waiting"
+    ? humanizePhase("generating", intentTier)
+    : phaseLabel;
   const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
   const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
 
   const thinkingText = metaParts.length > 0
-    ? `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
-    : `${phaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
+    ? `${activePhaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
+    : `${activePhaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
 
   const readyText = idleParts.length > 0
     ? `${idleParts.join(" · ")} · ready`
