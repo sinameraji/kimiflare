@@ -57,6 +57,8 @@ export interface AgentCallbacks {
   onSkillsSelected?: (result: SemanticSkillRoutingResult) => void;
   /** Called after pre-turn setup (memory + skills) to emit the meta banner. */
   onMetaBanner?: (info: { intentTier: string; skillsActive: number; memoryRecalled: boolean }) => void;
+  /** Called when worker status changes during multi-agent orchestration. */
+  onWorkersUpdated?: (workers: import("./supervisor.js").ActiveWorker[]) => void;
 }
 
 export interface AgentTurnOpts {

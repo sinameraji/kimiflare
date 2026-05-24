@@ -36,6 +36,7 @@ import type { LimitDecision, LoopDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
 import { TaskList } from "./ui/task-list.js";
+import { WorkerList } from "./ui/worker-list.js";
 import type { Task } from "./tools/registry.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -317,6 +318,7 @@ function App({
   const [kimiMdStale, setKimiMdStale] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
+  const [activeWorkers, setActiveWorkers] = useState<import("./agent/supervisor.js").ActiveWorker[]>([]);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1737,6 +1739,9 @@ function App({
             },
           ]);
         },
+        onWorkersUpdated: (workers: import("./agent/supervisor.js").ActiveWorker[]) => {
+          setActiveWorkers(workers);
+        },
       };
 
       const cleanupTurn = () => {
@@ -2247,6 +2252,9 @@ function App({
           />
         ) : (
           <Box flexDirection="column" marginTop={1}>
+            {activeWorkers.length > 0 && (
+              <WorkerList workers={activeWorkers} />
+            )}
             {tasks.length > 0 && (
               <TaskList
                 tasks={tasks}

@@ -13,6 +13,7 @@ import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool } from "./git
 import { browserFetchTool } from "./browser.js";
 import { tasksSetTool } from "./tasks.js";
 import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory.js";
+import { spawnWorkerTool } from "./spawn-worker.js";
 import { ToolArtifactStore } from "./artifact-store.js";
 import { reduceToolOutput, DEFAULT_REDUCER_CONFIG } from "./reducer.js";
 import { makeExpandArtifactTool } from "./expand-artifact.js";
@@ -34,6 +35,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   memoryRememberTool,
   memoryRecallTool,
   memoryForgetTool,
+  spawnWorkerTool,
 ];
 
 /**

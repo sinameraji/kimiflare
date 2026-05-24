@@ -43,6 +43,30 @@ export interface Usage {
   prompt_tokens_details?: { cached_tokens?: number } | null;
 }
 
+/** Structured finding from a standalone worker. */
+export interface WorkerFinding {
+  topic: string;
+  summary: string;
+  confidence: "high" | "medium" | "low";
+  sources: string[];
+  relevance: "critical" | "high" | "medium" | "low";
+}
+
+/** Result returned by a standalone research/executor worker. */
+export interface WorkerResultMessage {
+  workerId: string;
+  status: "completed" | "failed" | "cancelled";
+  task: string;
+  findings: WorkerFinding[];
+  recommendations: string[];
+  filesRead: string[];
+  webSources: string[];
+  costUsd: number;
+  tokensUsed: number;
+  reasoning: string;
+  error?: string;
+}
+
 /** Replace lone UTF-16 surrogates with the replacement character (U+FFFD).
  *  JSON.stringify preserves lone surrogates as \uD800..\uDFFF escapes, which
  *  JavaScript accepts but many strict parsers (Cloudflare AI Gateway, Python,
