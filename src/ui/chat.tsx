@@ -75,7 +75,9 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
       {events.map((e, i) => {
         const prev = events[i - 1];
         const showSeparator = !!(
-          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
+          prev &&
+          ((e.kind === "user" && prev.kind !== "user") ||
+            (e.kind === "assistant" && prev.kind !== "assistant" && prev.kind !== "tool"))
         );
         return (
           <Box key={e.key} flexDirection="column">
@@ -131,7 +133,7 @@ const EventView = React.memo(function EventView({
       <Box flexDirection="column">
         <Box>
           <Text bold color={theme.user}>
-            ›{" "}
+            You:{" "}
           </Text>
           <Text bold>{evt.text}</Text>
         </Box>
@@ -147,21 +149,28 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "assistant") {
     return (
-      <Box flexDirection="column" paddingLeft={2}>
-        {showReasoning && evt.reasoning ? (
-          <Box flexDirection="column" marginBottom={1}>
-            <Text color={theme.reasoning.color}>
-              thinking…{" "}
-              {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
-            </Text>
-          </Box>
-        ) : null}
-        {evt.text ? <MD text={evt.text} /> : null}
-        {evt.streaming && (
-          <Text color={theme.spinner}>
-            <Spinner type="dots" />
+      <Box flexDirection="column">
+        <Box>
+          <Text bold color={theme.assistant ?? theme.info.color}>
+            kimiflare:{" "}
           </Text>
-        )}
+          <Box flexDirection="column">
+            {showReasoning && evt.reasoning ? (
+              <Box flexDirection="column" marginBottom={1}>
+                <Text color={theme.reasoning.color}>
+                  thinking…{" "}
+                  {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
+                </Text>
+              </Box>
+            ) : null}
+            {evt.text ? <MD text={evt.text} /> : null}
+            {evt.streaming && (
+              <Text color={theme.spinner}>
+                <Spinner type="dots" />
+              </Text>
+            )}
+          </Box>
+        </Box>
       </Box>
     );
   }

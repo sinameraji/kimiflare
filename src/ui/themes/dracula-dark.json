@@ -9,7 +9,7 @@
     "error": "#ff5858"
   },
   "user": "#ff79c6",
-  "assistant": null,
+  "assistant": "#bd93f9",
   "reasoning": {
     "color": "#8191c2",
     "dim": false
