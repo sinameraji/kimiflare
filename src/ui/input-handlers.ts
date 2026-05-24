@@ -92,7 +92,7 @@ export function interruptTurn(deps: InterruptDeps): InterruptOutcome {
   const { hadLimit, hadLoop } = clearLimitLoopResolvers(deps);
 
   if (
-    deps.busyRef.current &&
+    (deps.busyRef.current || deps.supervisorRef.current.isRunning) &&
     deps.activeScopeRef.current &&
     !deps.isAbortingRef.current
   ) {

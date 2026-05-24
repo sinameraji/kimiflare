@@ -886,7 +886,7 @@ function App({
         resumeSessions !== null ||
         checkpointSession !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+      if (!modalOpen && (busyRef.current || supervisorRef.current.isRunning) && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
         runInterruptTurn(interruptDepsRef.current!);
         return;
@@ -1595,6 +1595,7 @@ function App({
         onAssistantStart: () => {
           const id = mkAssistantId();
           activeAsstIdRef.current = id;
+          beginTurn();
           setTurnPhase("generating");
           setLastActivityAt(Date.now());
           setEvents((e) => [
@@ -1663,6 +1664,10 @@ function App({
           if (pendingToolCallsRef.current.size === 0) {
             setTurnPhase("waiting");
             setCurrentToolName(null);
+            // Unblock the UI before onIterationEnd (compaction / memory recall)
+            // so the user isn't stuck watching a spinner while housekeeping runs
+            // between iterations.
+            endTurn();
           }
           updateTool(r.tool_call_id, {
             status: !r.ok && typeof r.content === "string" && r.content.startsWith("Permission denied") ? "rejected" : r.ok ? "done" : "error",
