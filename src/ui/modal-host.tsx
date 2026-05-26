@@ -8,6 +8,7 @@ import { CommandPicker } from "./command-picker.js";
 import { CommandList } from "./command-list.js";
 import { LspWizard } from "./lsp-wizard.js";
 import { ThemePicker } from "./theme-picker.js";
+import { UiPicker, type UiEngineChoice } from "./ui-picker.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./remote-dashboard.js";
 import { InboxModal } from "./inbox-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
@@ -47,6 +48,9 @@ export interface ModalHostProps {
   // Theme picker
   themes: Theme[];
   onPickTheme: (theme: Theme | null) => void;
+  // UI engine picker
+  currentUiEngine: UiEngineChoice;
+  onPickUi: (choice: UiEngineChoice | null) => void;
   // Remote dashboard
   selectedRemoteSession: RemoteSession | null;
   onSelectRemoteSession: (s: RemoteSession | null) => void;
@@ -81,6 +85,8 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     onLspSave,
     themes,
     onPickTheme,
+    currentUiEngine,
+    onPickUi,
     selectedRemoteSession,
     onSelectRemoteSession,
     onCancelRemoteSession,
@@ -243,6 +249,16 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <ThemePicker themes={themes} onPick={onPickTheme} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showUiPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <UiPicker current={currentUiEngine} onPick={onPickUi} />
         </Box>
       </ThemeProvider>
     );

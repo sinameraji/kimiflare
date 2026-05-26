@@ -1423,15 +1423,38 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "ui": {
+        // No-arg form opens an arrow-key picker (matches `/theme`,
+        // `/resume`, etc.). Direct-arg form is still supported for
+        // muscle-memory and scripts.
+        let nextUi: "ink" | "camouflage";
         if (!args) {
-          cam.send("ShowToast", {
-            text: "usage: /ui ink|camouflage — takes effect on next launch",
-            kind: "info",
-            ttl_ms: 4000,
+          const existing = (await loadConfig().catch(() => null)) ?? null;
+          const current = existing?.uiEngine ?? "ink";
+          const choice = await selectList(cam, {
+            id: `ui-${Date.now()}`,
+            prompt: "Pick UI engine (takes effect on next launch)",
+            options: [
+              {
+                value: "ink",
+                label: "React Ink",
+                description: "stable — current default",
+              },
+              {
+                value: "camouflage",
+                label: "Camouflage",
+                description: "experimental Rust TUI — bail with `kimiflare --ui ink`",
+              },
+            ],
+            default: current,
+            allow_filter: false,
+            allow_cancel: true,
           });
-          return true;
-        }
-        if (args !== "ink" && args !== "camouflage") {
+          if (choice.cancelled || !choice.value) return true;
+          if (choice.value !== "ink" && choice.value !== "camouflage") return true;
+          nextUi = choice.value as "ink" | "camouflage";
+        } else if (args === "ink" || args === "camouflage") {
+          nextUi = args as "ink" | "camouflage";
+        } else {
           cam.send("ShowToast", {
             text: `unknown UI engine "${args}" — choose "ink" or "camouflage"`,
             kind: "warn",
@@ -1439,7 +1462,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           });
           return true;
         }
-        const nextUi = args as "ink" | "camouflage";
         try {
           const existing = (await loadConfig()) ?? null;
           if (existing) {

@@ -40,6 +40,8 @@ export interface ModalHostController {
   setShowLspWizard: (v: boolean) => void;
   showThemePicker: boolean;
   setShowThemePicker: (v: boolean) => void;
+  showUiPicker: boolean;
+  setShowUiPicker: (v: boolean) => void;
   showRemoteDashboard: boolean;
   setShowRemoteDashboard: (v: boolean) => void;
   showInboxModal: boolean;
@@ -79,6 +81,7 @@ export function useModalHost(): ModalHostController {
   const [showCommandList, setShowCommandList] = useState(false);
   const [showLspWizard, setShowLspWizard] = useState(false);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showUiPicker, setShowUiPicker] = useState(false);
   const [showRemoteDashboard, setShowRemoteDashboard] = useState(false);
   const [showInboxModal, setShowInboxModal] = useState(false);
   const [showHooksDashboard, setShowHooksDashboard] = useState(false);
@@ -91,6 +94,7 @@ export function useModalHost(): ModalHostController {
       showCommandList ||
       showLspWizard ||
       showThemePicker ||
+      showUiPicker ||
       showRemoteDashboard ||
       showInboxModal ||
       showHooksDashboard;
@@ -110,6 +114,7 @@ export function useModalHost(): ModalHostController {
     showRemoteDashboard,
     showInboxModal,
     showHooksDashboard,
+    showUiPicker,
     limitModal,
     loopModal,
   ]);
@@ -123,6 +128,7 @@ export function useModalHost(): ModalHostController {
     showCommandList, setShowCommandList,
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
+    showUiPicker, setShowUiPicker,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     showHooksDashboard, setShowHooksDashboard,
@@ -141,6 +147,7 @@ export interface ModalFlagsInput {
   showCommandList: boolean;
   showLspWizard: boolean;
   showThemePicker: boolean;
+  showUiPicker: boolean;
   showRemoteDashboard: boolean;
   showInboxModal: boolean;
 }
@@ -159,6 +166,7 @@ export function computeModalFlags(s: ModalFlagsInput): ModalFlags {
     s.showCommandList ||
     s.showLspWizard ||
     s.showThemePicker ||
+    s.showUiPicker ||
     s.showRemoteDashboard ||
     s.showInboxModal;
   const hasOverlayModal = s.limitModal !== null || s.loopModal !== null;
@@ -178,6 +186,7 @@ export const EMPTY_MODAL_STATE: ModalFlagsInput = {
   showCommandList: false,
   showLspWizard: false,
   showThemePicker: false,
+  showUiPicker: false,
   showRemoteDashboard: false,
   showInboxModal: false,
 };

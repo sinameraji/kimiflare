@@ -171,6 +171,8 @@ export interface Cfg {
   cloudMode?: boolean;
   cloudToken?: string;
   shell?: string;
+  /** Preferred interactive UI engine. Persisted via the `/ui` slash command. */
+  uiEngine?: "ink" | "camouflage";
 }
 function App({
   initialCfg,
@@ -268,6 +270,7 @@ function App({
     showCommandList, setShowCommandList,
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
+    showUiPicker, setShowUiPicker,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
     hasFullscreenModal,
@@ -1110,6 +1113,32 @@ function App({
     [],
   );
 
+  const handleUiPick = useCallback(
+    (picked: "ink" | "camouflage" | null) => {
+      setShowUiPicker(false);
+      if (!picked) return;
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, uiEngine: picked };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "error",
+          key: mkKey(),
+          text:
+            `UI engine set to "${picked}". RESTART kimiflare for it to take effect.` +
+            (picked === "camouflage"
+              ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
+              : ""),
+        },
+      ]);
+    },
+    [],
+  );
+
   const buildSlashContext = useCallback((): SlashContext => ({
     exit,
     busy,
@@ -1126,6 +1155,7 @@ function App({
     setHasUpdate,
     setLatestVersion,
     setShowThemePicker,
+    setShowUiPicker,
     setShowInboxModal,
     setShowHooksDashboard: modals.setShowHooksDashboard,
     setShowLspWizard,
@@ -1967,6 +1997,8 @@ function App({
         onLspSave={handleLspSave}
         themes={themeList()}
         onPickTheme={handleThemePick}
+        currentUiEngine={cfg?.uiEngine ?? "ink"}
+        onPickUi={handleUiPick}
         selectedRemoteSession={selectedRemoteSession}
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}

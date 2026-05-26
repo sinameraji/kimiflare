@@ -102,6 +102,7 @@ export interface SlashContext {
 
   // Modal setters
   setShowThemePicker: (v: boolean) => void;
+  setShowUiPicker: (v: boolean) => void;
   setShowInboxModal: (v: boolean) => void;
   setShowLspWizard: (v: boolean) => void;
   setShowRemoteDashboard: (v: boolean) => void;
@@ -491,16 +492,10 @@ const handleTheme: Handler = (ctx, _rest, arg) => {
 
 const handleUi: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
+  // No-arg form opens the arrow-key picker (matches `/theme`, `/resume`).
+  // Direct-arg form is still supported for muscle-memory and scripts.
   if (!arg) {
-    setEvents((e) => [
-      ...e,
-      {
-        kind: "info",
-        key: mkKey(),
-        text:
-          "usage: /ui ink|camouflage — `ink` is stable, `camouflage` is the experimental Rust TUI. Takes effect on next launch.",
-      },
-    ]);
+    ctx.setShowUiPicker(true);
     return true;
   }
   if (arg !== "ink" && arg !== "camouflage") {
