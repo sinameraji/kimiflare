@@ -8,7 +8,7 @@
  * tree, no plumbing visible to the user.
  *
  * Invocation:
- *     kimiflare --ui camouflage -p "do X"
+ *     kimiflare --ui camouflage -p "do X"   (opt-in; default is --ui ink)
  *
  * Bidirectional out of the box: typing into the renderer's input box →
  * the binding fires "userInput" → we run another turn. Permission widget
@@ -215,6 +215,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   })();
 
+  // Experimental-UI warning — mirrors the stderr notice in index.tsx so the
+  // user still sees it after Camouflage takes the alt-screen and the
+  // scrollback warning becomes invisible. Long TTL so it hangs around long
+  // enough to read; user can dismiss with Esc.
+  cam.send("ShowToast", {
+    text: "EXPERIMENTAL — switch back any time with `kimiflare --ui ink`",
+    kind: "warn",
+    ttl_ms: 10000,
+  });
   // Welcome banner — mirrors src/ui/welcome.tsx. Shown once at startup
   // as a non-blocking toast (NOT a modal — modals require Esc to
   // dismiss, which is the wrong first impression).

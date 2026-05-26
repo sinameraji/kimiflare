@@ -27,7 +27,7 @@ program
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
-  .option("--ui <name>", "render UI with the given engine (default: camouflage; pass `ink` for the legacy React/Ink UI as a fallback)")
+  .option("--ui <name>", "render UI with the given engine: `ink` (default, stable) or `camouflage` (experimental Rust TUI). Can also be set via the KIMIFLARE_UI environment variable.")
   .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
@@ -293,9 +293,10 @@ async function main() {
     return;
   }
 
-  // (`--ui camouflage` is now the default; its branch lives at the bottom
-  // of `main()` next to the legacy Ink fallback so both paths share the
-  // TTY guard + cfg checks.)
+  // (`--ui camouflage` is opt-in experimental; the camouflage branch lives at
+  // the bottom of `main()` next to the Ink path so both share the TTY guard
+  // + cfg checks. Default is `ink` until Camouflage covers every surface and
+  // we've burned-in via opt-in dogfooding.)
 
   if (opts.emitEvents) {
     if (opts.print === undefined) {
@@ -370,16 +371,31 @@ async function main() {
   // alt-screen and flash for a fraction of a second.
   const logoText = renderLogo(getAppVersion());
 
-  // CC-1+ — default interactive UI is now Camouflage. The legacy React/Ink
-  // app is still available via `--ui ink` for A/B comparison and as a
-  // fallback while we wire up the remaining surfaces (queue, hooks, mode
-  // switching, MCP UI, etc.). Once Camouflage covers everything, the Ink
-  // path is deleted along with react/ink deps.
-  const uiEngine = (opts.ui ?? "camouflage").toLowerCase();
+  // UI engine resolution: `--ui` flag wins, then `KIMIFLARE_UI` env var, then
+  // the safe default (`ink`). Camouflage is opt-in experimental until it
+  // covers every surface (queue, hooks, mode switching, MCP UI, etc.) and
+  // gets enough burn-in via dogfooding. Users who like it can set
+  // `export KIMIFLARE_UI=camouflage` once instead of typing `--ui` each time.
+  const uiEngine = (opts.ui ?? process.env.KIMIFLARE_UI ?? "ink").toLowerCase();
   if (uiEngine !== "camouflage") {
     console.log(logoText);
   }
   if (uiEngine === "camouflage") {
+    // Loud warning that this is experimental and how to bail. Printed
+    // before Camouflage takes the alt-screen so it lands in scrollback;
+    // also emitted as a persistent warn-toast inside the TUI itself
+    // (see ui-mode.ts) so the user sees it even if scrollback was
+    // cleared.
+    process.stderr.write(
+      "\n\x1b[1;33m⚠  Camouflage UI is experimental.\x1b[0m\n" +
+        "   If anything looks broken, switch back any time with:\n" +
+        "     \x1b[1mkimiflare --ui ink\x1b[0m\n" +
+        "   or unset KIMIFLARE_UI if you've exported it.\n" +
+        "   Report issues at https://github.com/sinameraji/camouflage/issues\n\n",
+    );
+    // Brief pause so the warning isn't wiped off the alt-screen
+    // before the user reads it.
+    await new Promise((r) => setTimeout(r, 1200));
     if (!cfg) {
       // Run Camouflage-native onboarding (ports the Ink Onboarding flow).
       // On cancel/exit, the user falls back to the env-var path or
@@ -390,7 +406,7 @@ async function main() {
         console.error(
           "kimiflare: onboarding cancelled.\n" +
             "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or run again to retry.\n" +
-            "Legacy onboarding: `kimiflare --ui ink`.",
+            "Default Ink onboarding: `kimiflare` (no flag).",
         );
         process.exit(2);
       }
