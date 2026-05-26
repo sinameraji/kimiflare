@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.76.0](https://github.com/sinameraji/kimiflare/compare/v0.75.0...v0.76.0) (2026-05-26)
+
+
+### Features
+
+* **ui:** default interactive UI to Camouflage ([#474](https://github.com/sinameraji/kimiflare/issues/474)) ([#499](https://github.com/sinameraji/kimiflare/issues/499)) ([75a647b](https://github.com/sinameraji/kimiflare/commit/75a647b5a7bdeaf30aa8b74727a5ded5610f93de))
+
 ## [0.75.0](https://github.com/sinameraji/kimiflare/compare/v0.74.1...v0.75.0) (2026-05-24)
 
 
