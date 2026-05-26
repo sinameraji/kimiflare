@@ -1,8 +1,8 @@
-import { isBlockedInPlanMode, isReadOnlyBash } from "../mode.js";
+import { isBlockedInPlanMode, isReadOnlyBash, type Mode } from "../mode.js";
 import type { PermissionHandler, PermissionRequest, PermissionDecision } from "./types.js";
 
 export function createDefaultPermissionHandler(options: {
-  mode: "plan" | "edit" | "auto";
+  mode: Mode;
   onRequest?: (req: PermissionRequest) => void;
 }): PermissionHandler {
   return async (req) => {
@@ -20,7 +20,7 @@ export function createDefaultPermissionHandler(options: {
       return "allow";
     }
 
-    // edit mode: emit event and wait for external decision
+    // edit mode and multi-agent-experimental mode: emit event and wait for external decision
     options.onRequest?.(req);
     // If no external handler resolves it, deny to avoid hanging.
     // The SDK session will override this with its own event-based waiter.

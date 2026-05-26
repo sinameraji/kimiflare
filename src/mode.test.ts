@@ -101,7 +101,8 @@ describe("nextMode", () => {
   it("cycles through modes", () => {
     assert.strictEqual(nextMode("edit"), "plan");
     assert.strictEqual(nextMode("plan"), "auto");
-    assert.strictEqual(nextMode("auto"), "edit");
+    assert.strictEqual(nextMode("auto"), "multi-agent-experimental");
+    assert.strictEqual(nextMode("multi-agent-experimental"), "edit");
   });
 });
 

@@ -65,6 +65,7 @@ export interface ModalHostProps {
   // Mode picker
   currentMode: import("../mode.js").Mode;
   onPickMode: (mode: import("../mode.js").Mode | null) => void;
+  multiAgentEnabled?: boolean;
   // Key entry modal (opens after a byok model is picked without a stored key)
   onSaveProviderKey: (model: ModelEntry, result: KeyResult) => void;
   onCancelKeyEntry: () => void;
@@ -393,7 +394,7 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     return (
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
-          <ModePicker current={props.currentMode} onPick={props.onPickMode} />
+          <ModePicker current={props.currentMode} onPick={props.onPickMode} multiAgentEnabled={props.multiAgentEnabled} />
         </Box>
       </ThemeProvider>
     );

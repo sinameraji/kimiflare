@@ -116,6 +116,8 @@ export interface KimiConfig {
   workerMaxParallel?: number;
   /** Timeout per worker in milliseconds (default: 300000 = 5 min). */
   workerTimeoutMs?: number;
+  /** Enable multi-agent-experimental mode in the mode cycle. Default: false. */
+  multiAgentEnabled?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -277,6 +279,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
+      multiAgentEnabled: readBooleanEnv("KIMIFLARE_MULTI_AGENT_ENABLED"),
     };
   }
 
@@ -323,6 +326,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         workerBudgetUsd: parsed.workerBudgetUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
+        multiAgentEnabled: parsed.multiAgentEnabled,
       };
     }
   } catch {

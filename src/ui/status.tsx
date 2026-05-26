@@ -39,7 +39,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
-    mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : theme.modeBadge.edit;
+    mode === "plan" ? theme.modeBadge.plan : mode === "auto" ? theme.modeBadge.auto : mode === "multi-agent-experimental" ? theme.modeBadge.auto : theme.modeBadge.edit;
   const warn = usage && usage.prompt_tokens / contextLimit >= 0.8;
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
     <Box flexDirection="column">
       <Box>
         <Text color={modeColor} bold>
-          [{mode}]
+          [{mode === "multi-agent-experimental" ? "multi-agent" : mode}]
         </Text>
         <Text> </Text>
         {thinking ? (

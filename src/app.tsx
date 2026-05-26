@@ -186,6 +186,7 @@ export interface Cfg {
   };
   secretsStoreId?: string;
   unifiedBilling?: boolean;
+  multiAgentEnabled?: boolean;
 }
 function App({
   initialCfg,
@@ -899,7 +900,13 @@ function App({
       return;
     }
     if (key.shift && key.tab) {
-      setMode((m) => nextMode(m));
+      setMode((m) => {
+        const next = nextMode(m);
+        if (next === "multi-agent-experimental" && !cfg?.multiAgentEnabled) {
+          return nextMode(next);
+        }
+        return next;
+      });
       return;
     }
     if (key.ctrl && inputChar === "o") {
@@ -2122,6 +2129,7 @@ function App({
         currentModel={cfg?.model ?? ""}
         onPickModel={handleModelPick}
         currentMode={mode}
+        multiAgentEnabled={cfg?.multiAgentEnabled}
         onPickMode={(m) => {
           if (m) {
             setMode(m);

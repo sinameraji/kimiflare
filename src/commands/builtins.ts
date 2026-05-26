@@ -8,7 +8,7 @@ import type { SlashItem } from "./types.js";
 export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "help", description: "Show keybindings and command list", source: "builtin" },
   { name: "model", argHint: "[list|<id>]", description: "Pick model (no args opens picker)", source: "builtin" },
-  { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
+  { name: "mode", argHint: "edit|plan|auto|multi-agent-experimental", description: "Switch agent mode", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
   { name: "reasoning", description: "Toggle reasoning visibility", source: "builtin" },
   { name: "memory", argHint: "[on|off|clear|search ...]", description: "Manage memory", source: "builtin" },

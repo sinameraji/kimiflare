@@ -92,7 +92,7 @@ export interface SessionStatus {
   isCompacting: boolean;
   pendingSteer: string[];
   pendingFollowUp: string[];
-  currentMode: "plan" | "edit" | "auto";
+  currentMode: import("../mode.js").Mode;
 }
 
 export type PermissionHandler = (req: PermissionRequest) => Promise<PermissionDecision>;

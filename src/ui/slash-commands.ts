@@ -540,12 +540,12 @@ const handleMode: Handler = (ctx, _rest, arg) => {
     ctx.setShowModePicker(true);
     return true;
   }
-  if (arg === "edit" || arg === "plan" || arg === "auto") {
+  if (arg === "edit" || arg === "plan" || arg === "auto" || arg === "multi-agent-experimental") {
     ctx.setMode(arg);
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `mode: ${arg}` }]);
     return true;
   }
-  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto" }]);
+  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto|multi-agent-experimental" }]);
   return true;
 };
 
