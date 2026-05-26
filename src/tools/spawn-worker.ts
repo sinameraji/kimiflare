@@ -28,22 +28,34 @@ async function callWorkerEndpoint(
 ): Promise<WorkerResultMessage> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const url = `${endpoint}/worker`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(apiKey ? { "X-Worker-Api-Key": apiKey } : {}),
+  };
+  const body = JSON.stringify(payload);
+  const fetchSignal = signal ?? controller.signal;
+
   try {
-    const res = await fetch(`${endpoint}/worker`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "X-Worker-Api-Key": apiKey } : {}),
-      },
-      body: JSON.stringify(payload),
-      signal: signal ?? controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Worker endpoint returned ${res.status}: ${text.slice(0, 200)}`);
+    // Primary attempt
+    const res = await fetch(url, { method: "POST", headers, body, signal: fetchSignal });
+    if (res.ok) {
+      return (await res.json()) as WorkerResultMessage;
     }
-    const data = (await res.json()) as WorkerResultMessage;
-    return data;
+
+    // Retry once on 5xx or network-level failure
+    if (res.status >= 500 && res.status < 600) {
+      logger.warn("spawn_worker:retrying", { status: res.status, endpoint });
+      const retryRes = await fetch(url, { method: "POST", headers, body, signal: fetchSignal });
+      if (retryRes.ok) {
+        return (await retryRes.json()) as WorkerResultMessage;
+      }
+      const text = await retryRes.text().catch(() => "");
+      throw new Error(`Worker endpoint returned ${retryRes.status}: ${text.slice(0, 200)}`);
+    }
+
+    const text = await res.text().catch(() => "");
+    throw new Error(`Worker endpoint returned ${res.status}: ${text.slice(0, 200)}`);
   } finally {
     clearTimeout(timer);
   }

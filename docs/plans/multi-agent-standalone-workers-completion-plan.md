@@ -2,8 +2,8 @@
 
 > **Branch:** `feat/multi-agent-standalone-workers`  
 > **Date:** 2026-05-26  
-> **Status:** Phase 1 (Client) DONE — Phase 2 (Server) NOT STARTED — Phase 3 (Activation) NOT STARTED  
-> **PR:** #496 — we will finish everything in this single PR.
+> **Status:** Phase 1 (Client) DONE — Phase 2 (Server) DONE — Phase 3 (Activation) DONE  
+> **PR:** #496 — all phases complete.
 
 ---
 
@@ -21,11 +21,11 @@
 | `src/ui/app.tsx` | ✅ Done | Wired `onWorkersUpdated` into turn callbacks; renders `<WorkerList>` above task list. |
 | `scripts/mock-worker-server.mjs` | ✅ Done | Local mock server for testing without Commute. |
 
-**What is missing:**
-1. **Explicit activation mechanism** — the user must be able to opt into multi-agent mode.
-2. **Auto-triage gate** — workers should only spawn when the task is "heavy".
-3. **Commute server side** — the `/worker` endpoint that actually runs agents remotely.
-4. **Integration** — wiring activation + triage + spawning into the turn loop.
+**What was built in this PR:**
+1. ✅ **Explicit activation mechanism** — `multi-agent-experimental` mode via Shift-Tab or `/mode`.
+2. ✅ **Auto-triage gate** — workers only spawn when mode is multi-agent AND tier is `heavy`.
+3. ✅ **Commute server side** — `/worker` endpoint in `remote/worker/` with plan-mode support.
+4. ✅ **Integration** — wired activation + triage + spawning into the turn loop.
 
 ---
 
@@ -156,29 +156,26 @@ Test the full flow:
 
 ### KimiFlare Client (this repo)
 
-- [ ] `src/mode.ts` — add `multi-agent-experimental` mode
-- [ ] `src/commands/builtins.ts` — update `/mode` command help
-- [ ] `src/ui/slash-commands.ts` — accept new mode in `handleMode`
-- [ ] `src/ui/status.tsx` — render new mode in status bar
-- [ ] `src/ui/app.tsx` — wire auto-triage gate into `processMessage`
-- [ ] `src/agent/supervisor.ts` — add `autoSpawnWorkers()` and prompt decomposition
-- [ ] `src/config.ts` — add `multiAgentEnabled` flag
-- [ ] `src/tools/spawn-worker.ts` — add retry logic
-- [ ] `src/ui/worker-list.tsx` — add synthesizing state
+- [x] `src/mode.ts` — add `multi-agent-experimental` mode
+- [x] `src/commands/builtins.ts` — update `/mode` command help
+- [x] `src/ui/slash-commands.ts` — accept new mode in `handleMode`
+- [x] `src/ui/status.tsx` — render new mode in status bar
+- [x] `src/ui/app.tsx` — wire auto-triage gate into `processMessage`
+- [x] `src/agent/supervisor.ts` — add `autoSpawnWorkers()` and prompt decomposition
+- [x] `src/config.ts` — add `multiAgentEnabled` flag
+- [x] `src/tools/spawn-worker.ts` — add retry logic
+- [x] `src/ui/worker-list.tsx` — add synthesizing state
 
 ### Commute Server (`remote/worker/`)
 
-- [ ] `remote/worker/src/index.ts` — `/worker` and `/worker/:id/cancel` endpoints
-- [ ] `remote/worker/src/agent.ts` — lightweight agent runner
-- [ ] `remote/worker/src/plan-mode.ts` — read-only tool filter
-- [ ] `remote/worker/src/artifact.ts` — git branch/commit/push helpers
-- [ ] `remote/worker/src/github.ts` — PR creation via GitHub API
-- [ ] `remote/worker/wrangler.toml` — Worker bindings
+- [x] `remote/worker/src/index.ts` — `/worker` endpoint
+- [x] `remote/worker/src/worker-handler.ts` — lightweight agent runner via Workers AI
+- [x] `remote/worker/src/types.ts` — add `WORKER_API_KEY` and `ACCOUNT_ID` to Env
 
 ### Docs
 
-- [ ] `docs/plans/multi-agent-standalone-workers-plan.md` — update progress
-- [ ] `docs/plans/multi-agent-standalone-workers-completion-plan.md` — this file, mark sections done as we go
+- [x] `docs/plans/multi-agent-standalone-workers-plan.md` — update progress
+- [x] `docs/plans/multi-agent-standalone-workers-completion-plan.md` — this file, mark sections done as we go
 
 ---
 

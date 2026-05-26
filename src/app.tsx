@@ -320,6 +320,7 @@ function App({
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<import("./agent/supervisor.js").ActiveWorker[]>([]);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1608,11 +1609,13 @@ function App({
             { kind: "info", key: mkKey(), text: "multi-agent mode: spawning parallel research workers..." },
           ]);
           try {
+            setIsSynthesizing(true);
             const { plan, conflicts, recommendations } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,
               (workers) => setActiveWorkers(workers),
             );
+            setIsSynthesizing(false);
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: "workers completed — synthesizing findings" },
@@ -1632,6 +1635,7 @@ function App({
             endTurn();
             return;
           } catch (e) {
+            setIsSynthesizing(false);
             const err = e as Error;
             setEvents((e) => [
               ...e,
@@ -2311,7 +2315,7 @@ function App({
         ) : (
           <Box flexDirection="column" marginTop={1}>
             {activeWorkers.length > 0 && (
-              <WorkerList workers={activeWorkers} />
+              <WorkerList workers={activeWorkers} isSynthesizing={isSynthesizing} />
             )}
             {tasks.length > 0 && (
               <TaskList

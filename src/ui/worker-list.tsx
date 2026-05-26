@@ -7,9 +7,10 @@ import type { ActiveWorker } from "../agent/supervisor.js";
 
 interface Props {
   workers: ActiveWorker[];
+  isSynthesizing?: boolean;
 }
 
-export function WorkerList({ workers }: Props) {
+export function WorkerList({ workers, isSynthesizing }: Props) {
   const theme = useTheme();
 
   if (workers.length === 0) return null;
@@ -28,6 +29,13 @@ export function WorkerList({ workers }: Props) {
       {workers.map((w) => (
         <WorkerRow key={w.id} worker={w} />
       ))}
+      {isSynthesizing && (
+        <Box marginLeft={2}>
+          <Text color={theme.info.color}>
+            <Spinner type="dots" /> <Text bold>[coordinator]</Text> Synthesizing findings...
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }

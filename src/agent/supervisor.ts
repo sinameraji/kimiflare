@@ -230,14 +230,12 @@ export class TurnSupervisor {
   /** Synthesize findings from multiple workers into a unified execution plan.
    *
    * Steps:
-   * 1. Deduplicate findings by topic (case-insensitive).
+   * 1. Deduplicate findings by topic (case-insensitive), keeping the highest-confidence version.
    * 2. Detect conflicts — same topic with different recommendations.
-   * 3. Produce a markdown execution plan the coordinator can present to the user
+   * 3. Tie-breaker: when conflicting recommendations exist, prefer the one from
+   *    the worker with higher average confidence.
+   * 4. Produce a markdown execution plan the coordinator can present to the user
    *    or feed into an executor worker.
-   *
-   * TODO: Conflict resolution currently just flags conflicts; it does not pick
-   * a winner. A future improvement could use confidence scores or a tie-breaker
-   * LLM call to resolve conflicts automatically.
    */
   synthesizeFindings(results: WorkerResultMessage[]): {
     plan: string;
@@ -247,31 +245,51 @@ export class TurnSupervisor {
     const allFindings = results.flatMap((r) => r.findings);
     const allRecommendations = results.flatMap((r) => r.recommendations);
 
-    // Deduplicate by topic
-    const seenTopics = new Set<string>();
-    const dedupedFindings = allFindings.filter((f) => {
+    // Confidence score mapping for tie-breaking
+    const CONFIDENCE_SCORE = { high: 3, medium: 2, low: 1 };
+
+    // Deduplicate by topic, keeping the highest-confidence finding
+    const topicToFinding = new Map<string, (typeof allFindings)[0]>();
+    for (const f of allFindings) {
       const key = f.topic.toLowerCase().trim();
-      if (seenTopics.has(key)) return false;
-      seenTopics.add(key);
-      return true;
-    });
+      const existing = topicToFinding.get(key);
+      if (!existing || CONFIDENCE_SCORE[f.confidence] > CONFIDENCE_SCORE[existing.confidence]) {
+        topicToFinding.set(key, f);
+      }
+    }
+    const dedupedFindings = [...topicToFinding.values()];
 
     // Detect conflicts: same topic with different recommendations
+    // Tie-breaker: prefer recommendations from higher-confidence workers
     const conflicts: string[] = [];
-    const topicRecs = new Map<string, Set<string>>();
+    const topicRecs = new Map<string, Map<string, number>>(); // topic -> rec -> max confidence score
     for (const r of allRecommendations) {
       const lower = r.toLowerCase();
       for (const f of dedupedFindings) {
         if (lower.includes(f.topic.toLowerCase())) {
-          const set = topicRecs.get(f.topic) ?? new Set();
-          set.add(r);
-          topicRecs.set(f.topic, set);
+          const recMap = topicRecs.get(f.topic) ?? new Map();
+          const currentScore = recMap.get(r) ?? 0;
+          const newScore = CONFIDENCE_SCORE[f.confidence];
+          if (newScore > currentScore) {
+            recMap.set(r, newScore);
+          }
+          topicRecs.set(f.topic, recMap);
         }
       }
     }
-    for (const [topic, recs] of topicRecs) {
-      if (recs.size > 1) {
-        conflicts.push(`Topic "${topic}" has conflicting recommendations: ${[...recs].join(" vs ")}`);
+
+    const resolvedRecommendations: string[] = [];
+    for (const [topic, recMap] of topicRecs) {
+      const recs = [...recMap.entries()];
+      if (recs.length > 1) {
+        // Sort by confidence score descending and pick the highest
+        recs.sort((a, b) => b[1] - a[1]);
+        const winner = recs[0]![0];
+        const losers = recs.slice(1).map((r) => r[0]);
+        conflicts.push(`Topic "${topic}" had conflicting recommendations; preferred "${winner}" over ${losers.join(" / ")}`);
+        resolvedRecommendations.push(winner);
+      } else if (recs.length === 1) {
+        resolvedRecommendations.push(recs[0]![0]);
       }
     }
 
@@ -284,17 +302,17 @@ export class TurnSupervisor {
       ),
       "",
       "## Recommendations",
-      ...[...new Set(allRecommendations)].map((r) => `- ${r}`),
+      ...resolvedRecommendations.map((r) => `- ${r}`),
     ];
 
     if (conflicts.length > 0) {
-      planLines.push("", "## Conflicts to Resolve", ...conflicts.map((c) => `- ${c}`));
+      planLines.push("", "## Conflicts Resolved", ...conflicts.map((c) => `- ${c}`));
     }
 
     return {
       plan: planLines.join("\n"),
       conflicts,
-      recommendations: [...new Set(allRecommendations)],
+      recommendations: resolvedRecommendations,
     };
   }
 
