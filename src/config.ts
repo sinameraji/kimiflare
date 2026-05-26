@@ -175,6 +175,19 @@ function warnIfBlankGatewayId(value: string | undefined, source: string): void {
 }
 
 export async function loadConfig(): Promise<KimiConfig | null> {
+  // v0.72+: always read the file up front, even when env vars provide
+  // credentials. The env path used to short-circuit and return an
+  // entirely env-derived object, which silently dropped settings-only
+  // fields (like `uiEngine` from `/ui camouflage`, or `theme` from
+  // `/theme everforest-light`) on the next launch.
+  let persisted: Partial<KimiConfig> | null = null;
+  try {
+    const raw = await readFile(configPath(), "utf8");
+    persisted = JSON.parse(raw) as Partial<KimiConfig>;
+  } catch {
+    /* no config file yet — env-only is still valid */
+  }
+
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
   const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
@@ -234,6 +247,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       costAttribution: envCostAttribution ?? false,
       filePicker: envFilePicker ?? true,
       shell: envShell,
+      // Settings-only fields: env vars don't carry these, so we read
+      // them from the persisted file (when present) so the user's TUI
+      // choices survive across restarts.
+      uiEngine: persisted?.uiEngine,
+      theme: persisted?.theme,
     };
   }
 
@@ -265,12 +283,16 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
       shell: envShell,
+      // Settings-only fields: env vars don't carry these, so we read
+      // them from the persisted file (when present) so the user's TUI
+      // choices survive across restarts.
+      uiEngine: persisted?.uiEngine,
+      theme: persisted?.theme,
     };
   }
 
-  try {
-    const raw = await readFile(configPath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<KimiConfig>;
+  if (persisted) {
+    const parsed = persisted;
     if (parsed.cloudMode) {
       return {
         accountId: envAccount ?? parsed.accountId ?? "",
@@ -296,6 +318,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
+        uiEngine: parsed.uiEngine,
       };
     }
     if (parsed.accountId && parsed.apiToken) {
@@ -331,10 +354,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
+        uiEngine: parsed.uiEngine,
       };
     }
-  } catch {
-    /* no config file */
   }
   return null;
 }
