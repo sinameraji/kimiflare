@@ -93,6 +93,14 @@ export interface KimiConfig {
   cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
+  /**
+   * Preferred interactive UI engine. `"ink"` is the default (stable React/Ink
+   * UI); `"camouflage"` is the experimental Rust TUI. The runtime resolution
+   * chain is: `--ui` flag → `KIMIFLARE_UI` env var → this field → `"ink"`.
+   * Settable from inside either TUI via `/ui ink` or `/ui camouflage`;
+   * takes effect on the next launch (the choice is baked at process start).
+   */
+  uiEngine?: "ink" | "camouflage";
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";

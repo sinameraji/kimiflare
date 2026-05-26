@@ -489,6 +489,52 @@ const handleTheme: Handler = (ctx, _rest, arg) => {
   return true;
 };
 
+const handleUi: Handler = (ctx, _rest, arg) => {
+  const { setEvents, mkKey } = ctx;
+  if (!arg) {
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text:
+          "usage: /ui ink|camouflage — `ink` is stable, `camouflage` is the experimental Rust TUI. Takes effect on next launch.",
+      },
+    ]);
+    return true;
+  }
+  if (arg !== "ink" && arg !== "camouflage") {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: `unknown UI engine "${arg}" — choose "ink" or "camouflage"` },
+    ]);
+    return true;
+  }
+  const next = arg as "ink" | "camouflage";
+  ctx.setCfg((prev) => {
+    if (!prev) return prev;
+    const updated = { ...prev, uiEngine: next } as Cfg;
+    void saveConfig(updated).catch(() => {});
+    return updated;
+  });
+  // Loud red "error"-kind event so the user can't miss that they need to
+  // restart. Also reminds them of the env-var escape hatch in case the
+  // new engine is broken on their machine.
+  setEvents((e) => [
+    ...e,
+    {
+      kind: "error",
+      key: mkKey(),
+      text:
+        `UI engine set to "${next}". RESTART kimiflare for it to take effect.` +
+        (next === "camouflage"
+          ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
+          : ""),
+    },
+  ]);
+  return true;
+};
+
 const handlePlan: Handler = (ctx) => {
   ctx.setMode("plan");
   ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: plan" }]);
@@ -1356,6 +1402,7 @@ const handlers: Record<string, Handler> = {
   "/gateway": handleGateway,
   "/mode": handleMode,
   "/theme": handleTheme,
+  "/ui": handleUi,
   "/plan": handlePlan,
   "/auto": handleAuto,
   "/edit": handleEdit,

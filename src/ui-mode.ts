@@ -1422,6 +1422,50 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         await openCheckpointPicker();
         return true;
       }
+      case "ui": {
+        if (!args) {
+          cam.send("ShowToast", {
+            text: "usage: /ui ink|camouflage — takes effect on next launch",
+            kind: "info",
+            ttl_ms: 4000,
+          });
+          return true;
+        }
+        if (args !== "ink" && args !== "camouflage") {
+          cam.send("ShowToast", {
+            text: `unknown UI engine "${args}" — choose "ink" or "camouflage"`,
+            kind: "warn",
+            ttl_ms: 3000,
+          });
+          return true;
+        }
+        const nextUi = args as "ink" | "camouflage";
+        try {
+          const existing = (await loadConfig()) ?? null;
+          if (existing) {
+            await saveConfig({ ...existing, uiEngine: nextUi });
+          }
+        } catch (e) {
+          cam.send("ShowToast", {
+            text: `failed to persist UI choice: ${(e as Error).message}`,
+            kind: "error",
+            ttl_ms: 6000,
+          });
+          return true;
+        }
+        // Loud error-kind toast (rendered red) with a long TTL so the user
+        // can't miss it. Also reminds them of the env-var escape hatch.
+        cam.send("ShowToast", {
+          text:
+            `UI engine set to "${nextUi}". RESTART kimiflare for it to take effect.` +
+            (nextUi === "ink"
+              ? "  (or `unset KIMIFLARE_UI` if you previously exported it)"
+              : "  (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` to bail.)"),
+          kind: "error",
+          ttl_ms: 12000,
+        });
+        return true;
+      }
       case "theme": {
         const themes = themeList();
         if (themes.length === 0) {
