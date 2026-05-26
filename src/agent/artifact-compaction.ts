@@ -33,8 +33,14 @@ interface Turn {
   tools: ChatMessage[];
 }
 
+// Approximate tokens from a character count. Char-per-token of 4 is the
+// usual back-of-envelope figure for English prose, but coding-agent
+// content (source code, JSON tool results, file paths) tokenizes denser
+// than that — typically 3 to 3.5 chars/token. We use 3.5 so budget and
+// compaction decisions bias toward over-estimating, which is the safer
+// direction when the alternative is a hard API context-overflow error.
 export function approxTokens(n: number): number {
-  return Math.round(n / 4);
+  return Math.round(n / 3.5);
 }
 
 export function estimateMessageTokens(m: ChatMessage): number {

@@ -45,7 +45,7 @@ import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
-import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
 import { selectList, form, confirm } from "camouflage";
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
@@ -57,7 +57,6 @@ import { calculateCost } from "./pricing.js";
 import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
 import type { KimiConfig } from "./config.js";
 import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
-import { clearCloudCredentials } from "./cloud/auth.js";
 import { listAllSkills, setSkillEnabled, deleteSkill } from "./skills/manager.js";
 import { loadCustomCommands } from "./commands/loader.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
@@ -82,9 +81,6 @@ export interface UiModeOpts {
   codeMode?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
   aiGatewayId?: string;
   /** Optional path to the camouflage-tui binary. Defaults to PATH lookup. */
   camouflageBin?: string;
@@ -452,9 +448,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
-        cloudMode: opts.cloudMode,
-        cloudToken: opts.cloudToken,
-        cloudDeviceId: opts.cloudDeviceId,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;
@@ -685,13 +678,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       } else if (err instanceof AgentLoopError) {
         cam.send("RuntimeError", { message: "agent loop detected (repeated tool calls)", kind: "generic", severity: "error" });
         exitCode = 43; aborted = true;
-      } else if (isKillSwitchError(err)) {
-        cam.send("RuntimeError", {
-          message: "KimiFlare Cloud budget exhausted across all users",
-          kind: "quota_exhausted", severity: "fatal",
-          cta: { label: "switch to BYOK: kimiflare config set-key", action_id: "byok" },
-        });
-        aborted = true;
       } else if (err instanceof KimiApiError) {
         cam.send("RuntimeError", { message: humanizeCloudflareError(err), source: "cloudflare", kind: "api_error", severity: "error" });
       } else {
@@ -1219,7 +1205,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     // Stay on main until the user selects (close) or picks a command.
     while (true) {
       const mainOptions = HELP_CATEGORIES
-        .filter((c) => !(opts.cloudMode && c.key === "gateway"))
+        .filter((c) => c.key !== "__none__")
         .map((c) => ({ value: c.key, label: c.label, description: c.tagline }));
       mainOptions.push({ value: "__keys__", label: "Keys & shortcuts", description: "global keybinds" });
       const choice = await selectList(cam, {
@@ -1537,7 +1523,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             { label: "cached prompt", value: String(cachedTokens) },
             { label: "completion tokens", value: String(completionTokens) },
             { label: "total $", value: formatUsd(sessionCostUsd) },
-            ...(opts.cloudMode ? [{ label: "billing", value: "Cloud mode (no out-of-pocket)" }] : []),
           ],
         });
         return true;
@@ -1938,12 +1923,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         });
         return true;
       case "logout": {
-        try {
-          await clearCloudCredentials();
-          cam.send("ShowToast", { text: "cleared cloud credentials", kind: "success", ttl_ms: 2500 });
-        } catch (err) {
-          cam.send("ShowToast", { text: `logout failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
-        }
+        cam.send("ShowToast", { text: "Cloud has been removed; nothing to log out of.", kind: "info", ttl_ms: 2500 });
         return true;
       }
       case "remote": {

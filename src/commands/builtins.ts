@@ -7,7 +7,7 @@ import type { SlashItem } from "./types.js";
  */
 export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "help", description: "Show keybindings and command list", source: "builtin" },
-  { name: "model", description: "Show current model", source: "builtin" },
+  { name: "model", argHint: "[list|<id>]", description: "Pick model (no args opens picker)", source: "builtin" },
   { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
   { name: "ui", argHint: "ink|camouflage", description: "Switch UI engine (takes effect on next launch)", source: "builtin" },
@@ -32,12 +32,10 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "remote", argHint: "<prompt>", description: "Run a remote session on Cloudflare", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
-  { name: "inbox", description: "Check for a voice reply from the creator", source: "builtin" },
   { name: "report", argHint: "[send] [note]", description: "Report the last API error with diagnostic logs", source: "builtin" },
   { name: "shell", argHint: "[auto|bash|cmd|powershell|<path>]", description: "Show or set shell for bash tool", source: "builtin" },
   { name: "logout", description: "Clear stored credentials", source: "builtin" },
   { name: "exit", description: "Exit kimiflare", source: "builtin" },
-  { name: "quit", description: "Alias for /exit", source: "builtin" },
 ];
 
 export const BUILTIN_COMMAND_NAMES = new Set(

@@ -43,9 +43,16 @@ export function loadContextFile(cwd: string): ContextFile | null {
 }
 
 /** Build the truly static prefix that should remain byte-for-byte identical
- *  across all turns in a session. Contains identity and invariant rules only. */
-export function buildStaticPrefix(opts: Pick<SystemPromptOpts, "model">): string {
-  return `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below. You are powered by the ${opts.model} model on Cloudflare Workers AI.
+ *  across all turns in a session. Contains identity and invariant rules only.
+ *
+ *  NOTE: this prefix MUST NOT contain the model name. In cache-stable mode the
+ *  loop only refreshes messages[1] (the session prefix) per turn — messages[0]
+ *  is set once at session start and never updated. If the model name lived
+ *  here, switching models mid-session via /model would leave a stale name in
+ *  the system prompt, and the new model would (correctly) report the wrong
+ *  identity. The model identity block lives in `buildSessionPrefix` instead. */
+export function buildStaticPrefix(_opts?: Pick<SystemPromptOpts, "model">): string {
+  return `You are kimiflare, an interactive coding assistant running in the user's terminal. You act on the user's local filesystem through the tools listed below.
 
 How to work:
 - Prefer calling tools over guessing. Read files before editing them. Use \`glob\` and \`grep\` to explore code before assuming structure.
@@ -54,7 +61,7 @@ How to work:
 - For multi-step work, call \`tasks_set\` at the start with a short task list (one task "in_progress", the rest "pending"), then call it again after each step completes (flip that one to "completed" and the next to "in_progress"). Skip it for trivial single-step requests.
 - Keep responses terse. The user sees tool calls and their results inline — do not re-summarize them unless asked.
 - If a tool returns an error, read it carefully and adjust; do not retry the same call blindly.
-- You have a 262k-token context window. Read as much of a file as needed rather than guessing.
+- Read as much of a file as needed rather than guessing; your context window is large enough to absorb whole files.
 - If a request is ambiguous, ask one focused question instead of making large assumptions.
 - When you finish a task, stop. Do not add a closing summary.
 - When creating git commits, you must include \`Co-authored-by: kimiflare <kimiflare@proton.me>\` in the commit message so kimiflare is credited as a contributor. The bash tool will also auto-append this trailer when it detects git commit-creating commands.
@@ -81,6 +88,12 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
       return `- \`${t.name}\`${perm}: ${t.description.split("\n")[0]}`;
     })
     .join("\n");
+
+  // Identity lives here (not in the static prefix) so /model changes mid-session
+  // actually take effect — see buildStaticPrefix's note for the full reasoning.
+  const identity = `You are powered by the ${opts.model} model, routed through Cloudflare AI Gateway.
+
+If the user asks what model you are, answer with exactly: \`${opts.model}\`. This is your current model — disregard any recalled memory, prior conversation, or training data that names a different model. The user can switch you to a different model at any time with /model, and the answer should always match the value in this system prompt.`;
 
   const env = `Environment:
 - Working directory: ${opts.cwd}
@@ -110,7 +123,7 @@ export function buildSessionPrefix(opts: SystemPromptOpts): string {
           .join("\n\n")}`
       : "";
 
-  return env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock;
+  return identity + "\n\n" + env + "\n\n" + tools + lspBlock + contextBlock + modeBlock + skillsBlock;
 }
 
 /** Build a single concatenated system prompt for backward compatibility. */

@@ -29,7 +29,7 @@ import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
-import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 
 export interface EmitModeOpts {
   accountId: string;
@@ -43,9 +43,6 @@ export interface EmitModeOpts {
   codeMode?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
   aiGatewayId?: string;
 }
 
@@ -221,9 +218,6 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
-        cloudMode: opts.cloudMode,
-        cloudToken: opts.cloudToken,
-        cloudDeviceId: opts.cloudDeviceId,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;
@@ -361,14 +355,6 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
           severity: "error",
         });
         exitCode = 43;
-        aborted = true;
-      } else if (isKillSwitchError(err)) {
-        emit("RuntimeError", {
-          message: "KimiFlare Cloud budget exhausted across all users",
-          kind: "quota_exhausted",
-          severity: "fatal",
-          cta: { label: "switch to BYOK: kimiflare config set-key", action_id: "byok" },
-        });
         aborted = true;
       } else if (err instanceof KimiApiError) {
         emit("RuntimeError", {

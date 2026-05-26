@@ -16,43 +16,17 @@ export class PermissionDeniedError extends Error {
   }
 }
 
-export class KillSwitchError extends Error {
-  endedAt: string | undefined;
-  constructor(endedAt?: string) {
-    super("SERVICE_ENDED");
-    this.name = "KillSwitchError";
-    this.endedAt = endedAt;
-  }
-}
-
-export function isKillSwitchError(err: unknown): err is KillSwitchError {
-  return err instanceof KillSwitchError;
-}
-
-/** Detect the cloud kill-switch response (503 + {error: "SERVICE_ENDED"}).
- *  Call this immediately after fetch() and before checking res.ok.
- *  Throws KillSwitchError when matched; otherwise returns silently. */
-export async function detectKillSwitch(res: Response): Promise<void> {
-  if (res.status === 503) {
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (data.error === "SERVICE_ENDED") {
-      throw new KillSwitchError(typeof data.ended_at === "string" ? data.ended_at : undefined);
-    }
-  }
-}
-
-export function isCloudQuotaExhaustedError(err: unknown): err is KimiApiError {
-  return (
-    err instanceof KimiApiError &&
-    err.httpStatus === 429 &&
-    /token quota exhausted/i.test(err.message)
-  );
-}
-
 /** Map known Cloudflare Workers AI / Gateway error codes to human-readable,
  *  actionable messages. Falls back to the original message with JSON stripped. */
 export function humanizeCloudflareError(err: KimiApiError): string {
   const { code, httpStatus, message } = err;
+
+  // If we already threw a friendly multi-line "kimiflare: …" message from the
+  // client (e.g. missing provider key, missing AI Gateway), pass it through
+  // verbatim instead of clobbering it with the generic 401/400 template.
+  if (message.startsWith("kimiflare: ")) {
+    return message.slice("kimiflare: ".length);
+  }
 
   // Cloudflare-specific error codes
   if (code === 3040) {
@@ -76,7 +50,7 @@ export function humanizeCloudflareError(err: KimiApiError): string {
   if (httpStatus === 401) {
     const codeStr = code !== undefined ? ` (code: ${code})` : "";
     return (
-      `Authentication required${codeStr}. Please check your API token or run \`kimiflare auth cloud\` if using cloud mode.`
+      `Authentication required${codeStr}. Please check your API token.`
     );
   }
 

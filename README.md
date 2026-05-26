@@ -8,12 +8,12 @@
   <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sinameraji/kimiflare?style=flat-square&color=2ea44f" alt="license"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js >= 20">
   <img src="https://img.shields.io/badge/typescript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
-  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/"><img src="https://img.shields.io/badge/powered%20by-Kimi--K2.6-f59e0b?style=flat-square" alt="Powered by Kimi-K2.6"></a>
+  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2"><img src="https://img.shields.io/badge/powered%20by-Kimi%20K2.6-f59e0b?style=flat-square" alt="Powered by Kimi K2.6"></a>
 </p>
 
 <p align="center">
-  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2.6/">Kimi-K2.6</a>, routed through your own <a href="https://developers.cloudflare.com/ai-gateway/">Cloudflare AI Gateway</a>.</strong><br>
-  Moonshot's 1T-parameter open-source model, with first-class observability, caching, and authoritative cost — all on your Cloudflare account.
+  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2">Kimi K2.6</a> on <a href="https://developers.cloudflare.com/workers-ai/">Cloudflare Workers AI</a> — with optional routing through your own <a href="https://developers.cloudflare.com/ai-gateway/">AI Gateway</a> for first-class observability, caching, and authoritative cost.</strong><br>
+  All on your Cloudflare account.
 </p>
 
 <p align="center">
@@ -22,9 +22,9 @@
 
 ## How it works
 
-You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare provisions (or reuses) an **AI Gateway** in your account and routes every model request through it. Nothing leaves your Cloudflare tenancy.
+You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare calls **Workers AI** directly by default — fastest path, fewest moving parts. You can optionally turn on routing through an **AI Gateway** in your account (provisioned or reused on first run) for observability, caching, and cost reporting. Either way, nothing leaves your Cloudflare tenancy.
 
-You get this for free:
+With AI Gateway enabled you get this for free:
 
 - **Per-request logs** with full payload, latency, and status — visible in the Cloudflare dashboard
 - **Response caching** with configurable TTL (`/gateway cache-ttl <seconds>`)
@@ -90,6 +90,14 @@ The onboarding wizard provisions or picks an AI Gateway in your account. Your Cl
 Edit your token at: https://dash.cloudflare.com/profile/api-tokens
 
 Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, per-feature breakdown, and direct dashboard links to each request log. `/gateway status` shows the current TTL, skip-cache flag, metadata tags, and live cache-hit ratio.
+
+### Model
+
+KimiFlare runs on **Kimi K2.6** via Cloudflare Workers AI — no API key needed beyond your Cloudflare token:
+
+- `@cf/moonshotai/kimi-k2.6` — 262k context, reasoning, tools
+
+`@cf/moonshotai/kimi-k2.5` is also available for older sessions.
 
 ### One-shot mode
 

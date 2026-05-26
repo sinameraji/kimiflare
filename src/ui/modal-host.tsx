@@ -9,15 +9,27 @@ import { CommandList } from "./command-list.js";
 import { LspWizard } from "./lsp-wizard.js";
 import { ThemePicker } from "./theme-picker.js";
 import { UiPicker, type UiEngineChoice } from "./ui-picker.js";
+import { ModelPicker } from "./model-picker.js";
+import { ModePicker } from "./mode-picker.js";
+import { ShellPicker } from "./shell-picker.js";
+import { MemoryPicker } from "./memory-picker.js";
+import { GatewayPicker } from "./gateway-picker.js";
+import { SkillsPicker } from "./skills-picker.js";
+import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
+import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
+import { UnifiedBillingStatus } from "./unified-billing-status.js";
+import type { ModelEntry } from "../models/registry.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./remote-dashboard.js";
 import { InboxModal } from "./inbox-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
+import { HelpMenu } from "./help-menu.js";
 import type { Theme } from "./theme.js";
 import type { ModalHostController } from "./use-modal-host.js";
 import type { CustomCommand } from "../commands/types.js";
 import type { SaveCustomCommandOptions } from "../commands/save.js";
 import type { RemoteSession } from "../remote/session-store.js";
 import type { HookConfig, HookEvent } from "../hooks/types.js";
+import type { MemoryManager } from "../memory/manager.js";
 
 interface LspServersConfig {
   [key: string]: {
@@ -51,6 +63,24 @@ export interface ModalHostProps {
   // UI engine picker
   currentUiEngine: UiEngineChoice;
   onPickUi: (choice: UiEngineChoice | null) => void;
+  // Model picker
+  currentModel: string;
+  onPickModel: (model: ModelEntry | null) => void;
+  // Mode picker
+  currentMode: import("../mode.js").Mode;
+  onPickMode: (mode: import("../mode.js").Mode | null) => void;
+  // Key entry modal (opens after a byok model is picked without a stored key)
+  onSaveProviderKey: (model: ModelEntry, result: KeyResult) => void;
+  onCancelKeyEntry: () => void;
+  // Billing chooser (Unified Billing vs BYOK) for Unified-eligible providers
+  onPickBilling: (model: ModelEntry, choice: BillingChoice | null) => void;
+  // Unified Billing probe — result is one of "enabled" | "fallback-byok" | "cancelled"
+  onUnifiedProbeResolve: (model: ModelEntry, r: "enabled" | "fallback-byok" | "cancelled") => void;
+  // Cloudflare credentials needed by the key entry and probe flows
+  accountId: string;
+  apiToken: string;
+  secretsStoreId?: string;
+  aiGatewayId?: string;
   // Remote dashboard
   selectedRemoteSession: RemoteSession | null;
   onSelectRemoteSession: (s: RemoteSession | null) => void;
@@ -63,6 +93,27 @@ export interface ModalHostProps {
   getConfiguredHooks: () => { event: HookEvent; hook: HookConfig }[];
   cwd: string;
   onHooksMutate: () => void;
+  // Help menu
+  costAttributionEnabled: boolean;
+  onRunCommand: (cmd: string) => void;
+  // Shell picker
+  currentShell: string | undefined;
+  onPickShell: (shell: string | null) => void;
+  // Memory picker
+  memoryEnabled: boolean;
+  memoryManager: MemoryManager | null;
+  onMemoryAction: (action: string) => void;
+  onMemoryDone: () => void;
+  // Gateway picker
+  gatewayId: string | undefined;
+  gatewaySkipCache: boolean | undefined;
+  gatewayCollectLogs: boolean | undefined;
+  gatewayMetadataCount: number;
+  onGatewayAction: (action: string) => void;
+  onGatewayDone: () => void;
+  // Skills picker
+  onSkillsAction: (action: string) => void;
+  onSkillsDone: () => void;
 }
 
 /**
@@ -87,6 +138,16 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     onPickTheme,
     currentUiEngine,
     onPickUi,
+    currentModel,
+    onPickModel,
+    onSaveProviderKey,
+    onCancelKeyEntry,
+    onPickBilling,
+    onUnifiedProbeResolve,
+    accountId,
+    apiToken,
+    secretsStoreId,
+    aiGatewayId,
     selectedRemoteSession,
     onSelectRemoteSession,
     onCancelRemoteSession,
@@ -139,6 +200,76 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
             onMutate={props.onHooksMutate}
             onDone={() => modals.setShowHooksDashboard(false)}
           />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showHelpMenu) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <HelpMenu
+            customCommands={customCommands.map((c) => ({ name: c.name, description: c.description }))}
+            costAttributionEnabled={props.costAttributionEnabled}
+            onDone={() => modals.setShowHelpMenu(false)}
+            onCommand={(cmd) => {
+              modals.setShowHelpMenu(false);
+              props.onRunCommand(cmd);
+            }}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showShellPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ShellPicker current={props.currentShell} onPick={props.onPickShell} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showMemoryPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <MemoryPicker
+            enabled={props.memoryEnabled}
+            memoryManager={props.memoryManager}
+            onAction={props.onMemoryAction}
+            onDone={props.onMemoryDone}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showGatewayPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <GatewayPicker
+            gatewayId={props.gatewayId}
+            skipCache={props.gatewaySkipCache}
+            collectLogs={props.gatewayCollectLogs}
+            metadataCount={props.gatewayMetadataCount}
+            onAction={props.onGatewayAction}
+            onDone={props.onGatewayDone}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showSkillsPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <SkillsPicker onAction={props.onSkillsAction} onDone={props.onSkillsDone} />
         </Box>
       </ThemeProvider>
     );
@@ -259,6 +390,72 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <UiPicker current={currentUiEngine} onPick={onPickUi} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showModelPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ModelPicker current={currentModel} onPick={onPickModel} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showModePicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ModePicker current={props.currentMode} onPick={props.onPickMode} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.billingChooserFor) {
+    const model = modals.billingChooserFor;
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <BillingChooser model={model} onPick={(choice) => onPickBilling(model, choice)} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.unifiedProbeFor) {
+    const model = modals.unifiedProbeFor;
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <UnifiedBillingStatus
+            model={model}
+            accountId={accountId}
+            apiToken={apiToken}
+            gatewayId={aiGatewayId ?? ""}
+            onResolve={(r) => onUnifiedProbeResolve(model, r)}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.keyEntryFor) {
+    const model = modals.keyEntryFor;
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <KeyEntryModal
+            model={model}
+            accountId={accountId}
+            apiToken={apiToken}
+            secretsStoreId={secretsStoreId}
+            onSave={(result) => onSaveProviderKey(model, result)}
+            onCancel={onCancelKeyEntry}
+          />
         </Box>
       </ThemeProvider>
     );

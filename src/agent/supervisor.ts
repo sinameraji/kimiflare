@@ -38,7 +38,9 @@ export class TurnSupervisor {
   startTurn(opts: AgentTurnOpts, callbacks?: SupervisorCallbacks): void {
     if (this.isRunning) {
       logger.warn("supervisor:start_rejected", { reason: "turn_already_running", phase: this._phase });
-      throw new Error("TurnSupervisor: turn already in progress");
+      // Graceful no-op instead of throwing — prevents unhandled crashes when
+      // queued messages or rapid submissions race into processMessage().
+      return;
     }
     this._phase = "preparing";
     this._killRequested = false;

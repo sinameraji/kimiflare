@@ -3,23 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>kimiflare — Claude Code alternative on Cloudflare</title>
-  <meta name="description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
+  <title>kimiflare — terminal coding agent on Cloudflare</title>
+  <meta name="description" content="An open-source terminal coding agent powered by Kimi K2.6 on Cloudflare Workers AI — with optional AI Gateway routing for observability, caching, and authoritative cost.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://kimiflare.com/">
   <meta name="theme-color" content="#f48120">
 
   <!-- Open Graph -->
-  <meta property="og:title" content="kimiflare — Claude Code alternative on Cloudflare">
-  <meta property="og:description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
+  <meta property="og:title" content="kimiflare — terminal coding agent on Cloudflare">
+  <meta property="og:description" content="An open-source terminal coding agent powered by Kimi K2.6 on Cloudflare Workers AI — with optional AI Gateway routing for observability, caching, and authoritative cost.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://kimiflare.com/">
   <meta property="og:image" content="https://kimiflare.com/logo.png">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="kimiflare — Claude Code alternative on Cloudflare">
-  <meta name="twitter:description" content="An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.">
+  <meta name="twitter:title" content="kimiflare — terminal coding agent on Cloudflare">
+  <meta name="twitter:description" content="An open-source terminal coding agent powered by Kimi K2.6 on Cloudflare Workers AI — with optional AI Gateway routing for observability, caching, and authoritative cost.">
   <meta name="twitter:image" content="https://kimiflare.com/logo.png">
 
   <!-- Cloudflare Web Analytics -->
@@ -35,7 +35,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "kimiflare",
-    "description": "An open-source terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — with first-class observability, caching, and authoritative cost.",
+    "description": "An open-source terminal coding agent powered by Kimi K2.6 on Cloudflare Workers AI — with optional AI Gateway routing for observability, caching, and authoritative cost.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "macOS, Linux, Windows",
     "offers": {
@@ -711,10 +711,10 @@
   <section class="hero">
     <div class="hero-label fade-in">Kimi-K2.6 · Cloudflare AI Gateway</div>
     <h1 class="fade-in delay-1">
-      Claude Code alternative, on your own Cloudflare account.
+      A terminal coding agent on your own Cloudflare account.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      An open-source terminal coding agent powered by Kimi K2.6 and routed through your own Cloudflare AI Gateway — with per-request logs, response caching, and authoritative cost out of the box.
+      An open-source terminal coding agent powered by Kimi K2.6 on Cloudflare Workers AI — with optional routing through your own AI Gateway for per-request logs, response caching, and authoritative cost.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
@@ -1002,11 +1002,8 @@
 <span class="c"># Install</span><br>
 <span class="v">npm</span> install -g kimiflare<br>
 <br>
-<span class="c"># Run — onboarding asks BYOK <s>or Cloud</s></span><br>
-<span class="v">kimiflare</span><br>
-<br>
-<s><span class="c"># Or start in Cloud mode directly</span><br>
-<span class="v">kimiflare</span> --cloud</s>
+<span class="c"># Run — onboarding sets up your Cloudflare account</span><br>
+<span class="v">kimiflare</span>
       </div>
     </div>
 

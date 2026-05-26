@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.75.0](https://github.com/sinameraji/kimiflare/compare/v0.74.1...v0.75.0) (2026-05-24)
+
+
+### Features
+
+* **ui:** add bidirectional turn separators and speaker labels in chat view ([#493](https://github.com/sinameraji/kimiflare/issues/493)) ([55b0805](https://github.com/sinameraji/kimiflare/commit/55b0805755a4c4a2ccc538a5a572f8826986ccf9))
+
+
+### Bug Fixes
+
+* **app:** make onDone fire-and-forget so UI returns to idle immediately ([#492](https://github.com/sinameraji/kimiflare/issues/492)) ([b134e3a](https://github.com/sinameraji/kimiflare/commit/b134e3a26378d8c1daebb23307fd74289d322ec8))
+* **app:** unblock UI between iterations during onIterationEnd housekeeping ([#494](https://github.com/sinameraji/kimiflare/issues/494)) ([250a553](https://github.com/sinameraji/kimiflare/commit/250a55372473b23e8bf8f273a239976ecc0af2d3))
+
+## [0.74.1](https://github.com/sinameraji/kimiflare/compare/v0.74.0...v0.74.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **agent:** close race window in processMessage and harden runInit/runCompact ([#491](https://github.com/sinameraji/kimiflare/issues/491)) ([0994e80](https://github.com/sinameraji/kimiflare/commit/0994e807065a705b840b33053d4388d82d4204ff))
+* **agent:** prevent TurnSupervisor crash on race-conditioned turn starts ([#487](https://github.com/sinameraji/kimiflare/issues/487)) ([104691b](https://github.com/sinameraji/kimiflare/commit/104691b4f20b3f01f95f7ce41aba6e0d7f978f84))
+* **context:** prevent API overflow at high context utilization ([#489](https://github.com/sinameraji/kimiflare/issues/489)) ([83cbe79](https://github.com/sinameraji/kimiflare/commit/83cbe7945c1d22ce308ec193c913c63445ee177b))
+
+## [0.74.0](https://github.com/sinameraji/kimiflare/compare/v0.73.2...v0.74.0) (2026-05-21)
+
+
+### Features
+
+* **routing:** dual-path Workers AI direct + AI Gateway ([#484](https://github.com/sinameraji/kimiflare/issues/484)) ([7ee9db3](https://github.com/sinameraji/kimiflare/commit/7ee9db3f7d15ac091d3eeafa575842356c9382c3))
+
+
+### Bug Fixes
+
+* **agent:** prevent 'Body is unusable' error and handle it gracefully ([#482](https://github.com/sinameraji/kimiflare/issues/482)) ([4f33f08](https://github.com/sinameraji/kimiflare/commit/4f33f080fd15d4314fb2a4fbb985bf4565b5a509))
+
+## [0.73.2](https://github.com/sinameraji/kimiflare/compare/v0.73.1...v0.73.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **routing:** route every chat model through AI Gateway /compat ([#480](https://github.com/sinameraji/kimiflare/issues/480)) ([16ac852](https://github.com/sinameraji/kimiflare/commit/16ac852ef2775027a87f7d09ff10293edb845eb6))
+
+## [0.73.1](https://github.com/sinameraji/kimiflare/compare/v0.73.0...v0.73.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **onboarding:** route picked model through billing setup before saving ([#476](https://github.com/sinameraji/kimiflare/issues/476)) ([2c9a0be](https://github.com/sinameraji/kimiflare/commit/2c9a0be9c437bece31e6fa6c653cde692fc86a3f))
+
+## [0.73.0](https://github.com/sinameraji/kimiflare/compare/v0.72.0...v0.73.0) (2026-05-18)
+
+
+### Features
+
+* **models:** multi-provider routing via AI Gateway Universal Endpoint ([#468](https://github.com/sinameraji/kimiflare/issues/468)) ([a319976](https://github.com/sinameraji/kimiflare/commit/a319976611d91deb84585b362b1a759583c7acec))
+
 ## [0.72.0](https://github.com/sinameraji/kimiflare/compare/v0.71.0...v0.72.0) (2026-05-17)
 
 

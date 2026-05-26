@@ -26,7 +26,7 @@ import type { Cfg } from "../app.js";
 
 const MAX_GITIGNORE_SIZE = 1 * 1024 * 1024; // 1 MB
 export const CONTEXT_LIMIT = 262_000;
-export const AUTO_COMPACT_SUGGEST_PCT = 0.8;
+export const AUTO_COMPACT_THRESHOLD = 0.8;
 export const MAX_EVENTS = 500;
 export const MAX_IMAGES_PER_MESSAGE = 10;
 export const FEEDBACK_WORKER_URL = "https://hello.kimiflare.com";

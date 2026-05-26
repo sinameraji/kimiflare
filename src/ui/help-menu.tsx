@@ -12,7 +12,6 @@ interface CustomCommandSummary {
 interface Props {
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
-  cloudMode?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -137,7 +136,6 @@ const CATEGORIES: Category[] = [
       { command: "/model", description: "show current model" },
       { command: "/update", description: "check for updates" },
       { command: "/hello", description: "send a voice note to the creator" },
-      { command: "/inbox", description: "check for a voice reply from the creator" },
     ],
   },
   {
@@ -172,7 +170,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, onDone, onCommand }: Props) {
+export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
   const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
@@ -192,7 +190,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, on
     onDone();
   };
 
-  const categories = cloudMode ? CATEGORIES.filter((c) => c.key !== "gateway") : CATEGORIES;
+  const categories = CATEGORIES;
 
   if (page === "main") {
     const items: { label: string; value: string; key: string }[] = categories.map((cat) => ({

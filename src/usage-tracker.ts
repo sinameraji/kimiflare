@@ -281,11 +281,13 @@ export async function recordUsage(
   sessionId: string,
   usage: Usage,
   gateway?: GatewayUsageLookup,
+  model?: string,
 ): Promise<void> {
   const cost = calculateCost(
     usage.prompt_tokens,
     usage.completion_tokens,
     usage.prompt_tokens_details?.cached_tokens ?? 0,
+    model,
   );
   const estimatedCost = cost.total;
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0;

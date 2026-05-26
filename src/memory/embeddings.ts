@@ -1,6 +1,5 @@
 import type { AiGatewayOptions } from "../agent/client.js";
 import { getUserAgent } from "../util/version.js";
-import { detectKillSwitch } from "../util/errors.js";
 
 export interface EmbedOpts {
   accountId: string;
@@ -8,10 +7,6 @@ export interface EmbedOpts {
   model?: string;
   texts: string[];
   gateway?: AiGatewayOptions;
-  /** Cloud mode — route through KimiFlare Cloud API instead of direct CF API */
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
 }
 
 const DEFAULT_MODEL = "@cf/baai/bge-base-en-v1.5";
@@ -35,7 +30,6 @@ async function fetchWithRetry(
   for (let i = 0; i < retries; i++) {
     try {
       const res = await fetch(url, init);
-      await detectKillSwitch(res);
       if (res.ok) return res;
       if (res.status === 429 || res.status >= 500) {
         // Rate limit or server error — retry with backoff
@@ -64,39 +58,34 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     "User-Agent": getUserAgent(),
   };
 
-  if (opts.cloudMode) {
-    url = "https://api.kimiflare.com/v1/embeddings";
-    if (opts.cloudToken) headers.Authorization = `Bearer ${opts.cloudToken}`;
-    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
-  } else {
-    url = opts.gateway
-      ? `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`
-      : `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${model}`;
+  if (opts.gateway) {
+    // Gateway path: embeddings go through the AI Gateway for observability.
+    url = `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`;
     headers.Authorization = `Bearer ${opts.apiToken}`;
 
-    if (opts.gateway) {
-      const merged: Record<string, string | number | boolean> = {
-        ...(opts.gateway.metadata ?? {}),
-        feature: "embedding",
-      };
-      const entries = Object.entries(merged).slice(0, 5);
-      headers["cf-aig-metadata"] = JSON.stringify(Object.fromEntries(entries));
-    }
-    if (opts.gateway?.cacheTtl !== undefined) {
+    const merged: Record<string, string | number | boolean> = {
+      ...(opts.gateway.metadata ?? {}),
+      feature: "embedding",
+    };
+    const entries = Object.entries(merged).slice(0, 5);
+    headers["cf-aig-metadata"] = JSON.stringify(Object.fromEntries(entries));
+    if (opts.gateway.cacheTtl !== undefined) {
       headers["cf-aig-cache-ttl"] = String(opts.gateway.cacheTtl);
     }
-    if (opts.gateway?.skipCache !== undefined) {
+    if (opts.gateway.skipCache !== undefined) {
       headers["cf-aig-skip-cache"] = String(opts.gateway.skipCache);
     }
+  } else {
+    // Direct Workers AI path: lower latency, no gateway overhead.
+    url = `https://api.cloudflare.com/client/v4/accounts/${opts.accountId}/ai/run/${model}`;
+    headers.Authorization = `Bearer ${opts.apiToken}`;
   }
 
   // Workers AI embeddings endpoint accepts single text or batch
   const results: Float32Array[] = [];
   for (const text of opts.texts) {
     const truncated = truncateForEmbedding(text);
-    const body = opts.cloudMode
-      ? JSON.stringify({ model, texts: [truncated] })
-      : JSON.stringify({ text: [truncated] });
+    const body = JSON.stringify({ text: [truncated] });
     const res = await fetchWithRetry(url, { method: "POST", headers, body });
     const json = (await res.json()) as unknown;
 

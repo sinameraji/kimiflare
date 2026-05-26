@@ -20,6 +20,7 @@ import type { AbortScope } from "../util/abort-scope.js";
 import { logger } from "../util/logger.js";
 import { compactEventsVisual, gatewayFromConfig } from "../ui/app-helpers.js";
 import type { HooksManager } from "../hooks/manager.js";
+import type { TurnSupervisor } from "./supervisor.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -46,6 +47,7 @@ export interface RunCompactDeps {
    *  omitted, no hooks fire (back-compat for SDK callers). */
   hooks?: HooksManager;
   sessionId?: string | null;
+  supervisorRef: React.MutableRefObject<TurnSupervisor>;
 }
 
 export async function runCompact(deps: RunCompactDeps): Promise<void> {
@@ -56,9 +58,10 @@ export async function runCompact(deps: RunCompactDeps): Promise<void> {
     artifactStoreRef, messagesRef, sessionStateRef,
     limitResolveRef, pendingToolCallsRef,
     hooks, sessionId,
+    supervisorRef,
   } = deps;
 
-  if (busy) {
+  if (busy || supervisorRef.current.isRunning) {
     setEvents((e) => [
       ...e,
       { kind: "info", key: mkKey(), text: "can't compact while model is running" },

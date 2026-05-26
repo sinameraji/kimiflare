@@ -22,6 +22,8 @@ describe("runKimi session affinity header", () => {
     globalThis.fetch = originalFetch;
   });
 
+  const GW = { id: "my-gateway" } as const;
+
   it("sends X-Session-ID and x-session-affinity headers when sessionId is provided", async () => {
     const gen = runKimi({
       accountId: "test",
@@ -29,8 +31,8 @@ describe("runKimi session affinity header", () => {
       model: "@cf/test/model",
       messages: [{ role: "user", content: "hi" }],
       sessionId: "sess-123",
+      gateway: GW,
     });
-    // exhaust generator
     for await (const _ of gen) {
       /* noop */
     }
@@ -45,6 +47,7 @@ describe("runKimi session affinity header", () => {
       apiToken: "token",
       model: "@cf/test/model",
       messages: [{ role: "user", content: "hi" }],
+      gateway: GW,
     });
     for await (const _ of gen) {
       /* noop */
@@ -54,7 +57,7 @@ describe("runKimi session affinity header", () => {
     assert.strictEqual(lastRequest!.headers.get("x-session-affinity"), null);
   });
 
-  it("uses the direct Workers AI endpoint by default", async () => {
+  it("uses direct Workers AI path when no gateway is configured for a Workers AI model", async () => {
     const gen = runKimi({
       accountId: "acct",
       apiToken: "token",
@@ -69,9 +72,27 @@ describe("runKimi session affinity header", () => {
       lastRequest!.url,
       "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/test/model",
     );
+    assert.strictEqual(lastRequest!.headers.get("Authorization"), "Bearer token");
   });
 
-  it("routes through native AI Gateway when configured", async () => {
+  it("throws when no gateway is configured for a non-Workers-AI model", async () => {
+    const gen = runKimi({
+      accountId: "acct",
+      apiToken: "token",
+      model: "anthropic/claude-test",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    await assert.rejects(
+      (async () => {
+        for await (const _ of gen) {
+          /* noop */
+        }
+      })(),
+      /AI Gateway/,
+    );
+  });
+
+  it("routes Workers AI through the Universal Endpoint with a workers-ai/ model prefix", async () => {
     const gen = runKimi({
       accountId: "acct",
       apiToken: "token",
@@ -91,8 +112,10 @@ describe("runKimi session affinity header", () => {
     assert.ok(lastRequest);
     assert.strictEqual(
       lastRequest!.url,
-      "https://gateway.ai.cloudflare.com/v1/acct/my-gateway/workers-ai/@cf/test/model",
+      "https://gateway.ai.cloudflare.com/v1/acct/my-gateway/compat/chat/completions",
     );
+    const body = await lastRequest!.clone().json();
+    assert.strictEqual(body.model, "workers-ai/@cf/test/model");
     assert.strictEqual(lastRequest!.headers.get("cf-aig-cache-ttl"), "3600");
     assert.strictEqual(lastRequest!.headers.get("cf-aig-skip-cache"), "false");
     assert.strictEqual(lastRequest!.headers.get("cf-aig-collect-log-payload"), "false");

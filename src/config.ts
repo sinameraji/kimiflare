@@ -1,7 +1,6 @@
 import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { validateModelId } from "./agent/client.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
@@ -57,9 +56,9 @@ export interface KimiConfig {
   memoryMaxEntries?: number;
   /** Embedding model for memory vectors. Default: @cf/baai/bge-base-en-v1.5. */
   memoryEmbeddingModel?: string;
-  /** Model for internal plumbing tasks (memory verification, hypothetical queries). Default: @cf/meta/llama-4-scout-17b-16e-instruct. */
+  /** Model for internal plumbing tasks (memory verification, hypothetical queries). Default: @cf/moonshotai/kimi-k2.5. */
   plumbingModel?: string;
-  /** Model for auto-extracting high-signal edit events. Default: @cf/meta/llama-3.2-3b-instruct. */
+  /** Model for auto-extracting high-signal edit events. Default: @cf/moonshotai/kimi-k2.5. */
   memoryExtractionModel?: string;
   /** Enable Code Mode: present tools as a TypeScript API and execute generated code in a sandbox. */
   codeMode?: boolean;
@@ -89,8 +88,6 @@ export interface KimiConfig {
   githubTokenExpiry?: number;
   /** Default GitHub repo for remote sessions (owner/repo). */
   githubRepo?: string;
-  /** Enable cloud mode: use api.kimiflare.com instead of direct Workers AI. */
-  cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
   /**
@@ -101,6 +98,24 @@ export interface KimiConfig {
    * takes effect on the next launch (the choice is baked at process start).
    */
   uiEngine?: "ink" | "camouflage";
+  /** Per-provider API keys forwarded to AI Gateway as cf-aig-authorization for BYOK. */
+  providerKeys?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  /** When true, models marked billingMode="unified" use Cloudflare's Unified Billing (no BYOK header). */
+  unifiedBilling?: boolean;
+  /** Non-secret names referencing provider keys stored in Cloudflare Secrets Store with scope: ai_gateway. */
+  providerKeyAliases?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  /** Id of the Cloudflare Secrets Store kimi-code uses for provider-key BYOK aliases. */
+  secretsStoreId?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -140,6 +155,22 @@ function readNumberEnv(name: string): number | undefined {
   if (!raw) return undefined;
   const parsed = parseInt(raw, 10);
   return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function readProviderKeysEnv():
+  | { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string }
+  | undefined {
+  const anthropic = process.env.ANTHROPIC_API_KEY || process.env.KIMIFLARE_ANTHROPIC_KEY;
+  const openai = process.env.OPENAI_API_KEY || process.env.KIMIFLARE_OPENAI_KEY;
+  const google = process.env.GOOGLE_API_KEY || process.env.KIMIFLARE_GOOGLE_KEY;
+  const generic = process.env.KIMIFLARE_OPENAI_COMPAT_KEY;
+  if (!anthropic && !openai && !google && !generic) return undefined;
+  const out: { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string } = {};
+  if (anthropic) out.anthropic = anthropic;
+  if (openai) out.openai = openai;
+  if (google) out.google = google;
+  if (generic) out["openai-compatible"] = generic;
+  return out;
 }
 
 function readGatewayMetadataEnv(): Record<string, string | number | boolean> | undefined {
@@ -221,39 +252,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
-  const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
   const envShell = process.env.KIMIFLARE_SHELL;
-
-  if (envCloudMode) {
-    return {
-      accountId: "",
-      apiToken: "",
-      model: envModel,
-      cloudMode: true,
-      reasoningEffort: envEffort,
-      coauthor: envCoauthor?.enabled ?? true,
-      coauthorName: envCoauthor?.name,
-      coauthorEmail: envCoauthor?.email,
-      cacheStablePrompts,
-      compiledContext,
-      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
-      memoryEnabled: envMemoryEnabled ?? false,
-      memoryDbPath: envMemoryDbPath,
-      memoryMaxAgeDays: envMemoryMaxAgeDays,
-      memoryMaxEntries: envMemoryMaxEntries,
-      memoryEmbeddingModel: envMemoryEmbeddingModel,
-      plumbingModel: envPlumbingModel,
-      codeMode: envCodeMode,
-      costAttribution: envCostAttribution ?? false,
-      filePicker: envFilePicker ?? true,
-      shell: envShell,
-      // Settings-only fields: env vars don't carry these, so we read
-      // them from the persisted file (when present) so the user's TUI
-      // choices survive across restarts.
-      uiEngine: persisted?.uiEngine,
-      theme: persisted?.theme,
-    };
-  }
+  const envProviderKeys = readProviderKeysEnv();
+  const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
 
   if (envAccount && envToken) {
     return {
@@ -288,39 +289,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       // choices survive across restarts.
       uiEngine: persisted?.uiEngine,
       theme: persisted?.theme,
+      providerKeys: envProviderKeys ?? persisted?.providerKeys,
+      providerKeyAliases: persisted?.providerKeyAliases,
+      secretsStoreId: persisted?.secretsStoreId,
+      unifiedBilling: envUnifiedBilling ?? persisted?.unifiedBilling,
     };
   }
 
   if (persisted) {
     const parsed = persisted;
-    if (parsed.cloudMode) {
-      return {
-        accountId: envAccount ?? parsed.accountId ?? "",
-        apiToken: envToken ?? parsed.apiToken ?? "",
-        model: envModel ?? parsed.model ?? DEFAULT_MODEL,
-        cloudMode: true,
-        reasoningEffort: envEffort ?? parsed.reasoningEffort,
-        coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
-        coauthorName: envCoauthor?.name ?? parsed.coauthorName,
-        coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
-        mcpServers: parsed.mcpServers,
-        cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
-        compiledContext: parsed.compiledContext ?? compiledContext,
-        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
-        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? false,
-        memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
-        memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
-        memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
-        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
-        plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
-        codeMode: envCodeMode ?? parsed.codeMode,
-        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
-        filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        theme: parsed.theme,
-        shell: envShell ?? parsed.shell,
-        uiEngine: parsed.uiEngine,
-      };
-    }
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
       return {
@@ -351,10 +328,13 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         uiEngine: parsed.uiEngine,
+        providerKeys: envProviderKeys ?? parsed.providerKeys,
+        providerKeyAliases: parsed.providerKeyAliases,
+        secretsStoreId: parsed.secretsStoreId,
+        unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
       };
     }
   }

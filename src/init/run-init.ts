@@ -25,11 +25,10 @@ import { classifyIntent } from "../intent/classify.js";
 import type { ReasoningEffort } from "../config.js";
 import type { TurnPhase } from "../ui/status.js";
 import type { DailyUsage } from "../usage-tracker.js";
+import type { TurnSupervisor } from "../agent/supervisor.js";
 import {
   KimiApiError,
   humanizeCloudflareError,
-  isCloudQuotaExhaustedError,
-  isKillSwitchError,
 } from "../util/errors.js";
 import { logger } from "../util/logger.js";
 import { recordUsage, getCostReport } from "../usage-tracker.js";
@@ -39,6 +38,8 @@ import type { LspManager } from "../lsp/manager.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { ChatEvent } from "../ui/chat.js";
 import type { Cfg } from "../app.js";
+import type { LoopDecision } from "../ui/limit-modal.js";
+import type { LoopModalState } from "../ui/use-modal-host.js";
 import { gatewayFromConfig, gatewayUsageLookupFromConfig, mkAssistantId, trackRecentFile } from "../ui/app-helpers.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
@@ -50,13 +51,6 @@ export interface RunInitDeps {
   mkKey: () => string;
   setEvents: SetEvents;
 
-  // Cloud auth (passed in because both `cfg.cloud*` and `initial*` props
-  // matter — caller knows which to prefer).
-  cloudToken: string | undefined;
-  initialCloudToken: string | undefined;
-  cloudDeviceId: string | undefined;
-  initialCloudDeviceId: string | undefined;
-
   // Turn-state setters
   setCodeMode: (v: boolean) => void;
   setTurnPhase: (v: TurnPhase) => void;
@@ -64,11 +58,8 @@ export interface RunInitDeps {
   setLastActivityAt: (v: number) => void;
   setUsage: React.Dispatch<React.SetStateAction<Usage | null>>;
   setSessionUsage: React.Dispatch<React.SetStateAction<DailyUsage | null>>;
-  setCloudBudget: (v: { remaining: number; limit: number } | null) => void;
-  setCloudToken: (v: string | undefined) => void;
-  setCloudDeviceId: (v: string | undefined) => void;
   setKimiMdStale: (v: boolean) => void;
-  setLoopModal: (v: null) => void;
+  setLoopModal: (v: LoopModalState | null) => void;
 
   // Turn-lifecycle hooks
   beginTurn: () => void;
@@ -101,15 +92,15 @@ export interface RunInitDeps {
   cacheStableRef: React.MutableRefObject<boolean>;
   lastApiErrorRef: React.MutableRefObject<{ httpStatus?: number; code?: number; message: string } | null>;
   limitResolveRef: React.MutableRefObject<unknown>;
-  loopResolveRef: React.MutableRefObject<unknown>;
+  loopResolveRef: React.MutableRefObject<((d: LoopDecision) => void) | null>;
+  supervisorRef: React.MutableRefObject<TurnSupervisor>;
 }
 
 export async function runInit(deps: RunInitDeps): Promise<void> {
   const {
     cfg, busy, mkKey, setEvents,
-    cloudToken, initialCloudToken, cloudDeviceId, initialCloudDeviceId,
     setCodeMode, setTurnPhase, setCurrentToolName, setLastActivityAt,
-    setUsage, setSessionUsage, setCloudBudget, setCloudToken, setCloudDeviceId,
+    setUsage, setSessionUsage,
     setKimiMdStale, setLoopModal,
     beginTurn, endTurn, ensureSessionId, onIterationEnd,
     updateAssistant, updateTool, updateGatewayMeta,
@@ -119,9 +110,10 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
     pendingToolCallsRef, recentFilesRef, usageRef, activeAsstIdRef,
     gatewayMetaRef, kimiMdStaleNudgedRef, lspManagerRef, modeRef,
     cacheStableRef, lastApiErrorRef, limitResolveRef, loopResolveRef,
+    supervisorRef,
   } = deps;
 
-  if (busy) {
+  if (busy || supervisorRef.current.isRunning) {
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "can't /init while model is running" }]);
     return;
   }
@@ -168,9 +160,9 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
       memoryManager: memoryManagerRef.current,
       githubToken: cfg.githubOAuthToken,
       codeMode: effectiveCodeMode,
-      cloudMode: cfg.cloudMode,
-      cloudToken: cloudToken ?? initialCloudToken,
-      cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+      providerKeys: cfg.providerKeys,
+      providerKeyAliases: cfg.providerKeyAliases,
+      unifiedBilling: cfg.unifiedBilling,
       shell: cfg.shell,
       onIterationEnd,
       onFileChange: (path, content) => {
@@ -263,34 +255,16 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
         },
         onUsageFinal: (u, meta) => {
           const sid = ensureSessionId();
-          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), cfg?.model);
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
-          if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-            const token = cloudToken ?? initialCloudToken!;
-            const did = cloudDeviceId ?? initialCloudDeviceId;
-            void (async () => {
-              try {
-                const { fetchCloudUsage } = await import("../cloud/auth.js");
-                const usage = await fetchCloudUsage(token, did);
-                if (usage) {
-                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-                }
-              } catch (err) {
-                if (isKillSwitchError(err)) {
-                  setCloudToken(undefined);
-                  setCloudDeviceId(undefined);
-                  setEvents((es) => [
-                    ...es,
-                    { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-                  ]);
-                }
-                // Other errors are non-fatal
-              }
-            })();
-          }
         },
         onGatewayMeta: updateGatewayMeta,
         askPermission: (req) => askForPermission(req, { promptOnBlockedBash: true }),
+        onLoopDetected: () =>
+          new Promise<LoopDecision>((resolve) => {
+            loopResolveRef.current = resolve;
+            setLoopModal({ resolve });
+          }),
         onKimiMdStale: () => {
           if (!kimiMdStaleNudgedRef.current) {
             kimiMdStaleNudgedRef.current = true;
@@ -356,50 +330,16 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
             : ev,
         ),
       );
-    } else if (isKillSwitchError(e)) {
-      setCloudToken(undefined);
-      setCloudDeviceId(undefined);
-      setEvents((es) => [
-        ...es,
-        { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
-      ]);
-    } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-      const token = cloudToken ?? initialCloudToken;
-      const did = cloudDeviceId ?? initialCloudDeviceId;
-      let used = 0;
-      let limit = 0;
-      let expiresAt = "";
-      if (token) {
-        try {
-          const { fetchCloudUsage } = await import("../cloud/auth.js");
-          const usage = await fetchCloudUsage(token, did);
-          if (usage) {
-            used = usage.input_tokens_used;
-            limit = usage.input_token_limit;
-            expiresAt = usage.expires_at;
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-      if (!limit) {
-        const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
-        if (m && m[1] && m[2]) {
-          used = parseInt(m[1].replace(/,/g, ""), 10);
-          limit = parseInt(m[2].replace(/,/g, ""), 10);
-        }
-      }
-      setEvents((es) => [
-        ...es,
-        { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
-      ]);
     } else if (e instanceof AgentLoopError) {
       setEvents((es) => [
         ...es,
         {
           kind: "error",
           key: mkKey(),
-          text: "The agent got stuck repeating the same actions. Here's what we know so far.",
+          text:
+            "/init stopped: the agent kept repeating the same tool calls and couldn't finish writing KIMI.md. " +
+            "Try /init again — if it loops in the same place, the repo may be too large for a single pass; " +
+            "you can write KIMI.md manually or scope it by deleting noisy paths from your .gitignore-style ignore list.",
         },
       ]);
     } else if (

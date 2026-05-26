@@ -9,9 +9,6 @@ export interface SearchOpts {
   apiToken: string;
   model?: string;
   gateway?: AiGatewayOptions;
-  cloudMode?: boolean;
-  cloudToken?: string;
-  cloudDeviceId?: string;
 }
 
 /**
@@ -31,9 +28,6 @@ export async function searchSections(
     model: opts.model,
     texts: [query],
     gateway: opts.gateway,
-    cloudMode: opts.cloudMode,
-    cloudToken: opts.cloudToken,
-    cloudDeviceId: opts.cloudDeviceId,
   });
   const queryEmbedding = embeddings[0];
   if (!queryEmbedding) {

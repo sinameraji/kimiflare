@@ -6,9 +6,7 @@ import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
-import { CloudQuotaMessage } from "./cloud-quota-message.js";
 import { ApiErrorMessage } from "./api-error-message.js";
-import { ServiceEndedMessage } from "./service-ended-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -32,23 +30,11 @@ export type ChatEvent =
       memoryRecalled?: boolean;
     }
   | {
-      kind: "cloud_quota_exhausted";
-      key: string;
-      used: number;
-      limit: number;
-      expiresAt: string;
-    }
-  | {
       kind: "api_error";
       key: string;
       httpStatus?: number;
       code?: number;
       message: string;
-    }
-  | {
-      kind: "service_ended";
-      key: string;
-      endedAt?: string;
     }
   | {
       kind: "qrcode";
@@ -89,7 +75,9 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
       {events.map((e, i) => {
         const prev = events[i - 1];
         const showSeparator = !!(
-          e.kind === "user" && prev && (prev.kind === "assistant" || prev.kind === "tool")
+          prev &&
+          ((e.kind === "user" && prev.kind !== "user") ||
+            (e.kind === "assistant" && prev.kind !== "assistant" && prev.kind !== "tool"))
         );
         return (
           <Box key={e.key} flexDirection="column">
@@ -145,7 +133,7 @@ const EventView = React.memo(function EventView({
       <Box flexDirection="column">
         <Box>
           <Text bold color={theme.user}>
-            ›{" "}
+            You:{" "}
           </Text>
           <Text bold>{evt.text}</Text>
         </Box>
@@ -161,21 +149,28 @@ const EventView = React.memo(function EventView({
   }
   if (evt.kind === "assistant") {
     return (
-      <Box flexDirection="column" paddingLeft={2}>
-        {showReasoning && evt.reasoning ? (
-          <Box flexDirection="column" marginBottom={1}>
-            <Text color={theme.reasoning.color}>
-              thinking…{" "}
-              {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
-            </Text>
-          </Box>
-        ) : null}
-        {evt.text ? <MD text={evt.text} /> : null}
-        {evt.streaming && (
-          <Text color={theme.spinner}>
-            <Spinner type="dots" />
+      <Box flexDirection="column">
+        <Box>
+          <Text bold color={theme.assistant ?? theme.info.color}>
+            kimiflare:{" "}
           </Text>
-        )}
+          <Box flexDirection="column">
+            {showReasoning && evt.reasoning ? (
+              <Box flexDirection="column" marginBottom={1}>
+                <Text color={theme.reasoning.color}>
+                  thinking…{" "}
+                  {evt.reasoning.length > 400 ? evt.reasoning.slice(0, 400) + "…" : evt.reasoning}
+                </Text>
+              </Box>
+            ) : null}
+            {evt.text ? <MD text={evt.text} /> : null}
+            {evt.streaming && (
+              <Text color={theme.spinner}>
+                <Spinner type="dots" />
+              </Text>
+            )}
+          </Box>
+        </Box>
       </Box>
     );
   }
@@ -195,15 +190,6 @@ const EventView = React.memo(function EventView({
       <Text color={theme.info.color}>
         ◈ {humanizeMemory(evt.text, intentTier)}
       </Text>
-    );
-  }
-  if (evt.kind === "cloud_quota_exhausted") {
-    return (
-      <CloudQuotaMessage
-        used={evt.used}
-        limit={evt.limit}
-        expiresAt={evt.expiresAt}
-      />
     );
   }
   if (evt.kind === "meta") {
@@ -230,9 +216,6 @@ const EventView = React.memo(function EventView({
         message={evt.message}
       />
     );
-  }
-  if (evt.kind === "service_ended") {
-    return <ServiceEndedMessage endedAt={evt.endedAt} />;
   }
   if (evt.kind === "qrcode") {
     return (

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Box, Text, useApp, useInput, render } from "ink";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
@@ -25,11 +25,9 @@ import { LspManager } from "./lsp/manager.js";
 import { HooksManager } from "./hooks/manager.js";
 import { sanitizeString } from "./agent/messages.js";
 import type { ChatMessage, ContentPart, Usage } from "./agent/messages.js";
-import { KimiApiError, isCloudQuotaExhaustedError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { AbortScope } from "./util/abort-scope.js";
 import { logger } from "./util/logger.js";
-import { buildReport, sendReport } from "./cloud/report.js";
-import type { CloudCredentials } from "./cloud/auth.js";
 import { ChatView, type ChatEvent } from "./ui/chat.js";
 import { StatusBar } from "./ui/status.js";
 import { PermissionModal } from "./ui/permission.js";
@@ -86,6 +84,10 @@ import { ThemeProvider } from "./ui/theme-context.js";
 import { resolveTheme, themeList, themeNames, DEFAULT_THEME_NAME } from "./ui/theme.js";
 import { loadAndMergeThemes } from "./ui/theme-loader.js";
 import type { Theme } from "./ui/theme.js";
+import { getModelOrInfer, type ModelEntry } from "./models/registry.js";
+import { decideNextStep } from "./models/next-step.js";
+import type { KeyResult } from "./ui/key-entry-modal.js";
+import type { BillingChoice } from "./ui/billing-chooser.js";
 import type { ResolvedLspConfig } from "./util/lsp-config.js";
 import { maybeLspNudge } from "./util/lsp-nudge.js";
 import { glob } from "./util/glob.js";
@@ -113,7 +115,7 @@ import {
   handleRemoteCancel as handleRemoteCancelImpl,
 } from "./ui/command-handlers.js";
 import {
-  AUTO_COMPACT_SUGGEST_PCT,
+  AUTO_COMPACT_THRESHOLD,
   buildFilePickerIgnoreList,
   capEvents,
   compactEventsVisual,
@@ -168,33 +170,43 @@ export interface Cfg {
   githubRefreshToken?: string;
   githubTokenExpiry?: number;
   githubRepo?: string;
-  cloudMode?: boolean;
-  cloudToken?: string;
   shell?: string;
   /** Preferred interactive UI engine. Persisted via the `/ui` slash command. */
   uiEngine?: "ink" | "camouflage";
+  providerKeys?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  providerKeyAliases?: {
+    anthropic?: string;
+    openai?: string;
+    google?: string;
+    "openai-compatible"?: string;
+  };
+  secretsStoreId?: string;
+  unifiedBilling?: boolean;
 }
 function App({
   initialCfg,
   initialUpdateResult,
   initialLspScope,
   initialLspProjectPath,
-  initialCloudToken,
-  initialCloudDeviceId,
 }: {
   initialCfg: Cfg | null;
   initialUpdateResult?: UpdateCheckResult;
   initialLspScope: "project" | "global";
   initialLspProjectPath: string | null;
-  initialCloudToken?: string;
-  initialCloudDeviceId?: string;
 }) {
   const { exit } = useApp();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
+  const modelContextLimit = useMemo(
+    () => (cfg ? getModelOrInfer(cfg.model).contextWindow : CONTEXT_LIMIT),
+    [cfg?.model],
+  );
   const [lspScope, setLspScope] = useState<"project" | "global">(initialLspScope);
   const [lspProjectPath, setLspProjectPath] = useState<string | null>(initialLspProjectPath);
-  const [cloudToken, setCloudToken] = useState(initialCloudToken);
-  const [cloudDeviceId, setCloudDeviceId] = useState(initialCloudDeviceId);
   const [events, setRawEvents] = useState<ChatEvent[]>([]);
   const setEvents = useCallback(
     (updater: React.SetStateAction<ChatEvent[]>) => {
@@ -223,7 +235,6 @@ function App({
     };
   }, []);
   const [gatewayMeta, setGatewayMeta] = useState<GatewayMeta | null>(null);
-  const [cloudBudget, setCloudBudget] = useState<{ remaining: number; limit: number } | null>(null);
   const turn = useTurnController();
   const {
     busy, busyRef,
@@ -271,8 +282,18 @@ function App({
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
     showUiPicker, setShowUiPicker,
+    setShowModelPicker,
+    showModePicker, setShowModePicker,
+    keyEntryFor: _keyEntryFor, setKeyEntryFor,
+    setBillingChooserFor,
+    setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
+    showHelpMenu, setShowHelpMenu,
+    showMemoryPicker, setShowMemoryPicker,
+    showGatewayPicker, setShowGatewayPicker,
+    showSkillsPicker, setShowSkillsPicker,
+    showShellPicker, setShowShellPicker,
     hasFullscreenModal,
     hasAnyModal,
   } = modals;
@@ -356,33 +377,6 @@ function App({
     });
     return () => { cancelled = true; };
   }, []);
-
-  // Fetch cloud token budget on startup
-  useEffect(() => {
-    if (!cfg?.cloudMode || !initialCloudToken) return;
-    let cancelled = false;
-    const fetchBudget = async () => {
-      try {
-        const { fetchCloudUsage } = await import("./cloud/auth.js");
-        const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
-        if (usage && !cancelled) {
-          setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-        }
-      } catch (err) {
-        if (isKillSwitchError(err) && !cancelled) {
-          setCloudToken(undefined);
-          setCloudDeviceId(undefined);
-          setEvents((es) => [
-            ...es,
-            { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-          ]);
-        }
-        // Other errors are non-fatal
-      }
-    };
-    fetchBudget();
-    return () => { cancelled = true; };
-  }, [cfg?.cloudMode, initialCloudToken]);
 
   // Cursor offset for the input box. The picker controller owns its own
   // open/close/selection state — see `usePickerController` below.
@@ -503,7 +497,13 @@ function App({
     perm !== null ||
     limitModal !== null ||
     loopModal !== null ||
-    showInboxModal;
+    showInboxModal ||
+    showHelpMenu ||
+    showModePicker ||
+    showMemoryPicker ||
+    showGatewayPicker ||
+    showSkillsPicker ||
+    showShellPicker;
 
   const loadFilePickerItems = useCallback(async (): Promise<FilePickerItem[]> => {
     const cwd = process.cwd();
@@ -553,10 +553,6 @@ function App({
       setKimiMdStale,
       customCommandsRef,
       setCustomCommandsVersion,
-      cloudToken,
-      initialCloudToken,
-      cloudDeviceId,
-      initialCloudDeviceId,
     });
   }, [cfg, setEvents]);
 
@@ -893,7 +889,7 @@ function App({
         resumeSessions !== null ||
         checkpointSession !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+      if (!modalOpen && (busyRef.current || supervisorRef.current.isRunning) && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
         runInterruptTurn(interruptDepsRef.current!);
         return;
@@ -1038,6 +1034,7 @@ function App({
       pendingToolCallsRef,
       hooks: hooksManagerRef.current,
       sessionId: sessionIdRef.current,
+      supervisorRef,
     });
   }, [cfg, busy, saveSessionSafe]);
 
@@ -1048,19 +1045,12 @@ function App({
       busy,
       mkKey,
       setEvents,
-      cloudToken,
-      initialCloudToken,
-      cloudDeviceId,
-      initialCloudDeviceId,
       setCodeMode,
       setTurnPhase,
       setCurrentToolName,
       setLastActivityAt,
       setUsage,
       setSessionUsage,
-      setCloudBudget,
-      setCloudToken,
-      setCloudDeviceId,
       setKimiMdStale,
       setLoopModal,
       beginTurn,
@@ -1092,6 +1082,7 @@ function App({
       lastApiErrorRef,
       limitResolveRef,
       loopResolveRef,
+      supervisorRef,
     });
   }, [cfg, busy, updateAssistant, updateTool, updateGatewayMeta]);
 
@@ -1136,8 +1127,159 @@ function App({
         },
       ]);
     },
-    [],
+    [mkKey, setShowUiPicker],
   );
+
+  const handleModelPick = useCallback(
+    (picked: ModelEntry | null) => {
+      setShowModelPicker(false);
+      if (!picked) return;
+      // Persist the model selection first (cheap & expected even if onboarding is mid-flight).
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, model: picked.id };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: `model: ${picked.id} · ${picked.contextWindow.toLocaleString()} ctx`,
+        },
+      ]);
+      // Route the rest of onboarding through the shared decision table.
+      const next = decideNextStep(cfg, picked);
+      if (next.kind === "ready") return;
+      if (next.kind === "needs-gateway") {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `${picked.id} routes through Cloudflare AI Gateway, but no gateway is configured — run /gateway <id>`,
+          },
+        ]);
+        return;
+      }
+      if (next.kind === "billing-choice") {
+        setBillingChooserFor(picked);
+        return;
+      }
+      // needs-key
+      setKeyEntryFor(picked);
+    },
+    [cfg, mkKey, setShowModelPicker, setBillingChooserFor, setKeyEntryFor],
+  );
+
+  const handlePickBilling = useCallback(
+    (model: ModelEntry, choice: BillingChoice | null) => {
+      setBillingChooserFor(null);
+      if (!choice) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "billing setup cancelled — pick again with /model" },
+        ]);
+        return;
+      }
+      if (choice === "byok") {
+        setKeyEntryFor(model);
+        return;
+      }
+      // choice === "unified" → kick off the probe
+      setUnifiedProbeFor(model);
+    },
+    [mkKey, setBillingChooserFor, setKeyEntryFor, setUnifiedProbeFor],
+  );
+
+  const handleUnifiedProbeResolve = useCallback(
+    (model: ModelEntry, r: "enabled" | "fallback-byok" | "cancelled") => {
+      setUnifiedProbeFor(null);
+      if (r === "enabled") {
+        setCfg((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, unifiedBilling: true };
+          void saveConfig(updated).catch(() => {});
+          return updated;
+        });
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `✓ ${model.id} ready — billed via your Cloudflare credits.`,
+          },
+        ]);
+        return;
+      }
+      if (r === "fallback-byok") {
+        setKeyEntryFor(model);
+        return;
+      }
+      // cancelled
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: "unified billing setup cancelled" },
+      ]);
+    },
+    [mkKey, setUnifiedProbeFor, setKeyEntryFor],
+  );
+
+  const handleSaveProviderKey = useCallback(
+    (model: ModelEntry, result: KeyResult) => {
+      setKeyEntryFor(null);
+      const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+      setCfg((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        if (result.kind === "alias") {
+          updated.providerKeyAliases = {
+            ...(prev.providerKeyAliases ?? {}),
+            [provider]: result.alias,
+          };
+          updated.secretsStoreId = result.secretsStoreId;
+          // If we previously stored a local key for this provider, drop it — the
+          // alias supersedes it and we don't want the secret hanging around.
+          if (prev.providerKeys?.[provider]) {
+            const { [provider]: _drop, ...rest } = prev.providerKeys;
+            updated.providerKeys = rest;
+          }
+        } else {
+          updated.providerKeys = {
+            ...(prev.providerKeys ?? {}),
+            [provider]: result.key,
+          };
+        }
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text:
+            result.kind === "alias"
+              ? `✓ ${provider} key stored in Cloudflare Secrets Store — ${model.id} is ready to use.`
+              : `⚠ ${provider} key saved locally at ~/.config/kimiflare/config.json. Do not commit this file.`,
+        },
+      ]);
+    },
+    [mkKey, setKeyEntryFor],
+  );
+
+  const handleCancelKeyEntry = useCallback(() => {
+    setKeyEntryFor(null);
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text: "key entry cancelled — run /model to pick again, or set up your key later.",
+      },
+    ]);
+  }, [mkKey, setKeyEntryFor]);
 
   const buildSlashContext = useCallback((): SlashContext => ({
     exit,
@@ -1156,13 +1298,23 @@ function App({
     setLatestVersion,
     setShowThemePicker,
     setShowUiPicker,
+    setShowModelPicker,
+    setShowModePicker,
+    setKeyEntryFor,
+    setBillingChooserFor,
+    setUnifiedProbeFor,
     setShowInboxModal,
     setShowHooksDashboard: modals.setShowHooksDashboard,
+    setShowHelpMenu,
     setShowLspWizard,
     setShowRemoteDashboard,
     setShowCommandList,
     setCommandWizard,
     setCommandPicker,
+    setShowMemoryPicker,
+    setShowGatewayPicker,
+    setShowSkillsPicker,
+    setShowShellPicker,
     lspScope,
     lspProjectPath,
     resetSession,
@@ -1202,7 +1354,9 @@ function App({
   }), [
     exit, busy, cfg, mode, lspScope, lspProjectPath,
     setCfg, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta,
-    setHasUpdate, setLatestVersion, setShowThemePicker, setShowInboxModal,
+    setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setShowModePicker, setKeyEntryFor,
+    setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal, setShowHelpMenu,
+    setShowMemoryPicker, setShowGatewayPicker, setShowSkillsPicker, setShowShellPicker,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -1271,14 +1425,25 @@ function App({
       let trimmed = text.trim();
       if (!trimmed) return;
 
+      // Mark busy immediately so no other path can race into processMessage
+      // while async setup (image encoding, hooks, etc.) is in flight.
+      beginTurn();
+
       let overrideModel: string | undefined;
       let overrideEffort: ReasoningEffort | undefined;
       let display = displayText?.trim() || trimmed;
 
       if (trimmed.startsWith("/")) {
-        if (handleSlash(trimmed)) return;
-        const head = trimmed.split(/\s+/)[0]!.slice(1);
-        const custom = customCommandsRef.current.find((c) => c.name === head);
+        const head = trimmed.split(/\s+/)[0]!.toLowerCase();
+        const selfManaged = ["/compact", "/init"].includes(head);
+        if (handleSlash(trimmed)) {
+          if (!selfManaged) {
+            endTurn();
+          }
+          return;
+        }
+        const cmdName = head.slice(1);
+        const custom = customCommandsRef.current.find((c) => c.name === cmdName);
         if (custom) {
           const info = (text: string) =>
             setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
@@ -1289,7 +1454,10 @@ function App({
           if (custom.shell) {
             info(`/${custom.name}: executing shell code from template`);
           }
-          if (!rendered.trim()) return;
+          if (!rendered.trim()) {
+            endTurn();
+            return;
+          }
           const parts: string[] = [];
           if (custom.model) {
             overrideModel = custom.model;
@@ -1389,6 +1557,7 @@ function App({
             ...e,
             { kind: "info", key: mkKey(), text: `hook blocked the prompt: ${reason}` },
           ]);
+          endTurn();
           return;
         }
       }
@@ -1424,7 +1593,6 @@ function App({
         ]);
       }
 
-      beginTurn();
       gatewayMetaRef.current = null;
       setGatewayMeta(null);
 
@@ -1457,6 +1625,7 @@ function App({
         onAssistantStart: () => {
           const id = mkAssistantId();
           activeAsstIdRef.current = id;
+          beginTurn();
           setTurnPhase("generating");
           setLastActivityAt(Date.now());
           setEvents((e) => [
@@ -1478,6 +1647,13 @@ function App({
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));
           setTurnPhase("waiting");
+
+          // If no tool calls were finalized, the turn is effectively done.
+          // Reset busy immediately so the UI returns to idle without waiting
+          // for the supervisor's onDone hook.
+          if (pendingToolCallsRef.current.size === 0) {
+            endTurn();
+          }
         },
         onToolCallFinalized: (call: import("./agent/messages.js").ToolCall) => {
           pendingToolCallsRef.current.set(call.id, call.function.name);
@@ -1518,6 +1694,10 @@ function App({
           if (pendingToolCallsRef.current.size === 0) {
             setTurnPhase("waiting");
             setCurrentToolName(null);
+            // Unblock the UI before onIterationEnd (compaction / memory recall)
+            // so the user isn't stuck watching a spinner while housekeeping runs
+            // between iterations.
+            endTurn();
           }
           updateTool(r.tool_call_id, {
             status: !r.ok && typeof r.content === "string" && r.content.startsWith("Permission denied") ? "rejected" : r.ok ? "done" : "error",
@@ -1530,32 +1710,8 @@ function App({
         },
         onUsageFinal: (u: Usage, meta?: GatewayMeta) => {
           const sid = ensureSessionId();
-          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current));
+          void recordUsage(sid, u, gatewayUsageLookupFromConfig(cfg, meta ?? gatewayMetaRef.current), cfg?.model);
           void getCostReport(sid).then((report) => setSessionUsage(report.session));
-          // Refresh cloud budget so remaining tokens update in real time
-          if (cfg?.cloudMode && (cloudToken ?? initialCloudToken)) {
-            const token = cloudToken ?? initialCloudToken!;
-            const did = cloudDeviceId ?? initialCloudDeviceId;
-            void (async () => {
-              try {
-                const { fetchCloudUsage } = await import("./cloud/auth.js");
-                const usage = await fetchCloudUsage(token, did);
-                if (usage) {
-                  setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
-                }
-              } catch (err) {
-                if (isKillSwitchError(err)) {
-                  setCloudToken(undefined);
-                  setCloudDeviceId(undefined);
-                  setEvents((es) => [
-                    ...es,
-                    { kind: "service_ended", key: mkKey(), endedAt: err.endedAt },
-                  ]);
-                }
-                // Other errors are non-fatal
-              }
-            })();
-          }
         },
         onGatewayMeta: updateGatewayMeta,
         onTasks: (nextTasks: Task[]) => {
@@ -1644,6 +1800,14 @@ function App({
       // Clear the one-shot session-start recall so it is not reused.
       sessionStartRecallRef.current = null;
 
+      // Last-resort guard against race conditions (e.g. queued messages draining
+      // while a slash-command-initiated turn like /compact is still winding down).
+      // If the supervisor is already running, undo beginTurn() and bail out.
+      if (supervisorRef.current.isRunning) {
+        endTurn();
+        return;
+      }
+
       supervisorRef.current.startTurn(
         {
           accountId: cfg.accountId,
@@ -1666,9 +1830,9 @@ function App({
           githubToken: cfg.githubOAuthToken,
           keepLastImageTurns: cfg.imageHistoryTurns ?? 2,
           codeMode: effectiveCodeMode,
-          cloudMode: cfg.cloudMode,
-          cloudToken: cloudToken ?? initialCloudToken,
-          cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
+          providerKeys: cfg.providerKeys,
+          providerKeyAliases: cfg.providerKeyAliases,
+          unifiedBilling: cfg.unifiedBilling,
           onIterationEnd,
           intentClassification: classification,
           sessionStartRecall: sessionStartRecallRef.current ?? undefined,
@@ -1678,10 +1842,7 @@ function App({
             apiToken: cfg.apiToken,
             embeddingModel: cfg.memoryEmbeddingModel,
             gateway: gatewayFromConfig(cfg),
-            cloudMode: cfg.cloudMode,
-            cloudToken: cloudToken ?? initialCloudToken,
-            cloudDeviceId: cloudDeviceId ?? initialCloudDeviceId,
-            maxSkillTokens: CONTEXT_LIMIT - 10_000,
+            maxSkillTokens: modelContextLimit - 10_000,
           },
           mode: modeRef.current,
           cacheStable: cacheStableRef.current,
@@ -1699,117 +1860,129 @@ function App({
           callbacks: sharedCallbacks,
         },
         {
-          onDone: async () => {
-            await saveSessionSafe();
+          onDone: () => {
+            // Fire-and-forget all post-turn housekeeping so the UI returns to
+            // idle immediately and the user can type the next message without
+            // waiting for compaction, memory recall, or session persistence.
+            void (async () => {
+              await saveSessionSafe();
 
-            // If the turn was killed (preempted or aborted), skip expensive
-            // post-turn work so the next turn can start immediately.
-            if (turnScope.signal.aborted) {
-              cleanupTurn();
-              return;
-            }
-
-            // Auto-compact after turn when thresholds are met. With compiled
-            // context on, use the heuristic compactor; otherwise fall back to the
-            // LLM summarizer so users have a safety net regardless of the flag.
-            if (shouldCompact({ messages: messagesRef.current })) {
-              // M6.1: same PreCompact fire as the mid-turn site above.
-              if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
-                void hooksManagerRef.current
-                  .fire(
-                    "PreCompact",
-                    {
-                      event: "PreCompact",
-                      session_id: sessionIdRef.current,
-                      cwd: process.cwd(),
-                    },
-                    null,
-                  )
-                  .catch(() => {});
+              // If the turn was killed (preempted or aborted), skip expensive
+              // post-turn work so the next turn can start immediately.
+              if (turnScope.signal.aborted) {
+                return;
               }
-              if (compiledContextRef.current) {
-                const store = artifactStoreRef.current;
-                const result = compactMessagesViaArtifacts({
-                  messages: messagesRef.current,
-                  state: sessionStateRef.current,
-                  store,
-                });
-                if (result.metrics.rawTurnsRemoved > 0) {
-                  messagesRef.current = result.newMessages;
-                  sessionStateRef.current = result.newState;
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "info",
-                      key: mkKey(),
-                      text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
-                    },
-                  ]);
-                  await saveSessionSafe();
+
+              // Auto-compact after turn when thresholds are met. With compiled
+              // context on, use the heuristic compactor; otherwise fall back to the
+              // LLM summarizer so users have a safety net regardless of the flag.
+              let didCompact = false;
+              if (shouldCompact({ messages: messagesRef.current })) {
+                // M6.1: same PreCompact fire as the mid-turn site above.
+                if (hooksManagerRef.current.hasEnabledHooks("PreCompact")) {
+                  void hooksManagerRef.current
+                    .fire(
+                      "PreCompact",
+                      {
+                        event: "PreCompact",
+                        session_id: sessionIdRef.current,
+                        cwd: process.cwd(),
+                      },
+                      null,
+                    )
+                    .catch(() => {});
                 }
-              } else {
-                try {
-                  const result = await summarizeMessagesViaLlm({
-                    accountId: cfg.accountId,
-                    apiToken: cfg.apiToken,
-                    model: cfg.model,
+                if (compiledContextRef.current) {
+                  const store = artifactStoreRef.current;
+                  const result = compactMessagesViaArtifacts({
                     messages: messagesRef.current,
-                    signal: turnScope.signal,
-                    gateway: gatewayFromConfig(cfg),
+                    state: sessionStateRef.current,
+                    store,
                   });
-                  if (result.replacedCount > 0) {
+                  if (result.metrics.rawTurnsRemoved > 0) {
                     messagesRef.current = result.newMessages;
+                    sessionStateRef.current = result.newState;
                     setEvents((e) => [
                       ...e,
                       {
                         kind: "info",
                         key: mkKey(),
-                        text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                        text: `auto-compacted: ${result.metrics.estimatedTokensBefore} → ${result.metrics.estimatedTokensAfter} tokens (${result.metrics.archivedArtifacts} artifacts)`,
                       },
                     ]);
                     await saveSessionSafe();
+                    didCompact = true;
                   }
-                } catch (compactErr) {
-                  if ((compactErr as Error).name !== "AbortError") {
-                    setEvents((es) => [
-                      ...es,
-                      {
-                        kind: "info",
-                        key: mkKey(),
-                        text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
-                      },
-                    ]);
+                } else {
+                  try {
+                    const result = await summarizeMessagesViaLlm({
+                      accountId: cfg.accountId,
+                      apiToken: cfg.apiToken,
+                      model: cfg.model,
+                      messages: messagesRef.current,
+                      signal: turnScope.signal,
+                      gateway: gatewayFromConfig(cfg),
+                    });
+                    if (result.replacedCount > 0) {
+                      messagesRef.current = result.newMessages;
+                      setEvents((e) => [
+                        ...e,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `auto-compacted: ${result.replacedCount} messages summarized`,
+                        },
+                      ]);
+                      await saveSessionSafe();
+                      didCompact = true;
+                    }
+                  } catch (compactErr) {
+                    if ((compactErr as Error).name !== "AbortError") {
+                      setEvents((es) => [
+                        ...es,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                        },
+                      ]);
+                    }
                   }
                 }
-              }
-            }
 
-            // After compaction, recall memories so the model retains durable anchors
-            const manager = memoryManagerRef.current;
-            if (manager) {
-              try {
-                const cwd = process.cwd();
-                const queryText = sessionStateRef.current.task || cwd;
-                const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
-                if (results.length > 0) {
-                  const text = await manager.synthesizeRecalled(results);
-                  const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-                  const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-                  messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-                  setEvents((e) => [
-                    ...e,
-                    {
-                      kind: "memory",
-                      key: mkKey(),
-                      text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                    },
-                  ]);
-                  await saveSessionSafe();
+                // After compaction, recall memories so the model retains durable anchors.
+                // Only surface the recall event when compaction actually happened —
+                // otherwise the message is noise on turns that merely crossed the
+                // threshold without removing anything.
+                if (didCompact) {
+                  const manager = memoryManagerRef.current;
+                  if (manager) {
+                    try {
+                      const cwd = process.cwd();
+                      const queryText = sessionStateRef.current.task || cwd;
+                      const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
+                      if (results.length > 0) {
+                        const text = await manager.synthesizeRecalled(results);
+                        const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
+                        const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
+                        messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+                        setEvents((e) => [
+                          ...e,
+                          {
+                            kind: "memory",
+                            key: mkKey(),
+                            text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                          },
+                        ]);
+                        await saveSessionSafe();
+                      }
+                    } catch {
+                      // Non-fatal
+                    }
+                  }
                 }
-              } catch {
-                // Non-fatal
               }
-            }
+            })();
 
             cleanupTurn();
           },
@@ -1828,41 +2001,6 @@ function App({
               setEvents((evts) =>
                 evts.map((e) => (e.kind === "tool" && e.status === "running" ? { ...e, status: "error" as const, result: "(stopped)" } : e)),
               );
-            } else if (isKillSwitchError(e)) {
-              setCloudToken(undefined);
-              setCloudDeviceId(undefined);
-              setEvents((es) => [
-                ...es,
-                { kind: "service_ended", key: mkKey(), endedAt: e.endedAt },
-              ]);
-            } else if (cfg?.cloudMode && isCloudQuotaExhaustedError(e)) {
-              const token = cloudToken ?? initialCloudToken;
-              const did = cloudDeviceId ?? initialCloudDeviceId;
-              let used = 0;
-              let limit = 0;
-              let expiresAt = "";
-              if (token) {
-                try {
-                  const { fetchCloudUsage } = await import("./cloud/auth.js");
-                  const usage = await fetchCloudUsage(token, did);
-                  if (usage) {
-                    used = usage.input_tokens_used;
-                    limit = usage.input_token_limit;
-                    expiresAt = usage.expires_at;
-                  }
-                } catch { /* ignore */ }
-              }
-              if (!limit) {
-                const m = (e as KimiApiError).message.match(/Used ([\d,]+)\s*\/\s*([\d,]+)/);
-                if (m && m[1] && m[2]) {
-                  used = parseInt(m[1].replace(/,/g, ""), 10);
-                  limit = parseInt(m[2].replace(/,/g, ""), 10);
-                }
-              }
-              setEvents((es) => [
-                ...es,
-                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
-              ]);
             } else if (
               e instanceof KimiApiError &&
               (e.httpStatus === 429 || e.code === 3040 || (e.httpStatus !== undefined && e.httpStatus >= 500))
@@ -1907,7 +2045,7 @@ function App({
 
       const historyEntry = trimmedDisplay;
 
-      if (busyRef.current) {
+      if (busyRef.current || supervisorRef.current.isRunning) {
         const key = mkKey();
         setEvents((e) => [...e, { kind: "user", key, text: trimmedDisplay, queued: true }]);
         setQueue((q) => [...q, { full: trimmedFull, display: trimmedDisplay, key }]);
@@ -1927,19 +2065,33 @@ function App({
   submitRef.current = submit;
 
   useEffect(() => {
+    if (usage && usage.prompt_tokens / modelContextLimit < AUTO_COMPACT_THRESHOLD * 0.7) {
+      compactSuggestedRef.current = false;
+    }
     if (compactSuggestedRef.current) return;
-    if (usage && usage.prompt_tokens / CONTEXT_LIMIT >= AUTO_COMPACT_SUGGEST_PCT) {
-      compactSuggestedRef.current = true;
+    if (busy) return;
+    if (!usage || usage.prompt_tokens / modelContextLimit < AUTO_COMPACT_THRESHOLD) return;
+    compactSuggestedRef.current = true;
+    const pct = Math.round((usage.prompt_tokens / modelContextLimit) * 100);
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "info",
+        key: mkKey(),
+        text: `context ${pct}% full — auto-compacting older turns`,
+      },
+    ]);
+    void runCompact().catch((err) => {
       setEvents((e) => [
         ...e,
         {
-          kind: "info",
+          kind: "error",
           key: mkKey(),
-          text: `context ${Math.round((usage.prompt_tokens / CONTEXT_LIMIT) * 100)}% full — run /compact to summarize older turns`,
+          text: `auto-compact failed: ${(err as Error).message} — run /compact manually`,
         },
       ]);
-    }
-  }, [usage]);
+    });
+  }, [usage, modelContextLimit, busy, runCompact]);
 
   if (!cfg) {
     return (
@@ -1999,6 +2151,24 @@ function App({
         onPickTheme={handleThemePick}
         currentUiEngine={cfg?.uiEngine ?? "ink"}
         onPickUi={handleUiPick}
+        currentModel={cfg?.model ?? ""}
+        onPickModel={handleModelPick}
+        currentMode={mode}
+        onPickMode={(m) => {
+          if (m) {
+            setMode(m);
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `mode: ${m}` }]);
+          }
+          setShowModePicker(false);
+        }}
+        onSaveProviderKey={handleSaveProviderKey}
+        onCancelKeyEntry={handleCancelKeyEntry}
+        onPickBilling={handlePickBilling}
+        onUnifiedProbeResolve={handleUnifiedProbeResolve}
+        accountId={cfg?.accountId ?? ""}
+        apiToken={cfg?.apiToken ?? ""}
+        secretsStoreId={cfg?.secretsStoreId}
+        aiGatewayId={cfg?.aiGatewayId}
         selectedRemoteSession={selectedRemoteSession}
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
@@ -2014,6 +2184,75 @@ function App({
         }}
         cwd={process.cwd()}
         onHooksMutate={() => hooksManagerRef.current.reload()}
+        costAttributionEnabled={cfg?.costAttribution ?? false}
+        onRunCommand={(cmd) => {
+          // Defer so the modal closes before the command runs
+          setTimeout(() => handleSlash(cmd), 0);
+        }}
+        currentShell={cfg?.shell}
+        onPickShell={(shell) => {
+          if (shell) {
+            const next = { ...cfg!, shell: shell === "auto" ? undefined : shell };
+            setCfg(next);
+            void saveConfig(next).catch(() => {});
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `shell set to ${shell}` }]);
+          }
+          setShowShellPicker(false);
+        }}
+        memoryEnabled={memoryManagerRef.current !== null}
+        memoryManager={memoryManagerRef.current}
+        onMemoryAction={(action) => {
+          setShowMemoryPicker(false);
+          setTimeout(() => handleSlash(`/memory ${action}`), 0);
+        }}
+        onMemoryDone={() => setShowMemoryPicker(false)}
+        gatewayId={cfg?.aiGatewayId}
+        gatewaySkipCache={cfg?.aiGatewaySkipCache}
+        gatewayCollectLogs={cfg?.aiGatewayCollectLogPayload}
+        gatewayMetadataCount={Object.keys(cfg?.aiGatewayMetadata ?? {}).length}
+        onGatewayAction={(action) => {
+          setShowGatewayPicker(false);
+          if (action === "set_id") {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Type /gateway <id> to set the gateway ID." }]);
+            return;
+          }
+          if (action === "set_ttl") {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Type /gateway cache-ttl <seconds> to set the cache TTL." }]);
+            return;
+          }
+          if (action === "add_meta") {
+            setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Type /gateway metadata KEY=VALUE to add metadata." }]);
+            return;
+          }
+          if (action === "toggle_skip") {
+            const next = !cfg?.aiGatewaySkipCache;
+            setTimeout(() => handleSlash(`/gateway skip-cache ${next}`), 0);
+            return;
+          }
+          if (action === "toggle_logs") {
+            const next = !cfg?.aiGatewayCollectLogPayload;
+            setTimeout(() => handleSlash(`/gateway collect-logs ${next}`), 0);
+            return;
+          }
+          if (action === "clear_meta") {
+            setTimeout(() => handleSlash("/gateway metadata clear"), 0);
+            return;
+          }
+          if (action === "off") {
+            setTimeout(() => handleSlash("/gateway off"), 0);
+            return;
+          }
+        }}
+        onGatewayDone={() => setShowGatewayPicker(false)}
+        onSkillsAction={(action) => {
+          setShowSkillsPicker(false);
+          if (action === "list") {
+            setTimeout(() => handleSlash("/skills list"), 0);
+            return;
+          }
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /skills ${action} <name> to ${action} a skill.` }]);
+        }}
+        onSkillsDone={() => setShowSkillsPicker(false)}
       />
     );
   }
@@ -2067,11 +2306,10 @@ function App({
               thinking={busy}
               turnStartedAt={turnStartedAt}
               mode={mode}
-              contextLimit={CONTEXT_LIMIT}
+              contextLimit={modelContextLimit}
+              model={cfg.model}
               gatewayMeta={gatewayMeta}
               codeMode={codeMode}
-              cloudMode={cfg.cloudMode}
-              cloudBudget={cloudBudget}
               skillsActive={skillsActive}
               memoryRecalled={memoryRecalled}
               phase={turnPhase}
@@ -2159,8 +2397,6 @@ export async function renderApp(
   updateResult?: UpdateCheckResult,
   lspScope: "project" | "global" = "global",
   lspProjectPath: string | null = null,
-  cloudToken?: string,
-  cloudDeviceId?: string,
 ) {
   const instance = render(
     <App
@@ -2168,8 +2404,6 @@ export async function renderApp(
       initialUpdateResult={updateResult}
       initialLspScope={lspScope}
       initialLspProjectPath={lspProjectPath}
-      initialCloudToken={cloudToken}
-      initialCloudDeviceId={cloudDeviceId}
     />,
     {
       incrementalRendering: true,
