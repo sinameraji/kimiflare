@@ -1593,6 +1593,56 @@ function App({
       const effectiveCodeMode = classification.tier === "heavy";
       setCodeMode(effectiveCodeMode);
 
+      // Two-gate check for multi-agent mode:
+      // 1. Mode gate: multi-agent-experimental must be active
+      // 2. Tier gate: task must be classified as "heavy"
+      if (modeRef.current === "multi-agent-experimental") {
+        if (classification.tier !== "heavy") {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `multi-agent mode active, but task is ${classification.tier} — running locally` },
+          ]);
+        } else {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: "multi-agent mode: spawning parallel research workers..." },
+          ]);
+          try {
+            const { plan, conflicts, recommendations } = await supervisorRef.current!.autoSpawnWorkers(
+              trimmed,
+              `Current project: ${process.cwd()}`,
+              (workers) => setActiveWorkers(workers),
+            );
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "workers completed — synthesizing findings" },
+            ]);
+            messagesRef.current.push({ role: "system", content: plan });
+            if (conflicts.length > 0) {
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: `conflicts detected:\n${conflicts.join("\n")}` },
+              ]);
+            }
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: `synthesized ${recommendations.length} recommendation(s)` },
+            ]);
+            await saveSessionSafe();
+            endTurn();
+            return;
+          } catch (e) {
+            const err = e as Error;
+            setEvents((e) => [
+              ...e,
+              { kind: "error", key: mkKey(), text: `multi-agent spawn failed: ${err.message}` },
+            ]);
+            endTurn();
+            return;
+          }
+        }
+      }
+
       const turnScope = sessionScopeRef.current.createChild();
       activeScopeRef.current = turnScope;
 

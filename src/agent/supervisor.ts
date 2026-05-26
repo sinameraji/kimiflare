@@ -298,7 +298,65 @@ export class TurnSupervisor {
     };
   }
 
+  /** Automatically spawn research workers for a heavy prompt.
+   *
+   * Decomposes the prompt into 2-4 parallel research tasks using a simple
+   * heuristic (split on "and" / commas when multiple distinct topics are
+   * mentioned). Falls back to 2 angled tasks when decomposition is unclear.
+   *
+   * Returns the synthesized plan after all workers complete.
+   */
+  async autoSpawnWorkers(
+    prompt: string,
+    context: string,
+    onUpdate?: (workers: ActiveWorker[]) => void,
+  ): Promise<{ plan: string; conflicts: string[]; recommendations: string[] }> {
+    const workers = decomposePrompt(prompt, context);
+    const results = await this.spawnWorkers(workers, onUpdate);
+    return this.synthesizeFindings(results);
+  }
+
   clearWorkers(): void {
     this._activeWorkers.clear();
   }
+}
+
+/** Simple heuristic to decompose a heavy prompt into parallel research tasks.
+ *
+ * Looks for:
+ * - Lists: "research X, Y, and Z" → 3 workers
+ * - Conjunctions: "research X and Y" → 2 workers
+ * - Fallback: 2 workers with different angles (overview + deep-dive)
+ */
+function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
+  // Try to find comma-separated or "and"-separated research topics
+  const listMatch = prompt.match(/research\s+(.+?)(?:\s+and\s+|,\s+)(.+)/i);
+  if (listMatch) {
+    const parts = prompt
+      .replace(/research\s+/i, "")
+      .split(/\s+and\s+|,\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (parts.length >= 2) {
+      return parts.slice(0, 4).map((task) => ({
+        mode: "plan" as const,
+        task: `Research ${task}`,
+        context,
+      }));
+    }
+  }
+
+  // Fallback: 2 workers with different angles
+  return [
+    {
+      mode: "plan",
+      task: `Research overview and best practices for: ${prompt}`,
+      context,
+    },
+    {
+      mode: "plan",
+      task: `Research implementation details and migration path for: ${prompt}`,
+      context,
+    },
+  ];
 }
