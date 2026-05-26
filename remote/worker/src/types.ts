@@ -40,6 +40,8 @@ export interface Env {
   SANDBOX: SandboxBinding;
   REMOTE_AUTH_SECRET: string;
   CF_API_TOKEN: string;
+  ACCOUNT_ID?: string;
+  WORKER_API_KEY?: string;
 }
 
 // Cloudflare Artifacts binding (simplified — actual types may vary)

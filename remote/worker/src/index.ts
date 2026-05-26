@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "./types.js";
 import { SessionDO } from "./session-do.js";
+import { handleWorkerRequest } from "./worker-handler.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -35,7 +36,7 @@ app.post("/remote/start", async (c) => {
     headers: { "Content-Type": "application/json" },
   }));
 
-  const data = await res.json();
+  const data = (await res.json()) as Record<string, unknown>;
   return c.json({ ...data, sessionId });
 });
 
@@ -210,6 +211,11 @@ app.get("/remote/web/:sessionId", async (c) => {
 </html>`;
 
   return c.html(html);
+});
+
+// Worker endpoint (multi-agent)
+app.post("/worker", async (c) => {
+  return handleWorkerRequest(c);
 });
 
 // Health check
