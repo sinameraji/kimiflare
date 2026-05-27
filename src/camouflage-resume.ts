@@ -8,7 +8,6 @@
  * round-trip end-to-end against real session data.
  */
 
-import { mount, selectList } from "camouflage";
 import { listSessions, type SessionSummary } from "./sessions.js";
 
 export interface CamouflageResumeOpts {
@@ -17,6 +16,19 @@ export interface CamouflageResumeOpts {
 }
 
 export async function runCamouflageResume(opts: CamouflageResumeOpts = {}): Promise<void> {
+  let camMod: typeof import("camouflage-tui");
+  try {
+    camMod = await import("camouflage-tui");
+  } catch {
+    process.stderr.write(
+      "kimiflare resume: the 'camouflage-tui' package is required.\n" +
+        "Install it with: npm install -g camouflage-tui\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  const { mount, selectList } = camMod;
+
   const sessions = await listSessions(opts.limit ?? 20, process.cwd());
 
   if (sessions.length === 0) {

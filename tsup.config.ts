@@ -21,5 +21,6 @@ export default defineConfig({
     "react",
     "commander",
     "turndown",
+    "camouflage-tui",
   ],
 });
