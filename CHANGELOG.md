@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.76.1](https://github.com/sinameraji/kimiflare/compare/v0.76.0...v0.76.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* make camouflage-tui an optional dependency ([#502](https://github.com/sinameraji/kimiflare/issues/502)) ([0d6824e](https://github.com/sinameraji/kimiflare/commit/0d6824e00e9c2a763e892563a0bdacbab2b36020))
+
 ## [0.76.0](https://github.com/sinameraji/kimiflare/compare/v0.75.0...v0.76.0) (2026-05-26)
 
 
