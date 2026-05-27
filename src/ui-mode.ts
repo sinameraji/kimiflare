@@ -25,8 +25,6 @@ import { appendFileSync, openSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { platform } from "node:os";
-import { mount } from "camouflage";
-
 /** File logger gated by KIMIFLARE_EVENT_LOG. One JSON object per line. */
 const KIMI_LOG_PATH = process.env.KIMIFLARE_EVENT_LOG ?? null;
 if (KIMI_LOG_PATH) {
@@ -39,7 +37,7 @@ function kimiLog(payload: Record<string, unknown>): void {
     appendFileSync(KIMI_LOG_PATH, line);
   } catch { /* swallow — diagnostic only */ }
 }
-import type { CamouflageHandle } from "camouflage";
+import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
@@ -47,7 +45,37 @@ import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
-import { selectList, form, confirm } from "camouflage";
+
+async function requireCamouflage(): Promise<typeof import("camouflage-tui")> {
+  try {
+    return await import("camouflage-tui");
+  } catch {
+    console.error(
+      "kimiflare: the 'camouflage-tui' package is required for the Camouflage UI.\n" +
+        "Install it with:\n" +
+        "  npm install -g camouflage-tui\n" +
+        "Or switch to the default Ink UI:\n" +
+        "  kimiflare --ui ink",
+    );
+    process.exit(2);
+  }
+}
+
+let _loaded = false;
+let mount: Awaited<ReturnType<typeof requireCamouflage>>["mount"];
+let selectList: Awaited<ReturnType<typeof requireCamouflage>>["selectList"];
+let form: Awaited<ReturnType<typeof requireCamouflage>>["form"];
+let confirm: Awaited<ReturnType<typeof requireCamouflage>>["confirm"];
+
+async function loadCamouflage() {
+  if (_loaded) return;
+  const mod = await requireCamouflage();
+  mount = mod.mount;
+  selectList = mod.selectList;
+  form = mod.form;
+  confirm = mod.confirm;
+  _loaded = true;
+}
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { buildWelcome } from "./ui/greetings.js";
@@ -115,6 +143,7 @@ function gatewayFromOpts(opts: UiModeOpts): AiGatewayOptions | undefined {
 }
 
 export async function runUiMode(opts: UiModeOpts): Promise<void> {
+  await loadCamouflage();
   // Spawn the renderer as a child. renderToTerminal=true means: TUI
   // draws to the user's terminal; outbound NDJSON arrives on fd 3.
   let cam: CamouflageHandle;
@@ -2198,6 +2227,7 @@ function tryGitBranch(): string {
 export async function runCamouflageOnboarding(opts: {
   camouflageBin?: string;
 }): Promise<KimiConfig | null> {
+  await loadCamouflage();
   const cam = await mount({ bin: opts.camouflageBin, renderToTerminal: true });
   cam.send("SessionStarted", {});
   cam.send("StatusUpdate", { segments: { mode: "setup", phase: "onboarding" } });
