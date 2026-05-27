@@ -41,6 +41,8 @@ export interface ModalHostController {
   setShowLspWizard: (v: boolean) => void;
   showThemePicker: boolean;
   setShowThemePicker: (v: boolean) => void;
+  showUiPicker: boolean;
+  setShowUiPicker: (v: boolean) => void;
   showModelPicker: boolean;
   setShowModelPicker: (v: boolean) => void;
   showModePicker: boolean;
@@ -101,6 +103,7 @@ export function useModalHost(): ModalHostController {
   const [showCommandList, setShowCommandList] = useState(false);
   const [showLspWizard, setShowLspWizard] = useState(false);
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [showUiPicker, setShowUiPicker] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showModePicker, setShowModePicker] = useState(false);
   const [keyEntryFor, setKeyEntryFor] = useState<ModelEntry | null>(null);
@@ -123,6 +126,7 @@ export function useModalHost(): ModalHostController {
       showCommandList ||
       showLspWizard ||
       showThemePicker ||
+      showUiPicker ||
       showModelPicker ||
       showModePicker ||
       keyEntryFor !== null ||
@@ -157,6 +161,7 @@ export function useModalHost(): ModalHostController {
     showRemoteDashboard,
     showInboxModal,
     showHooksDashboard,
+    showUiPicker,
     showHelpMenu,
     showMemoryPicker,
     showGatewayPicker,
@@ -175,6 +180,7 @@ export function useModalHost(): ModalHostController {
     showCommandList, setShowCommandList,
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
+    showUiPicker, setShowUiPicker,
     showModelPicker, setShowModelPicker,
     showModePicker, setShowModePicker,
     keyEntryFor, setKeyEntryFor,
@@ -203,6 +209,7 @@ export interface ModalFlagsInput {
   showCommandList: boolean;
   showLspWizard: boolean;
   showThemePicker: boolean;
+  showUiPicker: boolean;
   showModelPicker: boolean;
   showRemoteDashboard: boolean;
   showInboxModal: boolean;
@@ -227,6 +234,7 @@ export function computeModalFlags(s: ModalFlagsInput): ModalFlags {
     s.showCommandList ||
     s.showLspWizard ||
     s.showThemePicker ||
+    s.showUiPicker ||
     s.showModelPicker ||
     s.showRemoteDashboard ||
     s.showInboxModal ||
@@ -252,6 +260,7 @@ export const EMPTY_MODAL_STATE: ModalFlagsInput = {
   showCommandList: false,
   showLspWizard: false,
   showThemePicker: false,
+  showUiPicker: false,
   showModelPicker: false,
   showRemoteDashboard: false,
   showInboxModal: false,

@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.76.1](https://github.com/sinameraji/kimiflare/compare/v0.76.0...v0.76.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* make camouflage-tui an optional dependency ([#502](https://github.com/sinameraji/kimiflare/issues/502)) ([0d6824e](https://github.com/sinameraji/kimiflare/commit/0d6824e00e9c2a763e892563a0bdacbab2b36020))
+
+## [0.76.0](https://github.com/sinameraji/kimiflare/compare/v0.75.0...v0.76.0) (2026-05-26)
+
+
+### Features
+
+* **ui:** default interactive UI to Camouflage ([#474](https://github.com/sinameraji/kimiflare/issues/474)) ([#499](https://github.com/sinameraji/kimiflare/issues/499)) ([75a647b](https://github.com/sinameraji/kimiflare/commit/75a647b5a7bdeaf30aa8b74727a5ded5610f93de))
+
+## [0.75.0](https://github.com/sinameraji/kimiflare/compare/v0.74.1...v0.75.0) (2026-05-24)
+
+
+### Features
+
+* **ui:** add bidirectional turn separators and speaker labels in chat view ([#493](https://github.com/sinameraji/kimiflare/issues/493)) ([55b0805](https://github.com/sinameraji/kimiflare/commit/55b0805755a4c4a2ccc538a5a572f8826986ccf9))
+
+
+### Bug Fixes
+
+* **app:** make onDone fire-and-forget so UI returns to idle immediately ([#492](https://github.com/sinameraji/kimiflare/issues/492)) ([b134e3a](https://github.com/sinameraji/kimiflare/commit/b134e3a26378d8c1daebb23307fd74289d322ec8))
+* **app:** unblock UI between iterations during onIterationEnd housekeeping ([#494](https://github.com/sinameraji/kimiflare/issues/494)) ([250a553](https://github.com/sinameraji/kimiflare/commit/250a55372473b23e8bf8f273a239976ecc0af2d3))
+
 ## [0.74.1](https://github.com/sinameraji/kimiflare/compare/v0.74.0...v0.74.1) (2026-05-23)
 
 

@@ -8,6 +8,7 @@ import { CommandPicker } from "./command-picker.js";
 import { CommandList } from "./command-list.js";
 import { LspWizard } from "./lsp-wizard.js";
 import { ThemePicker } from "./theme-picker.js";
+import { UiPicker, type UiEngineChoice } from "./ui-picker.js";
 import { ModelPicker } from "./model-picker.js";
 import { ModePicker } from "./mode-picker.js";
 import { ShellPicker } from "./shell-picker.js";
@@ -59,6 +60,9 @@ export interface ModalHostProps {
   // Theme picker
   themes: Theme[];
   onPickTheme: (theme: Theme | null) => void;
+  // UI engine picker
+  currentUiEngine: UiEngineChoice;
+  onPickUi: (choice: UiEngineChoice | null) => void;
   // Model picker
   currentModel: string;
   onPickModel: (model: ModelEntry | null) => void;
@@ -133,6 +137,8 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
     onLspSave,
     themes,
     onPickTheme,
+    currentUiEngine,
+    onPickUi,
     currentModel,
     onPickModel,
     onSaveProviderKey,
@@ -375,6 +381,16 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <ThemePicker themes={themes} onPick={onPickTheme} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showUiPicker) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <UiPicker current={currentUiEngine} onPick={onPickUi} />
         </Box>
       </ThemeProvider>
     );

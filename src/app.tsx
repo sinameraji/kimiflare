@@ -172,6 +172,8 @@ export interface Cfg {
   githubTokenExpiry?: number;
   githubRepo?: string;
   shell?: string;
+  /** Preferred interactive UI engine. Persisted via the `/ui` slash command. */
+  uiEngine?: "ink" | "camouflage";
   providerKeys?: {
     anthropic?: string;
     openai?: string;
@@ -281,6 +283,7 @@ function App({
     showCommandList, setShowCommandList,
     showLspWizard, setShowLspWizard,
     showThemePicker, setShowThemePicker,
+    showUiPicker, setShowUiPicker,
     setShowModelPicker,
     showModePicker, setShowModePicker,
     keyEntryFor: _keyEntryFor, setKeyEntryFor,
@@ -890,7 +893,7 @@ function App({
         resumeSessions !== null ||
         checkpointSession !== null ||
         showThemePicker;
-      if (!modalOpen && busyRef.current && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+      if (!modalOpen && (busyRef.current || supervisorRef.current.isRunning) && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         lastEscapeAtRef.current = now;
         runInterruptTurn(interruptDepsRef.current!);
         return;
@@ -1111,6 +1114,32 @@ function App({
     [],
   );
 
+  const handleUiPick = useCallback(
+    (picked: "ink" | "camouflage" | null) => {
+      setShowUiPicker(false);
+      if (!picked) return;
+      setCfg((c) => {
+        if (!c) return c;
+        const updated = { ...c, uiEngine: picked };
+        void saveConfig(updated).catch(() => {});
+        return updated;
+      });
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "error",
+          key: mkKey(),
+          text:
+            `UI engine set to "${picked}". RESTART kimiflare for it to take effect.` +
+            (picked === "camouflage"
+              ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
+              : ""),
+        },
+      ]);
+    },
+    [mkKey, setShowUiPicker],
+  );
+
   const handleModelPick = useCallback(
     (picked: ModelEntry | null) => {
       setShowModelPicker(false);
@@ -1278,6 +1307,7 @@ function App({
     setHasUpdate,
     setLatestVersion,
     setShowThemePicker,
+    setShowUiPicker,
     setShowModelPicker,
     setShowModePicker,
     setKeyEntryFor,
@@ -1658,6 +1688,7 @@ function App({
         onAssistantStart: () => {
           const id = mkAssistantId();
           activeAsstIdRef.current = id;
+          beginTurn();
           setTurnPhase("generating");
           setLastActivityAt(Date.now());
           setEvents((e) => [
@@ -1726,6 +1757,10 @@ function App({
           if (pendingToolCallsRef.current.size === 0) {
             setTurnPhase("waiting");
             setCurrentToolName(null);
+            // Unblock the UI before onIterationEnd (compaction / memory recall)
+            // so the user isn't stuck watching a spinner while housekeeping runs
+            // between iterations.
+            endTurn();
           }
           updateTool(r.tool_call_id, {
             status: !r.ok && typeof r.content === "string" && r.content.startsWith("Permission denied") ? "rejected" : r.ok ? "done" : "error",
@@ -2180,6 +2215,8 @@ function App({
         onLspSave={handleLspSave}
         themes={themeList()}
         onPickTheme={handleThemePick}
+        currentUiEngine={cfg?.uiEngine ?? "ink"}
+        onPickUi={handleUiPick}
         currentModel={cfg?.model ?? ""}
         onPickModel={handleModelPick}
         currentMode={mode}

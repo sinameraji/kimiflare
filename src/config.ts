@@ -90,6 +90,14 @@ export interface KimiConfig {
   githubRepo?: string;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
+  /**
+   * Preferred interactive UI engine. `"ink"` is the default (stable React/Ink
+   * UI); `"camouflage"` is the experimental Rust TUI. The runtime resolution
+   * chain is: `--ui` flag → `KIMIFLARE_UI` env var → this field → `"ink"`.
+   * Settable from inside either TUI via `/ui ink` or `/ui camouflage`;
+   * takes effect on the next launch (the choice is baked at process start).
+   */
+  uiEngine?: "ink" | "camouflage";
   /** Per-provider API keys forwarded to AI Gateway as cf-aig-authorization for BYOK. */
   providerKeys?: {
     anthropic?: string;
@@ -208,6 +216,19 @@ function warnIfBlankGatewayId(value: string | undefined, source: string): void {
 }
 
 export async function loadConfig(): Promise<KimiConfig | null> {
+  // v0.72+: always read the file up front, even when env vars provide
+  // credentials. The env path used to short-circuit and return an
+  // entirely env-derived object, which silently dropped settings-only
+  // fields (like `uiEngine` from `/ui camouflage`, or `theme` from
+  // `/theme everforest-light`) on the next launch.
+  let persisted: Partial<KimiConfig> | null = null;
+  try {
+    const raw = await readFile(configPath(), "utf8");
+    persisted = JSON.parse(raw) as Partial<KimiConfig>;
+  } catch {
+    /* no config file yet — env-only is still valid */
+  }
+
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
   const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
@@ -273,8 +294,15 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
       shell: envShell,
-      providerKeys: envProviderKeys,
-      unifiedBilling: envUnifiedBilling,
+      // Settings-only fields: env vars don't carry these, so we read
+      // them from the persisted file (when present) so the user's TUI
+      // choices survive across restarts.
+      uiEngine: persisted?.uiEngine,
+      theme: persisted?.theme,
+      providerKeys: envProviderKeys ?? persisted?.providerKeys,
+      providerKeyAliases: persisted?.providerKeyAliases,
+      secretsStoreId: persisted?.secretsStoreId,
+      unifiedBilling: envUnifiedBilling ?? persisted?.unifiedBilling,
       workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT,
       workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
@@ -283,9 +311,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     };
   }
 
-  try {
-    const raw = await readFile(configPath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<KimiConfig>;
+  if (persisted) {
+    const parsed = persisted;
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
       return {
@@ -318,6 +345,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
+        uiEngine: parsed.uiEngine,
         providerKeys: envProviderKeys ?? parsed.providerKeys,
         providerKeyAliases: parsed.providerKeyAliases,
         secretsStoreId: parsed.secretsStoreId,
@@ -329,8 +357,6 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         multiAgentEnabled: parsed.multiAgentEnabled,
       };
     }
-  } catch {
-    /* no config file */
   }
   return null;
 }

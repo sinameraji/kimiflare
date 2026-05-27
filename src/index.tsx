@@ -11,6 +11,7 @@ import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { getAppVersion } from "./util/version.js";
 import { createRemoteCommand } from "./remote/cli.js";
+import { renderLogo } from "./ui/logo.js";
 
 const program = new Command();
 program
@@ -23,6 +24,10 @@ program
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
+  .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
+  .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
+  .option("--ui <name>", "render UI with the given engine: `ink` (default, stable) or `camouflage` (experimental Rust TUI). Can also be set via the KIMIFLARE_UI environment variable.")
+  .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc");
 
 program
@@ -84,6 +89,25 @@ logsCmd
   });
 
 program
+  .command("resume")
+  .description("Pick a session to resume via Camouflage's SelectList primitive (CC-1 demo). Prints chosen session id on stdout, exits 1 on cancel.")
+  .option("--limit <n>", "max recent sessions to list", (v) => parseInt(v, 10), 20)
+  .option("--camouflage-bin <path>", "path to camouflage-tui (defaults to PATH lookup)")
+  .action(async (cmdOpts, command) => {
+    // `--camouflage-bin` is also declared at the top-level program (for
+    // `--ui camouflage` mode), so commander parses the flag against the
+    // parent and never stores it on the subcommand's cmdOpts. Fall back
+    // to the parent's value when the subcommand-level one is undefined.
+    const parentOpts = command?.parent?.opts() ?? {};
+    const bin = cmdOpts.camouflageBin ?? parentOpts.camouflageBin;
+    const { runCamouflageResume } = await import("./camouflage-resume.js");
+    await runCamouflageResume({
+      limit: cmdOpts.limit,
+      camouflageBin: bin,
+    });
+  });
+
+program
   .command("auth")
   .description("Authenticate with external services")
   .addCommand(
@@ -116,6 +140,10 @@ const opts = program.opts<{
   reasoning?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
+  emitEvents?: boolean;
+  multiTurn?: boolean;
+  ui?: string;
+  camouflageBin?: string;
   mode?: string;
 }>();
 
@@ -153,6 +181,39 @@ async function main() {
     return;
   }
 
+  // (`--ui camouflage` is opt-in experimental; the camouflage branch lives at
+  // the bottom of `main()` next to the Ink path so both share the TTY guard
+  // + cfg checks. Default is `ink` until Camouflage covers every surface and
+  // we've burned-in via opt-in dogfooding.)
+
+  if (opts.emitEvents) {
+    if (opts.print === undefined) {
+      console.error(
+        "kimiflare: --emit-events requires -p \"<prompt>\" (one-shot mode).\n" +
+          "Multi-turn stdin-driven emit mode is not yet implemented.",
+      );
+      process.exit(2);
+    }
+    if (!cfg) {
+      console.error("kimiflare: --emit-events requires credentials.");
+      process.exit(2);
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const { runEmitMode } = await import("./emit-mode.js");
+    await runEmitMode({
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model,
+      prompt: opts.print,
+      allowAll: !!opts.dangerouslyAllowAll,
+      multiTurn: !!opts.multiTurn,
+      codeMode: cfg.codeMode,
+      continueOnLimit: !!opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+    });
+    return;
+  }
+
   if (opts.print !== undefined) {
     if (!cfg) {
       console.error(
@@ -185,6 +246,76 @@ async function main() {
     process.exit(2);
   }
 
+  // ANSI logo. For the Ink path we still console.log it as part of the
+  // pre-render output. For the Camouflage path we hand it to the
+  // renderer as a Splash event so it stays visible until the user's
+  // first prompt — console.log here would get swallowed by Camouflage's
+  // alt-screen and flash for a fraction of a second.
+  const logoText = renderLogo(getAppVersion());
+
+  // UI engine resolution: `--ui` flag wins, then `KIMIFLARE_UI` env var,
+  // then the persisted `uiEngine` field in ~/.config/kimiflare/config.json
+  // (set from inside either TUI via the `/ui` slash command), then the safe
+  // default (`ink`). Camouflage is opt-in experimental until it covers every
+  // surface (queue, hooks, mode switching, MCP UI, etc.) and gets enough
+  // burn-in via dogfooding.
+  const uiEngine = (
+    opts.ui ?? process.env.KIMIFLARE_UI ?? cfg?.uiEngine ?? "ink"
+  ).toLowerCase();
+  if (uiEngine !== "camouflage") {
+    console.log(logoText);
+  }
+  if (uiEngine === "camouflage") {
+    // Loud warning that this is experimental and how to bail. Printed
+    // before Camouflage takes the alt-screen so it lands in scrollback;
+    // also emitted as a persistent warn-toast inside the TUI itself
+    // (see ui-mode.ts) so the user sees it even if scrollback was
+    // cleared.
+    process.stderr.write(
+      "\n\x1b[1;33m⚠  Camouflage UI is experimental.\x1b[0m\n" +
+        "   If anything looks broken, switch back any time with:\n" +
+        "     \x1b[1mkimiflare --ui ink\x1b[0m\n" +
+        "   or unset KIMIFLARE_UI if you've exported it.\n" +
+        "   Report issues at https://github.com/sinameraji/camouflage/issues\n\n",
+    );
+    // Brief pause so the warning isn't wiped off the alt-screen
+    // before the user reads it.
+    await new Promise((r) => setTimeout(r, 1200));
+    if (!cfg) {
+      // Run Camouflage-native onboarding (ports the Ink Onboarding flow).
+      // On cancel/exit, the user falls back to the env-var path or
+      // `--ui ink` for the legacy onboarding.
+      const { runCamouflageOnboarding } = await import("./ui-mode.js");
+      const saved = await runCamouflageOnboarding({ camouflageBin: opts.camouflageBin });
+      if (!saved) {
+        console.error(
+          "kimiflare: onboarding cancelled.\n" +
+            "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or run again to retry.\n" +
+            "Default Ink onboarding: `kimiflare` (no flag).",
+        );
+        process.exit(2);
+      }
+      cfg = saved;
+    }
+    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const { runUiMode } = await import("./ui-mode.js");
+    await runUiMode({
+      accountId: cfg.accountId,
+      apiToken: cfg.apiToken,
+      model,
+      // Optional: -p seeds an initial prompt; otherwise the user types into
+      // the renderer's input box.
+      prompt: opts.print,
+      allowAll: !!opts.dangerouslyAllowAll,
+      codeMode: cfg.codeMode,
+      continueOnLimit: !!opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+      camouflageBin: opts.camouflageBin,
+      splash: logoText,
+    });
+    return;
+  }
+  // Legacy Ink UI fallback (`--ui ink`).
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;

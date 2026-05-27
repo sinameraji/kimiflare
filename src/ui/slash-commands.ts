@@ -104,6 +104,7 @@ export interface SlashContext {
 
   // Modal setters
   setShowThemePicker: (v: boolean) => void;
+  setShowUiPicker: (v: boolean) => void;
   setShowModelPicker: (v: boolean) => void;
   setShowModePicker: (v: boolean) => void;
   setKeyEntryFor: (v: ModelEntry | null) => void;
@@ -570,6 +571,64 @@ const handleTheme: Handler = (ctx, _rest, arg) => {
     return updated;
   });
   setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `theme: ${next.label} — restart to apply` }]);
+  return true;
+};
+
+const handleUi: Handler = (ctx, _rest, arg) => {
+  const { setEvents, mkKey } = ctx;
+  // No-arg form opens the arrow-key picker (matches `/theme`, `/resume`).
+  // Direct-arg form is still supported for muscle-memory and scripts.
+  if (!arg) {
+    ctx.setShowUiPicker(true);
+    return true;
+  }
+  if (arg !== "ink" && arg !== "camouflage") {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: `unknown UI engine "${arg}" — choose "ink" or "camouflage"` },
+    ]);
+    return true;
+  }
+  const next = arg as "ink" | "camouflage";
+  ctx.setCfg((prev) => {
+    if (!prev) return prev;
+    const updated = { ...prev, uiEngine: next } as Cfg;
+    void saveConfig(updated).catch(() => {});
+    return updated;
+  });
+  // Loud red "error"-kind event so the user can't miss that they need to
+  // restart. Also reminds them of the env-var escape hatch in case the
+  // new engine is broken on their machine.
+  setEvents((e) => [
+    ...e,
+    {
+      kind: "error",
+      key: mkKey(),
+      text:
+        `UI engine set to "${next}". RESTART kimiflare for it to take effect.` +
+        (next === "camouflage"
+          ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
+          : ""),
+    },
+  ]);
+  return true;
+};
+
+const handlePlan: Handler = (ctx) => {
+  ctx.setMode("plan");
+  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: plan" }]);
+  return true;
+};
+
+const handleAuto: Handler = (ctx) => {
+  ctx.setMode("auto");
+  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: auto" }]);
+  return true;
+};
+
+const handleEdit: Handler = (ctx) => {
+  ctx.setMode("edit");
+  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: "mode: edit" }]);
   return true;
 };
 
@@ -1373,6 +1432,10 @@ const handlers: Record<string, Handler> = {
   "/gateway": handleGateway,
   "/mode": handleMode,
   "/theme": handleTheme,
+  "/ui": handleUi,
+  "/plan": handlePlan,
+  "/auto": handleAuto,
+  "/edit": handleEdit,
   "/skills": handleSkills,
   "/memory": handleMemory,
   "/resume": handleResume,
