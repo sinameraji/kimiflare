@@ -1011,7 +1011,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       allow_cancel: true,
     });
     if (adv.cancelled) return;
-    let cmdMode: "edit" | "plan" | "auto" | undefined = initial?.mode;
+    let cmdMode: Mode | undefined =
+      initial?.mode === "multi-agent-experimental" ? undefined : initial?.mode;
     let cmdEffort: "low" | "medium" | "high" | undefined = initial?.effort;
     let cmdModel: string | undefined = initial?.model;
     if (adv.value === "set") {

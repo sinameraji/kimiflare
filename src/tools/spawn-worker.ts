@@ -19,7 +19,7 @@ interface SpawnWorkerArgs {
 const DEFAULT_WORKER_TIMEOUT_MS = 300_000; // 5 minutes
 const DEFAULT_WORKER_BUDGET_USD = 1.0;
 
-async function callWorkerEndpoint(
+export async function callWorkerEndpoint(
   endpoint: string,
   apiKey: string | undefined,
   payload: unknown,

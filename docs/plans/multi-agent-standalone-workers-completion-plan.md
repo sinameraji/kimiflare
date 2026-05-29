@@ -166,11 +166,19 @@ Test the full flow:
 - [x] `src/tools/spawn-worker.ts` — add retry logic
 - [x] `src/ui/worker-list.tsx` — add synthesizing state
 
-### Commute Server (`remote/worker/`)
+### Commute Server (local copy: `remote/worker/`)
 
 - [x] `remote/worker/src/index.ts` — `/worker` endpoint
-- [x] `remote/worker/src/worker-handler.ts` — lightweight agent runner via Workers AI
+- [x] `remote/worker/src/worker-handler.ts` — plan + execute mode agent runner via Workers AI
+- [x] `remote/worker/src/github.ts` — Git Data API helpers for execute mode
 - [x] `remote/worker/src/types.ts` — add `WORKER_API_KEY` and `ACCOUNT_ID` to Env
+
+### Commute Server (deployed: `kimiflare-web/remote/worker/`)
+
+- [x] `src/index.ts` — wire `POST /worker` route
+- [x] `src/worker-handler.ts` — port plan mode + add execute mode (`runExecuteWorker`)
+- [x] `src/github.ts` — new file: `getRef`/`createRef`/`createBlob`/`createTree`/`createCommit`/`updateRef`/`createPullRequest`
+- [x] `src/types.ts` — add `WORKER_API_KEY` to Env
 
 ### Docs
 
@@ -181,14 +189,20 @@ Test the full flow:
 
 ## 6. Success Criteria
 
-- [ ] User can activate `multi-agent-experimental` mode via Shift-Tab or `/mode multi-agent-experimental`.
-- [ ] When mode is active and prompt is `heavy`, parallel research workers spawn automatically.
-- [ ] When mode is active but prompt is `light`/`medium`, turn runs locally with an info message.
-- [ ] Worker results are synthesized into a coherent plan presented to the user.
-- [ ] Commute server `/worker` endpoint accepts plan tasks and returns structured JSON.
-- [ ] Commute server `/worker` endpoint accepts execute tasks and creates branch + PR.
-- [ ] `npm run typecheck` passes.
-- [ ] `npm test` passes.
+- [x] User can activate `multi-agent-experimental` mode via Shift-Tab or `/mode multi-agent-experimental` (gated behind `multiAgentEnabled`).
+- [x] When mode is active and prompt is `heavy`, parallel research workers spawn automatically.
+- [x] When mode is active but prompt is `light`/`medium`, turn runs locally with an info message.
+- [x] Worker results are synthesized into a coherent plan presented to the user.
+- [x] Commute server `/worker` endpoint accepts plan tasks and returns structured JSON (`kimiflare-web/remote/worker/src/worker-handler.ts` → `runPlanWorker`).
+- [x] Commute server `/worker` endpoint accepts execute tasks and creates branch + PR via the GitHub Git Data API (`runExecuteWorker` + `github.ts`).
+- [x] `npm run typecheck` passes.
+- [x] `npm test` passes (one pre-existing, unrelated theme-contrast failure remains).
+
+### Unit test coverage added
+
+- `src/intent/classify.test.ts` — tier classification (light/medium/heavy), result shape.
+- `src/agent/supervisor.test.ts` — `synthesizeFindings` dedup/conflict handling, `decomposePrompt` splitting.
+- `src/tools/spawn-worker.test.ts` — `callWorkerEndpoint` success, 5xx retry, 4xx no-retry, API-key header.
 
 ---
 
