@@ -39,6 +39,8 @@ function kimiLog(payload: Record<string, unknown>): void {
 }
 import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
+import { TurnSupervisor } from "./agent/supervisor.js";
+import { classifyIntent } from "./intent/classify.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -133,9 +135,16 @@ const BUILTIN_SLASH_COMMANDS = BUILTIN_COMMANDS.map((c) => ({
   source: "builtin" as const,
 }));
 
-/** Mode names KimiFlare supports + the order /mode and Shift+Tab cycle through. */
-const MODES = ["edit", "plan", "auto"] as const;
+/** Mode names KimiFlare supports + the order /mode and Shift+Tab cycle through.
+ *  `multi-agent-experimental` only appears in the cycle when enabled via
+ *  config (`multiAgentEnabled`) or the KIMIFLARE_MULTI_AGENT_ENABLED env var. */
+const MODES = ["edit", "plan", "auto", "multi-agent-experimental"] as const;
 type Mode = typeof MODES[number];
+
+/** Short status-bar label for a mode (the experimental name is long). */
+function modeLabel(m: Mode): string {
+  return m === "multi-agent-experimental" ? "multi-agent" : m;
+}
 
 function gatewayFromOpts(opts: UiModeOpts): AiGatewayOptions | undefined {
   if (!opts.aiGatewayId) return undefined;
@@ -193,6 +202,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let currentThemeName = "everforest-dark";
   const branch = tryGitBranch();
   let currentSessionFilePath: string | null = null;
+
+  // Multi-agent (experimental): the mode is hidden from the cycle unless
+  // explicitly enabled. We honor the env var directly in addition to the
+  // loaded config, since loadConfig() ignores the env var when a persisted
+  // config file exists.
+  const startupCfg = await loadConfig().catch(() => null);
+  const multiAgentEnabled =
+    (startupCfg?.multiAgentEnabled ?? false) ||
+    /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_MULTI_AGENT_ENABLED ?? "");
+  const multiAgentSupervisor = new TurnSupervisor();
+  const availableModes = (): Mode[] =>
+    multiAgentEnabled ? [...MODES] : MODES.filter((m) => m !== "multi-agent-experimental");
 
   if (opts.splash && opts.splash.length > 0) {
     cam.send("Splash", { text: opts.splash });
@@ -276,8 +297,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   const setMode = (next: Mode): void => {
     if (next === currentMode) return;
     currentMode = next;
-    cam.send("StatusUpdate", { segments: { mode: next } });
-    cam.send("ShowToast", { text: `mode: ${next}`, kind: "info", ttl_ms: 1200 });
+    cam.send("StatusUpdate", { segments: { mode: modeLabel(next) } });
+    cam.send("ShowToast", { text: `mode: ${modeLabel(next)}`, kind: "info", ttl_ms: 1200 });
   };
 
   // Default context-window heuristic for the /compact recommended banner.
@@ -370,14 +391,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   });
 
-  // Shift+Tab / Tab cycles edit → plan → auto (and back).
+  // Shift+Tab / Tab cycles edit → plan → auto (→ multi-agent when enabled).
   cam.on("modeChangeRequested", ({ direction }: { direction: "next" | "prev" }) => {
-    const idx = MODES.indexOf(currentMode);
-    const len = MODES.length;
+    const modes = availableModes();
+    const idx = Math.max(0, modes.indexOf(currentMode));
+    const len = modes.length;
     const nextIdx = direction === "prev"
       ? (idx - 1 + len) % len
       : (idx + 1) % len;
-    setMode(MODES[nextIdx] ?? "edit");
+    setMode(modes[nextIdx] ?? "edit");
   });
 
   cam.on("exit", ({ code }) => {
@@ -464,6 +486,55 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     currentController = new AbortController();
 
     try {
+      // Multi-agent (experimental) two-gate: when the mode is active AND the
+      // prompt classifies as a heavy task, spawn parallel research workers
+      // instead of running a normal local turn. Light/medium tasks fall
+      // through to the normal turn below.
+      if (currentMode === "multi-agent-experimental") {
+        const classification = classifyIntent(text);
+        if (classification.tier !== "heavy") {
+          cam.send("ShowToast", {
+            text: `multi-agent mode active, but task is ${classification.tier} — running locally`,
+            kind: "info",
+            ttl_ms: 2500,
+          });
+        } else {
+          setPhase("thinking");
+          cam.send("ShowToast", { text: "multi-agent mode: spawning parallel research workers…", kind: "info", ttl_ms: 2500 });
+          try {
+            let lastDone = -1;
+            const { plan, conflicts, recommendations } = await multiAgentSupervisor.autoSpawnWorkers(
+              text,
+              `Current project: ${cwd}`,
+              (workers) => {
+                const done = workers.filter((w) => w.status === "completed" || w.status === "failed").length;
+                const running = workers.filter((w) => w.status === "running").length;
+                if (done !== lastDone) {
+                  lastDone = done;
+                  cam.send("ShowToast", { text: `workers: ${running} running · ${done}/${workers.length} done`, kind: "info", ttl_ms: 1500 });
+                }
+              },
+            );
+            // Render the synthesized plan as an assistant message so the user
+            // sees the research output, and keep it in history for follow-ups.
+            const sid = `s${++streamCounter}`;
+            cam.send("AssistantStreamStarted", { stream_id: sid });
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: plan });
+            cam.send("AssistantMessageCompleted", { stream_id: sid });
+            messages.push({ role: "assistant", content: plan });
+            if (conflicts.length > 0) {
+              cam.send("ShowToast", { text: `${conflicts.length} conflict(s) resolved`, kind: "warn", ttl_ms: 3000 });
+            }
+            cam.send("ShowToast", { text: `synthesized ${recommendations.length} recommendation(s)`, kind: "success", ttl_ms: 3000 });
+          } catch (err) {
+            if (!(err instanceof Error && err.name === "AbortError")) {
+              cam.send("ShowToast", { text: `multi-agent spawn failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 4000 });
+            }
+          }
+          return;
+        }
+      }
+
       await runAgentTurn({
         accountId: opts.accountId,
         apiToken: opts.apiToken,
@@ -1299,15 +1370,19 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       case "auto":
         setMode(name as Mode);
         return true;
-      case "mode":
-        if (args && (MODES as readonly string[]).includes(args)) {
+      case "mode": {
+        const modes = availableModes();
+        if (args && (modes as readonly string[]).includes(args)) {
           setMode(args as Mode);
+        } else if (args === "multi-agent-experimental" && !multiAgentEnabled) {
+          cam.send("ShowToast", { text: "multi-agent mode is disabled — set KIMIFLARE_MULTI_AGENT_ENABLED=1", kind: "error", ttl_ms: 3500 });
         } else {
-          const idx = MODES.indexOf(currentMode);
-          const next = MODES[(idx + 1) % MODES.length] ?? "edit";
+          const idx = Math.max(0, modes.indexOf(currentMode));
+          const next = modes[(idx + 1) % modes.length] ?? "edit";
           setMode(next);
         }
         return true;
+      }
       case "model":
         cam.send("ShowToast", { text: `model: ${opts.model}`, kind: "info", ttl_ms: 2500 });
         return true;
