@@ -346,7 +346,7 @@ export class TurnSupervisor {
  * - Conjunctions: "research X and Y" → 2 workers
  * - Fallback: 2 workers with different angles (overview + deep-dive)
  */
-function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
+export function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
   // Try to find comma-separated or "and"-separated research topics
   const listMatch = prompt.match(/research\s+(.+?)(?:\s+and\s+|,\s+)(.+)/i);
   if (listMatch) {
