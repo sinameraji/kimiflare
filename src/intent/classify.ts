@@ -17,6 +17,13 @@ const INTENT_PATTERNS: Record<string, RegExp> = {
   meta: /\b(plan|design|strategy|ontology|roadmap|approach)\b/i,
 };
 
+/** Strong signals that a task needs deep, multi-angle work regardless of
+ *  mutating verbs or file mentions — research, audits, security reviews, and
+ *  whole-codebase exploration. The keyword scorer otherwise reads these as
+ *  trivial because they lack verbs like "implement". */
+const HEAVY_SIGNAL =
+  /\b(research|investigat\w*|audit|deep[\s-]?(dive|thinking)|explorat\w*|comprehensive|end[\s-]?to[\s-]?end|entire\s+(code\s?base|repo\w*|project|app)|whole\s+(code\s?base|repo\w*|project|app)|across\s+the\s+(code\s?base|repo\w*|project)|security|vulnerab\w*|loophole|exploit\w*|threat\s?model|attack\s+surface|penetration)\b/i;
+
 export function classifyIntent(prompt: string): IntentResult {
   let intentScore = 0;
   let matchedIntent = "other";
@@ -32,21 +39,23 @@ export function classifyIntent(prompt: string): IntentResult {
   const hasFileMentions = (prompt.match(/@\w+|\b[\w/-]+\.(ts|tsx|js|jsx|py|go|rs)\b/g) || []).length;
   const hasMutatingVerb = /\b(add|create|write|edit|delete|remove|rename|migrate|implement)\b/i.test(prompt);
   const isQuestion = prompt.trim().endsWith("?") || /\b(what|how|why|is|does|can)\b/i.test(prompt.split(" ")[0] || "");
+  const hasHeavySignal = HEAVY_SIGNAL.test(prompt);
 
   const rawScore = Math.min(
     1.0,
     intentScore * 0.25 +
       (hasFileMentions > 2 ? 0.3 : hasFileMentions * 0.1) +
       (hasMutatingVerb ? 0.25 : 0) +
-      (isQuestion ? 0 : 0.1),
+      (isQuestion ? 0 : 0.1) +
+      (hasHeavySignal ? 0.6 : 0),
   );
 
   const tier = rawScore < 0.3 ? "light" : rawScore < 0.65 ? "medium" : "heavy";
 
   return {
-    intent: matchedIntent,
+    intent: hasHeavySignal && matchedIntent === "other" ? "explore" : matchedIntent,
     rawScore,
     tier,
-    confidence: 0.5 + (intentScore > 0 ? 0.3 : 0) + (hasFileMentions > 0 ? 0.1 : 0),
+    confidence: 0.5 + (intentScore > 0 || hasHeavySignal ? 0.3 : 0) + (hasFileMentions > 0 ? 0.1 : 0),
   };
 }
