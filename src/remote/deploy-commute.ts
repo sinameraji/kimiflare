@@ -131,7 +131,6 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       "Find the token kimiflare is using → Edit → add these Account permissions:\n" +
       "  • Workers Scripts:Edit\n" +
       "  • Workers KV Storage:Edit\n" +
-      "  • Workers Routes:Edit\n" +
       "  • Account Settings:Read\n" +
       "\n" +
       "Save the token. The value doesn't change, so no kimiflare config edit\n" +
