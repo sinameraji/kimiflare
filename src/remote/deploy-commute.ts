@@ -140,6 +140,28 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       "\n\n⚠  Wrangler isn't picking up CLOUDFLARE_API_TOKEN.\n" +
       "Verify the token is in your kimiflare config (`/init` if not),\n" +
       "or set CLOUDFLARE_API_TOKEN in your shell.";
+  } else if (
+    // Plain "Forbidden" or anything mentioning containers/billing — the
+    // /worker handler spawns a Cloudflare Sandbox, which requires the
+    // Containers feature, which requires Workers Paid on the account.
+    /\bforbidden\b/i.test(combined) ||
+    /containers? .*(not enabled|disabled|denied|forbidden)/i.test(combined) ||
+    /workers paid/i.test(combined) ||
+    /billing/i.test(combined)
+  ) {
+    hint =
+      "\n\n⚠  Most likely cause: this Cloudflare account doesn't have Containers enabled.\n" +
+      "\n" +
+      "The multi-agent Worker spawns a Cloudflare Sandbox, which is a Container.\n" +
+      "Containers require the Workers Paid plan ($5/mo) and an active subscription.\n" +
+      "\n" +
+      "Check / enable:\n" +
+      "  1. https://dash.cloudflare.com/ → Workers & Pages → Plans → Upgrade to Paid\n" +
+      "  2. https://dash.cloudflare.com/ → Workers & Pages → Containers (verify available)\n" +
+      "  3. Confirm your account isn't a sub-account with restricted features\n" +
+      "\n" +
+      "Then re-run /multi-agent → Set up. If you do not want to pay for Workers,\n" +
+      "this feature is not usable on the free tier.";
   }
   return `${cmd} failed:\n${tail}${hint}`;
 }
@@ -257,8 +279,15 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     yield { message: `Created namespace ${finalKvId.slice(0, 8)}….` };
   }
 
-  // ── 3b. Patch wrangler.toml: KV id + remote image (so no Docker needed) ─
-  yield { message: "Patching wrangler.toml (KV id + public image)…" };
+  // ── 3b. Patch wrangler.toml ─────────────────────────────────────────
+  // - inject the live KV namespace ID we just resolved
+  // - swap ./Dockerfile for the published public image (no Docker needed)
+  // - strip the [[artifacts]] block (beta binding the user's wrangler may
+  //   not recognize; worker-handler has a direct-GitHub-clone fallback)
+  // - add a [[migrations]] block for the SessionDO + Sandbox DOs if the
+  //   repo's wrangler.toml didn't already include one (wrangler errors
+  //   on a "Forbidden" or fails silently otherwise on first deploy)
+  yield { message: "Patching wrangler.toml…" };
   let toml = await readFile(wranglerToml, "utf8");
   toml = toml.replace(
     /(\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"OAUTH_KV"[\s\S]*?id\s*=\s*")[^"]+(")/,
@@ -268,8 +297,18 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     /image\s*=\s*"\.\/Dockerfile"/,
     `image = "${PUBLIC_SANDBOX_IMAGE}"`,
   );
+  // Strip [[artifacts]] block. Match the header + every following line
+  // that isn't blank-then-section, until the next blank line or new [[.
+  toml = toml.replace(/\n\[\[artifacts\]\][\s\S]*?(?=\n\[|\n*$)/g, "\n");
+  if (!/\[\[migrations\]\]/.test(toml)) {
+    toml +=
+      `\n# Auto-added by kimiflare /multi-agent → Set up\n` +
+      `[[migrations]]\n` +
+      `tag = "v1"\n` +
+      `new_sqlite_classes = ["SessionDO", "Sandbox"]\n`;
+  }
   await writeFile(wranglerToml, toml, "utf8");
-  yield { message: "wrangler.toml patched." };
+  yield { message: "wrangler.toml patched (KV id, public image, DO migrations)." };
 
   // ── 4. Generate + set the WORKER_API_KEY secret ────────────────────
   const workerApiKey = generateSecret();
