@@ -20,6 +20,17 @@ describe("classifyIntent", () => {
     assert.strictEqual(r.tier, "heavy");
   });
 
+  it("classifies security/audit/research tasks as heavy even without mutating verbs", () => {
+    for (const p of [
+      "Find a security loophole in this project.",
+      "audit the codebase for vulnerabilities",
+      "research the best caching strategy",
+      "read my entire codebase and find exploits",
+    ]) {
+      assert.strictEqual(classifyIntent(p).tier, "heavy", `expected heavy: ${p}`);
+    }
+  });
+
   it("returns a well-formed IntentResult", () => {
     const r = classifyIntent("refactor the parser");
     assert.ok(typeof r.intent === "string");

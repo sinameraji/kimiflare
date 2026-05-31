@@ -265,6 +265,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envShell = process.env.KIMIFLARE_SHELL;
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
+  const envMultiAgentEnabled = readBooleanEnv("KIMIFLARE_MULTI_AGENT_ENABLED");
 
   if (envAccount && envToken) {
     return {
@@ -307,7 +308,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
-      multiAgentEnabled: readBooleanEnv("KIMIFLARE_MULTI_AGENT_ENABLED"),
+      multiAgentEnabled: envMultiAgentEnabled,
     };
   }
 
@@ -354,7 +355,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         workerBudgetUsd: parsed.workerBudgetUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
-        multiAgentEnabled: parsed.multiAgentEnabled,
+        multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
       };
     }
   }
