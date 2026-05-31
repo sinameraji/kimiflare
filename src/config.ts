@@ -126,6 +126,11 @@ export interface KimiConfig {
   workerTimeoutMs?: number;
   /** Enable multi-agent-experimental mode in the mode cycle. Default: false. */
   multiAgentEnabled?: boolean;
+  /** Bearer/secret for the worker endpoint (sent as X-Worker-Api-Key). */
+  workerApiKey?: string;
+  /** When true, after plan workers synthesize, spawn one executor worker
+   *  to implement the synthesized plan and open a PR. Off by default. */
+  autoExecute?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -309,6 +314,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
       multiAgentEnabled: envMultiAgentEnabled,
+      workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY,
+      autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
     };
   }
 
@@ -351,11 +358,13 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         providerKeyAliases: parsed.providerKeyAliases,
         secretsStoreId: parsed.secretsStoreId,
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
-        workerEndpoint: parsed.workerEndpoint,
+        workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT ?? parsed.workerEndpoint,
         workerBudgetUsd: parsed.workerBudgetUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
         multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
+        workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY ?? parsed.workerApiKey,
+        autoExecute: parsed.autoExecute,
       };
     }
   }

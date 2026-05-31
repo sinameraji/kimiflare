@@ -41,6 +41,7 @@ import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import { classifyIntent } from "./intent/classify.js";
+import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -208,7 +209,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // loaded config, since loadConfig() ignores the env var when a persisted
   // config file exists.
   const startupCfg = await loadConfig().catch(() => null);
-  const multiAgentEnabled =
+  let multiAgentEnabled =
     (startupCfg?.multiAgentEnabled ?? false) ||
     /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_MULTI_AGENT_ENABLED ?? "");
   const multiAgentSupervisor = new TurnSupervisor();
@@ -299,7 +300,207 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     currentMode = next;
     cam.send("StatusUpdate", { segments: { mode: modeLabel(next) } });
     cam.send("ShowToast", { text: `mode: ${modeLabel(next)}`, kind: "info", ttl_ms: 1200 });
+    // Auto-open the /multi-agent settings menu when the user switches to
+    // multi-agent without an endpoint configured (same fallback chain the
+    // supervisor uses). Otherwise they'd Shift-Tab in, send a heavy prompt,
+    // and only discover the missing config when the spawn errors out.
+    if (next === "multi-agent-experimental") {
+      void loadConfig().then((c) => {
+        const hasEndpoint = !!(c?.workerEndpoint || c?.remoteWorkerUrl);
+        if (!hasEndpoint) {
+          cam.send("ShowToast", {
+            text: "multi-agent needs setup — opening settings…",
+            kind: "info",
+            ttl_ms: 1500,
+          });
+          void handleMultiAgentCommand(undefined);
+        }
+      }).catch(() => {});
+    }
   };
+
+  /** /multi-agent — proper settings TUI.
+   *  Looping menu: each option shows its current value; selecting one drills
+   *  in (toggle picker for booleans, text/password form for strings); ESC at
+   *  any point exits. */
+  async function handleMultiAgentCommand(_args: string | undefined): Promise<void> {
+    while (true) {
+      const cfg = (await loadConfig().catch(() => null)) ?? {
+        accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model,
+      };
+      const fmtBool = (v: boolean | undefined) => (v ? "✓ on" : "✗ off");
+      const fmtAutoStr = (v: string | undefined) => (v && v.length > 0 ? v : "(auto-managed by Set up)");
+      const fmtAutoSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(auto-managed by Set up)");
+      // Same Commute worker hosts both /remote sessions and /multi-agent; if
+      // the user already ran /remote setup we reuse those values so they
+      // don't have to enter the endpoint twice.
+      const effectiveEndpoint = cfg.workerEndpoint ?? cfg.remoteWorkerUrl;
+      const effectiveApiKey = cfg.workerApiKey ?? cfg.remoteAuthSecret;
+      const endpointFromRemote = !cfg.workerEndpoint && !!cfg.remoteWorkerUrl;
+      const apiKeyFromRemote = !cfg.workerApiKey && !!cfg.remoteAuthSecret;
+
+      const main = await selectList(cam, {
+        id: `ma-main-${Date.now()}`,
+        prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
+        options: [
+          { value: "enabled",     label: `Multi-agent mode               ${fmtBool(cfg.multiAgentEnabled)}` },
+          { value: "endpoint",    label: `Endpoint                       ${fmtAutoStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
+          { value: "workerSecret",label: `Worker secret                  ${fmtAutoSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
+          { value: "autoExecute", label: `Auto-implement after research  ${fmtBool(cfg.autoExecute)}` },
+          { value: "deploy",      label: `→ Set up (deploys to your Cloudflare account, one-time)` },
+          ...(effectiveEndpoint
+            ? [{ value: "teardown", label: `→ Tear down (delete from your Cloudflare account)` }]
+            : []),
+          { value: "done",        label: "Done" },
+        ],
+        allow_cancel: true,
+      });
+      if (main.cancelled || main.value === "done") return;
+
+      if (main.value === "teardown") {
+        const confirm = await selectList(cam, {
+          id: `ma-teardown-${Date.now()}`,
+          prompt: "Tear down multi-agent? Deletes the Worker + KV namespace from your Cloudflare account.",
+          options: [
+            { value: "no",  label: "Cancel" },
+            { value: "yes", label: "Yes, tear down" },
+          ],
+          default: "no",
+          allow_cancel: true,
+        });
+        if (confirm.cancelled || confirm.value !== "yes") continue;
+        const sid = `s${++streamCounter}`;
+        cam.send("AssistantStreamStarted", { stream_id: sid });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Tearing down multi-agent\n\n" });
+        try {
+          for await (const step of teardownCommute()) {
+            const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
+            if (step.error) break;
+          }
+        } catch (err) {
+          cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ tear-down aborted: ${err instanceof Error ? err.message : String(err)}\n` });
+        }
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "\n_Re-open with /multi-agent if you'd like to set up again._\n" });
+        cam.send("AssistantMessageCompleted", { stream_id: sid });
+        // If we tore down, mode should drop back to edit since multi-agent
+        // is now disabled in cfg.
+        if (currentMode === "multi-agent-experimental") setMode("edit");
+        multiAgentEnabled = false;
+        // Exit the menu so the streamed log is visible in the transcript.
+        return;
+      }
+
+      if (main.value === "deploy") {
+        // Before we deploy, look for existing kimiflare-* Workers on the
+        // user's account. If we find any, ask whether to reuse one or
+        // create the fresh kimiflare-multi-agent default — avoids silently
+        // overwriting a Worker that belongs to a different project.
+        cam.send("ShowToast", { text: "scanning your Cloudflare account…", kind: "info", ttl_ms: 1500 });
+        let chosenName: string | undefined;
+        const existing = await findExistingCommuteWorkers().catch(() => [] as string[]);
+        if (existing.length > 0) {
+          const pick = await selectList(cam, {
+            id: `ma-pick-${Date.now()}`,
+            prompt: `Found existing Worker${existing.length === 1 ? "" : "s"} on your account. Which one to deploy to?`,
+            options: [
+              ...existing.map((n) => ({
+                value: n,
+                label: `Use existing: ${n}${n === "kimiflare-commute" ? "  (⚠  overwrites /remote infra)" : ""}`,
+              })),
+              { value: "__new__", label: "Create new: kimiflare-multi-agent  (recommended — isolated)" },
+            ],
+            default: "__new__",
+            allow_cancel: true,
+          });
+          if (pick.cancelled) continue;
+          chosenName = pick.value === "__new__" ? undefined : pick.value;
+        }
+
+        cam.send("ShowToast", { text: "deploying… see progress in the transcript", kind: "info", ttl_ms: 2000 });
+        const sid = `s${++streamCounter}`;
+        cam.send("AssistantStreamStarted", { stream_id: sid });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: `# Setting up multi-agent on ${chosenName ?? "kimiflare-multi-agent"}\n\n` });
+        try {
+          for await (const step of deployCommute({ workerName: chosenName })) {
+            const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
+            if (step.error) break;
+          }
+        } catch (err) {
+          cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ deploy aborted: ${err instanceof Error ? err.message : String(err)}\n` });
+        }
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "\n_Re-open with /multi-agent when ready._\n" });
+        cam.send("AssistantMessageCompleted", { stream_id: sid });
+        // Exit the menu so the streamed log is visible in the transcript
+        // (the next selectList would otherwise cover it).
+        return;
+      }
+
+      if (main.value === "enabled") {
+        const pick = await selectList(cam, {
+          id: `ma-enabled-${Date.now()}`,
+          prompt: "Enable multi-agent in the Shift-Tab cycle?",
+          options: [
+            { value: "on",  label: "✓ Enable" },
+            { value: "off", label: "✗ Disable" },
+          ],
+          default: cfg.multiAgentEnabled ? "on" : "off",
+          allow_cancel: true,
+        });
+        if (pick.cancelled) continue;
+        const next = { ...cfg, multiAgentEnabled: pick.value === "on" };
+        await saveConfig(next);
+        multiAgentEnabled = !!next.multiAgentEnabled;
+        if (!next.multiAgentEnabled && currentMode === "multi-agent-experimental") setMode("edit");
+        cam.send("ShowToast", { text: `multi-agent ${next.multiAgentEnabled ? "enabled" : "disabled"}`, kind: "success", ttl_ms: 1500 });
+        if (next.multiAgentEnabled && !cfg.workerEndpoint) {
+          cam.send("ShowToast", { text: "tip: set an endpoint next (pick Set up to deploy one)", kind: "info", ttl_ms: 2500 });
+        }
+        continue;
+      }
+
+      if (main.value === "autoExecute") {
+        const pick = await selectList(cam, {
+          id: `ma-autoexec-${Date.now()}`,
+          prompt: "After research, auto-spawn an executor that implements + opens a PR?",
+          options: [
+            { value: "on",  label: "✓ On  — auto-execute (creates real PRs!)" },
+            { value: "off", label: "✗ Off — research only" },
+          ],
+          default: cfg.autoExecute ? "on" : "off",
+          allow_cancel: true,
+        });
+        if (pick.cancelled) continue;
+        await saveConfig({ ...cfg, autoExecute: pick.value === "on" });
+        cam.send("ShowToast", { text: `auto-execute ${pick.value === "on" ? "on" : "off"}`, kind: "success", ttl_ms: 1500 });
+        continue;
+      }
+
+      // String fields: open a single-field form with the current value pre-filled.
+      type StringFieldKey = "endpoint" | "workerSecret";
+      const stringField = ((): { key: keyof KimiConfig; label: string; placeholder?: string; kind?: "password"; current: string } | null => {
+        const k = main.value as StringFieldKey;
+        if (k === "endpoint")     return { key: "workerEndpoint", label: "Endpoint URL",                              placeholder: "https://<your-worker>.workers.dev",  current: cfg.workerEndpoint ?? "" };
+        if (k === "workerSecret") return { key: "workerApiKey",   label: "Worker secret (blank to clear)",            kind: "password",                                  current: cfg.workerApiKey  ?? "" };
+        return null;
+      })();
+      if (!stringField) continue;
+      const f = await form(cam, {
+        id: `ma-${main.value}-${Date.now()}`,
+        title: stringField.label,
+        fields: [
+          { name: "value", label: stringField.label, default: stringField.current, placeholder: stringField.placeholder, kind: stringField.kind },
+        ],
+        allow_cancel: true,
+      });
+      if (f.cancelled || !f.values) continue;
+      const raw = (f.values.value ?? "").trim();
+      const next: KimiConfig = { ...cfg, [stringField.key]: raw || undefined };
+      await saveConfig(next);
+      cam.send("ShowToast", { text: `${main.value} ${raw ? "updated" : "cleared"}`, kind: "success", ttl_ms: 1500 });
+    }
+  }
 
   // Default context-window heuristic for the /compact recommended banner.
   // Override via opts.maxInputTokens; otherwise fall back to a Kimi-default
@@ -503,7 +704,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "multi-agent mode: spawning parallel research workers…", kind: "info", ttl_ms: 2500 });
           try {
             let lastDone = -1;
-            const { plan, conflicts, recommendations } = await multiAgentSupervisor.autoSpawnWorkers(
+            const { plan, conflicts, recommendations, prUrl, executor } = await multiAgentSupervisor.autoSpawnWorkers(
               text,
               `Current project: ${cwd}`,
               (workers) => {
@@ -519,13 +720,22 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             // sees the research output, and keep it in history for follow-ups.
             const sid = `s${++streamCounter}`;
             cam.send("AssistantStreamStarted", { stream_id: sid });
-            cam.send("AssistantTokenDelta", { stream_id: sid, token: plan });
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: prUrl ? `${plan}\n\n---\nExecutor opened PR: ${prUrl}` : plan });
             cam.send("AssistantMessageCompleted", { stream_id: sid });
             messages.push({ role: "assistant", content: plan });
             if (conflicts.length > 0) {
               cam.send("ShowToast", { text: `${conflicts.length} conflict(s) resolved`, kind: "warn", ttl_ms: 3000 });
             }
             cam.send("ShowToast", { text: `synthesized ${recommendations.length} recommendation(s)`, kind: "success", ttl_ms: 3000 });
+            if (executor) {
+              if (executor.status === "completed" && prUrl) {
+                cam.send("ShowToast", { text: `executor opened PR: ${prUrl}`, kind: "success", ttl_ms: 5000 });
+              } else if (executor.status === "completed") {
+                cam.send("ShowToast", { text: "executor completed (no file changes to commit)", kind: "info", ttl_ms: 3000 });
+              } else {
+                cam.send("ShowToast", { text: `executor failed: ${executor.error ?? "unknown"}`, kind: "error", ttl_ms: 5000 });
+              }
+            }
           } catch (err) {
             if (!(err instanceof Error && err.name === "AbortError")) {
               cam.send("ShowToast", { text: `multi-agent spawn failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 4000 });
@@ -1375,12 +1585,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         if (args && (modes as readonly string[]).includes(args)) {
           setMode(args as Mode);
         } else if (args === "multi-agent-experimental" && !multiAgentEnabled) {
-          cam.send("ShowToast", { text: "multi-agent mode is disabled — set KIMIFLARE_MULTI_AGENT_ENABLED=1", kind: "error", ttl_ms: 3500 });
+          cam.send("ShowToast", { text: "multi-agent mode is disabled — run /multi-agent enable", kind: "error", ttl_ms: 3500 });
         } else {
           const idx = Math.max(0, modes.indexOf(currentMode));
           const next = modes[(idx + 1) % modes.length] ?? "edit";
           setMode(next);
         }
+        return true;
+      }
+      case "multi-agent": {
+        await handleMultiAgentCommand(args);
         return true;
       }
       case "model":

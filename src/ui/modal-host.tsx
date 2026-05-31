@@ -21,6 +21,7 @@ import { UnifiedBillingStatus } from "./unified-billing-status.js";
 import type { ModelEntry } from "../models/registry.js";
 import { RemoteDashboard, RemoteSessionDetail } from "./remote-dashboard.js";
 import { InboxModal } from "./inbox-modal.js";
+import { MultiAgentModal, type MultiAgentSettings } from "./multi-agent-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
 import { HelpMenu } from "./help-menu.js";
 import type { Theme } from "./theme.js";
@@ -88,6 +89,11 @@ export interface ModalHostProps {
   onCancelRemoteSession: (session: RemoteSession) => void | Promise<void>;
   // Inbox
   onInboxOpen: (url: string) => void;
+  // Multi-agent modal
+  multiAgentSettings?: MultiAgentSettings;
+  onMultiAgentSave?: (patch: MultiAgentSettings) => void;
+  multiAgentRemoteWorkerUrl?: string;
+  multiAgentRemoteAuthSecret?: string;
   // M6.1: hooks dashboard. Pass `getConfiguredHooks` rather than a
   // static array so the dashboard re-reads after every mutation
   // without needing a re-render in the parent.
@@ -185,6 +191,22 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
           <InboxModal
             onDone={() => modals.setShowInboxModal(false)}
             onOpen={onInboxOpen}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showMultiAgentModal) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <MultiAgentModal
+            initial={props.multiAgentSettings ?? {}}
+            onSave={props.onMultiAgentSave ?? (() => {})}
+            onDone={() => modals.setShowMultiAgentModal(false)}
+            remoteWorkerUrl={props.multiAgentRemoteWorkerUrl}
+            remoteAuthSecret={props.multiAgentRemoteAuthSecret}
           />
         </Box>
       </ThemeProvider>

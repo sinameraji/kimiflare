@@ -189,6 +189,9 @@ export interface Cfg {
   secretsStoreId?: string;
   unifiedBilling?: boolean;
   multiAgentEnabled?: boolean;
+  workerEndpoint?: string;
+  workerApiKey?: string;
+  autoExecute?: boolean;
 }
 function App({
   initialCfg,
@@ -291,6 +294,7 @@ function App({
     setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
+    showMultiAgentModal, setShowMultiAgentModal,
     showHelpMenu, setShowHelpMenu,
     showMemoryPicker, setShowMemoryPicker,
     showGatewayPicker, setShowGatewayPicker,
@@ -305,6 +309,21 @@ function App({
   const [draftInput, setDraftInput] = useState("");
 
   const [mode, setMode] = useState<Mode>("edit");
+  // Auto-open the /multi-agent settings modal the moment the user switches
+  // into multi-agent mode without an endpoint configured. Same fallback
+  // chain the supervisor uses (cfg.workerEndpoint, then cfg.remoteWorkerUrl).
+  useEffect(() => {
+    if (
+      mode === "multi-agent-experimental" &&
+      cfg &&
+      !cfg.workerEndpoint &&
+      !cfg.remoteWorkerUrl &&
+      !showMultiAgentModal
+    ) {
+      setShowMultiAgentModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cfg?.workerEndpoint, cfg?.remoteWorkerUrl]);
   const [codeMode, setCodeMode] = useState<boolean>(false);
   const filePickerEnabled = initialCfg?.filePicker ?? true;
   const [effort, setEffort] = useState<ReasoningEffort>(
@@ -1314,6 +1333,7 @@ function App({
     setBillingChooserFor,
     setUnifiedProbeFor,
     setShowInboxModal,
+    setShowMultiAgentModal,
     setShowHooksDashboard: modals.setShowHooksDashboard,
     setShowHelpMenu,
     setShowLspWizard,
@@ -1640,7 +1660,7 @@ function App({
           ]);
           try {
             setIsSynthesizing(true);
-            const { plan, conflicts, recommendations } = await supervisorRef.current!.autoSpawnWorkers(
+            const { plan, conflicts, recommendations, prUrl, executor } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,
               (workers) => setActiveWorkers(workers),
@@ -1661,6 +1681,16 @@ function App({
               ...e,
               { kind: "info", key: mkKey(), text: `synthesized ${recommendations.length} recommendation(s)` },
             ]);
+            if (executor) {
+              setEvents((e) => [
+                ...e,
+                executor.status === "completed" && prUrl
+                  ? { kind: "info", key: mkKey(), text: `executor opened PR: ${prUrl}` }
+                  : executor.status === "completed"
+                  ? { kind: "info", key: mkKey(), text: "executor completed (no file changes to commit)" }
+                  : { kind: "error", key: mkKey(), text: `executor failed: ${executor.error ?? "unknown"}` },
+              ]);
+            }
             await saveSessionSafe();
             endTurn();
             return;
@@ -2240,6 +2270,23 @@ function App({
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
         onInboxOpen={openBrowser}
+        multiAgentSettings={cfg ? {
+          multiAgentEnabled: cfg.multiAgentEnabled,
+          workerEndpoint: cfg.workerEndpoint,
+          workerApiKey: cfg.workerApiKey,
+          autoExecute: cfg.autoExecute,
+        } : undefined}
+        onMultiAgentSave={(patch) => {
+          if (!cfg) return;
+          const next = { ...cfg, ...patch };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          if (patch.multiAgentEnabled === false && mode === "multi-agent-experimental") {
+            setMode("edit");
+          }
+        }}
+        multiAgentRemoteWorkerUrl={cfg?.remoteWorkerUrl}
+        multiAgentRemoteAuthSecret={cfg?.remoteAuthSecret}
         getConfiguredHooks={() => {
           const out: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
           for (const ev of (["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"] as const)) {

@@ -11,6 +11,8 @@ import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
 import type { WorkerResultMessage } from "./messages.js";
+import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
+import { loadConfig } from "../config.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -125,16 +127,48 @@ export class TurnSupervisor {
     workers: SpawnWorkerOpts[],
     onUpdate?: (workers: ActiveWorker[]) => void,
   ): Promise<WorkerResultMessage[]> {
-    const endpoint = process.env.KIMIFLARE_WORKER_ENDPOINT;
+    // Read config first; env vars override individual fields for back-compat.
+    // We also fall back to the /remote setup endpoint when the dedicated
+    // multi-agent fields aren't set — same Commute worker hosts both, so most
+    // users who already ran /remote setup get /multi-agent for free.
+    const cfg = await loadConfig().catch(() => null);
+    const endpoint =
+      process.env.KIMIFLARE_WORKER_ENDPOINT
+      ?? cfg?.workerEndpoint
+      ?? cfg?.remoteWorkerUrl;
     if (!endpoint) {
-      throw new Error("Worker endpoint not configured. Set KIMIFLARE_WORKER_ENDPOINT.");
+      throw new Error(
+        "Multi-agent endpoint not configured. Open /multi-agent and pick Set up to deploy one.",
+      );
     }
 
-    const apiKey = process.env.KIMIFLARE_WORKER_API_KEY;
+    const apiKey =
+      process.env.KIMIFLARE_WORKER_API_KEY
+      ?? cfg?.workerApiKey
+      ?? cfg?.remoteAuthSecret;
+    // KIMIFLARE_CLI_REF stays as a dev/CI env override only — there's no
+    // config field or UI for it. End users always get the latest published
+    // kimiflare via the server's `npm install -g kimiflare@latest` step.
+    const cliRef = process.env.KIMIFLARE_CLI_REF;
     const maxParallel = Math.min(
       workers.length,
       parseInt(process.env.KIMIFLARE_WORKER_MAX_PARALLEL ?? "3", 10),
     );
+
+    // Sandbox-driven workers need a repo to clone — detect once.
+    const repoInfo = detectRepoInfo();
+    if ("error" in repoInfo) {
+      throw new Error(`cannot spawn workers: ${repoInfo.error}`);
+    }
+    const repo: RepoInfo = repoInfo;
+
+    if (!cfg?.accountId || !cfg?.apiToken) {
+      throw new Error(
+        "Cloudflare credentials not found in your config — re-run /init or set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.",
+      );
+    }
+    const userAccountId = cfg.accountId;
+    const userApiToken = cfg.apiToken;
 
     // Register all workers as pending
     for (const w of workers) {
@@ -151,18 +185,23 @@ export class TurnSupervisor {
 
     const results: WorkerResultMessage[] = [];
     const queue = [...workers];
+    // Capture the instance Map so the inner runBatch (a regular function with
+    // its own `this`) can reach it. Earlier this used `TurnSupervisor.prototype._activeWorkers`,
+    // which is undefined because _activeWorkers is an instance field, not on
+    // the prototype — that caused "Cannot read properties of undefined (reading 'entries')".
+    const activeWorkers = this._activeWorkers;
 
     async function runBatch(batch: SpawnWorkerOpts[]): Promise<void> {
       await Promise.all(
         batch.map(async (w) => {
-          const workerId = [...TurnSupervisor.prototype._activeWorkers.entries()].find(
+          const workerId = [...activeWorkers.entries()].find(
             ([, aw]) => aw.task === w.task && aw.status === "pending",
           )?.[0];
           if (!workerId) return;
 
-          const worker = TurnSupervisor.prototype._activeWorkers.get(workerId)!;
+          const worker = activeWorkers.get(workerId)!;
           worker.status = "running";
-          onUpdate?.([...TurnSupervisor.prototype._activeWorkers.values()]);
+          onUpdate?.([...activeWorkers.values()]);
 
           try {
             const payload = {
@@ -173,10 +212,25 @@ export class TurnSupervisor {
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),
               model: w.model ?? "@cf/moonshotai/kimi-k2.6",
+              // Sandbox-driven worker needs the repo to clone:
+              githubToken: repo.token,
+              owner: repo.owner,
+              repo: repo.repo,
+              baseBranch: w.baseBranch ?? repo.baseBranch,
+              // Reuse the USER's Cloudflare creds (already configured) so
+              // worker LLM calls bill against their account, not the
+              // Commute operator's. Server falls back to operator creds if
+              // these are absent (older client + new server).
+              userAccountId,
+              userApiToken,
+              // Optionally override the in-sandbox kimiflare install so the
+              // worker runs pre-release / branch code instead of the image-
+              // baked version. e.g. `kimiflare@latest`, `kimiflare@1.2.3`,
+              // `github:sinameraji/kimiflare#feat/foo`.
+              ...(cliRef ? { kimiflareInstall: cliRef } : {}),
               ...(w.mode === "execute"
                 ? {
                     branchName: w.branchName,
-                    baseBranch: w.baseBranch ?? "main",
                     prTitle: w.prTitle,
                     prBody: w.prBody,
                   }
@@ -184,7 +238,9 @@ export class TurnSupervisor {
             };
 
             const controller = new AbortController();
-            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "300000", 10);
+            // Sandbox workers take 1-4 min typical (artifact + clone + agent loop + push).
+            // 10 min default leaves headroom; override with KIMIFLARE_WORKER_TIMEOUT_MS.
+            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "600000", 10);
             const timer = setTimeout(() => controller.abort(), timeoutMs);
 
             const res = await fetch(`${endpoint}/worker`, {
@@ -214,7 +270,7 @@ export class TurnSupervisor {
             worker.error = (e as Error).message;
             logger.error("spawnWorkers:failed", { workerId, error: (e as Error).message });
           }
-          onUpdate?.([...TurnSupervisor.prototype._activeWorkers.values()]);
+          onUpdate?.([...activeWorkers.values()]);
         }),
       );
     }
@@ -328,10 +384,52 @@ export class TurnSupervisor {
     prompt: string,
     context: string,
     onUpdate?: (workers: ActiveWorker[]) => void,
-  ): Promise<{ plan: string; conflicts: string[]; recommendations: string[] }> {
+  ): Promise<{
+    plan: string;
+    conflicts: string[];
+    recommendations: string[];
+    prUrl?: string;
+    executor?: { status: "completed" | "failed"; error?: string };
+  }> {
     const workers = decomposePrompt(prompt, context);
     const results = await this.spawnWorkers(workers, onUpdate);
-    return this.synthesizeFindings(results);
+    const synth = this.synthesizeFindings(results);
+
+    // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
+    // opt in via /multi-agent in the TUI or KIMIFLARE_AUTO_EXECUTE=1. Only
+    // fires when synthesis produced actionable recommendations.
+    const cfg = await loadConfig().catch(() => null);
+    const autoExecute =
+      cfg?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
+    if (!autoExecute || synth.recommendations.length === 0) {
+      return synth;
+    }
+
+    const executeTask = [
+      `Original request: ${prompt}`,
+      "",
+      "A research pass produced this plan. Implement it.",
+      "",
+      synth.plan,
+    ].join("\n");
+
+    try {
+      const execResults = await this.spawnWorkers(
+        [{ mode: "execute", task: executeTask, context }],
+        onUpdate,
+      );
+      const exec = execResults[0];
+      if (!exec) {
+        return { ...synth, executor: { status: "failed", error: "executor worker did not return a result" } };
+      }
+      return {
+        ...synth,
+        prUrl: exec.prUrl,
+        executor: { status: exec.status === "completed" ? "completed" : "failed", error: exec.error },
+      };
+    } catch (err) {
+      return { ...synth, executor: { status: "failed", error: err instanceof Error ? err.message : String(err) } };
+    }
   }
 
   clearWorkers(): void {
@@ -339,42 +437,37 @@ export class TurnSupervisor {
   }
 }
 
-/** Simple heuristic to decompose a heavy prompt into parallel research tasks.
+/** Conservative heuristic to decompose a heavy prompt into parallel research tasks.
  *
- * Looks for:
- * - Lists: "research X, Y, and Z" → 3 workers
- * - Conjunctions: "research X and Y" → 2 workers
- * - Fallback: 2 workers with different angles (overview + deep-dive)
+ * Only splits the prompt when the user gave EXPLICIT list structure — numbered
+ * (`1. … 2. … 3. …`) or bulleted (`- …`/`* …`) — because that's the only
+ * cheap signal that's reliably a list. Earlier this also split on any
+ * conjunction or comma, which chopped cohesive sentences like "do heavy
+ * exploration AND research IN this project AND identify…" into nonsense
+ * fragments.
+ *
+ * For prose prompts (no explicit list), spawn 2 workers with the FULL prompt
+ * preserved and different angles. The synthesizer dedups overlapping findings,
+ * so two well-formed angles beat N fragmented ones.
  */
 export function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
-  // Try to find comma-separated or "and"-separated research topics
-  const listMatch = prompt.match(/research\s+(.+?)(?:\s+and\s+|,\s+)(.+)/i);
-  if (listMatch) {
-    const parts = prompt
-      .replace(/research\s+/i, "")
-      .split(/\s+and\s+|,\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (parts.length >= 2) {
-      return parts.slice(0, 4).map((task) => ({
-        mode: "plan" as const,
-        task: `Research ${task}`,
-        context,
-      }));
-    }
+  const items = extractListItems(prompt);
+  if (items.length >= 2) {
+    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
   }
-
-  // Fallback: 2 workers with different angles
   return [
-    {
-      mode: "plan",
-      task: `Research overview and best practices for: ${prompt}`,
-      context,
-    },
-    {
-      mode: "plan",
-      task: `Research implementation details and migration path for: ${prompt}`,
-      context,
-    },
+    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
+    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
   ];
+}
+
+/** Pull explicit list items from a prompt: numbered (`1. …`, `1) …`) or
+ *  bulleted (`- …`, `* …`, `• …`). Returns trimmed item bodies, or [] when
+ *  no clear list structure is present. */
+function extractListItems(prompt: string): string[] {
+  const numbered = [...prompt.matchAll(/(?:^|\n)\s*\d+[.)]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
+  if (numbered.length >= 2) return numbered.filter((s) => s.length > 0);
+  const bulleted = [...prompt.matchAll(/(?:^|\n)\s*[-*•]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
+  if (bulleted.length >= 2) return bulleted.filter((s) => s.length > 0);
+  return [];
 }
