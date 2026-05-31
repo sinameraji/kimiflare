@@ -126,6 +126,16 @@ export interface KimiConfig {
   workerTimeoutMs?: number;
   /** Enable multi-agent-experimental mode in the mode cycle. Default: false. */
   multiAgentEnabled?: boolean;
+  /** Bearer/secret for the worker endpoint (sent as X-Worker-Api-Key). */
+  workerApiKey?: string;
+  /** When true, after plan workers synthesize, spawn one executor worker
+   *  to implement the synthesized plan and open a PR. Off by default. */
+  autoExecute?: boolean;
+  /** Optional npm spec passed to `npm install -g` inside each worker's
+   *  sandbox, so the worker runs a specific kimiflare version/branch
+   *  instead of the image-baked one. Examples:
+   *    "kimiflare@1.2.3", "github:sinameraji/kimiflare#feat/foo". */
+  cliRef?: string;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -309,6 +319,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
       multiAgentEnabled: envMultiAgentEnabled,
+      workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY,
+      autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
+      cliRef: process.env.KIMIFLARE_CLI_REF,
     };
   }
 
@@ -351,11 +364,14 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         providerKeyAliases: parsed.providerKeyAliases,
         secretsStoreId: parsed.secretsStoreId,
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
-        workerEndpoint: parsed.workerEndpoint,
+        workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT ?? parsed.workerEndpoint,
         workerBudgetUsd: parsed.workerBudgetUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
         multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
+        workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY ?? parsed.workerApiKey,
+        autoExecute: parsed.autoExecute,
+        cliRef: process.env.KIMIFLARE_CLI_REF ?? parsed.cliRef,
       };
     }
   }

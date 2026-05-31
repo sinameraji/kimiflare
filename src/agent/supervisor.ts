@@ -12,6 +12,7 @@ import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
 import type { WorkerResultMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
+import { loadConfig } from "../config.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -126,12 +127,17 @@ export class TurnSupervisor {
     workers: SpawnWorkerOpts[],
     onUpdate?: (workers: ActiveWorker[]) => void,
   ): Promise<WorkerResultMessage[]> {
-    const endpoint = process.env.KIMIFLARE_WORKER_ENDPOINT;
+    // Read config first; env vars override individual fields for back-compat.
+    const cfg = await loadConfig().catch(() => null);
+    const endpoint = process.env.KIMIFLARE_WORKER_ENDPOINT ?? cfg?.workerEndpoint;
     if (!endpoint) {
-      throw new Error("Worker endpoint not configured. Set KIMIFLARE_WORKER_ENDPOINT.");
+      throw new Error(
+        "Worker endpoint not configured. Run /multi-agent in the TUI, or set KIMIFLARE_WORKER_ENDPOINT.",
+      );
     }
 
-    const apiKey = process.env.KIMIFLARE_WORKER_API_KEY;
+    const apiKey = process.env.KIMIFLARE_WORKER_API_KEY ?? cfg?.workerApiKey;
+    const cliRef = process.env.KIMIFLARE_CLI_REF ?? cfg?.cliRef;
     const maxParallel = Math.min(
       workers.length,
       parseInt(process.env.KIMIFLARE_WORKER_MAX_PARALLEL ?? "3", 10),
@@ -143,6 +149,14 @@ export class TurnSupervisor {
       throw new Error(`cannot spawn workers: ${repoInfo.error}`);
     }
     const repo: RepoInfo = repoInfo;
+
+    if (!cfg?.accountId || !cfg?.apiToken) {
+      throw new Error(
+        "Cloudflare credentials not found in your config — re-run /init or set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.",
+      );
+    }
+    const userAccountId = cfg.accountId;
+    const userApiToken = cfg.apiToken;
 
     // Register all workers as pending
     for (const w of workers) {
@@ -191,13 +205,17 @@ export class TurnSupervisor {
               owner: repo.owner,
               repo: repo.repo,
               baseBranch: w.baseBranch ?? repo.baseBranch,
+              // Reuse the USER's Cloudflare creds (already configured) so
+              // worker LLM calls bill against their account, not the
+              // Commute operator's. Server falls back to operator creds if
+              // these are absent (older client + new server).
+              userAccountId,
+              userApiToken,
               // Optionally override the in-sandbox kimiflare install so the
               // worker runs pre-release / branch code instead of the image-
               // baked version. e.g. `kimiflare@latest`, `kimiflare@1.2.3`,
               // `github:sinameraji/kimiflare#feat/foo`.
-              ...(process.env.KIMIFLARE_CLI_REF
-                ? { kimiflareInstall: process.env.KIMIFLARE_CLI_REF }
-                : {}),
+              ...(cliRef ? { kimiflareInstall: cliRef } : {}),
               ...(w.mode === "execute"
                 ? {
                     branchName: w.branchName,
@@ -366,9 +384,11 @@ export class TurnSupervisor {
     const synth = this.synthesizeFindings(results);
 
     // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
-    // opt in with KIMIFLARE_AUTO_EXECUTE=1. Only fires when synthesis produced
-    // actionable recommendations.
-    const autoExecute = /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
+    // opt in via /multi-agent in the TUI or KIMIFLARE_AUTO_EXECUTE=1. Only
+    // fires when synthesis produced actionable recommendations.
+    const cfg = await loadConfig().catch(() => null);
+    const autoExecute =
+      cfg?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
     if (!autoExecute || synth.recommendations.length === 0) {
       return synth;
     }

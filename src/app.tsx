@@ -189,6 +189,10 @@ export interface Cfg {
   secretsStoreId?: string;
   unifiedBilling?: boolean;
   multiAgentEnabled?: boolean;
+  workerEndpoint?: string;
+  workerApiKey?: string;
+  autoExecute?: boolean;
+  cliRef?: string;
 }
 function App({
   initialCfg,

@@ -550,6 +550,79 @@ const handleMode: Handler = (ctx, _rest, arg) => {
   return true;
 };
 
+const handleMultiAgent: Handler = (ctx, rest, _arg) => {
+  const { cfg, setCfg, setEvents, mkKey, setMode, mode } = ctx;
+  if (!cfg) {
+    setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "no config loaded — credentials not set up" }]);
+    return true;
+  }
+  const sub = (rest[0] ?? "").toLowerCase();
+  const value = rest.slice(1).join(" ").trim();
+  const persist = (patch: Partial<typeof cfg>, msg: string, kind: "info" | "success" | "error" = "success") => {
+    const next = { ...cfg, ...patch };
+    setCfg(next);
+    void saveConfig(next).catch(() => {});
+    setEvents((e) => [...e, { kind: kind === "success" ? "info" : kind, key: mkKey(), text: msg }]);
+  };
+
+  if (sub === "enable") {
+    persist({ multiAgentEnabled: true }, "multi-agent enabled — Shift-Tab to switch modes");
+    if (!cfg.workerEndpoint) {
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "tip: run /multi-agent endpoint <url> to configure your Commute endpoint" }]);
+    }
+    return true;
+  }
+  if (sub === "disable") {
+    persist({ multiAgentEnabled: false }, "multi-agent disabled");
+    if (mode === "multi-agent-experimental") setMode("edit");
+    return true;
+  }
+  if (sub === "execute") {
+    persist({ autoExecute: true }, "auto-execute on — after research, a 4th worker will implement + open a PR");
+    return true;
+  }
+  if (sub === "no-execute") {
+    persist({ autoExecute: false }, "auto-execute off — research only");
+    return true;
+  }
+  if (sub === "endpoint") {
+    if (!value) {
+      setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "usage: /multi-agent endpoint <url>" }]);
+      return true;
+    }
+    persist({ workerEndpoint: value }, `endpoint set: ${value}`);
+    return true;
+  }
+  if (sub === "api-key") {
+    if (!value) {
+      setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "usage: /multi-agent api-key <key>" }]);
+      return true;
+    }
+    persist({ workerApiKey: value }, "api key set");
+    return true;
+  }
+  if (sub === "cli-ref") {
+    persist({ cliRef: value || undefined }, value ? `cli ref set: ${value}` : "cli ref cleared (image default)");
+    return true;
+  }
+  if (sub === "status" || sub === "") {
+    const lines = [
+      "multi-agent status:",
+      `  enabled:      ${cfg.multiAgentEnabled ? "yes" : "no"}`,
+      `  endpoint:     ${cfg.workerEndpoint ?? "(not set)"}`,
+      `  api key:      ${cfg.workerApiKey ? "(set)" : "(not set)"}`,
+      `  auto-execute: ${cfg.autoExecute ? "yes" : "no"}`,
+      `  cli ref:      ${cfg.cliRef ?? "(image default)"}`,
+      "",
+      "subcommands: enable | disable | execute | no-execute | endpoint <url> | api-key <key> | cli-ref <ref> | status",
+    ];
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
+    return true;
+  }
+  setEvents((e) => [...e, { kind: "error", key: mkKey(), text: `unknown subcommand: ${sub}. Run /multi-agent status for help.` }]);
+  return true;
+};
+
 const handleTheme: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
   if (!arg) {
@@ -1431,6 +1504,7 @@ const handlers: Record<string, Handler> = {
   "/model": handleModel,
   "/gateway": handleGateway,
   "/mode": handleMode,
+  "/multi-agent": handleMultiAgent,
   "/theme": handleTheme,
   "/ui": handleUi,
   "/plan": handlePlan,
