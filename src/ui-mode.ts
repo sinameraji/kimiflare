@@ -324,7 +324,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model,
       };
       const fmtBool = (v: boolean | undefined) => (v ? "✓ on" : "✗ off");
-      const fmtStr = (v: string | undefined) => (v && v.length > 0 ? v : "(not set)");
+      const fmtAutoStr = (v: string | undefined) => (v && v.length > 0 ? v : "(auto-managed by Set up)");
       const fmtAutoSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(auto-managed by Set up)");
       // Same Commute worker hosts both /remote sessions and /multi-agent; if
       // the user already ran /remote setup we reuse those values so they
@@ -339,7 +339,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
         options: [
           { value: "enabled",     label: `Multi-agent mode               ${fmtBool(cfg.multiAgentEnabled)}` },
-          { value: "endpoint",    label: `Endpoint                       ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
+          { value: "endpoint",    label: `Endpoint                       ${fmtAutoStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
           { value: "workerSecret",label: `Worker secret                  ${fmtAutoSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
           { value: "autoExecute", label: `Auto-implement after research  ${fmtBool(cfg.autoExecute)}` },
           { value: "deploy",      label: `→ Set up (deploys to your Cloudflare account, one-time)` },

@@ -151,7 +151,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     if (f === "endpoint") {
       if (v) return v;
       if (remoteWorkerUrl) return `${remoteWorkerUrl}  (from /remote)`;
-      return "(not set)";
+      return "(auto-managed by Set up)";
     }
     if (f === "workerSecret") {
       if (v) return "(set)";
