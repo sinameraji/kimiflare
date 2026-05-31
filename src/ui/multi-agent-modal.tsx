@@ -310,9 +310,9 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
                 {failed && (
                   <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.accent} paddingX={1}>
                     <Text color={theme.accent} bold>Next steps</Text>
-                    <Text>1. Press <Text bold>O</Text> to open the Cloudflare token dashboard</Text>
-                    <Text>2. Create a token with the scopes above</Text>
-                    <Text>3. Update <Text bold>apiToken</Text> in ~/.config/kimiflare/config.json</Text>
+                    <Text>1. Press <Text bold>O</Text> to open your Cloudflare tokens</Text>
+                    <Text>2. Find the token kimiflare is using → Edit → add the scopes above</Text>
+                    <Text>3. Save (the token value doesn't change)</Text>
                     <Text>4. Press <Text bold>R</Text> to retry, or Esc to close</Text>
                     <Text dimColor>{ctaUrl}</Text>
                   </Box>

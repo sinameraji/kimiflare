@@ -125,19 +125,17 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
     hint =
       "\n\n⚠  Your Cloudflare API token is missing one or more required scopes.\n" +
       "\n" +
-      "Mint a new token at:\n" +
+      "Open your tokens at:\n" +
       `  ${TOKEN_TEMPLATE_URL}\n` +
       "\n" +
-      "Click \"Create Custom Token\" and select these Account permissions:\n" +
+      "Find the token kimiflare is using → Edit → add these Account permissions:\n" +
       "  • Workers Scripts:Edit\n" +
       "  • Workers KV Storage:Edit\n" +
       "  • Workers Routes:Edit\n" +
       "  • Account Settings:Read\n" +
-      "  • Workers AI:Read   (already in your existing token, keep it)\n" +
       "\n" +
-      "Then update kimiflare's token:\n" +
-      "  export CLOUDFLARE_API_TOKEN=<new token>\n" +
-      "(or edit ~/.config/kimiflare/config.json) and re-run /multi-agent → Set up.";
+      "Save the token. The value doesn't change, so no kimiflare config edit\n" +
+      "is needed — just re-run /multi-agent → Set up.";
   } else if (lower.includes("not authenticated") || lower.includes("wrangler login")) {
     hint =
       "\n\n⚠  Wrangler isn't picking up CLOUDFLARE_API_TOKEN.\n" +
