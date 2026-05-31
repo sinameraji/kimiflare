@@ -92,6 +92,8 @@ export interface ModalHostProps {
   // Multi-agent modal
   multiAgentSettings?: MultiAgentSettings;
   onMultiAgentSave?: (patch: MultiAgentSettings) => void;
+  multiAgentRemoteWorkerUrl?: string;
+  multiAgentRemoteAuthSecret?: string;
   // M6.1: hooks dashboard. Pass `getConfiguredHooks` rather than a
   // static array so the dashboard re-reads after every mutation
   // without needing a re-render in the parent.
@@ -203,6 +205,8 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
             initial={props.multiAgentSettings ?? {}}
             onSave={props.onMultiAgentSave ?? (() => {})}
             onDone={() => modals.setShowMultiAgentModal(false)}
+            remoteWorkerUrl={props.multiAgentRemoteWorkerUrl}
+            remoteAuthSecret={props.multiAgentRemoteAuthSecret}
           />
         </Box>
       </ThemeProvider>

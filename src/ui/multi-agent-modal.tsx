@@ -20,6 +20,11 @@ interface Props {
   initial: MultiAgentSettings;
   onSave: (patch: MultiAgentSettings) => void;
   onDone: () => void;
+  /** Fallback Commute URL from `/remote setup`. Shown in the field display
+   *  with a "(via /remote)" hint when the dedicated endpoint isn't set, so
+   *  the user understands where the value comes from. */
+  remoteWorkerUrl?: string;
+  remoteAuthSecret?: string;
 }
 
 type Field = "enabled" | "endpoint" | "apiKey" | "autoExecute" | "cliRef";
@@ -39,7 +44,7 @@ const PLACEHOLDERS: Partial<Record<Field, string>> = {
   cliRef:   "github:owner/kimiflare#branch  or  kimiflare@1.2.3",
 };
 
-export function MultiAgentModal({ initial, onSave, onDone }: Props) {
+export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remoteAuthSecret }: Props) {
   const theme = useTheme();
   const [state, setState] = useState<MultiAgentSettings>(initial);
   const [cursor, setCursor] = useState(0);
@@ -110,8 +115,17 @@ export function MultiAgentModal({ initial, onSave, onDone }: Props) {
   const renderValue = (f: Field): string => {
     if (isBool(f)) return currentBool(f) ? "✓ on" : "✗ off";
     const v = currentStr(f);
+    if (f === "endpoint") {
+      if (v) return v;
+      if (remoteWorkerUrl) return `${remoteWorkerUrl}  (via /remote)`;
+      return "(not set)";
+    }
+    if (f === "apiKey") {
+      if (v) return "(set)";
+      if (remoteAuthSecret) return "(via /remote)";
+      return "(not set)";
+    }
     if (!v) return "(not set)";
-    if (f === "apiKey") return "(set)";
     return v;
   };
 

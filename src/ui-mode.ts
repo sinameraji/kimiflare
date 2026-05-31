@@ -325,14 +325,21 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       const fmtBool = (v: boolean | undefined) => (v ? "✓ on" : "✗ off");
       const fmtStr = (v: string | undefined) => (v && v.length > 0 ? v : "(not set)");
       const fmtSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(not set)");
+      // Same Commute worker hosts both /remote sessions and /multi-agent; if
+      // the user already ran /remote setup we reuse those values so they
+      // don't have to enter the endpoint twice.
+      const effectiveEndpoint = cfg.workerEndpoint ?? cfg.remoteWorkerUrl;
+      const effectiveApiKey = cfg.workerApiKey ?? cfg.remoteAuthSecret;
+      const endpointFromRemote = !cfg.workerEndpoint && !!cfg.remoteWorkerUrl;
+      const apiKeyFromRemote = !cfg.workerApiKey && !!cfg.remoteAuthSecret;
 
       const main = await selectList(cam, {
         id: `ma-main-${Date.now()}`,
         prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
         options: [
           { value: "enabled",     label: `Enabled                ${fmtBool(cfg.multiAgentEnabled)}` },
-          { value: "endpoint",    label: `Commute endpoint       ${fmtStr(cfg.workerEndpoint)}` },
-          { value: "apiKey",      label: `Commute API key        ${fmtSecret(cfg.workerApiKey)}` },
+          { value: "endpoint",    label: `Commute endpoint       ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (via /remote)" : ""}` },
+          { value: "apiKey",      label: `Commute API key        ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (via /remote)" : ""}` },
           { value: "autoExecute", label: `Auto-execute (4th agent) ${fmtBool(cfg.autoExecute)}` },
           { value: "cliRef",      label: `In-sandbox kimiflare    ${fmtStr(cfg.cliRef)}` },
           { value: "done",        label: "Done" },

@@ -2272,6 +2272,8 @@ function App({
             setMode("edit");
           }
         }}
+        multiAgentRemoteWorkerUrl={cfg?.remoteWorkerUrl}
+        multiAgentRemoteAuthSecret={cfg?.remoteAuthSecret}
         getConfiguredHooks={() => {
           const out: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
           for (const ev of (["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"] as const)) {

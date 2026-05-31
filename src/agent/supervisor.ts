@@ -128,15 +128,24 @@ export class TurnSupervisor {
     onUpdate?: (workers: ActiveWorker[]) => void,
   ): Promise<WorkerResultMessage[]> {
     // Read config first; env vars override individual fields for back-compat.
+    // We also fall back to the /remote setup endpoint when the dedicated
+    // multi-agent fields aren't set — same Commute worker hosts both, so most
+    // users who already ran /remote setup get /multi-agent for free.
     const cfg = await loadConfig().catch(() => null);
-    const endpoint = process.env.KIMIFLARE_WORKER_ENDPOINT ?? cfg?.workerEndpoint;
+    const endpoint =
+      process.env.KIMIFLARE_WORKER_ENDPOINT
+      ?? cfg?.workerEndpoint
+      ?? cfg?.remoteWorkerUrl;
     if (!endpoint) {
       throw new Error(
-        "Worker endpoint not configured. Run /multi-agent in the TUI, or set KIMIFLARE_WORKER_ENDPOINT.",
+        "Worker endpoint not configured. Run /multi-agent in the TUI (or /remote setup to auto-deploy).",
       );
     }
 
-    const apiKey = process.env.KIMIFLARE_WORKER_API_KEY ?? cfg?.workerApiKey;
+    const apiKey =
+      process.env.KIMIFLARE_WORKER_API_KEY
+      ?? cfg?.workerApiKey
+      ?? cfg?.remoteAuthSecret;
     const cliRef = process.env.KIMIFLARE_CLI_REF ?? cfg?.cliRef;
     const maxParallel = Math.min(
       workers.length,
