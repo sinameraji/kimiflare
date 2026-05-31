@@ -103,6 +103,52 @@ function extractKvId(text: string): string | undefined {
   return match ? match[1] : undefined;
 }
 
+/** Build a user-actionable error message from a failed wrangler invocation.
+ *  Tries to detect the common failure modes (missing token scope, auth) and
+ *  point the user at a fix; falls back to surfacing the raw stderr tail. */
+function explainWranglerFailure(cmd: string, stdout: string, stderr: string): string {
+  const combined = `${stdout}\n${stderr}`;
+  const tail = combined.slice(-1200).trim();
+  const lower = combined.toLowerCase();
+  let hint = "";
+  if (
+    lower.includes("authentication error") ||
+    lower.includes("unauthorized") ||
+    /\bcode: 10000\b/.test(lower) ||
+    /\bstatus 403\b/.test(lower) ||
+    lower.includes("permission") ||
+    lower.includes("not allowed")
+  ) {
+    hint =
+      "\n\n⚠  Your Cloudflare API token is missing one or more required scopes.\n" +
+      "\n" +
+      "Mint a new token at:\n" +
+      `  ${TOKEN_TEMPLATE_URL}\n` +
+      "\n" +
+      "Click \"Create Custom Token\" and select these Account permissions:\n" +
+      "  • Workers Scripts:Edit\n" +
+      "  • Workers KV Storage:Edit\n" +
+      "  • Workers Routes:Edit\n" +
+      "  • Account Settings:Read\n" +
+      "  • Workers AI:Read   (already in your existing token, keep it)\n" +
+      "\n" +
+      "Then update kimiflare's token:\n" +
+      "  export CLOUDFLARE_API_TOKEN=<new token>\n" +
+      "(or edit ~/.config/kimiflare/config.json) and re-run /multi-agent → Set up.";
+  } else if (lower.includes("not authenticated") || lower.includes("wrangler login")) {
+    hint =
+      "\n\n⚠  Wrangler isn't picking up CLOUDFLARE_API_TOKEN.\n" +
+      "Verify the token is in your kimiflare config (`/init` if not),\n" +
+      "or set CLOUDFLARE_API_TOKEN in your shell.";
+  }
+  return `${cmd} failed:\n${tail}${hint}`;
+}
+
+/** Cloudflare API tokens page. Deep-linking specific permission templates
+ *  isn't a publicly documented URL contract, so we link to the canonical
+ *  tokens page and spell out the scopes for the user. */
+const TOKEN_TEMPLATE_URL = "https://dash.cloudflare.com/profile/api-tokens";
+
 export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult, void> {
   // ── 0. Load existing cfg to get CF creds ────────────────────────────
   const cfg = await loadConfig();
@@ -149,27 +195,50 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   const workerDir = join(repoDir, "remote", "worker");
   const wranglerToml = join(workerDir, "wrangler.toml");
 
-  // ── 3a. Create the KV namespace in the user's account ───────────────
-  yield { message: "Creating OAUTH_KV namespace in your Cloudflare account…" };
-  const kvCreate = await runCmd("wrangler", ["kv", "namespace", "create", "OAUTH_KV"], {
-    cwd: workerDir,
-    env: cfEnv,
-    timeoutMs: 30_000,
-  });
-  const kvOutput = kvCreate.stdout + "\n" + kvCreate.stderr;
-  const kvId = extractKvId(kvOutput);
-  if (kvCreate.code !== 0 || !kvId) {
-    // KV might already exist from a prior run; try to list and reuse.
-    yield { message: "KV create failed or already exists; attempting to reuse existing namespace…" };
-    const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
-    const reuseMatch = kvList.stdout.match(/"title":\s*"[^"]*OAUTH_KV[^"]*",\s*"id":\s*"([a-f0-9]+)"/);
-    if (!reuseMatch) {
-      yield { message: `Could not create or find OAUTH_KV.\n${kvOutput.slice(0, 400)}`, error: true };
-      throw new Error("kv setup failed");
+  // ── 3a. Create or reuse the OAUTH_KV namespace in the user's account ─
+  // First try to find an existing one. wrangler kv namespace list emits
+  // JSON; parse it instead of grepping (field order isn't guaranteed).
+  let finalKvId = "";
+  yield { message: "Looking up existing OAUTH_KV namespace…" };
+  const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
+  if (kvList.code === 0) {
+    try {
+      const items = JSON.parse(kvList.stdout) as Array<{ id?: string; title?: string }>;
+      const match = items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title));
+      if (match?.id) {
+        finalKvId = match.id;
+        yield { message: `Reusing existing namespace ${match.title} (${finalKvId.slice(0, 8)}…).` };
+      }
+    } catch {
+      // Fall through to create.
     }
-    yield { message: `Reusing existing namespace ${reuseMatch[1]?.slice(0, 8)}…` };
+  } else {
+    // Listing failed — most likely token doesn't have KV permissions. Surface
+    // the actual wrangler stderr so the user can act on it.
+    yield {
+      message: explainWranglerFailure("wrangler kv namespace list", kvList.stdout, kvList.stderr),
+      error: true,
+    };
+    throw new Error("kv list failed");
   }
-  const finalKvId = kvId ?? extractKvId(kvOutput) ?? "";
+
+  if (!finalKvId) {
+    yield { message: "Creating OAUTH_KV namespace…" };
+    const kvCreate = await runCmd("wrangler", ["kv", "namespace", "create", "OAUTH_KV"], {
+      cwd: workerDir,
+      env: cfEnv,
+      timeoutMs: 30_000,
+    });
+    finalKvId = extractKvId(kvCreate.stdout + "\n" + kvCreate.stderr) ?? "";
+    if (!finalKvId) {
+      yield {
+        message: explainWranglerFailure("wrangler kv namespace create OAUTH_KV", kvCreate.stdout, kvCreate.stderr),
+        error: true,
+      };
+      throw new Error("kv create failed");
+    }
+    yield { message: `Created namespace ${finalKvId.slice(0, 8)}….` };
+  }
 
   // ── 3b. Patch wrangler.toml: KV id + remote image (so no Docker needed) ─
   yield { message: "Patching wrangler.toml (KV id + public image)…" };
@@ -195,7 +264,10 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     timeoutMs: 30_000,
   });
   if (secret.code !== 0) {
-    yield { message: `secret put failed:\n${secret.stderr.slice(0, 400)}`, error: true };
+    yield {
+      message: explainWranglerFailure("wrangler secret put WORKER_API_KEY", secret.stdout, secret.stderr),
+      error: true,
+    };
     throw new Error("secret put failed");
   }
   // ALSO set ACCOUNT_ID + CF_API_TOKEN as Worker secrets so the operator's
@@ -212,7 +284,10 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     timeoutMs: 180_000,
   });
   if (deploy.code !== 0) {
-    yield { message: `wrangler deploy failed:\n${(deploy.stderr || deploy.stdout).slice(0, 600)}`, error: true };
+    yield {
+      message: explainWranglerFailure("wrangler deploy", deploy.stdout, deploy.stderr),
+      error: true,
+    };
     throw new Error("deploy failed");
   }
   const workerUrl = extractWorkerUrl(deploy.stdout + "\n" + deploy.stderr);
