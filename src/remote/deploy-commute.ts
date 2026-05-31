@@ -279,14 +279,30 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     yield { message: `Created namespace ${finalKvId.slice(0, 8)}….` };
   }
 
+  // Detect whether a Worker with this name already exists on the user's
+  // account. Drives the migration-injection decision below: fresh deploys
+  // need v1 with new_sqlite_classes to create the DOs; existing deploys
+  // must NOT re-declare new_sqlite_classes on classes that already exist
+  // (Cloudflare returns code 10074 "Cannot apply new-sqlite-class
+  // migration to class … already depended on by existing Durable Objects").
+  yield { message: "Checking if a previous deployment exists…" };
+  const deployments = await runCmd("wrangler", ["deployments", "list", "--name", WORKER_NAME], {
+    env: cfEnv,
+    timeoutMs: 30_000,
+  });
+  const workerExists =
+    deployments.code === 0 &&
+    !/(no deployments|could not find|not found)/i.test(deployments.stdout + deployments.stderr);
+  yield { message: workerExists ? `Found existing Worker "${WORKER_NAME}" — preserving its migration history.` : "No existing Worker; will provision from scratch." };
+
   // ── 3b. Patch wrangler.toml ─────────────────────────────────────────
   // - inject the live KV namespace ID we just resolved
   // - swap ./Dockerfile for the published public image (no Docker needed)
   // - strip the [[artifacts]] block (beta binding the user's wrangler may
   //   not recognize; worker-handler has a direct-GitHub-clone fallback)
-  // - add a [[migrations]] block for the SessionDO + Sandbox DOs if the
-  //   repo's wrangler.toml didn't already include one (wrangler errors
-  //   on a "Forbidden" or fails silently otherwise on first deploy)
+  // - add a [[migrations]] block ONLY on fresh deploys; existing Workers
+  //   already have their DOs created and re-declaring new_sqlite_classes
+  //   collides with the deployed history.
   yield { message: "Patching wrangler.toml…" };
   let toml = await readFile(wranglerToml, "utf8");
   toml = toml.replace(
@@ -300,15 +316,19 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // Strip [[artifacts]] block. Match the header + every following line
   // that isn't blank-then-section, until the next blank line or new [[.
   toml = toml.replace(/\n\[\[artifacts\]\][\s\S]*?(?=\n\[|\n*$)/g, "\n");
-  if (!/\[\[migrations\]\]/.test(toml)) {
+  if (!workerExists && !/\[\[migrations\]\]/.test(toml)) {
     toml +=
-      `\n# Auto-added by kimiflare /multi-agent → Set up\n` +
+      `\n# Auto-added by kimiflare /multi-agent → Set up (fresh deploy only)\n` +
       `[[migrations]]\n` +
       `tag = "v1"\n` +
       `new_sqlite_classes = ["SessionDO", "Sandbox"]\n`;
   }
   await writeFile(wranglerToml, toml, "utf8");
-  yield { message: "wrangler.toml patched (KV id, public image, DO migrations)." };
+  yield {
+    message: workerExists
+      ? "wrangler.toml patched (KV id, public image)."
+      : "wrangler.toml patched (KV id, public image, DO migrations).",
+  };
 
   // ── 4. Generate + set the WORKER_API_KEY secret ────────────────────
   const workerApiKey = generateSecret();
