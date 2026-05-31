@@ -165,21 +165,25 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       hint =
         "\n\n⚠  Cloudflare Containers API returned 403 (Authentication error).\n" +
         "\n" +
-        "Your token has Workers Scripts:Edit but is missing the Containers\n" +
-        "permission. The Worker script uploaded fine; the failure is at the\n" +
-        "step where wrangler registers the container application.\n" +
+        "The Worker script uploaded fine. The failure is on the step where\n" +
+        "wrangler registers the container application. Your API token is\n" +
+        "scoped for Workers Scripts:Edit etc., but the Containers API is\n" +
+        "not covered by those scopes — it requires either:\n" +
         "\n" +
-        "Fix:\n" +
-        "  1. https://dash.cloudflare.com/profile/api-tokens → edit the token\n" +
-        "     kimiflare is using\n" +
-        "  2. Add an Account permission whose name contains \"Container\"\n" +
-        "     (Cloudflare's exact label varies — look for \"Workers Builds\",\n" +
-        "     \"Cloudflare Workers Containers\", or similar in the picker)\n" +
-        "  3. Save (token value doesn't change) and retry (R)\n" +
+        "  (a) A Containers-specific token permission (Cloudflare's exact\n" +
+        "      label varies — look in the token-edit picker for anything\n" +
+        "      containing \"Container\"), OR\n" +
         "\n" +
-        "If no Containers permission appears in the picker for your account,\n" +
-        "Containers may not be enabled yet — turn it on at\n" +
-        "https://dash.cloudflare.com/?to=/:account/workers/containers" +
+        "  (b) OAuth auth via `wrangler login` — gives wrangler full\n" +
+        "      account access. THIS IS HOW MOST EXISTING DEPLOYMENTS\n" +
+        "      WORKED. If your other Containers-using Workers were\n" +
+        "      deployed successfully, this is almost certainly how.\n" +
+        "\n" +
+        "Fastest fix (option b):\n" +
+        "  1. In another terminal:  wrangler login\n" +
+        "     (opens a browser; sign in to your CF account)\n" +
+        "  2. Press R here to retry — the deploy will auto-detect your\n" +
+        "     OAuth session and use it instead of the scoped API token." +
         logHint;
     } else {
       hint =
@@ -247,15 +251,28 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
     yield { message: "Cloudflare credentials missing — run /init to set them up first.", error: true };
     throw new Error("missing CF creds");
   }
-  const cfEnv: Record<string, string> = {
-    CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
-    CLOUDFLARE_API_TOKEN: cfg.apiToken,
-    // Surface the real Cloudflare API request + response bodies in
-    // wrangler's debug log. Otherwise a 403 just shows up as bare
-    // "Forbidden" with no clue which permission scope or feature flag
-    // is missing.
-    WRANGLER_LOG_SANITIZE: "false",
-  };
+  // Auth selection. Two paths:
+  //   - OAuth (via `wrangler login`): full account access including the
+  //     Containers API. Preferred when present because scoped tokens often
+  //     don't cover Containers, which yields a bare 403 at deploy time.
+  //   - API token (CLOUDFLARE_API_TOKEN from our cfg): used when no OAuth
+  //     session is found. Works for everything except Containers in many
+  //     accounts.
+  // We detect OAuth by running `wrangler whoami` with no CLOUDFLARE_*
+  // env vars set — wrangler will then fall back to its persisted OAuth
+  // session and exit 0 if one exists.
+  const oauthCheck = await runCmd("wrangler", ["whoami"], { timeoutMs: 8_000 });
+  const hasOAuth = oauthCheck.code === 0 && /Account ID|Email|You are logged in/i.test(oauthCheck.stdout + oauthCheck.stderr);
+  const cfEnv: Record<string, string> = hasOAuth
+    ? {
+        CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
+        WRANGLER_LOG_SANITIZE: "false",
+      }
+    : {
+        CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
+        CLOUDFLARE_API_TOKEN: cfg.apiToken,
+        WRANGLER_LOG_SANITIZE: "false",
+      };
 
   // ── 1. Prereqs ─────────────────────────────────────────────────────
   yield { message: "Checking prerequisites…" };
@@ -279,6 +296,12 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   const ver = await runCmd("wrangler", ["--version"], { timeoutMs: 5000 });
   const verStr = (ver.stdout || ver.stderr).trim().split("\n")[0] ?? "(unknown)";
   yield { message: `wrangler ready (${verStr})`, ok: true };
+  yield {
+    message: hasOAuth
+      ? "Using wrangler OAuth session (full account access — best for Containers)"
+      : "Using CLOUDFLARE_API_TOKEN from your kimiflare config (limited to the token's scopes)",
+    ok: true,
+  };
   yield { message: "Prerequisites ready", ok: true };
 
   // ── 2. Clone repo ──────────────────────────────────────────────────
