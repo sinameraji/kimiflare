@@ -39,9 +39,12 @@
 
 1. **Worker has no web search.** The in-sandbox kimiflare run uses whatever tools are registered in the kimiflare CLI installed inside the container. If you want web search, the CLI needs the tool wired (separate work).
 2. **No worker-level cost ceiling enforcement.** The `budget.maxCostUsd` field is plumbed but not honored — the worker runs until kimiflare exits or the CLI-side `KIMIFLARE_WORKER_TIMEOUT_MS` (default 10 min) trips.
-3. **Sandbox isn't explicitly destroyed.** `rm -rf /workspace/repo /root/.config/kimiflare` runs in `finally`, but the Sandbox DurableObject itself persists until the platform recycles it. With `max_instances = 5` in `wrangler.toml` you can hit container exhaustion under load — bump that or add explicit destruction.
-4. **The kimiflare installed inside the container is whatever's on npm.** It does NOT include changes from this branch until you publish. The Dockerfile does `npm install -g kimiflare` at image build; for testing pre-release code, push a new image or `npm install -g kimiflare@<dist-tag>` inside the running sandbox before the agent runs (small post-clone step you could add).
-5. **The local copy at `~/kimiflare/remote/worker/` is now divergent and out of date.** That copy implemented the old "Workers AI one-shot, no sandbox" version. The canonical implementation lives in `~/kimiflare-web/remote/worker/`. The local copy can be deleted or left as a non-sandbox fallback. Either way, do not trust it.
+3. **Sandbox release is best-effort.** Cleanup tries `sandbox.destroy/stop/kill/shutdown` speculatively (the `@cloudflare/sandbox` API doesn't document an explicit release), then falls back to platform recycling. `max_instances` bumped to 20 in `wrangler.toml` to give headroom.
+
+### Recently closed
+- ~~kimiflare installed inside container was always-the-latest-npm~~ → request now takes an optional `kimiflareInstall` field; CLI passes `KIMIFLARE_CLI_REF` env (e.g. `github:owner/kimiflare#feat/branch`) to test pre-release code.
+- ~~`max_instances = 5` was tight~~ → bumped to 20.
+- ~~Stale local mirror at `~/kimiflare/remote/worker/`~~ → deleted; `build:worker` script removed from `package.json`. Canonical code is in `~/kimiflare-web/remote/worker/`.
 
 ## What I told you was done but wasn't
 

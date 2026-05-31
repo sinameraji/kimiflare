@@ -191,6 +191,13 @@ export class TurnSupervisor {
               owner: repo.owner,
               repo: repo.repo,
               baseBranch: w.baseBranch ?? repo.baseBranch,
+              // Optionally override the in-sandbox kimiflare install so the
+              // worker runs pre-release / branch code instead of the image-
+              // baked version. e.g. `kimiflare@latest`, `kimiflare@1.2.3`,
+              // `github:sinameraji/kimiflare#feat/foo`.
+              ...(process.env.KIMIFLARE_CLI_REF
+                ? { kimiflareInstall: process.env.KIMIFLARE_CLI_REF }
+                : {}),
               ...(w.mode === "execute"
                 ? {
                     branchName: w.branchName,
