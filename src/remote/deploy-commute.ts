@@ -195,6 +195,23 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   const workerDir = join(repoDir, "remote", "worker");
   const wranglerToml = join(workerDir, "wrangler.toml");
 
+  // 2b. Install dependencies in the cloned Worker — wrangler's bundler
+  // needs them at deploy time (e.g. @cloudflare/sandbox), and a fresh
+  // clone has no node_modules.
+  yield { message: "Installing Worker dependencies (npm install)…" };
+  const install = await runCmd("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: workerDir,
+    timeoutMs: 180_000,
+  });
+  if (install.code !== 0) {
+    yield {
+      message: `npm install failed in the cloned worker:\n${(install.stderr || install.stdout).slice(-1200).trim()}`,
+      error: true,
+    };
+    throw new Error("npm install failed");
+  }
+  yield { message: "Dependencies installed." };
+
   // ── 3a. Create or reuse the OAUTH_KV namespace in the user's account ─
   // First try to find an existing one. wrangler kv namespace list emits
   // JSON; parse it instead of grepping (field order isn't guaranteed).
