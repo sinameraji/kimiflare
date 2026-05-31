@@ -46,9 +46,13 @@ const COMMUTE_BRANCH = "main";
 /** Pre-published public sandbox image. Patched into the cloned wrangler.toml
  *  so the user doesn't need Docker to run wrangler deploy. */
 const PUBLIC_SANDBOX_IMAGE = "ghcr.io/sinameraji/kimiflare-remote-agent:latest";
-/** Worker name the kimiflare-commute wrangler.toml ships with. We use this to
- *  target the right Worker for tear-down. */
-const WORKER_NAME = "kimiflare-commute";
+/** Worker name kimiflare uses for its OWN multi-agent infra. Intentionally
+ *  distinct from the kimiflare-commute default — users may already have a
+ *  Worker named "kimiflare-commute" deployed for a different project (e.g.
+ *  the /remote terminal sessions feature), and we MUST NOT clobber it.
+ *  Also drives the KV namespace title + the tear-down target. */
+const WORKER_NAME = "kimiflare-multi-agent";
+const KV_TITLE = "kimiflare-multi-agent-OAUTH_KV";
 
 function generateSecret(): string {
   return randomBytes(32).toString("hex");
@@ -144,35 +148,51 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       "Verify the token is in your kimiflare config (`/init` if not),\n" +
       "or set CLOUDFLARE_API_TOKEN in your shell.";
   } else if (
-    // Plain "Forbidden" or anything mentioning containers/billing.
     /\bforbidden\b/i.test(combined) ||
-    /containers? .*(not enabled|disabled|denied|forbidden)/i.test(combined) ||
-    /workers paid/i.test(combined) ||
-    /billing/i.test(combined)
+    /containers? .*(not enabled|disabled|denied|forbidden)/i.test(combined)
   ) {
-    // Extract the wrangler log file path from the output so user can grep
-    // it for the real underlying cause (wrangler often returns bare
-    // "Forbidden" without a body for permission/feature-flag issues).
+    // Confirmed from a live debug run: the 403 originates from
+    //   POST /accounts/<id>/containers/applications
+    // with body `{ error: 'Authentication error' }`. Cloudflare's
+    // Workers Scripts:Edit scope does NOT cover the Containers API —
+    // that's a separate permission group.
+    const containersHit = /containers\/applications/i.test(combined);
     const logMatch = combined.match(/Logs were written to "([^"]+)"/);
     const logHint = logMatch
-      ? `\n\nFor the full Cloudflare API response (which has the real reason), check:\n  ${logMatch[1]}\n  tail -n 50 "${logMatch[1]}" | grep -iE "error|forbidden|denied|message"`
+      ? `\n\nFull Cloudflare API response is in:\n  ${logMatch[1]}\n  tail -n 80 "${logMatch[1]}" | grep -iE "error|forbidden|denied|status"`
       : "";
-    hint =
-      "\n\n⚠  Cloudflare returned a bare \"Forbidden\". The most common causes:\n" +
-      "\n" +
-      "  • Account isn't on Workers Paid ($5/mo) — required for Containers\n" +
-      "    (the /worker handler spawns a Cloudflare Sandbox = a Container).\n" +
-      "  • Containers feature not enabled on the account.\n" +
-      "  • Token is missing a scope the deploy needs (Workers Scripts:Edit,\n" +
-      "    Workers KV Storage:Edit, Account Settings:Read).\n" +
-      "  • The Worker already exists but its deployed migration history\n" +
-      "    diverged from the source (rare, but happens after manual edits).\n" +
-      "\n" +
-      "Fastest triage:\n" +
-      "  1. https://dash.cloudflare.com/ → Workers & Pages → confirm Paid plan\n" +
-      "  2. Open https://dash.cloudflare.com/profile/api-tokens → Edit your token →\n" +
-      "     confirm the scopes above are checked." +
-      logHint;
+    if (containersHit) {
+      hint =
+        "\n\n⚠  Cloudflare Containers API returned 403 (Authentication error).\n" +
+        "\n" +
+        "Your token has Workers Scripts:Edit but is missing the Containers\n" +
+        "permission. The Worker script uploaded fine; the failure is at the\n" +
+        "step where wrangler registers the container application.\n" +
+        "\n" +
+        "Fix:\n" +
+        "  1. https://dash.cloudflare.com/profile/api-tokens → edit the token\n" +
+        "     kimiflare is using\n" +
+        "  2. Add an Account permission whose name contains \"Container\"\n" +
+        "     (Cloudflare's exact label varies — look for \"Workers Builds\",\n" +
+        "     \"Cloudflare Workers Containers\", or similar in the picker)\n" +
+        "  3. Save (token value doesn't change) and retry (R)\n" +
+        "\n" +
+        "If no Containers permission appears in the picker for your account,\n" +
+        "Containers may not be enabled yet — turn it on at\n" +
+        "https://dash.cloudflare.com/?to=/:account/workers/containers" +
+        logHint;
+    } else {
+      hint =
+        "\n\n⚠  Cloudflare returned a bare \"Forbidden\". Common causes:\n" +
+        "\n" +
+        "  • Token missing a required scope (Workers Scripts:Edit,\n" +
+        "    Workers KV Storage:Edit, Account Settings:Read).\n" +
+        "  • Account isn't on Workers Paid plan ($5/mo).\n" +
+        "  • Sub-account with restricted features.\n" +
+        "\n" +
+        "Edit your token at https://dash.cloudflare.com/profile/api-tokens" +
+        logHint;
+    }
   }
   return `${cmd} failed:\n${tail}${hint}`;
 }
@@ -192,6 +212,11 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   const cfEnv: Record<string, string> = {
     CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
     CLOUDFLARE_API_TOKEN: cfg.apiToken,
+    // Surface the real Cloudflare API request + response bodies in
+    // wrangler's debug log. Otherwise a 403 just shows up as bare
+    // "Forbidden" with no clue which permission scope or feature flag
+    // is missing.
+    WRANGLER_LOG_SANITIZE: "false",
   };
 
   // ── 1. Prereqs ─────────────────────────────────────────────────────
