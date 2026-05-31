@@ -574,7 +574,7 @@ const handleMultiAgent: Handler = (ctx, rest, _arg) => {
   if (sub === "enable") {
     persist({ multiAgentEnabled: true }, "multi-agent enabled — Shift-Tab to switch modes");
     if (!cfg.workerEndpoint) {
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "tip: run /multi-agent endpoint <url> to configure your Commute endpoint" }]);
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "tip: run /multi-agent endpoint <url> to set your endpoint, or open /multi-agent and pick Set up to deploy one" }]);
     }
     return true;
   }

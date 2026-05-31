@@ -138,7 +138,7 @@ export class TurnSupervisor {
       ?? cfg?.remoteWorkerUrl;
     if (!endpoint) {
       throw new Error(
-        "Worker endpoint not configured. Run /multi-agent in the TUI (or /remote setup to auto-deploy).",
+        "Multi-agent endpoint not configured. Open /multi-agent and pick Set up to deploy one.",
       );
     }
 

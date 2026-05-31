@@ -138,7 +138,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // ── 2. Clone repo ──────────────────────────────────────────────────
   const tmpRoot = await mkdtemp(join(tmpdir(), "kimiflare-commute-"));
   const repoDir = join(tmpRoot, "kimiflare-commute");
-  yield { message: `Cloning ${COMMUTE_REPO}…` };
+  yield { message: `Fetching worker source from GitHub (${COMMUTE_REPO})…` };
   const clone = await runCmd("git", ["clone", "--depth", "1", "--branch", COMMUTE_BRANCH, COMMUTE_REPO, repoDir], { timeoutMs: 60_000 });
   if (clone.code !== 0) {
     yield { message: `git clone failed:\n${(clone.stderr || clone.stdout).slice(0, 400)}`, error: true };
@@ -235,6 +235,6 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // ── 7. Cleanup ─────────────────────────────────────────────────────
   await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 
-  yield { message: "Commute is live — /multi-agent is ready.", done: true };
+  yield { message: "Setup complete — multi-agent is ready to use.", done: true };
   return { workerEndpoint: workerUrl, workerApiKey };
 }

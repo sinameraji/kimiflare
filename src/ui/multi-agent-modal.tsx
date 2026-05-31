@@ -33,16 +33,16 @@ type Field = "enabled" | "endpoint" | "apiKey" | "autoExecute" | "cliRef" | "dep
 const FIELDS: Field[] = ["enabled", "endpoint", "apiKey", "autoExecute", "cliRef", "deploy"];
 
 const LABELS: Record<Field, string> = {
-  enabled:      "Enabled",
-  endpoint:     "Commute endpoint",
-  apiKey:       "Commute API key",
-  autoExecute:  "Auto-execute (4th agent)",
-  cliRef:       "In-sandbox kimiflare",
-  deploy:       "→ Deploy your own Commute",
+  enabled:      "Multi-agent mode",
+  endpoint:     "Endpoint",
+  apiKey:       "API key",
+  autoExecute:  "Auto-implement after research",
+  cliRef:       "kimiflare version (advanced)",
+  deploy:       "→ Set up (deploys to your Cloudflare account, one-time)",
 };
 
 const PLACEHOLDERS: Partial<Record<Field, string>> = {
-  endpoint: "https://<your-commute>.workers.dev",
+  endpoint: "https://<your-worker>.workers.dev",
   cliRef:   "github:owner/kimiflare#branch  or  kimiflare@1.2.3",
 };
 
@@ -154,12 +154,12 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     const v = currentStr(f);
     if (f === "endpoint") {
       if (v) return v;
-      if (remoteWorkerUrl) return `${remoteWorkerUrl}  (via /remote)`;
+      if (remoteWorkerUrl) return `${remoteWorkerUrl}  (from /remote)`;
       return "(not set)";
     }
     if (f === "apiKey") {
       if (v) return "(set)";
-      if (remoteAuthSecret) return "(via /remote)";
+      if (remoteAuthSecret) return "(from /remote)";
       return "(not set)";
     }
     if (!v) return "(not set)";

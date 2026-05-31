@@ -305,7 +305,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       void loadConfig().then((c) => {
         if (!c?.workerEndpoint) {
           cam.send("ShowToast", {
-            text: "tip: multi-agent needs a Commute endpoint. Run /multi-agent setup.",
+            text: "tip: multi-agent needs an endpoint — open /multi-agent and pick Set up.",
             kind: "warn",
             ttl_ms: 4000,
           });
@@ -338,12 +338,12 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         id: `ma-main-${Date.now()}`,
         prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
         options: [
-          { value: "enabled",     label: `Enabled                  ${fmtBool(cfg.multiAgentEnabled)}` },
-          { value: "endpoint",    label: `Commute endpoint         ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (via /remote)" : ""}` },
-          { value: "apiKey",      label: `Commute API key          ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (via /remote)" : ""}` },
-          { value: "autoExecute", label: `Auto-execute (4th agent) ${fmtBool(cfg.autoExecute)}` },
-          { value: "cliRef",      label: `In-sandbox kimiflare     ${fmtStr(cfg.cliRef)}` },
-          { value: "deploy",      label: `→ Deploy your own Commute (one-time setup)` },
+          { value: "enabled",     label: `Multi-agent mode       ${fmtBool(cfg.multiAgentEnabled)}` },
+          { value: "endpoint",    label: `Endpoint               ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
+          { value: "apiKey",      label: `API key                ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
+          { value: "autoExecute", label: `Auto-implement after research ${fmtBool(cfg.autoExecute)}` },
+          { value: "cliRef",      label: `kimiflare version (advanced) ${fmtStr(cfg.cliRef)}` },
+          { value: "deploy",      label: `→ Set up (deploys to your Cloudflare account, one-time)` },
           { value: "done",        label: "Done" },
         ],
         allow_cancel: true,
@@ -351,10 +351,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       if (main.cancelled || main.value === "done") return;
 
       if (main.value === "deploy") {
-        cam.send("ShowToast", { text: "deploying your Commute… progress in messages below", kind: "info", ttl_ms: 2000 });
+        cam.send("ShowToast", { text: "deploying… progress in messages below", kind: "info", ttl_ms: 2000 });
         const sid = `s${++streamCounter}`;
         cam.send("AssistantStreamStarted", { stream_id: sid });
-        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Deploying your own Commute\n\n" });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Setting up multi-agent\n\n" });
         try {
           for await (const step of deployCommute()) {
             const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
@@ -386,7 +386,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         if (!next.multiAgentEnabled && currentMode === "multi-agent-experimental") setMode("edit");
         cam.send("ShowToast", { text: `multi-agent ${next.multiAgentEnabled ? "enabled" : "disabled"}`, kind: "success", ttl_ms: 1500 });
         if (next.multiAgentEnabled && !cfg.workerEndpoint) {
-          cam.send("ShowToast", { text: "tip: set a Commute endpoint next", kind: "info", ttl_ms: 2500 });
+          cam.send("ShowToast", { text: "tip: set an endpoint next (pick Set up to deploy one)", kind: "info", ttl_ms: 2500 });
         }
         continue;
       }
@@ -412,8 +412,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       type StringFieldKey = "endpoint" | "apiKey" | "cliRef";
       const stringField = ((): { key: keyof KimiConfig; label: string; placeholder?: string; kind?: "password"; current: string } | null => {
         const k = main.value as StringFieldKey;
-        if (k === "endpoint")  return { key: "workerEndpoint", label: "Commute endpoint URL",                        placeholder: "https://<your-commute>.workers.dev", current: cfg.workerEndpoint ?? "" };
-        if (k === "apiKey")    return { key: "workerApiKey",   label: "Commute X-Worker-Api-Key (blank to clear)",   kind: "password",                                  current: cfg.workerApiKey  ?? "" };
+        if (k === "endpoint")  return { key: "workerEndpoint", label: "Endpoint URL",                                 placeholder: "https://<your-worker>.workers.dev",  current: cfg.workerEndpoint ?? "" };
+        if (k === "apiKey")    return { key: "workerApiKey",   label: "API key (blank to clear)",                     kind: "password",                                  current: cfg.workerApiKey  ?? "" };
         if (k === "cliRef")    return { key: "cliRef",         label: "kimiflare install override (blank = default)", placeholder: "github:owner/kimiflare#branch",      current: cfg.cliRef        ?? "" };
         return null;
       })();
