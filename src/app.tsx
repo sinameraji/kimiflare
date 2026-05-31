@@ -309,6 +309,21 @@ function App({
   const [draftInput, setDraftInput] = useState("");
 
   const [mode, setMode] = useState<Mode>("edit");
+  // Auto-open the /multi-agent settings modal the moment the user switches
+  // into multi-agent mode without an endpoint configured. Same fallback
+  // chain the supervisor uses (cfg.workerEndpoint, then cfg.remoteWorkerUrl).
+  useEffect(() => {
+    if (
+      mode === "multi-agent-experimental" &&
+      cfg &&
+      !cfg.workerEndpoint &&
+      !cfg.remoteWorkerUrl &&
+      !showMultiAgentModal
+    ) {
+      setShowMultiAgentModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cfg?.workerEndpoint, cfg?.remoteWorkerUrl]);
   const [codeMode, setCodeMode] = useState<boolean>(false);
   const filePickerEnabled = initialCfg?.filePicker ?? true;
   const [effort, setEffort] = useState<ReasoningEffort>(

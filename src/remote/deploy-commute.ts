@@ -43,6 +43,9 @@ const COMMUTE_BRANCH = "main";
 /** Pre-published public sandbox image. Patched into the cloned wrangler.toml
  *  so the user doesn't need Docker to run wrangler deploy. */
 const PUBLIC_SANDBOX_IMAGE = "ghcr.io/sinameraji/kimiflare-remote-agent:latest";
+/** Worker name the kimiflare-commute wrangler.toml ships with. We use this to
+ *  target the right Worker for tear-down. */
+const WORKER_NAME = "kimiflare-commute";
 
 function generateSecret(): string {
   return randomBytes(32).toString("hex");
@@ -312,4 +315,95 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
 
   yield { message: "Setup complete — multi-agent is ready to use.", done: true };
   return { workerEndpoint: workerUrl, workerApiKey };
+}
+
+/**
+ * Tear down the user's multi-agent infrastructure: delete the Worker,
+ * delete OAUTH_KV namespace(s) titled by the binding, clear cfg.
+ *
+ * Streams progress like deployCommute.
+ */
+export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void> {
+  const cfg = await loadConfig();
+  if (!cfg?.accountId || !cfg?.apiToken) {
+    yield { message: "Cloudflare credentials missing — nothing to tear down.", error: true };
+    throw new Error("missing CF creds");
+  }
+  const cfEnv: Record<string, string> = {
+    CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
+    CLOUDFLARE_API_TOKEN: cfg.apiToken,
+  };
+
+  if (!(await hasBinary("wrangler"))) {
+    yield { message: "wrangler not found. Install: npm install -g wrangler", error: true };
+    throw new Error("wrangler missing");
+  }
+
+  // 1. Delete the Worker. Pipe "y" to auto-confirm wrangler's interactive
+  //    "Are you sure?" prompt.
+  yield { message: `Deleting Worker "${WORKER_NAME}"…` };
+  const del = await runCmd("wrangler", ["delete", "--name", WORKER_NAME], {
+    env: cfEnv,
+    input: "y\n",
+    timeoutMs: 60_000,
+  });
+  if (del.code === 0) {
+    yield { message: "Worker deleted." };
+  } else {
+    const combined = (del.stdout + del.stderr).toLowerCase();
+    if (combined.includes("not found") || combined.includes("does not exist") || combined.includes("10007")) {
+      yield { message: "Worker not found (already deleted or never created)." };
+    } else {
+      yield {
+        message: explainWranglerFailure(`wrangler delete --name ${WORKER_NAME}`, del.stdout, del.stderr),
+        error: true,
+      };
+      // Don't throw — continue to KV + config cleanup so partial state can
+      // still be cleared. The error is surfaced above.
+    }
+  }
+
+  // 2. Find + delete OAUTH_KV namespace(s). User may have multiple from
+  //    prior failed deploys; delete all titled OAUTH_KV-ish.
+  yield { message: "Listing KV namespaces to find OAUTH_KV…" };
+  const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
+  if (kvList.code === 0) {
+    try {
+      const items = JSON.parse(kvList.stdout) as Array<{ id?: string; title?: string }>;
+      const targets = items.filter((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title));
+      if (targets.length === 0) {
+        yield { message: "No OAUTH_KV namespaces found." };
+      } else {
+        for (const t of targets) {
+          if (!t.id) continue;
+          yield { message: `Deleting KV namespace ${t.title} (${t.id.slice(0, 8)}…)` };
+          const r = await runCmd("wrangler", ["kv", "namespace", "delete", "--namespace-id", t.id], {
+            env: cfEnv,
+            input: "y\n",
+            timeoutMs: 30_000,
+          });
+          if (r.code !== 0) {
+            yield { message: `  (warning: ${(r.stderr || r.stdout).slice(0, 200)})` };
+          }
+        }
+      }
+    } catch {
+      yield { message: "(could not parse KV list — skipping KV cleanup)" };
+    }
+  } else {
+    yield { message: "(could not list KV namespaces — skipping KV cleanup)" };
+  }
+
+  // 3. Clear multi-agent fields from cfg.
+  yield { message: "Clearing local multi-agent config…" };
+  const next: KimiConfig = {
+    ...cfg,
+    workerEndpoint: undefined,
+    workerApiKey: undefined,
+    multiAgentEnabled: false,
+    autoExecute: false,
+  };
+  await saveConfig(next);
+
+  yield { message: "Tear-down complete — multi-agent is fully removed.", done: true };
 }

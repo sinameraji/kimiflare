@@ -41,7 +41,7 @@ import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import { classifyIntent } from "./intent/classify.js";
-import { deployCommute } from "./remote/deploy-commute.js";
+import { deployCommute, teardownCommute } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -300,15 +300,20 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     currentMode = next;
     cam.send("StatusUpdate", { segments: { mode: modeLabel(next) } });
     cam.send("ShowToast", { text: `mode: ${modeLabel(next)}`, kind: "info", ttl_ms: 1200 });
-    // Proactive tip if entering multi-agent without an endpoint configured.
+    // Auto-open the /multi-agent settings menu when the user switches to
+    // multi-agent without an endpoint configured (same fallback chain the
+    // supervisor uses). Otherwise they'd Shift-Tab in, send a heavy prompt,
+    // and only discover the missing config when the spawn errors out.
     if (next === "multi-agent-experimental") {
       void loadConfig().then((c) => {
-        if (!c?.workerEndpoint) {
+        const hasEndpoint = !!(c?.workerEndpoint || c?.remoteWorkerUrl);
+        if (!hasEndpoint) {
           cam.send("ShowToast", {
-            text: "tip: multi-agent needs an endpoint — open /multi-agent and pick Set up.",
-            kind: "warn",
-            ttl_ms: 4000,
+            text: "multi-agent needs setup — opening settings…",
+            kind: "info",
+            ttl_ms: 1500,
           });
+          void handleMultiAgentCommand(undefined);
         }
       }).catch(() => {});
     }
@@ -343,11 +348,46 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           { value: "workerSecret",label: `Worker secret                  ${fmtAutoSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
           { value: "autoExecute", label: `Auto-implement after research  ${fmtBool(cfg.autoExecute)}` },
           { value: "deploy",      label: `→ Set up (deploys to your Cloudflare account, one-time)` },
+          ...(effectiveEndpoint
+            ? [{ value: "teardown", label: `→ Tear down (delete from your Cloudflare account)` }]
+            : []),
           { value: "done",        label: "Done" },
         ],
         allow_cancel: true,
       });
       if (main.cancelled || main.value === "done") return;
+
+      if (main.value === "teardown") {
+        const confirm = await selectList(cam, {
+          id: `ma-teardown-${Date.now()}`,
+          prompt: "Tear down multi-agent? Deletes the Worker + KV namespace from your Cloudflare account.",
+          options: [
+            { value: "no",  label: "Cancel" },
+            { value: "yes", label: "Yes, tear down" },
+          ],
+          default: "no",
+          allow_cancel: true,
+        });
+        if (confirm.cancelled || confirm.value !== "yes") continue;
+        const sid = `s${++streamCounter}`;
+        cam.send("AssistantStreamStarted", { stream_id: sid });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Tearing down multi-agent\n\n" });
+        try {
+          for await (const step of teardownCommute()) {
+            const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
+            if (step.error) break;
+          }
+        } catch (err) {
+          cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ tear-down aborted: ${err instanceof Error ? err.message : String(err)}\n` });
+        }
+        cam.send("AssistantMessageCompleted", { stream_id: sid });
+        // If we tore down, mode should drop back to edit since multi-agent
+        // is now disabled in cfg.
+        if (currentMode === "multi-agent-experimental") setMode("edit");
+        multiAgentEnabled = false;
+        continue;
+      }
 
       if (main.value === "deploy") {
         cam.send("ShowToast", { text: "deploying… progress in messages below", kind: "info", ttl_ms: 2000 });

@@ -7,7 +7,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
-import { deployCommute } from "../remote/deploy-commute.js";
+import { deployCommute, teardownCommute } from "../remote/deploy-commute.js";
 
 export interface MultiAgentSettings {
   multiAgentEnabled?: boolean;
@@ -28,9 +28,7 @@ interface Props {
   remoteAuthSecret?: string;
 }
 
-type Field = "enabled" | "endpoint" | "workerSecret" | "autoExecute" | "deploy";
-
-const FIELDS: Field[] = ["enabled", "endpoint", "workerSecret", "autoExecute", "deploy"];
+type Field = "enabled" | "endpoint" | "workerSecret" | "autoExecute" | "deploy" | "teardown";
 
 const LABELS: Record<Field, string> = {
   enabled:      "Multi-agent mode",
@@ -38,6 +36,7 @@ const LABELS: Record<Field, string> = {
   workerSecret: "Worker secret",
   autoExecute:  "Auto-implement after research",
   deploy:       "→ Set up (deploys to your Cloudflare account, one-time)",
+  teardown:     "→ Tear down (delete from your Cloudflare account)",
 };
 
 const PLACEHOLDERS: Partial<Record<Field, string>> = {
@@ -71,6 +70,17 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     [state, onSave],
   );
 
+  // The field list is computed: hide "teardown" until an endpoint exists.
+  const hasEndpoint = !!(state.workerEndpoint || remoteWorkerUrl);
+  const fields: Field[] = [
+    "enabled",
+    "endpoint",
+    "workerSecret",
+    "autoExecute",
+    "deploy",
+    ...(hasEndpoint ? (["teardown"] as Field[]) : []),
+  ];
+
   const runDeploy = useCallback(async () => {
     setDeploying(true);
     setDeployLog(["Starting deploy…"]);
@@ -94,9 +104,39 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     }
   }, [persist]);
 
+  const [teardownConfirming, setTeardownConfirming] = useState(false);
+
+  const runTeardown = useCallback(async () => {
+    setDeploying(true);
+    setDeployLog(["Starting tear-down…"]);
+    try {
+      for await (const step of teardownCommute()) {
+        const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+        setDeployLog((l) => [...l, `${prefix}${step.message}`]);
+        if (step.done) {
+          persist({
+            workerEndpoint: undefined,
+            workerApiKey: undefined,
+            multiAgentEnabled: false,
+            autoExecute: false,
+          });
+        }
+        if (step.error) break;
+      }
+    } catch (err) {
+      setDeployLog((l) => [...l, `✗ ${err instanceof Error ? err.message : String(err)}`]);
+    } finally {
+      setDeploying(false);
+    }
+  }, [persist]);
+
   const beginEdit = useCallback((f: Field) => {
     if (f === "deploy") {
       void runDeploy();
+      return;
+    }
+    if (f === "teardown") {
+      setTeardownConfirming(true);
       return;
     }
     if (isBool(f)) {
@@ -123,8 +163,20 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   }, [editing, persist]);
 
   useInput(
-    (_input, key) => {
+    (input, key) => {
       if (deploying) return; // Ignore input during deploy
+      if (teardownConfirming) {
+        if (key.escape || input === "n" || input === "N") {
+          setTeardownConfirming(false);
+          return;
+        }
+        if (input === "y" || input === "Y" || key.return) {
+          setTeardownConfirming(false);
+          void runTeardown();
+          return;
+        }
+        return;
+      }
       if (editing) {
         if (key.escape) { setEditing(null); setEditValue(""); }
         return;
@@ -135,9 +187,9 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         return;
       }
       if (key.upArrow)   { setCursor((c) => Math.max(0, c - 1)); return; }
-      if (key.downArrow) { setCursor((c) => Math.min(FIELDS.length - 1, c + 1)); return; }
+      if (key.downArrow) { setCursor((c) => Math.min(fields.length - 1, c + 1)); return; }
       if (key.return) {
-        const f = FIELDS[cursor];
+        const f = fields[cursor];
         if (f) beginEdit(f);
       }
     },
@@ -168,7 +220,18 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         /multi-agent  ·  settings
       </Text>
 
-      {editing ? (
+      {teardownConfirming ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={theme.palette.error} bold>Tear down multi-agent?</Text>
+          <Text color={theme.palette.foreground}>
+            This deletes the Worker and OAUTH_KV namespace from your Cloudflare account,
+            and clears your local config.
+          </Text>
+          <Box marginTop={1}>
+            <Text dimColor>y to confirm · n or Esc to cancel</Text>
+          </Box>
+        </Box>
+      ) : editing ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={theme.palette.foreground}>{LABELS[editing]}:</Text>
           {PLACEHOLDERS[editing] ? (
@@ -190,7 +253,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
       ) : (
         <>
           <Box flexDirection="column" marginTop={1}>
-            {FIELDS.map((f, idx) => {
+            {fields.map((f, idx) => {
               const selected = idx === cursor;
               return (
                 <Box key={f}>
@@ -220,7 +283,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
             <Text dimColor>
               {deploying
                 ? "Deploying… please wait."
-                : `↑↓ to pick · Enter to ${FIELDS[cursor] === "deploy" ? "deploy" : isBool(FIELDS[cursor]!) ? "toggle" : "edit"} · Esc to close`}
+                : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
             </Text>
           </Box>
         </>
