@@ -7,7 +7,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
-import { deployCommute, teardownCommute } from "../remote/deploy-commute.js";
+import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "../remote/deploy-commute.js";
 import { openBrowser } from "./app-helpers.js";
 
 export interface MultiAgentSettings {
@@ -82,15 +82,20 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     ...(hasEndpoint ? (["teardown"] as Field[]) : []),
   ];
 
-  const runDeploy = useCallback(async () => {
+  // Picker state: when an existing kimiflare-* Worker is detected on the
+  // user's CF account, switch to a picker before deploying so they choose
+  // reuse vs. fresh.
+  const [pickerCandidates, setPickerCandidates] = useState<string[] | null>(null);
+  const [pickerCursor, setPickerCursor] = useState(0);
+
+  const startDeployWithName = useCallback(async (workerName?: string) => {
     setDeploying(true);
-    setDeployLog(["Starting deploy…"]);
+    setDeployLog([`Starting deploy${workerName ? ` to ${workerName}` : ""}…`]);
     try {
-      for await (const step of deployCommute()) {
+      for await (const step of deployCommute({ workerName })) {
         const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
         setDeployLog((l) => [...l, `${prefix}${step.message}`]);
         if (step.done) {
-          // Pull saved values back into local state so the field list shows them.
           persist({
             workerEndpoint: undefined, // re-read from cfg via parent on next open
             multiAgentEnabled: true,
@@ -104,6 +109,20 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
       setDeploying(false);
     }
   }, [persist]);
+
+  const runDeploy = useCallback(async () => {
+    // Discover candidates first; if any exist, show picker. Otherwise
+    // deploy straight to the default name.
+    setDeployLog(["Scanning your Cloudflare account for existing Workers…"]);
+    const existing = await findExistingCommuteWorkers().catch(() => [] as string[]);
+    if (existing.length > 0) {
+      setPickerCandidates(existing);
+      setPickerCursor(existing.length); // default to "create new" at the bottom
+      setDeployLog([]);
+      return;
+    }
+    await startDeployWithName();
+  }, [startDeployWithName]);
 
   const [teardownConfirming, setTeardownConfirming] = useState(false);
 
@@ -166,6 +185,20 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   useInput(
     (input, key) => {
       if (deploying) return; // Ignore input during deploy
+      if (pickerCandidates) {
+        const len = pickerCandidates.length + 1; // +1 for "create new"
+        if (key.escape) { setPickerCandidates(null); return; }
+        if (key.upArrow)   { setPickerCursor((c) => Math.max(0, c - 1)); return; }
+        if (key.downArrow) { setPickerCursor((c) => Math.min(len - 1, c + 1)); return; }
+        if (key.return) {
+          const chosen = pickerCursor < pickerCandidates.length
+            ? pickerCandidates[pickerCursor]
+            : undefined; // "create new" → undefined → default name
+          setPickerCandidates(null);
+          void startDeployWithName(chosen);
+        }
+        return;
+      }
       if (teardownConfirming) {
         if (key.escape || input === "n" || input === "N") {
           setTeardownConfirming(false);
@@ -240,7 +273,36 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         /multi-agent  ·  settings
       </Text>
 
-      {teardownConfirming ? (
+      {pickerCandidates ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={theme.accent} bold>Existing Workers found on your account</Text>
+          <Text dimColor>Pick one to deploy to, or create a new isolated Worker:</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {[
+              ...pickerCandidates.map((n, idx) => ({
+                key: n,
+                idx,
+                label: `Use existing: ${n}${n === "kimiflare-commute" ? "  (⚠  overwrites /remote infra)" : ""}`,
+              })),
+              {
+                key: "__new__",
+                idx: pickerCandidates.length,
+                label: "Create new: kimiflare-multi-agent  (recommended — isolated)",
+              },
+            ].map(({ key, idx, label }) => {
+              const selected = idx === pickerCursor;
+              return (
+                <Text key={key} color={selected ? theme.accent : theme.palette.foreground} bold={selected}>
+                  {selected ? "› " : "  "}{label}
+                </Text>
+              );
+            })}
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>↑↓ to pick · Enter to deploy · Esc to cancel</Text>
+          </Box>
+        </Box>
+      ) : teardownConfirming ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={theme.palette.error} bold>Tear down multi-agent?</Text>
           <Text color={theme.palette.foreground}>

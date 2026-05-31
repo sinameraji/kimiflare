@@ -41,7 +41,7 @@ import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import { classifyIntent } from "./intent/classify.js";
-import { deployCommute, teardownCommute } from "./remote/deploy-commute.js";
+import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -392,12 +392,37 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       }
 
       if (main.value === "deploy") {
+        // Before we deploy, look for existing kimiflare-* Workers on the
+        // user's account. If we find any, ask whether to reuse one or
+        // create the fresh kimiflare-multi-agent default — avoids silently
+        // overwriting a Worker that belongs to a different project.
+        cam.send("ShowToast", { text: "scanning your Cloudflare account…", kind: "info", ttl_ms: 1500 });
+        let chosenName: string | undefined;
+        const existing = await findExistingCommuteWorkers().catch(() => [] as string[]);
+        if (existing.length > 0) {
+          const pick = await selectList(cam, {
+            id: `ma-pick-${Date.now()}`,
+            prompt: `Found existing Worker${existing.length === 1 ? "" : "s"} on your account. Which one to deploy to?`,
+            options: [
+              ...existing.map((n) => ({
+                value: n,
+                label: `Use existing: ${n}${n === "kimiflare-commute" ? "  (⚠  overwrites /remote infra)" : ""}`,
+              })),
+              { value: "__new__", label: "Create new: kimiflare-multi-agent  (recommended — isolated)" },
+            ],
+            default: "__new__",
+            allow_cancel: true,
+          });
+          if (pick.cancelled) continue;
+          chosenName = pick.value === "__new__" ? undefined : pick.value;
+        }
+
         cam.send("ShowToast", { text: "deploying… see progress in the transcript", kind: "info", ttl_ms: 2000 });
         const sid = `s${++streamCounter}`;
         cam.send("AssistantStreamStarted", { stream_id: sid });
-        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Setting up multi-agent\n\n" });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: `# Setting up multi-agent on ${chosenName ?? "kimiflare-multi-agent"}\n\n` });
         try {
-          for await (const step of deployCommute()) {
+          for await (const step of deployCommute({ workerName: chosenName })) {
             const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
             cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
             if (step.error) break;

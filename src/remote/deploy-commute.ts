@@ -202,7 +202,45 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
  *  tokens page and spell out the scopes for the user. */
 const TOKEN_TEMPLATE_URL = "https://dash.cloudflare.com/profile/api-tokens";
 
-export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult, void> {
+/** Names of Workers already deployed on the user's CF account that look
+ *  like candidate multi-agent hosts (so the UI can offer "reuse one" vs
+ *  "create fresh"). Returns just the names that actually exist. */
+export async function findExistingCommuteWorkers(): Promise<string[]> {
+  const cfg = await loadConfig();
+  if (!cfg?.accountId || !cfg?.apiToken) return [];
+  const env = {
+    CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
+    CLOUDFLARE_API_TOKEN: cfg.apiToken,
+    WRANGLER_LOG_SANITIZE: "false",
+  };
+  const candidates = ["kimiflare-multi-agent", "kimiflare-commute"];
+  const exists: string[] = [];
+  for (const name of candidates) {
+    const r = await runCmd("wrangler", ["deployments", "list", "--name", name], {
+      env,
+      timeoutMs: 15_000,
+    });
+    if (r.code === 0 && !/(no deployments|could not find|not found)/i.test(r.stdout + r.stderr)) {
+      exists.push(name);
+    }
+  }
+  return exists;
+}
+
+export interface DeployOpts {
+  /** Override the Worker name. Defaults to "kimiflare-multi-agent". When the
+   *  user picks "reuse my existing kimiflare-commute" we pass that here so
+   *  the deploy updates their existing Worker instead of creating a new one. */
+  workerName?: string;
+}
+
+export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<DeployStep, DeployResult, void> {
+  const workerName = opts.workerName ?? WORKER_NAME;
+  // KV title is derived so reusing an existing Worker also reuses (or
+  // creates next to) a parallel-named KV namespace, avoiding cross-Worker
+  // KV pollution.
+  const kvTitle = workerName === WORKER_NAME ? KV_TITLE : `${workerName}-OAUTH_KV`;
+
   // ── 0. Load existing cfg to get CF creds ────────────────────────────
   const cfg = await loadConfig();
   if (!cfg?.accountId || !cfg?.apiToken) {
@@ -274,15 +312,20 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // First try to find an existing one. wrangler kv namespace list emits
   // JSON; parse it instead of grepping (field order isn't guaranteed).
   let finalKvId = "";
-  yield { message: "Looking up existing OAUTH_KV namespace…" };
+  yield { message: `Looking up KV namespace "${kvTitle}"…` };
   const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
   if (kvList.code === 0) {
     try {
       const items = JSON.parse(kvList.stdout) as Array<{ id?: string; title?: string }>;
-      const match = items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title));
+      // Prefer exact title match (the one specifically for this Worker).
+      // Falls back to any *OAUTH_KV-suffixed namespace so reusing a legacy
+      // deployment still works.
+      const match =
+        items.find((it) => it.title === kvTitle && it.id) ??
+        items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title) && it.id);
       if (match?.id) {
         finalKvId = match.id;
-        yield { message: `OAUTH_KV namespace ready (reused ${finalKvId.slice(0, 8)}…)`, ok: true };
+        yield { message: `KV namespace ready (reused ${match.title} ${finalKvId.slice(0, 8)}…)`, ok: true };
       }
     } catch {
       // Fall through to create.
@@ -298,8 +341,8 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   }
 
   if (!finalKvId) {
-    yield { message: "Creating OAUTH_KV namespace…" };
-    const kvCreate = await runCmd("wrangler", ["kv", "namespace", "create", "OAUTH_KV"], {
+    yield { message: `Creating KV namespace "${kvTitle}"…` };
+    const kvCreate = await runCmd("wrangler", ["kv", "namespace", "create", kvTitle], {
       cwd: workerDir,
       env: cfEnv,
       timeoutMs: 30_000,
@@ -321,8 +364,8 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // must NOT re-declare new_sqlite_classes on classes that already exist
   // (Cloudflare returns code 10074 "Cannot apply new-sqlite-class
   // migration to class … already depended on by existing Durable Objects").
-  yield { message: "Checking if a previous deployment exists…" };
-  const deployments = await runCmd("wrangler", ["deployments", "list", "--name", WORKER_NAME], {
+  yield { message: `Checking if "${workerName}" already exists…` };
+  const deployments = await runCmd("wrangler", ["deployments", "list", "--name", workerName], {
     env: cfEnv,
     timeoutMs: 30_000,
   });
@@ -331,8 +374,8 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     !/(no deployments|could not find|not found)/i.test(deployments.stdout + deployments.stderr);
   yield {
     message: workerExists
-      ? `Found existing Worker "${WORKER_NAME}" — preserving its migration history`
-      : "No existing Worker — will provision from scratch",
+      ? `Found existing Worker "${workerName}" — preserving its migration history`
+      : `No Worker named "${workerName}" — will provision from scratch`,
     ok: true,
   };
 
@@ -346,6 +389,8 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   //   collides with the deployed history.
   yield { message: "Patching wrangler.toml…" };
   let toml = await readFile(wranglerToml, "utf8");
+  // Set the Worker name to whatever the user chose (default or override).
+  toml = toml.replace(/^name\s*=\s*"[^"]+"/m, `name = "${workerName}"`);
   toml = toml.replace(
     /(\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"OAUTH_KV"[\s\S]*?id\s*=\s*")[^"]+(")/,
     `$1${finalKvId}$2`,
