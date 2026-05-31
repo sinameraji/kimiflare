@@ -28,22 +28,20 @@ interface Props {
   remoteAuthSecret?: string;
 }
 
-type Field = "enabled" | "endpoint" | "apiKey" | "autoExecute" | "cliRef" | "deploy";
+type Field = "enabled" | "endpoint" | "workerSecret" | "autoExecute" | "deploy";
 
-const FIELDS: Field[] = ["enabled", "endpoint", "apiKey", "autoExecute", "cliRef", "deploy"];
+const FIELDS: Field[] = ["enabled", "endpoint", "workerSecret", "autoExecute", "deploy"];
 
 const LABELS: Record<Field, string> = {
   enabled:      "Multi-agent mode",
   endpoint:     "Endpoint",
-  apiKey:       "API key",
+  workerSecret: "Worker secret",
   autoExecute:  "Auto-implement after research",
-  cliRef:       "kimiflare version (advanced)",
   deploy:       "→ Set up (deploys to your Cloudflare account, one-time)",
 };
 
 const PLACEHOLDERS: Partial<Record<Field, string>> = {
   endpoint: "https://<your-worker>.workers.dev",
-  cliRef:   "github:owner/kimiflare#branch  or  kimiflare@1.2.3",
 };
 
 export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remoteAuthSecret }: Props) {
@@ -59,9 +57,8 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   const currentBool = (f: Field): boolean =>
     f === "enabled" ? !!state.multiAgentEnabled : !!state.autoExecute;
   const currentStr = (f: Field): string => {
-    if (f === "endpoint") return state.workerEndpoint ?? "";
-    if (f === "apiKey")   return state.workerApiKey ?? "";
-    if (f === "cliRef")   return state.cliRef ?? "";
+    if (f === "endpoint")     return state.workerEndpoint ?? "";
+    if (f === "workerSecret") return state.workerApiKey ?? "";
     return "";
   };
 
@@ -119,8 +116,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     const trimmed = value.trim();
     const patch: MultiAgentSettings =
       editing === "endpoint" ? { workerEndpoint: trimmed || undefined }
-      : editing === "apiKey"  ? { workerApiKey:   trimmed || undefined }
-      :                          { cliRef:         trimmed || undefined };
+      :                         { workerApiKey:   trimmed || undefined };
     persist(patch);
     setEditing(null);
     setEditValue("");
@@ -157,10 +153,10 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
       if (remoteWorkerUrl) return `${remoteWorkerUrl}  (from /remote)`;
       return "(not set)";
     }
-    if (f === "apiKey") {
+    if (f === "workerSecret") {
       if (v) return "(set)";
       if (remoteAuthSecret) return "(from /remote)";
-      return "(not set)";
+      return "(auto-managed by Set up)";
     }
     if (!v) return "(not set)";
     return v;
@@ -183,7 +179,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
               value={editValue}
               onChange={setEditValue}
               onSubmit={finishEdit}
-              mask={editing === "apiKey" ? "*" : undefined}
+              mask={editing === "workerSecret" ? "*" : undefined}
               focus
             />
           </Box>

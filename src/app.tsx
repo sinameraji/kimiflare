@@ -192,7 +192,6 @@ export interface Cfg {
   workerEndpoint?: string;
   workerApiKey?: string;
   autoExecute?: boolean;
-  cliRef?: string;
 }
 function App({
   initialCfg,
@@ -2261,7 +2260,6 @@ function App({
           workerEndpoint: cfg.workerEndpoint,
           workerApiKey: cfg.workerApiKey,
           autoExecute: cfg.autoExecute,
-          cliRef: cfg.cliRef,
         } : undefined}
         onMultiAgentSave={(patch) => {
           if (!cfg) return;

@@ -599,28 +599,24 @@ const handleMultiAgent: Handler = (ctx, rest, _arg) => {
     persist({ workerEndpoint: value }, `endpoint set: ${value}`);
     return true;
   }
-  if (sub === "api-key") {
+  if (sub === "worker-secret" || sub === "api-key") {
+    // api-key kept as a deprecated alias.
     if (!value) {
-      setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "usage: /multi-agent api-key <key>" }]);
+      setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "usage: /multi-agent worker-secret <secret>" }]);
       return true;
     }
-    persist({ workerApiKey: value }, "api key set");
-    return true;
-  }
-  if (sub === "cli-ref") {
-    persist({ cliRef: value || undefined }, value ? `cli ref set: ${value}` : "cli ref cleared (image default)");
+    persist({ workerApiKey: value }, "worker secret set");
     return true;
   }
   if (sub === "status" || sub === "") {
     const lines = [
       "multi-agent status:",
-      `  enabled:      ${cfg.multiAgentEnabled ? "yes" : "no"}`,
-      `  endpoint:     ${cfg.workerEndpoint ?? "(not set)"}`,
-      `  api key:      ${cfg.workerApiKey ? "(set)" : "(not set)"}`,
-      `  auto-execute: ${cfg.autoExecute ? "yes" : "no"}`,
-      `  cli ref:      ${cfg.cliRef ?? "(image default)"}`,
+      `  enabled:        ${cfg.multiAgentEnabled ? "yes" : "no"}`,
+      `  endpoint:       ${cfg.workerEndpoint ?? "(not set)"}`,
+      `  worker secret:  ${cfg.workerApiKey ? "(set)" : "(auto-managed by Set up)"}`,
+      `  auto-implement: ${cfg.autoExecute ? "yes" : "no"}`,
       "",
-      "subcommands: enable | disable | execute | no-execute | endpoint <url> | api-key <key> | cli-ref <ref> | status",
+      "subcommands: enable | disable | execute | no-execute | endpoint <url> | worker-secret <secret> | status",
     ];
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: lines.join("\n") }]);
     return true;

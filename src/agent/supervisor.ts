@@ -146,7 +146,10 @@ export class TurnSupervisor {
       process.env.KIMIFLARE_WORKER_API_KEY
       ?? cfg?.workerApiKey
       ?? cfg?.remoteAuthSecret;
-    const cliRef = process.env.KIMIFLARE_CLI_REF ?? cfg?.cliRef;
+    // KIMIFLARE_CLI_REF stays as a dev/CI env override only — there's no
+    // config field or UI for it. End users always get the latest published
+    // kimiflare via the server's `npm install -g kimiflare@latest` step.
+    const cliRef = process.env.KIMIFLARE_CLI_REF;
     const maxParallel = Math.min(
       workers.length,
       parseInt(process.env.KIMIFLARE_WORKER_MAX_PARALLEL ?? "3", 10),

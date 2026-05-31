@@ -325,7 +325,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       };
       const fmtBool = (v: boolean | undefined) => (v ? "✓ on" : "✗ off");
       const fmtStr = (v: string | undefined) => (v && v.length > 0 ? v : "(not set)");
-      const fmtSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(not set)");
+      const fmtAutoSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(auto-managed by Set up)");
       // Same Commute worker hosts both /remote sessions and /multi-agent; if
       // the user already ran /remote setup we reuse those values so they
       // don't have to enter the endpoint twice.
@@ -338,11 +338,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         id: `ma-main-${Date.now()}`,
         prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
         options: [
-          { value: "enabled",     label: `Multi-agent mode       ${fmtBool(cfg.multiAgentEnabled)}` },
-          { value: "endpoint",    label: `Endpoint               ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
-          { value: "apiKey",      label: `API key                ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
-          { value: "autoExecute", label: `Auto-implement after research ${fmtBool(cfg.autoExecute)}` },
-          { value: "cliRef",      label: `kimiflare version (advanced) ${fmtStr(cfg.cliRef)}` },
+          { value: "enabled",     label: `Multi-agent mode               ${fmtBool(cfg.multiAgentEnabled)}` },
+          { value: "endpoint",    label: `Endpoint                       ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (from /remote)" : ""}` },
+          { value: "workerSecret",label: `Worker secret                  ${fmtAutoSecret(effectiveApiKey)}${apiKeyFromRemote ? " (from /remote)" : ""}` },
+          { value: "autoExecute", label: `Auto-implement after research  ${fmtBool(cfg.autoExecute)}` },
           { value: "deploy",      label: `→ Set up (deploys to your Cloudflare account, one-time)` },
           { value: "done",        label: "Done" },
         ],
@@ -409,12 +408,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       }
 
       // String fields: open a single-field form with the current value pre-filled.
-      type StringFieldKey = "endpoint" | "apiKey" | "cliRef";
+      type StringFieldKey = "endpoint" | "workerSecret";
       const stringField = ((): { key: keyof KimiConfig; label: string; placeholder?: string; kind?: "password"; current: string } | null => {
         const k = main.value as StringFieldKey;
-        if (k === "endpoint")  return { key: "workerEndpoint", label: "Endpoint URL",                                 placeholder: "https://<your-worker>.workers.dev",  current: cfg.workerEndpoint ?? "" };
-        if (k === "apiKey")    return { key: "workerApiKey",   label: "API key (blank to clear)",                     kind: "password",                                  current: cfg.workerApiKey  ?? "" };
-        if (k === "cliRef")    return { key: "cliRef",         label: "kimiflare install override (blank = default)", placeholder: "github:owner/kimiflare#branch",      current: cfg.cliRef        ?? "" };
+        if (k === "endpoint")     return { key: "workerEndpoint", label: "Endpoint URL",                              placeholder: "https://<your-worker>.workers.dev",  current: cfg.workerEndpoint ?? "" };
+        if (k === "workerSecret") return { key: "workerApiKey",   label: "Worker secret (blank to clear)",            kind: "password",                                  current: cfg.workerApiKey  ?? "" };
         return null;
       })();
       if (!stringField) continue;
