@@ -263,18 +263,22 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
     yield { message: "git not found. Install git and retry.", error: true };
     throw new Error("git missing");
   }
-  if (!(await hasBinary("wrangler"))) {
-    yield { message: "wrangler not found. Installing via npm…" };
-    const install = await runCmd("npm", ["install", "-g", "wrangler"], { timeoutMs: 120_000 });
-    if (install.code !== 0) {
-      yield {
-        message: `wrangler install failed. Install manually: npm install -g wrangler\n${install.stderr.slice(0, 300)}`,
-        error: true,
-      };
-      throw new Error("wrangler install failed");
-    }
-    yield { message: "wrangler installed.", ok: true };
+  // Always install/upgrade wrangler@latest. The Cloudflare Containers API
+  // is recent and the request/response shape has shifted between minor
+  // versions — running an older wrangler against the current API can yield
+  // bare 403s. Cheap insurance: upgrade on every deploy.
+  yield { message: "Installing/upgrading wrangler to latest…" };
+  const wranglerInstall = await runCmd("npm", ["install", "-g", "wrangler@latest"], { timeoutMs: 180_000 });
+  if (wranglerInstall.code !== 0) {
+    yield {
+      message: `wrangler install failed. Install manually: npm install -g wrangler@latest\n${wranglerInstall.stderr.slice(-600)}`,
+      error: true,
+    };
+    throw new Error("wrangler install failed");
   }
+  const ver = await runCmd("wrangler", ["--version"], { timeoutMs: 5000 });
+  const verStr = (ver.stdout || ver.stderr).trim().split("\n")[0] ?? "(unknown)";
+  yield { message: `wrangler ready (${verStr})`, ok: true };
   yield { message: "Prerequisites ready", ok: true };
 
   // ── 2. Clone repo ──────────────────────────────────────────────────
