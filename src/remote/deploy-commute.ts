@@ -147,6 +147,18 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       "\n\n⚠  Wrangler isn't picking up CLOUDFLARE_API_TOKEN.\n" +
       "Verify the token is in your kimiflare config (`/init` if not),\n" +
       "or set CLOUDFLARE_API_TOKEN in your shell.";
+  } else if (/IMAGE_REGISTRY_NOT_CONFIGURED/i.test(combined)) {
+    hint =
+      "\n\n⚠  Cloudflare rejected the container image:\n" +
+      "    IMAGE_REGISTRY_NOT_CONFIGURED\n" +
+      "\n" +
+      "Containers in your account can only pull from registries it knows about.\n" +
+      "By default that's just Cloudflare's managed registry — populated by\n" +
+      "`wrangler deploy` building your Dockerfile locally.\n" +
+      "\n" +
+      "Verify Docker is running:  docker --version  (then try R to retry).\n" +
+      "If you want to use an external registry instead, add it under\n" +
+      "Workers & Pages → <Worker> → Container registries in the dashboard.";
   } else if (
     /\bforbidden\b/i.test(combined) ||
     /containers? .*(not enabled|disabled|denied|forbidden)/i.test(combined)
@@ -279,6 +291,20 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   if (!(await hasBinary("git"))) {
     yield { message: "git not found. Install git and retry.", error: true };
     throw new Error("git missing");
+  }
+  // Docker is required because we ship the container image via `./Dockerfile`
+  // (wrangler builds locally and pushes to Cloudflare's managed registry).
+  // The "use a published public image" shortcut fails on accounts that
+  // haven't pre-configured an external registry (IMAGE_REGISTRY_NOT_CONFIGURED).
+  if (!(await hasBinary("docker"))) {
+    yield {
+      message:
+        "docker not found. Cloudflare Containers requires Docker for building\n" +
+        "the sandbox image locally. Install: https://docs.docker.com/get-docker/\n" +
+        "(macOS: `brew install --cask docker`)",
+      error: true,
+    };
+    throw new Error("docker missing");
   }
   // Always install/upgrade wrangler@latest. The Cloudflare Containers API
   // is recent and the request/response shape has shifted between minor
@@ -432,24 +458,25 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   };
 
   // ── 3b. Patch wrangler.toml ─────────────────────────────────────────
+  // - set Worker name to the chosen target
   // - inject the live KV namespace ID we just resolved
-  // - swap ./Dockerfile for the published public image (no Docker needed)
   // - strip the [[artifacts]] block (beta binding the user's wrangler may
   //   not recognize; worker-handler has a direct-GitHub-clone fallback)
   // - add a [[migrations]] block ONLY on fresh deploys; existing Workers
   //   already have their DOs created and re-declaring new_sqlite_classes
   //   collides with the deployed history.
+  // NOTE: we deliberately leave `image = "./Dockerfile"` alone. Wrangler
+  // builds it locally with Docker and pushes to Cloudflare's managed
+  // container registry. We tried pointing at a published public GHCR
+  // image to avoid the Docker requirement, but that fails with
+  // IMAGE_REGISTRY_NOT_CONFIGURED on accounts without a custom external
+  // registry configured. Docker is the supported path.
   yield { message: "Patching wrangler.toml…" };
   let toml = await readFile(wranglerToml, "utf8");
-  // Set the Worker name to whatever the user chose (default or override).
   toml = toml.replace(/^name\s*=\s*"[^"]+"/m, `name = "${workerName}"`);
   toml = toml.replace(
     /(\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"OAUTH_KV"[\s\S]*?id\s*=\s*")[^"]+(")/,
     `$1${finalKvId}$2`,
-  );
-  toml = toml.replace(
-    /image\s*=\s*"\.\/Dockerfile"/,
-    `image = "${PUBLIC_SANDBOX_IMAGE}"`,
   );
   // Strip [[artifacts]] block. Match the header + every following line
   // that isn't blank-then-section, until the next blank line or new [[.
@@ -464,8 +491,8 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   await writeFile(wranglerToml, toml, "utf8");
   yield {
     message: workerExists
-      ? "wrangler.toml patched (KV id, public image)"
-      : "wrangler.toml patched (KV id, public image, DO migrations)",
+      ? "wrangler.toml patched (name, KV id, [[artifacts]] stripped)"
+      : "wrangler.toml patched (name, KV id, [[artifacts]] stripped, DO migrations added)",
     ok: true,
   };
 
