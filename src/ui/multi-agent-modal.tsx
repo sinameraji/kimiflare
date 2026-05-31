@@ -8,6 +8,7 @@ import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
 import { deployCommute, teardownCommute } from "../remote/deploy-commute.js";
+import { openBrowser } from "./app-helpers.js";
 
 export interface MultiAgentSettings {
   multiAgentEnabled?: boolean;
@@ -186,6 +187,25 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         onDone();
         return;
       }
+      // When a deploy failed, give the user one-key shortcuts to fix the
+      // most common cause (missing token scopes) and retry without leaving
+      // the modal.
+      const deployFailed = deployLog.some((l) => l.startsWith("✗"));
+      if (deployFailed) {
+        if (input === "u" || input === "U") {
+          const url = deployLog
+            .map((l) => l.match(/https:\/\/dash\.cloudflare\.com\/[^\s)]+/)?.[0])
+            .find((u): u is string => !!u)
+            ?? "https://dash.cloudflare.com/profile/api-tokens";
+          openBrowser(url);
+          return;
+        }
+        if (input === "r" || input === "R") {
+          setDeployLog([]);
+          void runDeploy();
+          return;
+        }
+      }
       if (key.upArrow)   { setCursor((c) => Math.max(0, c - 1)); return; }
       if (key.downArrow) { setCursor((c) => Math.min(fields.length - 1, c + 1)); return; }
       if (key.return) {
@@ -265,25 +285,48 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
               );
             })}
           </Box>
-          {deployLog.length > 0 && (
-            <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={theme.info.color} paddingX={1}>
-              <Text color={theme.accent} bold>{deploying ? "Deploying…" : "Deploy log"}</Text>
-              {deployLog.slice(-12).map((line, i) => {
-                const isErr = line.startsWith("✗");
-                const isDone = line.startsWith("✓");
-                return (
-                  <Text key={i} color={isErr ? theme.palette.error : isDone ? theme.palette.success : theme.palette.foreground}>
-                    {line}
-                  </Text>
-                );
-              })}
-            </Box>
-          )}
+          {deployLog.length > 0 && (() => {
+            const failed = !deploying && deployLog.some((l) => l.startsWith("✗"));
+            // Find the CTA URL in the streamed log (the error hint shows the
+            // CF tokens page on its own line, prefixed with two spaces).
+            const ctaUrl = deployLog
+              .map((l) => l.match(/https:\/\/dash\.cloudflare\.com\/[^\s)]+/)?.[0])
+              .find((u): u is string => !!u)
+              ?? "https://dash.cloudflare.com/profile/api-tokens";
+            return (
+              <>
+                <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={failed ? theme.palette.error : theme.info.color} paddingX={1}>
+                  <Text color={theme.accent} bold>{deploying ? "Deploying…" : failed ? "Setup failed" : "Deploy log"}</Text>
+                  {deployLog.slice(-16).map((line, i) => {
+                    const isErr = line.startsWith("✗");
+                    const isDone = line.startsWith("✓");
+                    return (
+                      <Text key={i} color={isErr ? theme.palette.error : isDone ? theme.palette.success : theme.palette.foreground}>
+                        {line}
+                      </Text>
+                    );
+                  })}
+                </Box>
+                {failed && (
+                  <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.accent} paddingX={1}>
+                    <Text color={theme.accent} bold>Next steps</Text>
+                    <Text>1. Press <Text bold>U</Text> to open the Cloudflare token dashboard</Text>
+                    <Text>2. Create a token with the scopes above</Text>
+                    <Text>3. <Text>export CLOUDFLARE_API_TOKEN=&lt;new token&gt;</Text> in this shell</Text>
+                    <Text>4. Press <Text bold>R</Text> to retry, or Esc to close</Text>
+                    <Text dimColor>{ctaUrl}</Text>
+                  </Box>
+                )}
+              </>
+            );
+          })()}
           <Box marginTop={1}>
             <Text dimColor>
               {deploying
                 ? "Deploying… please wait."
-                : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
+                : deployLog.some((l) => l.startsWith("✗"))
+                  ? "U open CF tokens · R retry · Esc close"
+                  : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : fields[cursor] === "teardown" ? "tear down" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
             </Text>
           </Box>
         </>

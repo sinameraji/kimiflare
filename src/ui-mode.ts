@@ -381,16 +381,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         } catch (err) {
           cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ tear-down aborted: ${err instanceof Error ? err.message : String(err)}\n` });
         }
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "\n_Re-open with /multi-agent if you'd like to set up again._\n" });
         cam.send("AssistantMessageCompleted", { stream_id: sid });
         // If we tore down, mode should drop back to edit since multi-agent
         // is now disabled in cfg.
         if (currentMode === "multi-agent-experimental") setMode("edit");
         multiAgentEnabled = false;
-        continue;
+        // Exit the menu so the streamed log is visible in the transcript.
+        return;
       }
 
       if (main.value === "deploy") {
-        cam.send("ShowToast", { text: "deploying… progress in messages below", kind: "info", ttl_ms: 2000 });
+        cam.send("ShowToast", { text: "deploying… see progress in the transcript", kind: "info", ttl_ms: 2000 });
         const sid = `s${++streamCounter}`;
         cam.send("AssistantStreamStarted", { stream_id: sid });
         cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Setting up multi-agent\n\n" });
@@ -403,8 +405,11 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         } catch (err) {
           cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ deploy aborted: ${err instanceof Error ? err.message : String(err)}\n` });
         }
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "\n_Re-open with /multi-agent when ready._\n" });
         cam.send("AssistantMessageCompleted", { stream_id: sid });
-        continue;
+        // Exit the menu so the streamed log is visible in the transcript
+        // (the next selectList would otherwise cover it).
+        return;
       }
 
       if (main.value === "enabled") {
