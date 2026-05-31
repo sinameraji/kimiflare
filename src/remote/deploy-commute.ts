@@ -316,32 +316,38 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   // First try to find an existing one. wrangler kv namespace list emits
   // JSON; parse it instead of grepping (field order isn't guaranteed).
   let finalKvId = "";
-  yield { message: `Looking up KV namespace "${kvTitle}"…` };
-  const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
-  if (kvList.code === 0) {
-    try {
-      const items = JSON.parse(kvList.stdout) as Array<{ id?: string; title?: string }>;
-      // Prefer exact title match (the one specifically for this Worker).
-      // Falls back to any *OAUTH_KV-suffixed namespace so reusing a legacy
-      // deployment still works.
-      const match =
-        items.find((it) => it.title === kvTitle && it.id) ??
-        items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title) && it.id);
-      if (match?.id) {
-        finalKvId = match.id;
-        yield { message: `KV namespace ready (reused ${match.title} ${finalKvId.slice(0, 8)}…)`, ok: true };
-      }
-    } catch {
-      // Fall through to create.
+  // Find existing KV by title. wrangler can print warnings/version-update
+  // notices before the JSON array, so don't JSON.parse(stdout) directly —
+  // extract just the array portion.
+  const findKvByTitle = async (): Promise<{ id: string; title: string } | null> => {
+    const r = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
+    if (r.code !== 0) {
+      throw new Error(explainWranglerFailure("wrangler kv namespace list", r.stdout, r.stderr));
     }
-  } else {
-    // Listing failed — most likely token doesn't have KV permissions. Surface
-    // the actual wrangler stderr so the user can act on it.
-    yield {
-      message: explainWranglerFailure("wrangler kv namespace list", kvList.stdout, kvList.stderr),
-      error: true,
-    };
-    throw new Error("kv list failed");
+    const jsonMatch = r.stdout.match(/\[\s*{[\s\S]*}\s*\]/);
+    if (!jsonMatch) return null;
+    try {
+      const items = JSON.parse(jsonMatch[0]) as Array<{ id?: string; title?: string }>;
+      const exact = items.find((it) => it.title === kvTitle && it.id);
+      if (exact?.id && exact.title) return { id: exact.id, title: exact.title };
+      const legacy = items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title) && it.id);
+      if (legacy?.id && legacy.title) return { id: legacy.id, title: legacy.title };
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  yield { message: `Looking up KV namespace "${kvTitle}"…` };
+  try {
+    const existing = await findKvByTitle();
+    if (existing) {
+      finalKvId = existing.id;
+      yield { message: `KV namespace ready (reused ${existing.title} ${finalKvId.slice(0, 8)}…)`, ok: true };
+    }
+  } catch (err) {
+    yield { message: err instanceof Error ? err.message : String(err), error: true };
+    throw err;
   }
 
   if (!finalKvId) {
@@ -353,13 +359,32 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
     });
     finalKvId = extractKvId(kvCreate.stdout + "\n" + kvCreate.stderr) ?? "";
     if (!finalKvId) {
+      // Common case: namespace exists from a prior partial deploy and our
+      // lookup didn't catch it (e.g. wrangler output format drift). Re-list
+      // and try once more before giving up.
+      if (/already exists/i.test(kvCreate.stdout + kvCreate.stderr)) {
+        yield { message: "Namespace already exists — re-checking…" };
+        try {
+          const found = await findKvByTitle();
+          if (found?.id) {
+            finalKvId = found.id;
+            yield { message: `KV namespace ready (recovered ${found.title} ${finalKvId.slice(0, 8)}…)`, ok: true };
+          }
+        } catch { /* fall through to error */ }
+      }
+    }
+    if (!finalKvId) {
       yield {
-        message: explainWranglerFailure("wrangler kv namespace create OAUTH_KV", kvCreate.stdout, kvCreate.stderr),
+        message: explainWranglerFailure(`wrangler kv namespace create ${kvTitle}`, kvCreate.stdout, kvCreate.stderr),
         error: true,
       };
       throw new Error("kv create failed");
     }
-    yield { message: `OAUTH_KV namespace ready (created ${finalKvId.slice(0, 8)}…)`, ok: true };
+    if (!finalKvId.length) {
+      // unreachable but keeps tsc happy with the earlier ok-yield branch.
+    } else if (!/already exists/i.test(kvCreate.stdout + kvCreate.stderr)) {
+      yield { message: `KV namespace ready (created ${finalKvId.slice(0, 8)}…)`, ok: true };
+    }
   }
 
   // Detect whether a Worker with this name already exists on the user's
