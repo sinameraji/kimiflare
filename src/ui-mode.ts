@@ -374,7 +374,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Tearing down multi-agent\n\n" });
         try {
           for await (const step of teardownCommute()) {
-            const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+            const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
             cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
             if (step.error) break;
           }
@@ -398,7 +398,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Setting up multi-agent\n\n" });
         try {
           for await (const step of deployCommute()) {
-            const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+            const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
             cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
             if (step.error) break;
           }

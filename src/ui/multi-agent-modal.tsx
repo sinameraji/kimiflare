@@ -87,7 +87,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     setDeployLog(["Starting deploy…"]);
     try {
       for await (const step of deployCommute()) {
-        const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+        const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
         setDeployLog((l) => [...l, `${prefix}${step.message}`]);
         if (step.done) {
           // Pull saved values back into local state so the field list shows them.
@@ -112,7 +112,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     setDeployLog(["Starting tear-down…"]);
     try {
       for await (const step of teardownCommute()) {
-        const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+        const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
         setDeployLog((l) => [...l, `${prefix}${step.message}`]);
         if (step.done) {
           persist({

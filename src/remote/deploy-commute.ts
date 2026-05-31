@@ -29,7 +29,10 @@ import { loadConfig, saveConfig, type KimiConfig } from "../config.js";
 
 export interface DeployStep {
   message: string;
+  /** Terminal "all-done" — the generator is finished. */
   done?: boolean;
+  /** Per-step success indicator (renders as a green ✓). Doesn't end the loop. */
+  ok?: boolean;
   error?: boolean;
 }
 
@@ -141,27 +144,35 @@ function explainWranglerFailure(cmd: string, stdout: string, stderr: string): st
       "Verify the token is in your kimiflare config (`/init` if not),\n" +
       "or set CLOUDFLARE_API_TOKEN in your shell.";
   } else if (
-    // Plain "Forbidden" or anything mentioning containers/billing — the
-    // /worker handler spawns a Cloudflare Sandbox, which requires the
-    // Containers feature, which requires Workers Paid on the account.
+    // Plain "Forbidden" or anything mentioning containers/billing.
     /\bforbidden\b/i.test(combined) ||
     /containers? .*(not enabled|disabled|denied|forbidden)/i.test(combined) ||
     /workers paid/i.test(combined) ||
     /billing/i.test(combined)
   ) {
+    // Extract the wrangler log file path from the output so user can grep
+    // it for the real underlying cause (wrangler often returns bare
+    // "Forbidden" without a body for permission/feature-flag issues).
+    const logMatch = combined.match(/Logs were written to "([^"]+)"/);
+    const logHint = logMatch
+      ? `\n\nFor the full Cloudflare API response (which has the real reason), check:\n  ${logMatch[1]}\n  tail -n 50 "${logMatch[1]}" | grep -iE "error|forbidden|denied|message"`
+      : "";
     hint =
-      "\n\n⚠  Most likely cause: this Cloudflare account doesn't have Containers enabled.\n" +
+      "\n\n⚠  Cloudflare returned a bare \"Forbidden\". The most common causes:\n" +
       "\n" +
-      "The multi-agent Worker spawns a Cloudflare Sandbox, which is a Container.\n" +
-      "Containers require the Workers Paid plan ($5/mo) and an active subscription.\n" +
+      "  • Account isn't on Workers Paid ($5/mo) — required for Containers\n" +
+      "    (the /worker handler spawns a Cloudflare Sandbox = a Container).\n" +
+      "  • Containers feature not enabled on the account.\n" +
+      "  • Token is missing a scope the deploy needs (Workers Scripts:Edit,\n" +
+      "    Workers KV Storage:Edit, Account Settings:Read).\n" +
+      "  • The Worker already exists but its deployed migration history\n" +
+      "    diverged from the source (rare, but happens after manual edits).\n" +
       "\n" +
-      "Check / enable:\n" +
-      "  1. https://dash.cloudflare.com/ → Workers & Pages → Plans → Upgrade to Paid\n" +
-      "  2. https://dash.cloudflare.com/ → Workers & Pages → Containers (verify available)\n" +
-      "  3. Confirm your account isn't a sub-account with restricted features\n" +
-      "\n" +
-      "Then re-run /multi-agent → Set up. If you do not want to pay for Workers,\n" +
-      "this feature is not usable on the free tier.";
+      "Fastest triage:\n" +
+      "  1. https://dash.cloudflare.com/ → Workers & Pages → confirm Paid plan\n" +
+      "  2. Open https://dash.cloudflare.com/profile/api-tokens → Edit your token →\n" +
+      "     confirm the scopes above are checked." +
+      logHint;
   }
   return `${cmd} failed:\n${tail}${hint}`;
 }
@@ -199,9 +210,9 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
       };
       throw new Error("wrangler install failed");
     }
-    yield { message: "wrangler installed." };
+    yield { message: "wrangler installed.", ok: true };
   }
-  yield { message: "Prereqs OK." };
+  yield { message: "Prerequisites ready", ok: true };
 
   // ── 2. Clone repo ──────────────────────────────────────────────────
   const tmpRoot = await mkdtemp(join(tmpdir(), "kimiflare-commute-"));
@@ -212,7 +223,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     yield { message: `git clone failed:\n${(clone.stderr || clone.stdout).slice(0, 400)}`, error: true };
     throw new Error("clone failed");
   }
-  yield { message: "Source cloned." };
+  yield { message: "Source fetched from GitHub", ok: true };
 
   const workerDir = join(repoDir, "remote", "worker");
   const wranglerToml = join(workerDir, "wrangler.toml");
@@ -232,7 +243,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     };
     throw new Error("npm install failed");
   }
-  yield { message: "Dependencies installed." };
+  yield { message: "Worker dependencies installed", ok: true };
 
   // ── 3a. Create or reuse the OAUTH_KV namespace in the user's account ─
   // First try to find an existing one. wrangler kv namespace list emits
@@ -246,7 +257,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
       const match = items.find((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title));
       if (match?.id) {
         finalKvId = match.id;
-        yield { message: `Reusing existing namespace ${match.title} (${finalKvId.slice(0, 8)}…).` };
+        yield { message: `OAUTH_KV namespace ready (reused ${finalKvId.slice(0, 8)}…)`, ok: true };
       }
     } catch {
       // Fall through to create.
@@ -276,7 +287,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
       };
       throw new Error("kv create failed");
     }
-    yield { message: `Created namespace ${finalKvId.slice(0, 8)}….` };
+    yield { message: `OAUTH_KV namespace ready (created ${finalKvId.slice(0, 8)}…)`, ok: true };
   }
 
   // Detect whether a Worker with this name already exists on the user's
@@ -293,7 +304,12 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   const workerExists =
     deployments.code === 0 &&
     !/(no deployments|could not find|not found)/i.test(deployments.stdout + deployments.stderr);
-  yield { message: workerExists ? `Found existing Worker "${WORKER_NAME}" — preserving its migration history.` : "No existing Worker; will provision from scratch." };
+  yield {
+    message: workerExists
+      ? `Found existing Worker "${WORKER_NAME}" — preserving its migration history`
+      : "No existing Worker — will provision from scratch",
+    ok: true,
+  };
 
   // ── 3b. Patch wrangler.toml ─────────────────────────────────────────
   // - inject the live KV namespace ID we just resolved
@@ -326,8 +342,9 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   await writeFile(wranglerToml, toml, "utf8");
   yield {
     message: workerExists
-      ? "wrangler.toml patched (KV id, public image)."
-      : "wrangler.toml patched (KV id, public image, DO migrations).",
+      ? "wrangler.toml patched (KV id, public image)"
+      : "wrangler.toml patched (KV id, public image, DO migrations)",
+    ok: true,
   };
 
   // ── 4. Generate + set the WORKER_API_KEY secret ────────────────────
@@ -351,6 +368,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
   // doesn't carry the user's creds).
   await runCmd("wrangler", ["secret", "put", "ACCOUNT_ID"],   { cwd: workerDir, env: cfEnv, input: cfg.accountId + "\n", timeoutMs: 30_000 });
   await runCmd("wrangler", ["secret", "put", "CF_API_TOKEN"], { cwd: workerDir, env: cfEnv, input: cfg.apiToken + "\n",  timeoutMs: 30_000 });
+  yield { message: "Worker secrets uploaded (WORKER_API_KEY, ACCOUNT_ID, CF_API_TOKEN)", ok: true };
 
   // ── 5. Deploy ──────────────────────────────────────────────────────
   yield { message: "Deploying Worker (this can take ~30s)…" };
@@ -371,7 +389,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     yield { message: "Deploy succeeded but couldn't parse the Worker URL — set it manually via /multi-agent.", error: true };
     throw new Error("url parse failed");
   }
-  yield { message: `Deployed: ${workerUrl}` };
+  yield { message: `Worker deployed at ${workerUrl}`, ok: true };
 
   // ── 6. Persist to cfg ──────────────────────────────────────────────
   const next: KimiConfig = {
@@ -381,7 +399,7 @@ export async function* deployCommute(): AsyncGenerator<DeployStep, DeployResult,
     multiAgentEnabled: true,
   };
   await saveConfig(next);
-  yield { message: "Saved to ~/.config/kimiflare/config.json." };
+  yield { message: "Saved to ~/.config/kimiflare/config.json", ok: true };
 
   // ── 7. Cleanup ─────────────────────────────────────────────────────
   await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
@@ -421,11 +439,11 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
     timeoutMs: 60_000,
   });
   if (del.code === 0) {
-    yield { message: "Worker deleted." };
+    yield { message: `Worker "${WORKER_NAME}" deleted`, ok: true };
   } else {
     const combined = (del.stdout + del.stderr).toLowerCase();
     if (combined.includes("not found") || combined.includes("does not exist") || combined.includes("10007")) {
-      yield { message: "Worker not found (already deleted or never created)." };
+      yield { message: "Worker not found (already deleted or never created)", ok: true };
     } else {
       yield {
         message: explainWranglerFailure(`wrangler delete --name ${WORKER_NAME}`, del.stdout, del.stderr),
@@ -445,18 +463,19 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
       const items = JSON.parse(kvList.stdout) as Array<{ id?: string; title?: string }>;
       const targets = items.filter((it) => typeof it.title === "string" && /OAUTH_KV$/i.test(it.title));
       if (targets.length === 0) {
-        yield { message: "No OAUTH_KV namespaces found." };
+        yield { message: "No OAUTH_KV namespaces found (nothing to delete)", ok: true };
       } else {
         for (const t of targets) {
           if (!t.id) continue;
-          yield { message: `Deleting KV namespace ${t.title} (${t.id.slice(0, 8)}…)` };
           const r = await runCmd("wrangler", ["kv", "namespace", "delete", "--namespace-id", t.id], {
             env: cfEnv,
             input: "y\n",
             timeoutMs: 30_000,
           });
-          if (r.code !== 0) {
-            yield { message: `  (warning: ${(r.stderr || r.stdout).slice(0, 200)})` };
+          if (r.code === 0) {
+            yield { message: `KV namespace ${t.title} deleted (${t.id.slice(0, 8)}…)`, ok: true };
+          } else {
+            yield { message: `KV namespace ${t.title} delete warning: ${(r.stderr || r.stdout).slice(0, 200)}` };
           }
         }
       }
@@ -468,7 +487,6 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
   }
 
   // 3. Clear multi-agent fields from cfg.
-  yield { message: "Clearing local multi-agent config…" };
   const next: KimiConfig = {
     ...cfg,
     workerEndpoint: undefined,
@@ -477,6 +495,7 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
     autoExecute: false,
   };
   await saveConfig(next);
+  yield { message: "Local multi-agent config cleared", ok: true };
 
   yield { message: "Tear-down complete — multi-agent is fully removed.", done: true };
 }
