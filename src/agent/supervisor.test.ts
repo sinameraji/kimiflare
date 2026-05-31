@@ -138,13 +138,32 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
 });
 
 describe("decomposePrompt", () => {
-  it("splits a comma/and list into multiple workers", () => {
-    const workers = decomposePrompt("research OAuth2, testing, and migration", "ctx");
-    assert.ok(workers.length >= 2);
-    assert.ok(workers.length <= 4);
+  it("splits an explicit numbered list into one worker per item", () => {
+    const workers = decomposePrompt(
+      "Research the following:\n1. caching strategies\n2. testing approaches\n3. migration paths",
+      "ctx",
+    );
+    assert.strictEqual(workers.length, 3);
+    assert.ok(workers[0]?.task.includes("caching"));
+    assert.ok(workers[1]?.task.includes("testing"));
+    assert.ok(workers[2]?.task.includes("migration"));
+  });
+
+  it("splits an explicit bulleted list", () => {
+    const workers = decomposePrompt("Look at:\n- auth\n- routing\n- billing", "ctx");
+    assert.strictEqual(workers.length, 3);
+  });
+
+  // Regression: previously chopped this prose prompt into 3 nonsense fragments
+  // by splitting on every "and". The user's "and" is grammatical conjunction,
+  // not a list separator — workers must see the whole prompt.
+  it("does NOT split a cohesive prose prompt on conjunctions", () => {
+    const prompt =
+      "do heavy exploration and research in this project and identify 1 high leverage large idea";
+    const workers = decomposePrompt(prompt, "ctx");
+    assert.strictEqual(workers.length, 2);
     for (const w of workers) {
-      assert.strictEqual(w.mode, "plan");
-      assert.ok(w.task.length > 0);
+      assert.ok(w.task.includes(prompt), `expected full prompt preserved: ${w.task}`);
     }
   });
 

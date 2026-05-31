@@ -344,42 +344,37 @@ export class TurnSupervisor {
   }
 }
 
-/** Simple heuristic to decompose a heavy prompt into parallel research tasks.
+/** Conservative heuristic to decompose a heavy prompt into parallel research tasks.
  *
- * Looks for:
- * - Lists: "research X, Y, and Z" → 3 workers
- * - Conjunctions: "research X and Y" → 2 workers
- * - Fallback: 2 workers with different angles (overview + deep-dive)
+ * Only splits the prompt when the user gave EXPLICIT list structure — numbered
+ * (`1. … 2. … 3. …`) or bulleted (`- …`/`* …`) — because that's the only
+ * cheap signal that's reliably a list. Earlier this also split on any
+ * conjunction or comma, which chopped cohesive sentences like "do heavy
+ * exploration AND research IN this project AND identify…" into nonsense
+ * fragments.
+ *
+ * For prose prompts (no explicit list), spawn 2 workers with the FULL prompt
+ * preserved and different angles. The synthesizer dedups overlapping findings,
+ * so two well-formed angles beat N fragmented ones.
  */
 export function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
-  // Try to find comma-separated or "and"-separated research topics
-  const listMatch = prompt.match(/research\s+(.+?)(?:\s+and\s+|,\s+)(.+)/i);
-  if (listMatch) {
-    const parts = prompt
-      .replace(/research\s+/i, "")
-      .split(/\s+and\s+|,\s+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (parts.length >= 2) {
-      return parts.slice(0, 4).map((task) => ({
-        mode: "plan" as const,
-        task: `Research ${task}`,
-        context,
-      }));
-    }
+  const items = extractListItems(prompt);
+  if (items.length >= 2) {
+    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
   }
-
-  // Fallback: 2 workers with different angles
   return [
-    {
-      mode: "plan",
-      task: `Research overview and best practices for: ${prompt}`,
-      context,
-    },
-    {
-      mode: "plan",
-      task: `Research implementation details and migration path for: ${prompt}`,
-      context,
-    },
+    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
+    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
   ];
+}
+
+/** Pull explicit list items from a prompt: numbered (`1. …`, `1) …`) or
+ *  bulleted (`- …`, `* …`, `• …`). Returns trimmed item bodies, or [] when
+ *  no clear list structure is present. */
+function extractListItems(prompt: string): string[] {
+  const numbered = [...prompt.matchAll(/(?:^|\n)\s*\d+[.)]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
+  if (numbered.length >= 2) return numbered.filter((s) => s.length > 0);
+  const bulleted = [...prompt.matchAll(/(?:^|\n)\s*[-*•]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
+  if (bulleted.length >= 2) return bulleted.filter((s) => s.length > 0);
+  return [];
 }
