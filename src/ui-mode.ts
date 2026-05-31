@@ -313,129 +313,98 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   };
 
-  /** /multi-agent subcommand dispatcher.
-   *  No args / `setup` → open a form to capture endpoint + api key + cli ref.
-   *  `enable` / `disable` → toggle multiAgentEnabled.
-   *  `execute` / `no-execute` → toggle autoExecute (the 4th agent).
-   *  `status` → show current settings as a toast. */
-  async function handleMultiAgentCommand(args: string | undefined): Promise<void> {
-    const sub = (args ?? "").trim().toLowerCase();
-    const current = (await loadConfig().catch(() => null)) ?? {
-      accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model,
-    };
+  /** /multi-agent — proper settings TUI.
+   *  Looping menu: each option shows its current value; selecting one drills
+   *  in (toggle picker for booleans, text/password form for strings); ESC at
+   *  any point exits. */
+  async function handleMultiAgentCommand(_args: string | undefined): Promise<void> {
+    while (true) {
+      const cfg = (await loadConfig().catch(() => null)) ?? {
+        accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model,
+      };
+      const fmtBool = (v: boolean | undefined) => (v ? "✓ on" : "✗ off");
+      const fmtStr = (v: string | undefined) => (v && v.length > 0 ? v : "(not set)");
+      const fmtSecret = (v: string | undefined) => (v && v.length > 0 ? "(set)" : "(not set)");
 
-    if (sub === "enable") {
-      await saveConfig({ ...current, multiAgentEnabled: true });
-      multiAgentEnabled = true;
-      cam.send("ShowToast", { text: "multi-agent enabled — Shift-Tab to switch modes", kind: "success", ttl_ms: 2500 });
-      if (!current.workerEndpoint) {
-        cam.send("ShowToast", { text: "tip: run /multi-agent setup to configure your Commute endpoint", kind: "info", ttl_ms: 3500 });
+      const main = await selectList(cam, {
+        id: `ma-main-${Date.now()}`,
+        prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
+        options: [
+          { value: "enabled",     label: `Enabled                ${fmtBool(cfg.multiAgentEnabled)}` },
+          { value: "endpoint",    label: `Commute endpoint       ${fmtStr(cfg.workerEndpoint)}` },
+          { value: "apiKey",      label: `Commute API key        ${fmtSecret(cfg.workerApiKey)}` },
+          { value: "autoExecute", label: `Auto-execute (4th agent) ${fmtBool(cfg.autoExecute)}` },
+          { value: "cliRef",      label: `In-sandbox kimiflare    ${fmtStr(cfg.cliRef)}` },
+          { value: "done",        label: "Done" },
+        ],
+        allow_cancel: true,
+      });
+      if (main.cancelled || main.value === "done") return;
+
+      if (main.value === "enabled") {
+        const pick = await selectList(cam, {
+          id: `ma-enabled-${Date.now()}`,
+          prompt: "Enable multi-agent in the Shift-Tab cycle?",
+          options: [
+            { value: "on",  label: "✓ Enable" },
+            { value: "off", label: "✗ Disable" },
+          ],
+          default: cfg.multiAgentEnabled ? "on" : "off",
+          allow_cancel: true,
+        });
+        if (pick.cancelled) continue;
+        const next = { ...cfg, multiAgentEnabled: pick.value === "on" };
+        await saveConfig(next);
+        multiAgentEnabled = !!next.multiAgentEnabled;
+        if (!next.multiAgentEnabled && currentMode === "multi-agent-experimental") setMode("edit");
+        cam.send("ShowToast", { text: `multi-agent ${next.multiAgentEnabled ? "enabled" : "disabled"}`, kind: "success", ttl_ms: 1500 });
+        if (next.multiAgentEnabled && !cfg.workerEndpoint) {
+          cam.send("ShowToast", { text: "tip: set a Commute endpoint next", kind: "info", ttl_ms: 2500 });
+        }
+        continue;
       }
-      return;
-    }
-    if (sub === "disable") {
-      await saveConfig({ ...current, multiAgentEnabled: false });
-      multiAgentEnabled = false;
-      if (currentMode === "multi-agent-experimental") setMode("edit");
-      cam.send("ShowToast", { text: "multi-agent disabled", kind: "info", ttl_ms: 2000 });
-      return;
-    }
-    if (sub === "execute") {
-      await saveConfig({ ...current, autoExecute: true });
-      cam.send("ShowToast", { text: "auto-execute on — after research, a 4th worker will implement + open a PR", kind: "success", ttl_ms: 3000 });
-      return;
-    }
-    if (sub === "no-execute") {
-      await saveConfig({ ...current, autoExecute: false });
-      cam.send("ShowToast", { text: "auto-execute off — research only", kind: "info", ttl_ms: 2000 });
-      return;
-    }
-    if (sub === "status") {
-      const lines = [
-        `enabled: ${current.multiAgentEnabled ? "yes" : "no"}`,
-        `endpoint: ${current.workerEndpoint ?? "(not set)"}`,
-        `api key: ${current.workerApiKey ? "(set)" : "(not set)"}`,
-        `auto-execute: ${current.autoExecute ? "yes" : "no"}`,
-        `cli ref: ${current.cliRef ?? "(image default)"}`,
-      ];
-      cam.send("ShowToast", { text: lines.join("\n"), kind: "info", ttl_ms: 6000 });
-      return;
-    }
-    if (sub && sub !== "setup") {
-      cam.send("ShowToast", { text: `unknown subcommand: ${sub}. Try /multi-agent (setup|enable|disable|execute|no-execute|status)`, kind: "error", ttl_ms: 4000 });
-      return;
-    }
 
-    // Default / "setup": open a form.
-    const f = await form(cam, {
-      id: `multi-agent-${Date.now()}`,
-      title: "/multi-agent  ·  configure Commute worker",
-      fields: [
-        {
-          name: "endpoint",
-          label: "Commute endpoint URL (https://<your-commute>.workers.dev)",
-          default: current.workerEndpoint ?? "",
-          required: true,
-        },
-        {
-          name: "apiKey",
-          label: "Commute X-Worker-Api-Key (optional)",
-          kind: "password",
-          default: current.workerApiKey ?? "",
-        },
-        {
-          name: "cliRef",
-          label: "kimiflare install override (optional — e.g. github:user/kimiflare#branch)",
-          default: current.cliRef ?? "",
-        },
-      ],
-      allow_cancel: true,
-    });
-    if (f.cancelled || !f.values) return;
-    const endpoint = (f.values.endpoint ?? "").trim();
-    if (!endpoint) {
-      cam.send("ShowToast", { text: "endpoint is required", kind: "error", ttl_ms: 2500 });
-      return;
+      if (main.value === "autoExecute") {
+        const pick = await selectList(cam, {
+          id: `ma-autoexec-${Date.now()}`,
+          prompt: "After research, auto-spawn an executor that implements + opens a PR?",
+          options: [
+            { value: "on",  label: "✓ On  — auto-execute (creates real PRs!)" },
+            { value: "off", label: "✗ Off — research only" },
+          ],
+          default: cfg.autoExecute ? "on" : "off",
+          allow_cancel: true,
+        });
+        if (pick.cancelled) continue;
+        await saveConfig({ ...cfg, autoExecute: pick.value === "on" });
+        cam.send("ShowToast", { text: `auto-execute ${pick.value === "on" ? "on" : "off"}`, kind: "success", ttl_ms: 1500 });
+        continue;
+      }
+
+      // String fields: open a single-field form with the current value pre-filled.
+      type StringFieldKey = "endpoint" | "apiKey" | "cliRef";
+      const stringField = ((): { key: keyof KimiConfig; label: string; placeholder?: string; kind?: "password"; current: string } | null => {
+        const k = main.value as StringFieldKey;
+        if (k === "endpoint")  return { key: "workerEndpoint", label: "Commute endpoint URL",                        placeholder: "https://<your-commute>.workers.dev", current: cfg.workerEndpoint ?? "" };
+        if (k === "apiKey")    return { key: "workerApiKey",   label: "Commute X-Worker-Api-Key (blank to clear)",   kind: "password",                                  current: cfg.workerApiKey  ?? "" };
+        if (k === "cliRef")    return { key: "cliRef",         label: "kimiflare install override (blank = default)", placeholder: "github:owner/kimiflare#branch",      current: cfg.cliRef        ?? "" };
+        return null;
+      })();
+      if (!stringField) continue;
+      const f = await form(cam, {
+        id: `ma-${main.value}-${Date.now()}`,
+        title: stringField.label,
+        fields: [
+          { name: "value", label: stringField.label, default: stringField.current, placeholder: stringField.placeholder, kind: stringField.kind },
+        ],
+        allow_cancel: true,
+      });
+      if (f.cancelled || !f.values) continue;
+      const raw = (f.values.value ?? "").trim();
+      const next: KimiConfig = { ...cfg, [stringField.key]: raw || undefined };
+      await saveConfig(next);
+      cam.send("ShowToast", { text: `${main.value} ${raw ? "updated" : "cleared"}`, kind: "success", ttl_ms: 1500 });
     }
-    const apiKey = (f.values.apiKey ?? "").trim();
-    const cliRef = (f.values.cliRef ?? "").trim();
-
-    // Ask about the toggles via select lists (form fields don't have a
-    // checkbox kind in camouflage; selects are the native pattern).
-    const enabledPick = await selectList(cam, {
-      id: `ma-enabled-${Date.now()}`,
-      prompt: "Enable multi-agent mode in the Shift-Tab cycle?",
-      options: [
-        { value: "yes", label: "Yes — enable now" },
-        { value: "no",  label: "No — keep disabled" },
-      ],
-      default: current.multiAgentEnabled ? "yes" : "no",
-      allow_cancel: true,
-    });
-    if (enabledPick.cancelled) return;
-    const execPick = await selectList(cam, {
-      id: `ma-exec-${Date.now()}`,
-      prompt: "After research, auto-spawn an executor worker to implement + open a PR?",
-      options: [
-        { value: "yes", label: "Yes — auto-execute (creates real PRs!)" },
-        { value: "no",  label: "No — research only" },
-      ],
-      default: current.autoExecute ? "yes" : "no",
-      allow_cancel: true,
-    });
-    if (execPick.cancelled) return;
-
-    const next = {
-      ...current,
-      workerEndpoint: endpoint,
-      workerApiKey: apiKey || undefined,
-      cliRef: cliRef || undefined,
-      multiAgentEnabled: enabledPick.value === "yes",
-      autoExecute: execPick.value === "yes",
-    };
-    await saveConfig(next);
-    multiAgentEnabled = next.multiAgentEnabled ?? false;
-    cam.send("ShowToast", { text: "saved /multi-agent config", kind: "success", ttl_ms: 2500 });
   }
 
   // Default context-window heuristic for the /compact recommended banner.

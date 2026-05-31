@@ -295,6 +295,7 @@ function App({
     setUnifiedProbeFor,
     showRemoteDashboard, setShowRemoteDashboard,
     showInboxModal, setShowInboxModal,
+    showMultiAgentModal, setShowMultiAgentModal,
     showHelpMenu, setShowHelpMenu,
     showMemoryPicker, setShowMemoryPicker,
     showGatewayPicker, setShowGatewayPicker,
@@ -1318,6 +1319,7 @@ function App({
     setBillingChooserFor,
     setUnifiedProbeFor,
     setShowInboxModal,
+    setShowMultiAgentModal,
     setShowHooksDashboard: modals.setShowHooksDashboard,
     setShowHelpMenu,
     setShowLspWizard,
@@ -2254,6 +2256,22 @@ function App({
         onSelectRemoteSession={setSelectedRemoteSession}
         onCancelRemoteSession={handleRemoteCancel}
         onInboxOpen={openBrowser}
+        multiAgentSettings={cfg ? {
+          multiAgentEnabled: cfg.multiAgentEnabled,
+          workerEndpoint: cfg.workerEndpoint,
+          workerApiKey: cfg.workerApiKey,
+          autoExecute: cfg.autoExecute,
+          cliRef: cfg.cliRef,
+        } : undefined}
+        onMultiAgentSave={(patch) => {
+          if (!cfg) return;
+          const next = { ...cfg, ...patch };
+          setCfg(next);
+          void saveConfig(next).catch(() => {});
+          if (patch.multiAgentEnabled === false && mode === "multi-agent-experimental") {
+            setMode("edit");
+          }
+        }}
         getConfiguredHooks={() => {
           const out: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
           for (const ev of (["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"] as const)) {

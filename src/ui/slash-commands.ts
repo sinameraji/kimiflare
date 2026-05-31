@@ -111,6 +111,7 @@ export interface SlashContext {
   setBillingChooserFor: (v: ModelEntry | null) => void;
   setUnifiedProbeFor: (v: ModelEntry | null) => void;
   setShowInboxModal: (v: boolean) => void;
+  setShowMultiAgentModal: (v: boolean) => void;
   setShowLspWizard: (v: boolean) => void;
   setShowRemoteDashboard: (v: boolean) => void;
   setShowCommandList: (v: boolean) => void;
@@ -557,6 +558,11 @@ const handleMultiAgent: Handler = (ctx, rest, _arg) => {
     return true;
   }
   const sub = (rest[0] ?? "").toLowerCase();
+  // No subcommand → open the proper arrow-nav settings modal.
+  if (!sub) {
+    ctx.setShowMultiAgentModal(true);
+    return true;
+  }
   const value = rest.slice(1).join(" ").trim();
   const persist = (patch: Partial<typeof cfg>, msg: string, kind: "info" | "success" | "error" = "success") => {
     const next = { ...cfg, ...patch };
