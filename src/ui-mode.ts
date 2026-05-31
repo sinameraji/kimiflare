@@ -41,6 +41,7 @@ import type { CamouflageHandle } from "camouflage-tui";
 import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import { classifyIntent } from "./intent/classify.js";
+import { deployCommute } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
@@ -337,16 +338,35 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         id: `ma-main-${Date.now()}`,
         prompt: "Multi-agent settings  ·  ↑↓ pick · Enter edit · Esc done",
         options: [
-          { value: "enabled",     label: `Enabled                ${fmtBool(cfg.multiAgentEnabled)}` },
-          { value: "endpoint",    label: `Commute endpoint       ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (via /remote)" : ""}` },
-          { value: "apiKey",      label: `Commute API key        ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (via /remote)" : ""}` },
+          { value: "enabled",     label: `Enabled                  ${fmtBool(cfg.multiAgentEnabled)}` },
+          { value: "endpoint",    label: `Commute endpoint         ${fmtStr(effectiveEndpoint)}${endpointFromRemote ? "  (via /remote)" : ""}` },
+          { value: "apiKey",      label: `Commute API key          ${fmtSecret(effectiveApiKey)}${apiKeyFromRemote ? " (via /remote)" : ""}` },
           { value: "autoExecute", label: `Auto-execute (4th agent) ${fmtBool(cfg.autoExecute)}` },
-          { value: "cliRef",      label: `In-sandbox kimiflare    ${fmtStr(cfg.cliRef)}` },
+          { value: "cliRef",      label: `In-sandbox kimiflare     ${fmtStr(cfg.cliRef)}` },
+          { value: "deploy",      label: `→ Deploy your own Commute (one-time setup)` },
           { value: "done",        label: "Done" },
         ],
         allow_cancel: true,
       });
       if (main.cancelled || main.value === "done") return;
+
+      if (main.value === "deploy") {
+        cam.send("ShowToast", { text: "deploying your Commute… progress in messages below", kind: "info", ttl_ms: 2000 });
+        const sid = `s${++streamCounter}`;
+        cam.send("AssistantStreamStarted", { stream_id: sid });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Deploying your own Commute\n\n" });
+        try {
+          for await (const step of deployCommute()) {
+            const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
+            if (step.error) break;
+          }
+        } catch (err) {
+          cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n✗ deploy aborted: ${err instanceof Error ? err.message : String(err)}\n` });
+        }
+        cam.send("AssistantMessageCompleted", { stream_id: sid });
+        continue;
+      }
 
       if (main.value === "enabled") {
         const pick = await selectList(cam, {

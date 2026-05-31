@@ -7,6 +7,7 @@ import React, { useState, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { CustomTextInput } from "./text-input.js";
 import { useTheme } from "./theme-context.js";
+import { deployCommute } from "../remote/deploy-commute.js";
 
 export interface MultiAgentSettings {
   multiAgentEnabled?: boolean;
@@ -27,9 +28,9 @@ interface Props {
   remoteAuthSecret?: string;
 }
 
-type Field = "enabled" | "endpoint" | "apiKey" | "autoExecute" | "cliRef";
+type Field = "enabled" | "endpoint" | "apiKey" | "autoExecute" | "cliRef" | "deploy";
 
-const FIELDS: Field[] = ["enabled", "endpoint", "apiKey", "autoExecute", "cliRef"];
+const FIELDS: Field[] = ["enabled", "endpoint", "apiKey", "autoExecute", "cliRef", "deploy"];
 
 const LABELS: Record<Field, string> = {
   enabled:      "Enabled",
@@ -37,6 +38,7 @@ const LABELS: Record<Field, string> = {
   apiKey:       "Commute API key",
   autoExecute:  "Auto-execute (4th agent)",
   cliRef:       "In-sandbox kimiflare",
+  deploy:       "→ Deploy your own Commute",
 };
 
 const PLACEHOLDERS: Partial<Record<Field, string>> = {
@@ -50,6 +52,8 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   const [cursor, setCursor] = useState(0);
   const [editing, setEditing] = useState<Field | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [deployLog, setDeployLog] = useState<string[]>([]);
+  const [deploying, setDeploying] = useState(false);
 
   const isBool = (f: Field) => f === "enabled" || f === "autoExecute";
   const currentBool = (f: Field): boolean =>
@@ -70,7 +74,34 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     [state, onSave],
   );
 
+  const runDeploy = useCallback(async () => {
+    setDeploying(true);
+    setDeployLog(["Starting deploy…"]);
+    try {
+      for await (const step of deployCommute()) {
+        const prefix = step.error ? "✗ " : step.done ? "✓ " : "· ";
+        setDeployLog((l) => [...l, `${prefix}${step.message}`]);
+        if (step.done) {
+          // Pull saved values back into local state so the field list shows them.
+          persist({
+            workerEndpoint: undefined, // re-read from cfg via parent on next open
+            multiAgentEnabled: true,
+          });
+        }
+        if (step.error) break;
+      }
+    } catch (err) {
+      setDeployLog((l) => [...l, `✗ ${err instanceof Error ? err.message : String(err)}`]);
+    } finally {
+      setDeploying(false);
+    }
+  }, [persist]);
+
   const beginEdit = useCallback((f: Field) => {
+    if (f === "deploy") {
+      void runDeploy();
+      return;
+    }
     if (isBool(f)) {
       const patch: MultiAgentSettings =
         f === "enabled"
@@ -81,7 +112,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     }
     setEditing(f);
     setEditValue(currentStr(f));
-  }, [state, persist]);
+  }, [state, persist, runDeploy]);
 
   const finishEdit = useCallback((value: string) => {
     if (!editing) return;
@@ -97,11 +128,16 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
 
   useInput(
     (_input, key) => {
+      if (deploying) return; // Ignore input during deploy
       if (editing) {
         if (key.escape) { setEditing(null); setEditValue(""); }
         return;
       }
-      if (key.escape) { onDone(); return; }
+      if (key.escape) {
+        if (deployLog.length > 0) { setDeployLog([]); return; } // Clear deploy log first
+        onDone();
+        return;
+      }
       if (key.upArrow)   { setCursor((c) => Math.max(0, c - 1)); return; }
       if (key.downArrow) { setCursor((c) => Math.min(FIELDS.length - 1, c + 1)); return; }
       if (key.return) {
@@ -113,6 +149,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   );
 
   const renderValue = (f: Field): string => {
+    if (f === "deploy") return "";
     if (isBool(f)) return currentBool(f) ? "✓ on" : "✗ off";
     const v = currentStr(f);
     if (f === "endpoint") {
@@ -169,8 +206,26 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
               );
             })}
           </Box>
+          {deployLog.length > 0 && (
+            <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={theme.info.color} paddingX={1}>
+              <Text color={theme.accent} bold>{deploying ? "Deploying…" : "Deploy log"}</Text>
+              {deployLog.slice(-12).map((line, i) => {
+                const isErr = line.startsWith("✗");
+                const isDone = line.startsWith("✓");
+                return (
+                  <Text key={i} color={isErr ? theme.palette.error : isDone ? theme.palette.success : theme.palette.foreground}>
+                    {line}
+                  </Text>
+                );
+              })}
+            </Box>
+          )}
           <Box marginTop={1}>
-            <Text dimColor>↑↓ to pick · Enter to {isBool(FIELDS[cursor]!) ? "toggle" : "edit"} · Esc to close</Text>
+            <Text dimColor>
+              {deploying
+                ? "Deploying… please wait."
+                : `↑↓ to pick · Enter to ${FIELDS[cursor] === "deploy" ? "deploy" : isBool(FIELDS[cursor]!) ? "toggle" : "edit"} · Esc to close`}
+            </Text>
           </Box>
         </>
       )}
