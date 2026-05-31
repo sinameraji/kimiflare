@@ -192,7 +192,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
       // the modal.
       const deployFailed = deployLog.some((l) => l.startsWith("✗"));
       if (deployFailed) {
-        if (input === "u" || input === "U") {
+        if (input === "o" || input === "O") {
           const url = deployLog
             .map((l) => l.match(/https:\/\/dash\.cloudflare\.com\/[^\s)]+/)?.[0])
             .find((u): u is string => !!u)
@@ -310,9 +310,9 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
                 {failed && (
                   <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.accent} paddingX={1}>
                     <Text color={theme.accent} bold>Next steps</Text>
-                    <Text>1. Press <Text bold>U</Text> to open the Cloudflare token dashboard</Text>
+                    <Text>1. Press <Text bold>O</Text> to open the Cloudflare token dashboard</Text>
                     <Text>2. Create a token with the scopes above</Text>
-                    <Text>3. <Text>export CLOUDFLARE_API_TOKEN=&lt;new token&gt;</Text> in this shell</Text>
+                    <Text>3. Update <Text bold>apiToken</Text> in ~/.config/kimiflare/config.json</Text>
                     <Text>4. Press <Text bold>R</Text> to retry, or Esc to close</Text>
                     <Text dimColor>{ctaUrl}</Text>
                   </Box>
@@ -325,7 +325,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
               {deploying
                 ? "Deploying… please wait."
                 : deployLog.some((l) => l.startsWith("✗"))
-                  ? "U open CF tokens · R retry · Esc close"
+                  ? "O open CF tokens · R retry · Esc close"
                   : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : fields[cursor] === "teardown" ? "tear down" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
             </Text>
           </Box>
