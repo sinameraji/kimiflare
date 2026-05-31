@@ -11,6 +11,7 @@ import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
 import type { WorkerResultMessage } from "./messages.js";
+import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -136,6 +137,13 @@ export class TurnSupervisor {
       parseInt(process.env.KIMIFLARE_WORKER_MAX_PARALLEL ?? "3", 10),
     );
 
+    // Sandbox-driven workers need a repo to clone — detect once.
+    const repoInfo = detectRepoInfo();
+    if ("error" in repoInfo) {
+      throw new Error(`cannot spawn workers: ${repoInfo.error}`);
+    }
+    const repo: RepoInfo = repoInfo;
+
     // Register all workers as pending
     for (const w of workers) {
       const id = `worker-${crypto.randomUUID().slice(0, 8)}`;
@@ -178,10 +186,14 @@ export class TurnSupervisor {
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),
               model: w.model ?? "@cf/moonshotai/kimi-k2.6",
+              // Sandbox-driven worker needs the repo to clone:
+              githubToken: repo.token,
+              owner: repo.owner,
+              repo: repo.repo,
+              baseBranch: w.baseBranch ?? repo.baseBranch,
               ...(w.mode === "execute"
                 ? {
                     branchName: w.branchName,
-                    baseBranch: w.baseBranch ?? "main",
                     prTitle: w.prTitle,
                     prBody: w.prBody,
                   }
@@ -189,7 +201,9 @@ export class TurnSupervisor {
             };
 
             const controller = new AbortController();
-            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "300000", 10);
+            // Sandbox workers take 1-4 min typical (artifact + clone + agent loop + push).
+            // 10 min default leaves headroom; override with KIMIFLARE_WORKER_TIMEOUT_MS.
+            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "600000", 10);
             const timer = setTimeout(() => controller.abort(), timeoutMs);
 
             const res = await fetch(`${endpoint}/worker`, {
@@ -333,10 +347,50 @@ export class TurnSupervisor {
     prompt: string,
     context: string,
     onUpdate?: (workers: ActiveWorker[]) => void,
-  ): Promise<{ plan: string; conflicts: string[]; recommendations: string[] }> {
+  ): Promise<{
+    plan: string;
+    conflicts: string[];
+    recommendations: string[];
+    prUrl?: string;
+    executor?: { status: "completed" | "failed"; error?: string };
+  }> {
     const workers = decomposePrompt(prompt, context);
     const results = await this.spawnWorkers(workers, onUpdate);
-    return this.synthesizeFindings(results);
+    const synth = this.synthesizeFindings(results);
+
+    // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
+    // opt in with KIMIFLARE_AUTO_EXECUTE=1. Only fires when synthesis produced
+    // actionable recommendations.
+    const autoExecute = /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
+    if (!autoExecute || synth.recommendations.length === 0) {
+      return synth;
+    }
+
+    const executeTask = [
+      `Original request: ${prompt}`,
+      "",
+      "A research pass produced this plan. Implement it.",
+      "",
+      synth.plan,
+    ].join("\n");
+
+    try {
+      const execResults = await this.spawnWorkers(
+        [{ mode: "execute", task: executeTask, context }],
+        onUpdate,
+      );
+      const exec = execResults[0];
+      if (!exec) {
+        return { ...synth, executor: { status: "failed", error: "executor worker did not return a result" } };
+      }
+      return {
+        ...synth,
+        prUrl: exec.prUrl,
+        executor: { status: exec.status === "completed" ? "completed" : "failed", error: exec.error },
+      };
+    } catch (err) {
+      return { ...synth, executor: { status: "failed", error: err instanceof Error ? err.message : String(err) } };
+    }
   }
 
   clearWorkers(): void {

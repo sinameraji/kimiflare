@@ -503,7 +503,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "multi-agent mode: spawning parallel research workers…", kind: "info", ttl_ms: 2500 });
           try {
             let lastDone = -1;
-            const { plan, conflicts, recommendations } = await multiAgentSupervisor.autoSpawnWorkers(
+            const { plan, conflicts, recommendations, prUrl, executor } = await multiAgentSupervisor.autoSpawnWorkers(
               text,
               `Current project: ${cwd}`,
               (workers) => {
@@ -519,13 +519,22 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             // sees the research output, and keep it in history for follow-ups.
             const sid = `s${++streamCounter}`;
             cam.send("AssistantStreamStarted", { stream_id: sid });
-            cam.send("AssistantTokenDelta", { stream_id: sid, token: plan });
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: prUrl ? `${plan}\n\n---\nExecutor opened PR: ${prUrl}` : plan });
             cam.send("AssistantMessageCompleted", { stream_id: sid });
             messages.push({ role: "assistant", content: plan });
             if (conflicts.length > 0) {
               cam.send("ShowToast", { text: `${conflicts.length} conflict(s) resolved`, kind: "warn", ttl_ms: 3000 });
             }
             cam.send("ShowToast", { text: `synthesized ${recommendations.length} recommendation(s)`, kind: "success", ttl_ms: 3000 });
+            if (executor) {
+              if (executor.status === "completed" && prUrl) {
+                cam.send("ShowToast", { text: `executor opened PR: ${prUrl}`, kind: "success", ttl_ms: 5000 });
+              } else if (executor.status === "completed") {
+                cam.send("ShowToast", { text: "executor completed (no file changes to commit)", kind: "info", ttl_ms: 3000 });
+              } else {
+                cam.send("ShowToast", { text: `executor failed: ${executor.error ?? "unknown"}`, kind: "error", ttl_ms: 5000 });
+              }
+            }
           } catch (err) {
             if (!(err instanceof Error && err.name === "AbortError")) {
               cam.send("ShowToast", { text: `multi-agent spawn failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 4000 });

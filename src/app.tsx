@@ -1640,7 +1640,7 @@ function App({
           ]);
           try {
             setIsSynthesizing(true);
-            const { plan, conflicts, recommendations } = await supervisorRef.current!.autoSpawnWorkers(
+            const { plan, conflicts, recommendations, prUrl, executor } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,
               (workers) => setActiveWorkers(workers),
@@ -1661,6 +1661,16 @@ function App({
               ...e,
               { kind: "info", key: mkKey(), text: `synthesized ${recommendations.length} recommendation(s)` },
             ]);
+            if (executor) {
+              setEvents((e) => [
+                ...e,
+                executor.status === "completed" && prUrl
+                  ? { kind: "info", key: mkKey(), text: `executor opened PR: ${prUrl}` }
+                  : executor.status === "completed"
+                  ? { kind: "info", key: mkKey(), text: "executor completed (no file changes to commit)" }
+                  : { kind: "error", key: mkKey(), text: `executor failed: ${executor.error ?? "unknown"}` },
+              ]);
+            }
             await saveSessionSafe();
             endTurn();
             return;
