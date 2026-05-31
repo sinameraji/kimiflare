@@ -151,18 +151,23 @@ export class TurnSupervisor {
 
     const results: WorkerResultMessage[] = [];
     const queue = [...workers];
+    // Capture the instance Map so the inner runBatch (a regular function with
+    // its own `this`) can reach it. Earlier this used `TurnSupervisor.prototype._activeWorkers`,
+    // which is undefined because _activeWorkers is an instance field, not on
+    // the prototype — that caused "Cannot read properties of undefined (reading 'entries')".
+    const activeWorkers = this._activeWorkers;
 
     async function runBatch(batch: SpawnWorkerOpts[]): Promise<void> {
       await Promise.all(
         batch.map(async (w) => {
-          const workerId = [...TurnSupervisor.prototype._activeWorkers.entries()].find(
+          const workerId = [...activeWorkers.entries()].find(
             ([, aw]) => aw.task === w.task && aw.status === "pending",
           )?.[0];
           if (!workerId) return;
 
-          const worker = TurnSupervisor.prototype._activeWorkers.get(workerId)!;
+          const worker = activeWorkers.get(workerId)!;
           worker.status = "running";
-          onUpdate?.([...TurnSupervisor.prototype._activeWorkers.values()]);
+          onUpdate?.([...activeWorkers.values()]);
 
           try {
             const payload = {
@@ -214,7 +219,7 @@ export class TurnSupervisor {
             worker.error = (e as Error).message;
             logger.error("spawnWorkers:failed", { workerId, error: (e as Error).message });
           }
-          onUpdate?.([...TurnSupervisor.prototype._activeWorkers.values()]);
+          onUpdate?.([...activeWorkers.values()]);
         }),
       );
     }

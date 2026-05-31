@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert";
 import { TurnSupervisor, decomposePrompt } from "./supervisor.js";
 import type { WorkerResultMessage, WorkerFinding } from "./messages.js";
@@ -71,6 +71,69 @@ describe("TurnSupervisor.synthesizeFindings", () => {
     assert.strictEqual(out.conflicts.length, 0);
     assert.strictEqual(out.recommendations.length, 0);
     assert.ok(out.plan.includes("Synthesized Execution Plan"));
+  });
+});
+
+describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () => {
+  const realFetch = globalThis.fetch;
+  const realEndpoint = process.env.KIMIFLARE_WORKER_ENDPOINT;
+
+  beforeEach(() => {
+    process.env.KIMIFLARE_WORKER_ENDPOINT = "http://mock";
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    if (realEndpoint === undefined) delete process.env.KIMIFLARE_WORKER_ENDPOINT;
+    else process.env.KIMIFLARE_WORKER_ENDPOINT = realEndpoint;
+  });
+
+  // Earlier this threw "Cannot read properties of undefined (reading 'entries')"
+  // because the inner runBatch referenced TurnSupervisor.prototype._activeWorkers,
+  // but _activeWorkers is an instance field, not on the prototype.
+  it("runs without reaching for instance fields via the prototype", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          workerId: `w${calls}`,
+          status: "completed",
+          task: "t",
+          findings: [],
+          recommendations: [],
+          filesRead: [],
+          webSources: [],
+          costUsd: 0,
+          tokensUsed: 0,
+          reasoning: "",
+        }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const sup = new TurnSupervisor();
+    const results = await sup.spawnWorkers([
+      { mode: "plan", task: "alpha" },
+      { mode: "plan", task: "beta" },
+    ]);
+
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(results.length, 2);
+    assert.ok(sup.activeWorkers.every((w) => w.status === "completed"));
+  });
+
+  it("marks the worker failed when the endpoint errors", async () => {
+    globalThis.fetch = (async () => {
+      return { ok: false, status: 500, text: async () => "boom", json: async () => ({}) } as unknown as Response;
+    }) as typeof fetch;
+
+    const sup = new TurnSupervisor();
+    const results = await sup.spawnWorkers([{ mode: "plan", task: "alpha" }]);
+    assert.strictEqual(results.length, 0);
+    assert.strictEqual(sup.activeWorkers[0]?.status, "failed");
   });
 });
 
