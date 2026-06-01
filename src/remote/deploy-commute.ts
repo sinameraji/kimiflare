@@ -481,7 +481,18 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   // Strip [[artifacts]] block. Match the header + every following line
   // that isn't blank-then-section, until the next blank line or new [[.
   toml = toml.replace(/\n\[\[artifacts\]\][\s\S]*?(?=\n\[|\n*$)/g, "\n");
-  if (!workerExists && !/\[\[migrations\]\]/.test(toml)) {
+  // Always ensure the migrations block lists ALL current DO classes.
+  // For existing workers, we bump the tag (v1 → v2 → v3) so Wrangler
+  // knows to add any new classes (e.g. WorkerDO) without recreating
+  // existing ones. Wrangler ignores already-created classes.
+  const existingMigrations = toml.match(/\[\[migrations\]\]/);
+  if (existingMigrations) {
+    // Replace the existing migrations block with the current class list
+    toml = toml.replace(
+      /\[\[migrations\]\][\s\S]*?new_sqlite_classes\s*=\s*\[[^\]]*\]/,
+      `[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]`,
+    );
+  } else {
     toml +=
       `\n# Auto-added by kimiflare /multi-agent → Set up (fresh deploy only)\n` +
       `[[migrations]]\n` +
