@@ -97,7 +97,6 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         setDeployLog((l) => [...l, `${prefix}${step.message}`]);
         if (step.done) {
           persist({
-            workerEndpoint: undefined, // re-read from cfg via parent on next open
             multiAgentEnabled: true,
           });
         }
@@ -113,9 +112,11 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
   const runDeploy = useCallback(async () => {
     // Discover candidates first; if any exist, show picker. Otherwise
     // deploy straight to the default name.
+    setDeploying(true);
     setDeployLog(["Scanning your Cloudflare account for existing Workers…"]);
     const existing = await findExistingCommuteWorkers().catch(() => [] as string[]);
     if (existing.length > 0) {
+      setDeploying(false);
       setPickerCandidates(existing);
       setPickerCursor(existing.length); // default to "create new" at the bottom
       setDeployLog([]);
@@ -224,6 +225,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
       // most common cause (missing token scopes) and retry without leaving
       // the modal.
       const deployFailed = deployLog.some((l) => l.startsWith("✗"));
+      const deploySucceeded = !deploying && !deployFailed && deployLog.some((l) => l.startsWith("✓"));
       if (deployFailed) {
         if (input === "o" || input === "O") {
           const url = deployLog
@@ -238,6 +240,10 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
           void runDeploy();
           return;
         }
+      }
+      if (deploySucceeded && key.return) {
+        onDone();
+        return;
       }
       if (key.upArrow)   { setCursor((c) => Math.max(0, c - 1)); return; }
       if (key.downArrow) { setCursor((c) => Math.min(fields.length - 1, c + 1)); return; }
@@ -334,19 +340,21 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
         </Box>
       ) : (
         <>
-          <Box flexDirection="column" marginTop={1}>
-            {fields.map((f, idx) => {
-              const selected = idx === cursor;
-              return (
-                <Box key={f}>
-                  <Text color={selected ? theme.accent : theme.palette.foreground} bold={selected}>
-                    {selected ? "› " : "  "}
-                    {LABELS[f].padEnd(28)} {renderValue(f)}
-                  </Text>
-                </Box>
-              );
-            })}
-          </Box>
+          {!deploying && (
+            <Box flexDirection="column" marginTop={1}>
+              {fields.map((f, idx) => {
+                const selected = idx === cursor;
+                return (
+                  <Box key={f}>
+                    <Text color={selected ? theme.accent : theme.palette.foreground} bold={selected}>
+                      {selected ? "› " : "  "}
+                      {LABELS[f].padEnd(28)} {renderValue(f)}
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
           {deployLog.length > 0 && (() => {
             const failed = !deploying && deployLog.some((l) => l.startsWith("✗"));
             // Find the CTA URL in the streamed log (the error hint shows the
@@ -379,6 +387,12 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
                     <Text dimColor>{ctaUrl}</Text>
                   </Box>
                 )}
+                {!failed && !deploying && deployLog.some((l) => l.startsWith("✓")) && (
+                  <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={theme.palette.success} paddingX={1}>
+                    <Text color={theme.palette.success} bold>Multi-agent is ready</Text>
+                    <Text>Press <Text bold>Enter</Text> to close and start using it.</Text>
+                  </Box>
+                )}
               </>
             );
           })()}
@@ -388,7 +402,9 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
                 ? "Deploying… please wait."
                 : deployLog.some((l) => l.startsWith("✗"))
                   ? "O open CF tokens · R retry · Esc close"
-                  : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : fields[cursor] === "teardown" ? "tear down" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
+                  : deployLog.some((l) => l.startsWith("✓"))
+                    ? "Enter to close · Esc to close"
+                    : `↑↓ to pick · Enter to ${fields[cursor] === "deploy" ? "deploy" : fields[cursor] === "teardown" ? "tear down" : isBool(fields[cursor]!) ? "toggle" : "edit"} · Esc to close`}
             </Text>
           </Box>
         </>

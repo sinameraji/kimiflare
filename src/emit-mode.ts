@@ -30,6 +30,9 @@ import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { classifyIntent } from "./intent/classify.js";
+import { TurnSupervisor } from "./agent/supervisor.js";
+import { loadConfig } from "./config.js";
 
 export interface EmitModeOpts {
   accountId: string;
@@ -203,6 +206,76 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
   async function runTurn(text: string): Promise<void> {
     emit("UserMessageCreated", { text });
     messages.push({ role: "user", content: text });
+
+    // ── Multi-agent branch (camouflage equivalent of TUI multi-agent) ──
+    const classification = classifyIntent(text);
+    const cfg = await loadConfig().catch(() => null);
+    const multiAgentEnabled =
+      cfg?.multiAgentEnabled ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_MULTI_AGENT ?? "");
+    if (multiAgentEnabled && classification.tier === "heavy") {
+      emit("AssistantStreamStarted", { stream_id: "multi-agent" });
+      setPhase("thinking");
+      const supervisor = new TurnSupervisor();
+      try {
+        const { plan, conflicts, recommendations, prUrl, executor } = await supervisor.autoSpawnWorkers(
+          text,
+          `Current project: ${cwd}`,
+          (workers) => {
+            // Emit TodoListUpdate so the Camouflage renderer shows the same
+            // ☐ / ◐ / ☑ checklist that the Ink TUI now uses.
+            emit("TodoListUpdate", {
+              items: workers.map((w) => ({
+                id: w.id,
+                label: `[${w.mode === "plan" ? "research" : "executor"}] ${w.task.slice(0, 80)}`,
+                state:
+                  w.status === "pending"
+                    ? "pending"
+                    : w.status === "running"
+                    ? "in_progress"
+                    : w.status === "completed"
+                    ? "completed"
+                    : "failed",
+              })),
+            });
+          },
+          (phase) => {
+            if (phase === "synthesizing") {
+              setPhase("thinking");
+            }
+          },
+        );
+        emit("AssistantMessageCompleted", { stream_id: "multi-agent" });
+        setPhase("idle");
+        messages.push({ role: "system", content: plan });
+        if (conflicts.length > 0) {
+          emit("RuntimeError", {
+            message: `conflicts detected:\n${conflicts.join("\n")}`,
+            kind: "generic",
+            severity: "warn",
+          });
+        }
+        if (executor) {
+          const execMsg =
+            executor.status === "completed" && prUrl
+              ? `executor opened PR: ${prUrl}`
+              : executor.status === "completed"
+              ? "executor completed (no file changes to commit)"
+              : `executor failed: ${executor.error ?? "unknown"}`;
+          emit("RuntimeError", { message: execMsg, kind: "generic", severity: executor.status === "completed" ? "info" : "error" });
+        }
+        // Clear the todo list so the renderer removes the checklist.
+        emit("TodoListUpdate", { items: [] });
+        return;
+      } catch (err) {
+        emit("RuntimeError", {
+          message: err instanceof Error ? err.message : String(err),
+          kind: "generic",
+          severity: "error",
+        });
+        emit("TodoListUpdate", { items: [] });
+        return;
+      }
+    }
 
     try {
       await runAgentTurn({

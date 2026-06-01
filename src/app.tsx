@@ -1659,13 +1659,12 @@ function App({
             { kind: "info", key: mkKey(), text: "multi-agent mode: spawning parallel research workers..." },
           ]);
           try {
-            setIsSynthesizing(true);
             const { plan, conflicts, recommendations, prUrl, executor } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,
               (workers) => setActiveWorkers(workers),
+              (phase) => setIsSynthesizing(phase === "synthesizing"),
             );
-            setIsSynthesizing(false);
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: "workers completed — synthesizing findings" },
@@ -2276,9 +2275,10 @@ function App({
           workerApiKey: cfg.workerApiKey,
           autoExecute: cfg.autoExecute,
         } : undefined}
-        onMultiAgentSave={(patch) => {
-          if (!cfg) return;
-          const next = { ...cfg, ...patch };
+        onMultiAgentSave={async (patch) => {
+          const fresh = await loadConfig().catch(() => cfg);
+          if (!fresh) return;
+          const next = { ...fresh, ...patch };
           setCfg(next);
           void saveConfig(next).catch(() => {});
           if (patch.multiAgentEnabled === false && mode === "multi-agent-experimental") {

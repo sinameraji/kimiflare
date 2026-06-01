@@ -71,6 +71,8 @@ export interface WorkerResultMessage {
   /** Raw stdout from the in-sandbox kimiflare run (for debugging). */
   rawOutput?: string;
   error?: string;
+  /** Phase timing breakdown from the worker (for debugging cold-start). */
+  phases?: Array<{ name: string; ms: number }>;
 }
 
 /** Replace lone UTF-16 surrogates with the replacement character (U+FFFD).

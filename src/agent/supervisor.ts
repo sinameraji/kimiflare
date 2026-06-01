@@ -43,6 +43,12 @@ export interface ActiveWorker {
   startedAt: number;
   result?: WorkerResultMessage;
   error?: string;
+  /** Raw stdout from the remote agent (available once the worker finishes). */
+  rawOutput?: string;
+  /** Worker reasoning summary (available once the worker finishes). */
+  reasoning?: string;
+  /** Coordinator-side log of what happened during this worker's lifecycle. */
+  logs: string[];
 }
 
 export class TurnSupervisor {
@@ -179,6 +185,7 @@ export class TurnSupervisor {
         task: w.task,
         status: "pending",
         startedAt: Date.now(),
+        logs: [],
       });
     }
     onUpdate?.(this.activeWorkers);
@@ -201,6 +208,7 @@ export class TurnSupervisor {
 
           const worker = activeWorkers.get(workerId)!;
           worker.status = "running";
+          worker.logs.push(`[coordinator] Starting worker → POST ${endpoint}/worker`);
           onUpdate?.([...activeWorkers.values()]);
 
           try {
@@ -237,38 +245,128 @@ export class TurnSupervisor {
                 : {}),
             };
 
-            const controller = new AbortController();
-            // Sandbox workers take 1-4 min typical (artifact + clone + agent loop + push).
-            // 10 min default leaves headroom; override with KIMIFLARE_WORKER_TIMEOUT_MS.
             const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "600000", 10);
-            const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-            const res = await fetch(`${endpoint}/worker`, {
+            worker.logs.push(`[coordinator] Sending payload (${JSON.stringify(payload).length} bytes)`);
+            worker.logs.push(`[coordinator] Worker will clone ${repo.owner}/${repo.repo} and run kimiflare inside Cloudflare Sandbox`);
+            worker.logs.push(`[coordinator] Typical runtime: 1–4 min. Timeout: ${Math.round(timeoutMs / 1000)}s`);
+            onUpdate?.([...activeWorkers.values()]);
+
+            // ── Start the worker via DO (returns immediately with workerId) ──
+            const startRes = await fetch(`${endpoint}/worker`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 ...(apiKey ? { "X-Worker-Api-Key": apiKey } : {}),
               },
               body: JSON.stringify(payload),
-              signal: controller.signal,
             });
-            clearTimeout(timer);
+            if (!startRes.ok) {
+              const text = await startRes.text().catch(() => "");
+              throw new Error(`Worker start failed: ${startRes.status} ${text.slice(0, 200)}`);
+            }
+            const { workerId: remoteWorkerId } = (await startRes.json()) as { workerId: string };
+            worker.logs.push(`[coordinator] Worker started (id: ${remoteWorkerId}) — polling for progress…`);
+            onUpdate?.([...activeWorkers.values()]);
 
-            if (!res.ok) {
-              const text = await res.text().catch(() => "");
-              throw new Error(`Worker endpoint returned ${res.status}: ${text.slice(0, 200)}`);
+            // ── Poll progress every 3s until done or timeout ──
+            const pollInterval = 3000;
+            const startTime = Date.now();
+            let lastLogCount = 0;
+            let data: WorkerResultMessage | undefined;
+
+            while (Date.now() - startTime < timeoutMs) {
+              await new Promise((r) => setTimeout(r, pollInterval));
+
+              const progressRes = await fetch(`${endpoint}/worker/${remoteWorkerId}/progress`, {
+                headers: apiKey ? { "X-Worker-Api-Key": apiKey } : {},
+              });
+              if (!progressRes.ok) {
+                worker.logs.push(`[coordinator] Progress poll failed: ${progressRes.status}`);
+                onUpdate?.([...activeWorkers.values()]);
+                continue;
+              }
+
+              const progress = (await progressRes.json()) as {
+                status: "pending" | "running" | "completed" | "failed";
+                step: string;
+                stepIndex: number;
+                totalSteps: number;
+                message: string;
+                logs: string[];
+                completedSteps: string[];
+                error?: string;
+                result?: WorkerResultMessage;
+              };
+
+              // Append new logs (only the ones we haven't seen)
+              const newLogs = progress.logs.slice(lastLogCount);
+              lastLogCount = progress.logs.length;
+              for (const logLine of newLogs) {
+                worker.logs.push(`[worker] ${logLine}`);
+              }
+
+              // Show current step
+              worker.logs.push(`[coordinator] Step ${progress.stepIndex}/${progress.totalSteps}: ${progress.message}`);
+              onUpdate?.([...activeWorkers.values()]);
+
+              if (progress.status === "completed" || progress.status === "failed") {
+                if (progress.result) {
+                  data = progress.result;
+                } else if (progress.error) {
+                  data = {
+                    workerId: remoteWorkerId,
+                    status: "failed",
+                    task: w.task,
+                    findings: [],
+                    recommendations: [],
+                    filesRead: [],
+                    webSources: [],
+                    costUsd: 0,
+                    tokensUsed: 0,
+                    reasoning: "",
+                    error: progress.error,
+                  } as WorkerResultMessage;
+                }
+                break;
+              }
             }
 
-            const data = (await res.json()) as WorkerResultMessage;
+            if (!data) {
+              throw new Error(`Worker timed out after ${Math.round(timeoutMs / 1000)}s`);
+            }
+
             worker.status = data.status === "completed" ? "completed" : "failed";
             worker.result = data;
+            worker.rawOutput = data.rawOutput;
+            worker.reasoning = data.reasoning;
+            worker.logs.push(`[coordinator] Worker finished with status: ${data.status}`);
+            if (data.phases && data.phases.length > 0) {
+              const timeline = data.phases.map((p) => `${p.name}: ${Math.round(p.ms / 1000)}s`).join(" · ");
+              worker.logs.push(`[coordinator] Phase timing: ${timeline}`);
+            }
+            if (data.error) {
+              worker.logs.push(`[coordinator] Worker error: ${data.error}`);
+            }
+            if (data.rawOutput) {
+              worker.logs.push(`[coordinator] Worker raw output (${data.rawOutput.length} chars):`);
+              worker.logs.push(...data.rawOutput.split("\n").slice(-30));
+            }
             if (data.status === "completed") {
               results.push(data);
             }
           } catch (e) {
             worker.status = "failed";
-            worker.error = (e as Error).message;
-            logger.error("spawnWorkers:failed", { workerId, error: (e as Error).message });
+            const err = e as Error;
+            const cause = (err as unknown as { cause?: Error }).cause;
+            let diagnostic = cause ? `${err.message} (${cause.message})` : err.message;
+            // Surface common sandbox/DO failure modes in the UI
+            if (diagnostic.includes("Network connection lost") || diagnostic.includes("reset")) {
+              diagnostic += " — Cloudflare Sandbox Durable Object reset. This can happen when the worker exceeds CPU/memory limits or hits a transient platform issue. Try reducing task complexity or retrying.";
+            }
+            worker.error = diagnostic;
+            worker.logs.push(`[coordinator] Fetch failed: ${diagnostic}`);
+            logger.error("spawnWorkers:failed", { workerId, error: diagnostic });
           }
           onUpdate?.([...activeWorkers.values()]);
         }),
@@ -384,6 +482,7 @@ export class TurnSupervisor {
     prompt: string,
     context: string,
     onUpdate?: (workers: ActiveWorker[]) => void,
+    onPhaseChange?: (phase: "spawning" | "synthesizing" | "complete") => void,
   ): Promise<{
     plan: string;
     conflicts: string[];
@@ -392,43 +491,49 @@ export class TurnSupervisor {
     executor?: { status: "completed" | "failed"; error?: string };
   }> {
     const workers = decomposePrompt(prompt, context);
-    const results = await this.spawnWorkers(workers, onUpdate);
-    const synth = this.synthesizeFindings(results);
-
-    // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
-    // opt in via /multi-agent in the TUI or KIMIFLARE_AUTO_EXECUTE=1. Only
-    // fires when synthesis produced actionable recommendations.
-    const cfg = await loadConfig().catch(() => null);
-    const autoExecute =
-      cfg?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
-    if (!autoExecute || synth.recommendations.length === 0) {
-      return synth;
-    }
-
-    const executeTask = [
-      `Original request: ${prompt}`,
-      "",
-      "A research pass produced this plan. Implement it.",
-      "",
-      synth.plan,
-    ].join("\n");
-
+    onPhaseChange?.("spawning");
     try {
-      const execResults = await this.spawnWorkers(
-        [{ mode: "execute", task: executeTask, context }],
-        onUpdate,
-      );
-      const exec = execResults[0];
-      if (!exec) {
-        return { ...synth, executor: { status: "failed", error: "executor worker did not return a result" } };
+      const results = await this.spawnWorkers(workers, onUpdate);
+      onPhaseChange?.("synthesizing");
+      const synth = this.synthesizeFindings(results);
+
+      // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
+      // opt in via /multi-agent in the TUI or KIMIFLARE_AUTO_EXECUTE=1. Only
+      // fires when synthesis produced actionable recommendations.
+      const cfg = await loadConfig().catch(() => null);
+      const autoExecute =
+        cfg?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
+      if (!autoExecute || synth.recommendations.length === 0) {
+        return synth;
       }
-      return {
-        ...synth,
-        prUrl: exec.prUrl,
-        executor: { status: exec.status === "completed" ? "completed" : "failed", error: exec.error },
-      };
-    } catch (err) {
-      return { ...synth, executor: { status: "failed", error: err instanceof Error ? err.message : String(err) } };
+
+      const executeTask = [
+        `Original request: ${prompt}`,
+        "",
+        "A research pass produced this plan. Implement it.",
+        "",
+        synth.plan,
+      ].join("\n");
+
+      try {
+        const execResults = await this.spawnWorkers(
+          [{ mode: "execute", task: executeTask, context }],
+          onUpdate,
+        );
+        const exec = execResults[0];
+        if (!exec) {
+          return { ...synth, executor: { status: "failed", error: "executor worker did not return a result" } };
+        }
+        return {
+          ...synth,
+          prUrl: exec.prUrl,
+          executor: { status: exec.status === "completed" ? "completed" : "failed", error: exec.error },
+        };
+      } catch (err) {
+        return { ...synth, executor: { status: "failed", error: err instanceof Error ? err.message : String(err) } };
+      }
+    } finally {
+      onPhaseChange?.("complete");
     }
   }
 

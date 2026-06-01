@@ -210,8 +210,11 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
       const bytes = Buffer.byteLength(content, "utf8");
       return { content, rawBytes: bytes, reducedBytes: bytes };
     } catch (e) {
-      const msg = `Failed to spawn worker: ${(e as Error).message}`;
-      logger.error("spawn_worker:failed", { error: (e as Error).message });
+      const err = e as Error;
+      const cause = (err as unknown as { cause?: Error }).cause;
+      const diagnostic = cause ? `${err.message} (${cause.message})` : err.message;
+      const msg = `Failed to spawn worker: ${diagnostic}`;
+      logger.error("spawn_worker:failed", { error: diagnostic });
       const bytes = Buffer.byteLength(msg, "utf8");
       return { content: msg, rawBytes: bytes, reducedBytes: bytes };
     }

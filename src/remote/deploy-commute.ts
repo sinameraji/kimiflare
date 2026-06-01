@@ -486,7 +486,17 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
       `\n# Auto-added by kimiflare /multi-agent → Set up (fresh deploy only)\n` +
       `[[migrations]]\n` +
       `tag = "v1"\n` +
-      `new_sqlite_classes = ["SessionDO", "Sandbox"]\n`;
+      `new_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]\n`;
+  }
+  // Enable invocation logs so the multi-agent worker emits structured logs
+  // to Cloudflare (visible in Workers & Pages → Logs). Keep the general
+  // log stream disabled to avoid noise — we only want per-invocation records.
+  if (!/\[observability\.logs\]/.test(toml)) {
+    toml +=
+      `\n# Auto-added by kimiflare /multi-agent → Set up\n` +
+      `[observability.logs]\n` +
+      `enabled = false\n` +
+      `invocation_logs = true\n`;
   }
   await writeFile(wranglerToml, toml, "utf8");
   yield {
