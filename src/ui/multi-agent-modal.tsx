@@ -14,6 +14,7 @@ export interface MultiAgentSettings {
   multiAgentEnabled?: boolean;
   workerEndpoint?: string;
   workerApiKey?: string;
+  workerName?: string;
   autoExecute?: boolean;
   cliRef?: string;
 }
@@ -131,13 +132,14 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     setDeploying(true);
     setDeployLog(["Starting tear-down…"]);
     try {
-      for await (const step of teardownCommute()) {
+      for await (const step of teardownCommute({ workerName: state.workerName })) {
         const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
         setDeployLog((l) => [...l, `${prefix}${step.message}`]);
         if (step.done) {
           persist({
             workerEndpoint: undefined,
             workerApiKey: undefined,
+            workerName: undefined,
             multiAgentEnabled: false,
             autoExecute: false,
           });
@@ -149,7 +151,7 @@ export function MultiAgentModal({ initial, onSave, onDone, remoteWorkerUrl, remo
     } finally {
       setDeploying(false);
     }
-  }, [persist]);
+  }, [persist, state.workerName]);
 
   const beginEdit = useCallback((f: Field) => {
     if (f === "deploy") {

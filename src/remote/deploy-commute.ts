@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { loadConfig, saveConfig, type KimiConfig } from "../config.js";
+import { getUserAgent } from "../util/version.js";
 
 export interface DeployStep {
   message: string;
@@ -53,6 +54,114 @@ const PUBLIC_SANDBOX_IMAGE = "ghcr.io/sinameraji/kimiflare-remote-agent:latest";
  *  Also drives the KV namespace title + the tear-down target. */
 const WORKER_NAME = "kimiflare-multi-agent";
 const KV_TITLE = "kimiflare-multi-agent-OAUTH_KV";
+const CF_API = "https://api.cloudflare.com/client/v4";
+
+interface CfEnvelope<T> {
+  success: boolean;
+  result?: T;
+  errors?: Array<{ code?: number; message?: string }>;
+}
+
+interface DurableObjectNamespace {
+  id: string;
+  name: string;
+  script: string;
+  class: string;
+}
+
+interface ContainerApplication {
+  id: string;
+  name: string;
+}
+
+async function cfApiFetch<T>(
+  accountId: string,
+  apiToken: string,
+  path: string,
+  init?: RequestInit,
+): Promise<CfEnvelope<T>> {
+  const url = `${CF_API}/accounts/${encodeURIComponent(accountId)}${path}`;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": getUserAgent(),
+      ...init?.headers,
+    },
+  });
+  const json = (await res.json()) as CfEnvelope<T>;
+  return json;
+}
+
+async function listDurableObjectNamespaces(
+  accountId: string,
+  apiToken: string,
+): Promise<DurableObjectNamespace[]> {
+  const json = await cfApiFetch<DurableObjectNamespace[]>(
+    accountId,
+    apiToken,
+    "/workers/durable_objects/namespaces",
+  );
+  if (!json.success || !json.result) {
+    throw new Error(
+      json.errors?.map((e) => e.message).join(", ") ?? "Failed to list DO namespaces",
+    );
+  }
+  return json.result;
+}
+
+async function deleteDurableObjectNamespace(
+  accountId: string,
+  apiToken: string,
+  namespaceId: string,
+): Promise<void> {
+  const json = await cfApiFetch<unknown>(
+    accountId,
+    apiToken,
+    `/workers/durable_objects/namespaces/${encodeURIComponent(namespaceId)}`,
+    { method: "DELETE" },
+  );
+  if (!json.success) {
+    throw new Error(
+      json.errors?.map((e) => e.message).join(", ") ?? "Failed to delete DO namespace",
+    );
+  }
+}
+
+async function listContainerApplications(
+  accountId: string,
+  apiToken: string,
+): Promise<ContainerApplication[]> {
+  const json = await cfApiFetch<ContainerApplication[]>(
+    accountId,
+    apiToken,
+    "/containers/applications",
+  );
+  if (!json.success || !json.result) {
+    // Containers API may be unavailable or require different permissions.
+    return [];
+  }
+  return json.result;
+}
+
+async function deleteContainerApplication(
+  accountId: string,
+  apiToken: string,
+  appId: string,
+): Promise<void> {
+  const json = await cfApiFetch<unknown>(
+    accountId,
+    apiToken,
+    `/containers/applications/${encodeURIComponent(appId)}`,
+    { method: "DELETE" },
+  );
+  if (!json.success) {
+    throw new Error(
+      json.errors?.map((e) => e.message).join(", ") ?? "Failed to delete container application",
+    );
+  }
+}
 
 function generateSecret(): string {
   return randomBytes(32).toString("hex");
@@ -481,23 +590,25 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   // Strip [[artifacts]] block. Match the header + every following line
   // that isn't blank-then-section, until the next blank line or new [[.
   toml = toml.replace(/\n\[\[artifacts\]\][\s\S]*?(?=\n\[|\n*$)/g, "\n");
-  // Always ensure the migrations block lists ALL current DO classes.
-  // For existing workers, we bump the tag (v1 → v2 → v3) so Wrangler
-  // knows to add any new classes (e.g. WorkerDO) without recreating
-  // existing ones. Wrangler ignores already-created classes.
-  const existingMigrations = toml.match(/\[\[migrations\]\]/);
-  if (existingMigrations) {
-    // Replace the existing migrations block with the current class list
-    toml = toml.replace(
-      /\[\[migrations\]\][\s\S]*?new_sqlite_classes\s*=\s*\[[^\]]*\]/,
-      `[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]`,
-    );
-  } else {
-    toml +=
-      `\n# Auto-added by kimiflare /multi-agent → Set up (fresh deploy only)\n` +
-      `[[migrations]]\n` +
-      `tag = "v1"\n` +
-      `new_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]\n`;
+  // Only touch migrations on fresh deploys. Existing workers already have
+  // their DO namespaces created; re-declaring new_sqlite_classes creates
+  // NEW namespaces for those classes, which breaks container applications
+  // that are bound to the old namespace (e.g. "kimiflare-multi-agent-sandbox").
+  if (!workerExists) {
+    const existingMigrations = toml.match(/\[\[migrations\]\]/);
+    if (existingMigrations) {
+      // Replace the existing migrations block with the current class list
+      toml = toml.replace(
+        /\[\[migrations\]\][\s\S]*?new_sqlite_classes\s*=\s*\[[^\]]*\]/,
+        `[[migrations]]\ntag = "v1"\nnew_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]`,
+      );
+    } else {
+      toml +=
+        `\n# Auto-added by kimiflare /multi-agent → Set up (fresh deploy only)\n` +
+        `[[migrations]]\n` +
+        `tag = "v1"\n` +
+        `new_sqlite_classes = ["SessionDO", "WorkerDO", "Sandbox"]\n`;
+    }
   }
   // Enable invocation logs so the multi-agent worker emits structured logs
   // to Cloudflare (visible in Workers & Pages → Logs). Keep the general
@@ -566,6 +677,7 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
     ...cfg,
     workerEndpoint: workerUrl,
     workerApiKey,
+    workerName,
     multiAgentEnabled: true,
   };
   await saveConfig(next);
@@ -578,18 +690,26 @@ export async function* deployCommute(opts: DeployOpts = {}): AsyncGenerator<Depl
   return { workerEndpoint: workerUrl, workerApiKey };
 }
 
+export interface TeardownOpts {
+  /** Override the Worker name to tear down. Defaults to the name stored in
+   *  config (workerName) or "kimiflare-multi-agent". */
+  workerName?: string;
+}
+
 /**
  * Tear down the user's multi-agent infrastructure: delete the Worker,
- * delete OAUTH_KV namespace(s) titled by the binding, clear cfg.
+ * delete Durable Object namespaces, delete container applications,
+ * delete OAUTH_KV namespace(s), clear cfg.
  *
  * Streams progress like deployCommute.
  */
-export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void> {
+export async function* teardownCommute(opts: TeardownOpts = {}): AsyncGenerator<DeployStep, void, void> {
   const cfg = await loadConfig();
   if (!cfg?.accountId || !cfg?.apiToken) {
     yield { message: "Cloudflare credentials missing — nothing to tear down.", error: true };
     throw new Error("missing CF creds");
   }
+  const workerName = opts.workerName ?? cfg.workerName ?? WORKER_NAME;
   const cfEnv: Record<string, string> = {
     CLOUDFLARE_ACCOUNT_ID: cfg.accountId,
     CLOUDFLARE_API_TOKEN: cfg.apiToken,
@@ -602,29 +722,81 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
 
   // 1. Delete the Worker. Pipe "y" to auto-confirm wrangler's interactive
   //    "Are you sure?" prompt.
-  yield { message: `Deleting Worker "${WORKER_NAME}"…` };
-  const del = await runCmd("wrangler", ["delete", "--name", WORKER_NAME], {
+  yield { message: `Deleting Worker "${workerName}"…` };
+  const del = await runCmd("wrangler", ["delete", "--name", workerName], {
     env: cfEnv,
     input: "y\n",
     timeoutMs: 60_000,
   });
   if (del.code === 0) {
-    yield { message: `Worker "${WORKER_NAME}" deleted`, ok: true };
+    yield { message: `Worker "${workerName}" deleted`, ok: true };
   } else {
     const combined = (del.stdout + del.stderr).toLowerCase();
     if (combined.includes("not found") || combined.includes("does not exist") || combined.includes("10007")) {
       yield { message: "Worker not found (already deleted or never created)", ok: true };
     } else {
       yield {
-        message: explainWranglerFailure(`wrangler delete --name ${WORKER_NAME}`, del.stdout, del.stderr),
+        message: explainWranglerFailure(`wrangler delete --name ${workerName}`, del.stdout, del.stderr),
         error: true,
       };
-      // Don't throw — continue to KV + config cleanup so partial state can
-      // still be cleared. The error is surfaced above.
+      // Don't throw — continue to KV + DO + config cleanup so partial state
+      // can still be cleared. The error is surfaced above.
     }
   }
 
-  // 2. Find + delete OAUTH_KV namespace(s). User may have multiple from
+  // 2. Delete Durable Object namespaces belonging to this worker.
+  yield { message: `Looking up Durable Object namespaces for "${workerName}"…` };
+  try {
+    const namespaces = await listDurableObjectNamespaces(cfg.accountId, cfg.apiToken);
+    const targets = namespaces.filter(
+      (ns) => ns.script === workerName || ns.name.startsWith(`${workerName}_`),
+    );
+    if (targets.length === 0) {
+      yield { message: "No Durable Object namespaces found (nothing to delete)", ok: true };
+    } else {
+      for (const ns of targets) {
+        try {
+          await deleteDurableObjectNamespace(cfg.accountId, cfg.apiToken, ns.id);
+          yield { message: `DO namespace ${ns.name} deleted (${ns.id.slice(0, 8)}…)`, ok: true };
+        } catch (err) {
+          yield {
+            message: `DO namespace ${ns.name} delete warning: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    yield {
+      message: `DO namespace lookup warning: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  // 3. Delete container applications tied to this worker's DOs.
+  //    Container app names are typically "{worker-name}-{class-lowercase}".
+  yield { message: `Looking up container applications for "${workerName}"…` };
+  try {
+    const apps = await listContainerApplications(cfg.accountId, cfg.apiToken);
+    const appPrefix = `${workerName}-`.toLowerCase();
+    const targets = apps.filter((app) => app.name.toLowerCase().startsWith(appPrefix));
+    if (targets.length === 0) {
+      yield { message: "No container applications found (nothing to delete)", ok: true };
+    } else {
+      for (const app of targets) {
+        try {
+          await deleteContainerApplication(cfg.accountId, cfg.apiToken, app.id);
+          yield { message: `Container application ${app.name} deleted (${app.id.slice(0, 8)}…)`, ok: true };
+        } catch (err) {
+          yield {
+            message: `Container application ${app.name} delete warning: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+      }
+    }
+  } catch {
+    yield { message: "(could not list container applications — skipping container cleanup)" };
+  }
+
+  // 4. Find + delete OAUTH_KV namespace(s). User may have multiple from
   //    prior failed deploys; delete all titled OAUTH_KV-ish.
   yield { message: "Listing KV namespaces to find OAUTH_KV…" };
   const kvList = await runCmd("wrangler", ["kv", "namespace", "list"], { env: cfEnv, timeoutMs: 30_000 });
@@ -656,11 +828,12 @@ export async function* teardownCommute(): AsyncGenerator<DeployStep, void, void>
     yield { message: "(could not list KV namespaces — skipping KV cleanup)" };
   }
 
-  // 3. Clear multi-agent fields from cfg.
+  // 5. Clear multi-agent fields from cfg.
   const next: KimiConfig = {
     ...cfg,
     workerEndpoint: undefined,
     workerApiKey: undefined,
+    workerName: undefined,
     multiAgentEnabled: false,
     autoExecute: false,
   };

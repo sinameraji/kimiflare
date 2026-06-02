@@ -191,6 +191,7 @@ export interface Cfg {
   multiAgentEnabled?: boolean;
   workerEndpoint?: string;
   workerApiKey?: string;
+  workerName?: string;
   autoExecute?: boolean;
 }
 function App({
@@ -2273,6 +2274,7 @@ function App({
           multiAgentEnabled: cfg.multiAgentEnabled,
           workerEndpoint: cfg.workerEndpoint,
           workerApiKey: cfg.workerApiKey,
+          workerName: cfg.workerName,
           autoExecute: cfg.autoExecute,
         } : undefined}
         onMultiAgentSave={async (patch) => {

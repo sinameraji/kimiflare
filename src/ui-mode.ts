@@ -373,7 +373,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("AssistantStreamStarted", { stream_id: sid });
         cam.send("AssistantTokenDelta", { stream_id: sid, token: "# Tearing down multi-agent\n\n" });
         try {
-          for await (const step of teardownCommute()) {
+          for await (const step of teardownCommute({ workerName: cfg.workerName })) {
             const prefix = step.error ? "✗ " : (step.done || step.ok) ? "✓ " : "· ";
             cam.send("AssistantTokenDelta", { stream_id: sid, token: `${prefix}${step.message}\n` });
             if (step.error) break;
