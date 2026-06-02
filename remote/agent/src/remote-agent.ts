@@ -27,8 +27,30 @@ const MAX_TURNS = parseInt(process.env.MAX_TURNS ?? "50", 10);
 const REASONING_EFFORT = (process.env.REASONING_EFFORT ?? "medium") as "low" | "medium" | "high";
 const ACCOUNT_ID = process.env.ACCOUNT_ID ?? "";
 const API_TOKEN = process.env.API_TOKEN ?? "";
+const SHALLOW_CLONE = process.env.SHALLOW_CLONE === "1" || process.env.SHALLOW_CLONE === "true";
 
 const WORKSPACE = "/workspace";
+
+/** Simple phase timer for cold-start telemetry. */
+class PhaseTimer {
+  private start = Date.now();
+  private last = this.start;
+  private phases: Array<{ name: string; ms: number }> = [];
+
+  record(name: string): void {
+    const now = Date.now();
+    this.phases.push({ name, ms: now - this.last });
+    this.last = now;
+  }
+
+  total(): number {
+    return Date.now() - this.start;
+  }
+
+  all(): Array<{ name: string; ms: number }> {
+    return [...this.phases];
+  }
+}
 
 function logInfo(msg: string): void {
   console.log(JSON.stringify({ type: "info", message: msg }));
@@ -43,12 +65,13 @@ function setupGit(): void {
   execSync("git config --global user.name 'kimiflare'");
 }
 
-function cloneRepo(): void {
+function cloneRepo(shallow = false): void {
   if (!ARTIFACTS_URL || !ARTIFACTS_TOKEN) {
     throw new Error("ARTIFACTS_URL and ARTIFACTS_TOKEN must be set");
   }
   const authUrl = ARTIFACTS_URL.replace("https://", `https://token:${ARTIFACTS_TOKEN}@`);
-  execSync(`git clone ${authUrl} ${WORKSPACE}`, { stdio: "inherit" });
+  const depthFlag = shallow ? "--depth 1" : "";
+  execSync(`git clone ${depthFlag} ${authUrl} ${WORKSPACE}`, { stdio: "inherit" });
 }
 
 function pushRepo(): void {
@@ -67,11 +90,13 @@ function hasChanges(): boolean {
 }
 
 async function runRemoteAgent(): Promise<void> {
+  const timer = new PhaseTimer();
   logInfo(`Starting remote session ${SESSION_ID}`);
   logInfo(`Model: ${MODEL}`);
   logInfo(`Max turns: ${MAX_TURNS}`);
 
   setupGit();
+  timer.record("sandbox_boot");
 
   if (!existsSync(WORKSPACE)) {
     mkdirSync(WORKSPACE, { recursive: true });
@@ -81,15 +106,16 @@ async function runRemoteAgent(): Promise<void> {
   try {
     const workspaceFiles = execSync("ls -A", { cwd: WORKSPACE, encoding: "utf8" });
     if (workspaceFiles.trim().length === 0) {
-      logInfo("Cloning repository...");
-      cloneRepo();
+      logInfo(`Cloning repository...${SHALLOW_CLONE ? " (shallow)" : ""}`);
+      cloneRepo(SHALLOW_CLONE);
     } else {
       logInfo("Workspace already populated, skipping clone");
     }
   } catch {
-    logInfo("Cloning repository...");
-    cloneRepo();
+    logInfo(`Cloning repository...${SHALLOW_CLONE ? " (shallow)" : ""}`);
+    cloneRepo(SHALLOW_CLONE);
   }
+  timer.record("clone");
 
   // Create or checkout branch
   try {
@@ -120,6 +146,8 @@ async function runRemoteAgent(): Promise<void> {
       content: PROMPT,
     },
   ];
+
+  timer.record("agent_start");
 
   let exitCode = 0;
   let errorLog = "";
@@ -180,10 +208,14 @@ async function runRemoteAgent(): Promise<void> {
   }
 
   // Report finalization
+  timer.record("total");
+  const phases = timer.all();
+  logInfo(`Phase timing: ${phases.map((p) => `${p.name}: ${p.ms}ms`).join(" · ")}`);
   await postFinalize({
     exitCode,
     hasChanges: changesExist,
     errorLog: errorLog || undefined,
+    phases,
   });
 
   process.exit(exitCode);

@@ -156,6 +156,57 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
     assert.strictEqual(results.length, 0);
     assert.strictEqual(sup.activeWorkers[0]?.status, "failed");
   });
+
+  it("includes batchId, shallowClone, and repoCache in the payload", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof _input === "string" ? _input : _input.toString();
+      const isStart = url.endsWith("/worker") && !url.includes("/progress");
+      if (isStart && init?.body) {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ workerId: "w1" }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "completed",
+          step: "done",
+          stepIndex: 1,
+          totalSteps: 1,
+          message: "finished",
+          logs: [],
+          completedSteps: ["done"],
+          result: {
+            workerId: "w1",
+            status: "completed",
+            task: "t",
+            findings: [],
+            recommendations: [],
+            filesRead: [],
+            webSources: [],
+            costUsd: 0,
+            tokensUsed: 0,
+            reasoning: "",
+          },
+        }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const sup = new TurnSupervisor();
+    await sup.spawnWorkers([{ mode: "plan", task: "alpha" }]);
+
+    assert.ok(capturedBody, "payload should have been captured");
+    assert.ok(typeof capturedBody!.batchId === "string" && (capturedBody!.batchId as string).startsWith("batch-"), "batchId should be a string starting with 'batch-'");
+    assert.strictEqual(capturedBody!.shallowClone, true, "shallowClone should default to true");
+    assert.strictEqual(capturedBody!.repoCache, true, "repoCache should default to true");
+  });
 });
 
 describe("decomposePrompt", () => {
