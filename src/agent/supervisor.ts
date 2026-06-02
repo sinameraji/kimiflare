@@ -34,6 +34,11 @@ export interface SpawnWorkerOpts {
   prBody?: string;
 }
 
+export interface WorkerStep {
+  label: string;
+  status: "pending" | "active" | "completed" | "failed";
+}
+
 /** Active worker tracking for UI status. */
 export interface ActiveWorker {
   id: string;
@@ -49,6 +54,8 @@ export interface ActiveWorker {
   rawOutput?: string;
   /** Worker reasoning summary (available once the worker finishes). */
   reasoning?: string;
+  /** Structured steps reported by the remote worker (stepIndex/totalSteps/completedSteps). */
+  steps?: WorkerStep[];
   /** Coordinator-side log of what happened during this worker's lifecycle. */
   logs: string[];
 }
@@ -334,6 +341,19 @@ export class TurnSupervisor {
                 result?: WorkerResultMessage;
               };
 
+              // Build structured steps from progress data
+              const allSteps: WorkerStep[] = [];
+              for (let i = 0; i < progress.totalSteps; i++) {
+                const isCompleted = i < progress.completedSteps.length;
+                const isActive = i === progress.stepIndex - 1 && !isCompleted && progress.status === "running";
+                const isFailed = progress.status === "failed" && i === progress.stepIndex - 1;
+                allSteps.push({
+                  label: progress.completedSteps[i] ?? progress.step,
+                  status: isFailed ? "failed" : isCompleted ? "completed" : isActive ? "active" : "pending",
+                });
+              }
+              worker.steps = allSteps;
+
               // Append new logs (only the ones we haven't seen)
               const newLogs = progress.logs.slice(lastLogCount);
               lastLogCount = progress.logs.length;
@@ -382,6 +402,14 @@ export class TurnSupervisor {
             worker.result = data;
             worker.rawOutput = data.rawOutput;
             worker.reasoning = data.reasoning;
+            // Mark all steps completed (or failed) on finish
+            if (worker.steps && worker.steps.length > 0) {
+              for (const s of worker.steps) {
+                if (s.status === "pending" || s.status === "active") {
+                  s.status = worker.status === "completed" ? "completed" : "failed";
+                }
+              }
+            }
             worker.logs.push(`[coordinator] Worker finished with status: ${data.status}`);
             if (data.phases && data.phases.length > 0) {
               const timeline = data.phases.map((p) => `${p.name}: ${Math.round(p.ms / 1000)}s`).join(" · ");
@@ -526,6 +554,7 @@ export class TurnSupervisor {
     onUpdate?: (workers: ActiveWorker[]) => void,
     onPhaseChange?: (phase: "spawning" | "synthesizing" | "complete") => void,
     signal?: AbortSignal,
+    onNarration?: (text: string) => void,
   ): Promise<{
     plan: string;
     conflicts: string[];
@@ -540,6 +569,14 @@ export class TurnSupervisor {
       );
     }
     const workers = decomposePrompt(prompt, context);
+
+    // Narrate the decomposition plan so the user knows what each agent will do
+    const narrationLines: string[] = [
+      `Decomposing your request into ${workers.length} parallel research task${workers.length > 1 ? "s" : ""}:`,
+      ...workers.map((w, i) => `  ${i + 1}. ${w.task.slice(0, 200)}${w.task.length > 200 ? "…" : ""}`),
+    ];
+    onNarration?.(narrationLines.join("\n"));
+
     onPhaseChange?.("spawning");
     try {
       const results = await this.spawnWorkers(workers, onUpdate, signal);

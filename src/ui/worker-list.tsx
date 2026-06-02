@@ -3,17 +3,18 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
-import type { ActiveWorker } from "../agent/supervisor.js";
+import type { ActiveWorker, WorkerStep } from "../agent/supervisor.js";
 
 interface Props {
   workers: ActiveWorker[];
   isSynthesizing?: boolean;
+  narration?: string;
 }
 
-export function WorkerList({ workers, isSynthesizing }: Props) {
+export function WorkerList({ workers, isSynthesizing, narration }: Props) {
   const theme = useTheme();
 
-  if (workers.length === 0) return null;
+  if (workers.length === 0 && !narration) return null;
 
   const running = workers.filter((w) => w.status === "running").length;
   const completed = workers.filter((w) => w.status === "completed").length;
@@ -28,6 +29,15 @@ export function WorkerList({ workers, isSynthesizing }: Props) {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
+      {narration && (
+        <Box marginBottom={1}>
+          <Text color={theme.info.color} italic>
+            {narration.split("\n").map((line, i) => (
+              <Text key={`narration-${i}`}>{line}{"\n"}</Text>
+            ))}
+          </Text>
+        </Box>
+      )}
       <Box>
         <Text color={theme.accent} bold>
           Workers: {pending > 0 ? `${pending} todo · ` : ""}
@@ -89,15 +99,7 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
       : "failed";
 
   const isDone = worker.status === "completed" || worker.status === "failed";
-
-  // Show the last 5 log lines for running workers so users can see
-  // heartbeat progress and any errors as they unfold; last 8 for done/failed.
-  const visibleLogs =
-    worker.status === "running"
-      ? worker.logs.slice(-5)
-      : worker.status === "pending"
-      ? []
-      : worker.logs.slice(-8);
+  const hasSteps = worker.steps && worker.steps.length > 0;
 
   return (
     <Box flexDirection="column" marginLeft={2}>
@@ -127,9 +129,20 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
           ) : null}
         </Text>
       </Box>
-      {visibleLogs.length > 0 && (
+
+      {/* Structured steps — primary visibility */}
+      {hasSteps && (
         <Box flexDirection="column" marginLeft={4}>
-          {visibleLogs.map((line, i) => (
+          {worker.steps!.map((step, i) => (
+            <StepRow key={`${worker.id}-step-${i}`} step={step} theme={theme} />
+          ))}
+        </Box>
+      )}
+
+      {/* Raw logs — collapsed by default, last 3 lines shown as secondary info */}
+      {worker.logs.length > 0 && (
+        <Box flexDirection="column" marginLeft={4}>
+          {worker.logs.slice(-3).map((line, i) => (
             <Text key={`${worker.id}-log-${i}`} color={theme.muted?.color ?? theme.info.color} dimColor>
               {line.slice(0, 120)}
             </Text>
@@ -137,6 +150,35 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
         </Box>
       )}
     </Box>
+  );
+}
+
+function StepRow({ step, theme }: { step: WorkerStep; theme: Theme }) {
+  if (step.status === "completed") {
+    return (
+      <Text color={theme.palette.success}>
+        {"  "}✓ <Text strikethrough>{step.label}</Text>
+      </Text>
+    );
+  }
+  if (step.status === "active") {
+    return (
+      <Text color={theme.accent} bold>
+        {"  "}<Spinner type="line" /> {step.label}
+      </Text>
+    );
+  }
+  if (step.status === "failed") {
+    return (
+      <Text color={theme.palette.error}>
+        {"  "}☒ {step.label}
+      </Text>
+    );
+  }
+  return (
+    <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+      {"  "}☐ {step.label}
+    </Text>
   );
 }
 

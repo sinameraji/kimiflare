@@ -93,22 +93,42 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
   // but _activeWorkers is an instance field, not on the prototype.
   it("runs without reaching for instance fields via the prototype", async () => {
     let calls = 0;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
       calls++;
+      const url = typeof input === "string" ? input : input.toString();
+      const isStart = url.endsWith("/worker") && !url.includes("/progress");
+      if (isStart) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ workerId: `w${calls}` }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      // Progress poll
       return {
         ok: true,
         status: 200,
         json: async () => ({
-          workerId: `w${calls}`,
           status: "completed",
-          task: "t",
-          findings: [],
-          recommendations: [],
-          filesRead: [],
-          webSources: [],
-          costUsd: 0,
-          tokensUsed: 0,
-          reasoning: "",
+          step: "done",
+          stepIndex: 1,
+          totalSteps: 1,
+          message: "finished",
+          logs: [],
+          completedSteps: ["done"],
+          result: {
+            workerId: `w${calls}`,
+            status: "completed",
+            task: "t",
+            findings: [],
+            recommendations: [],
+            filesRead: [],
+            webSources: [],
+            costUsd: 0,
+            tokensUsed: 0,
+            reasoning: "",
+          },
         }),
         text: async () => "",
       } as unknown as Response;
@@ -120,7 +140,8 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
       { mode: "plan", task: "beta" },
     ]);
 
-    assert.strictEqual(calls, 2);
+    // 2 start calls + 2 progress polls = 4 calls
+    assert.strictEqual(calls, 4);
     assert.strictEqual(results.length, 2);
     assert.ok(sup.activeWorkers.every((w) => w.status === "completed"));
   });

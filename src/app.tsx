@@ -344,6 +344,7 @@ function App({
   const [lastSessionTopic, setLastSessionTopic] = useState<string | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<import("./agent/supervisor.js").ActiveWorker[]>([]);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [coordinatorNarration, setCoordinatorNarration] = useState<string>("");
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1693,6 +1694,7 @@ function App({
             ...e,
             { kind: "info", key: mkKey(), text: "multi-agent mode: spawning parallel research workers..." },
           ]);
+          setCoordinatorNarration("");
           const controller = new AbortController();
           multiAgentAbortRef.current = controller;
           try {
@@ -1702,12 +1704,28 @@ function App({
               (workers) => setActiveWorkers(workers),
               (phase) => setIsSynthesizing(phase === "synthesizing"),
               controller.signal,
+              (text) => setCoordinatorNarration(text),
             );
+            setCoordinatorNarration("");
             setEvents((e) => [
               ...e,
               { kind: "info", key: mkKey(), text: "workers completed — synthesizing findings" },
             ]);
-            messagesRef.current.push({ role: "system", content: plan });
+            // Present the synthesized plan as a visible assistant message
+            // so the user can actually read what the workers discovered.
+            const asstId = mkAssistantId();
+            setEvents((e) => [
+              ...e,
+              {
+                kind: "assistant",
+                key: `asst_${asstId}`,
+                id: asstId,
+                text: plan,
+                reasoning: "",
+                streaming: false,
+              },
+            ]);
+            messagesRef.current.push({ role: "assistant", content: plan });
             if (conflicts.length > 0) {
               setEvents((e) => [
                 ...e,
@@ -1733,6 +1751,7 @@ function App({
             return;
           } catch (e) {
             setIsSynthesizing(false);
+            setCoordinatorNarration("");
             const err = e as Error;
             if (err.message === "Cancelled by user") {
               setEvents((e) => [
@@ -2446,8 +2465,8 @@ function App({
           />
         ) : (
           <Box flexDirection="column" marginTop={1}>
-            {activeWorkers.length > 0 && (
-              <WorkerList workers={activeWorkers} isSynthesizing={isSynthesizing} />
+            {(activeWorkers.length > 0 || coordinatorNarration) && (
+              <WorkerList workers={activeWorkers} isSynthesizing={isSynthesizing} narration={coordinatorNarration} />
             )}
             {tasks.length > 0 && (
               <TaskList
