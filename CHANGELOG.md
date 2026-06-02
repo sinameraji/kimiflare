@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.79.0](https://github.com/sinameraji/kimiflare/compare/v0.78.0...v0.79.0) (2026-06-02)
+
+
+### Features
+
+* **multi-agent:** coordinator narration, step visualization, and auto-present findings ([#515](https://github.com/sinameraji/kimiflare/issues/515)) ([71ace3d](https://github.com/sinameraji/kimiflare/commit/71ace3dd2bf8b2c81e0bd01923452c9da70c2368))
+
 ## [0.78.0](https://github.com/sinameraji/kimiflare/compare/v0.77.0...v0.78.0) (2026-06-02)
 
 
