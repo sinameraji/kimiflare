@@ -137,6 +137,12 @@ export interface KimiConfig {
   workerShallowClone?: boolean;
   /** Enable repo caching / reuse hints for the Commute worker. Default: true. */
   workerRepoCache?: boolean;
+  /** Forward memory context to multi-agent workers. Default: true. */
+  workerProxyMemory?: boolean;
+  /** Forward LSP context to multi-agent workers. Default: false. */
+  workerProxyLsp?: boolean;
+  /** Forward MCP context to multi-agent workers. Default: false. */
+  workerProxyMcp?: boolean;
   /** Model used for LLM-based task decomposition in multi-agent mode.
    *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
   decompositionModel?: string;
