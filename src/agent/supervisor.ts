@@ -37,6 +37,8 @@ export interface SpawnWorkerOpts {
 /** Active worker tracking for UI status. */
 export interface ActiveWorker {
   id: string;
+  /** Remote DO workerId returned by the Commute worker (needed for /cancel). */
+  remoteWorkerId?: string;
   mode: "plan" | "execute";
   task: string;
   status: "pending" | "running" | "completed" | "failed";
@@ -132,6 +134,7 @@ export class TurnSupervisor {
   async spawnWorkers(
     workers: SpawnWorkerOpts[],
     onUpdate?: (workers: ActiveWorker[]) => void,
+    signal?: AbortSignal,
   ): Promise<WorkerResultMessage[]> {
     // Read config first; env vars override individual fields for back-compat.
     // We also fall back to the /remote setup endpoint when the dedicated
@@ -245,7 +248,7 @@ export class TurnSupervisor {
                 : {}),
             };
 
-            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "600000", 10);
+            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "900000", 10);
 
             worker.logs.push(`[coordinator] Sending payload (${JSON.stringify(payload).length} bytes)`);
             worker.logs.push(`[coordinator] Worker will clone ${repo.owner}/${repo.repo} and run kimiflare inside Cloudflare Sandbox`);
@@ -266,6 +269,7 @@ export class TurnSupervisor {
               throw new Error(`Worker start failed: ${startRes.status} ${text.slice(0, 200)}`);
             }
             const { workerId: remoteWorkerId } = (await startRes.json()) as { workerId: string };
+            worker.remoteWorkerId = remoteWorkerId;
             worker.logs.push(`[coordinator] Worker started (id: ${remoteWorkerId}) — polling for progress…`);
             onUpdate?.([...activeWorkers.values()]);
 
@@ -277,6 +281,19 @@ export class TurnSupervisor {
             let data: WorkerResultMessage | undefined;
 
             while (Date.now() - startTime < timeoutMs) {
+              if (signal?.aborted) {
+                worker.logs.push(`[coordinator] Cancelling worker (id: ${remoteWorkerId})…`);
+                onUpdate?.([...activeWorkers.values()]);
+                try {
+                  await fetch(`${endpoint}/worker/${remoteWorkerId}/cancel`, {
+                    method: "POST",
+                    headers: apiKey ? { "X-Worker-Api-Key": apiKey } : {},
+                  });
+                } catch {
+                  // Best-effort cancel — ignore network errors
+                }
+                throw new Error("Cancelled by user");
+              }
               await new Promise((r) => setTimeout(r, pollInterval));
 
               let progressRes: Response | undefined;
@@ -508,6 +525,7 @@ export class TurnSupervisor {
     context: string,
     onUpdate?: (workers: ActiveWorker[]) => void,
     onPhaseChange?: (phase: "spawning" | "synthesizing" | "complete") => void,
+    signal?: AbortSignal,
   ): Promise<{
     plan: string;
     conflicts: string[];
@@ -515,10 +533,16 @@ export class TurnSupervisor {
     prUrl?: string;
     executor?: { status: "completed" | "failed"; error?: string };
   }> {
+    if (this._activeWorkers.size > 0) {
+      throw new Error(
+        `Multi-agent already active (${this._activeWorkers.size} worker(s) in flight). ` +
+        "Wait for completion or cancel before starting a new heavy task.",
+      );
+    }
     const workers = decomposePrompt(prompt, context);
     onPhaseChange?.("spawning");
     try {
-      const results = await this.spawnWorkers(workers, onUpdate);
+      const results = await this.spawnWorkers(workers, onUpdate, signal);
       onPhaseChange?.("synthesizing");
       const synth = this.synthesizeFindings(results);
 
@@ -544,6 +568,7 @@ export class TurnSupervisor {
         const execResults = await this.spawnWorkers(
           [{ mode: "execute", task: executeTask, context }],
           onUpdate,
+          signal,
         );
         const exec = execResults[0];
         if (!exec) {
