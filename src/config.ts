@@ -128,6 +128,8 @@ export interface KimiConfig {
   multiAgentEnabled?: boolean;
   /** Bearer/secret for the worker endpoint (sent as X-Worker-Api-Key). */
   workerApiKey?: string;
+  /** Name of the deployed multi-agent Worker. Used for tear-down. */
+  workerName?: string;
   /** When true, after plan workers synthesize, spawn one executor worker
    *  to implement the synthesized plan and open a PR. Off by default. */
   autoExecute?: boolean;
