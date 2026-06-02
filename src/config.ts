@@ -120,6 +120,8 @@ export interface KimiConfig {
   workerEndpoint?: string;
   /** Max cost per worker in USD (default: 1.0). */
   workerBudgetUsd?: number;
+  /** Hard ceiling for workerBudgetUsd. Any configured or programmatic value above this is silently capped. Default: 5.0. */
+  workerBudgetMaxUsd?: number;
   /** Max workers to spawn in parallel (default: 3). */
   workerMaxParallel?: number;
   /** Timeout per worker in milliseconds (default: 300000 = 5 min). */
@@ -313,6 +315,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       unifiedBilling: envUnifiedBilling ?? persisted?.unifiedBilling,
       workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT,
       workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
+      workerBudgetMaxUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_MAX_USD"),
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
       multiAgentEnabled: envMultiAgentEnabled,
@@ -362,6 +365,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
         workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT ?? parsed.workerEndpoint,
         workerBudgetUsd: parsed.workerBudgetUsd,
+        workerBudgetMaxUsd: parsed.workerBudgetMaxUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
         multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
@@ -371,6 +375,34 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     }
   }
   return null;
+}
+
+/** Resolve and validate a worker budget, applying the hard ceiling.
+ *
+ *  - If no budget is configured, returns the default (1.0).
+ *  - If the configured budget is ≤ 0, throws.
+ *  - If the configured budget exceeds the hard ceiling (default 5.0), it is
+ *    silently capped and a warning is logged.
+ */
+export function resolveWorkerBudgetUsd(cfg: KimiConfig | null): number {
+  const DEFAULT_WORKER_BUDGET_USD = 1.0;
+  const HARD_CEILING = cfg?.workerBudgetMaxUsd ?? 5.0;
+
+  const raw = cfg?.workerBudgetUsd ?? DEFAULT_WORKER_BUDGET_USD;
+  if (raw <= 0) {
+    throw new Error(
+      `Invalid workerBudgetUsd (${raw}). Must be > 0. Set via /multi-agent or KIMIFLARE_WORKER_BUDGET_USD.`,
+    );
+  }
+  if (raw > HARD_CEILING) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `kimiflare: workerBudgetUsd ${raw} exceeds hard ceiling ${HARD_CEILING}; capping to ${HARD_CEILING}. ` +
+        `Raise the ceiling with KIMIFLARE_WORKER_BUDGET_MAX_USD if you really need more.`,
+    );
+    return HARD_CEILING;
+  }
+  return raw;
 }
 
 export async function saveConfig(cfg: KimiConfig): Promise<string> {

@@ -12,7 +12,7 @@ import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
 import type { WorkerResultMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
-import { loadConfig } from "../config.js";
+import { loadConfig, resolveWorkerBudgetUsd } from "../config.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -46,7 +46,7 @@ export interface ActiveWorker {
   remoteWorkerId?: string;
   mode: "plan" | "execute";
   task: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "budget_exhausted";
   startedAt: number;
   result?: WorkerResultMessage;
   error?: string;
@@ -222,11 +222,17 @@ export class TurnSupervisor {
           onUpdate?.([...activeWorkers.values()]);
 
           try {
+            const maxCostUsd = resolveWorkerBudgetUsd(cfg);
+            if (maxCostUsd !== (w.budgetUsd ?? 1.0)) {
+              worker.logs.push(
+                `[coordinator] Budget capped to ${maxCostUsd.toFixed(2)} (was ${(w.budgetUsd ?? 1.0).toFixed(2)})`,
+              );
+            }
             const payload = {
               mode: w.mode,
               task: w.task,
               context: w.context ?? "",
-              budget: { maxCostUsd: w.budgetUsd ?? 1.0 },
+              budget: { maxCostUsd },
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),
               model: w.model ?? "@cf/moonshotai/kimi-k2.6",
@@ -330,7 +336,7 @@ export class TurnSupervisor {
               }
 
               const progress = (await progressRes.json()) as {
-                status: "pending" | "running" | "completed" | "failed";
+                status: "pending" | "running" | "completed" | "failed" | "budget_exhausted";
                 step: string;
                 stepIndex: number;
                 totalSteps: number;
@@ -346,7 +352,9 @@ export class TurnSupervisor {
               for (let i = 0; i < progress.totalSteps; i++) {
                 const isCompleted = i < progress.completedSteps.length;
                 const isActive = i === progress.stepIndex - 1 && !isCompleted && progress.status === "running";
-                const isFailed = progress.status === "failed" && i === progress.stepIndex - 1;
+                const isFailed =
+                  (progress.status === "failed" || progress.status === "budget_exhausted") &&
+                  i === progress.stepIndex - 1;
                 allSteps.push({
                   label: progress.completedSteps[i] ?? progress.step,
                   status: isFailed ? "failed" : isCompleted ? "completed" : isActive ? "active" : "pending",
@@ -372,13 +380,17 @@ export class TurnSupervisor {
                 onUpdate?.([...activeWorkers.values()]);
               }
 
-              if (progress.status === "completed" || progress.status === "failed") {
+              if (
+                progress.status === "completed" ||
+                progress.status === "failed" ||
+                progress.status === "budget_exhausted"
+              ) {
                 if (progress.result) {
                   data = progress.result;
                 } else if (progress.error) {
                   data = {
                     workerId: remoteWorkerId,
-                    status: "failed",
+                    status: progress.status === "budget_exhausted" ? "budget_exhausted" : "failed",
                     task: w.task,
                     findings: [],
                     recommendations: [],
@@ -398,7 +410,12 @@ export class TurnSupervisor {
               throw new Error(`Worker timed out after ${Math.round(timeoutMs / 1000)}s`);
             }
 
-            worker.status = data.status === "completed" ? "completed" : "failed";
+            worker.status =
+              data.status === "completed"
+                ? "completed"
+                : data.status === "budget_exhausted"
+                  ? "budget_exhausted"
+                  : "failed";
             worker.result = data;
             worker.rawOutput = data.rawOutput;
             worker.reasoning = data.reasoning;
@@ -406,7 +423,12 @@ export class TurnSupervisor {
             if (worker.steps && worker.steps.length > 0) {
               for (const s of worker.steps) {
                 if (s.status === "pending" || s.status === "active") {
-                  s.status = worker.status === "completed" ? "completed" : "failed";
+                  s.status =
+                    worker.status === "completed"
+                      ? "completed"
+                      : worker.status === "budget_exhausted"
+                        ? "failed"
+                        : "failed";
                 }
               }
             }
@@ -422,7 +444,9 @@ export class TurnSupervisor {
               worker.logs.push(`[coordinator] Worker raw output (${data.rawOutput.length} chars):`);
               worker.logs.push(...data.rawOutput.split("\n").slice(-30));
             }
-            if (data.status === "completed") {
+            // Include completed and budget_exhausted (partial) results in synthesis.
+            // Budget-exhausted workers may still have useful findings.
+            if (data.status === "completed" || data.status === "budget_exhausted") {
               results.push(data);
             }
           } catch (e) {
@@ -517,6 +541,8 @@ export class TurnSupervisor {
       }
     }
 
+    const budgetExhaustedCount = results.filter((r) => r.status === "budget_exhausted").length;
+
     const planLines: string[] = [
       "# Synthesized Execution Plan",
       "",
@@ -528,6 +554,14 @@ export class TurnSupervisor {
       "## Recommendations",
       ...resolvedRecommendations.map((r) => `- ${r}`),
     ];
+
+    if (budgetExhaustedCount > 0) {
+      planLines.push(
+        "",
+        `> ⚠️ ${budgetExhaustedCount} worker(s) hit their budget ceiling and returned partial results. ` +
+          `Findings above may be incomplete. Consider re-running with a higher budget if critical gaps remain.`,
+      );
+    }
 
     if (conflicts.length > 0) {
       planLines.push("", "## Conflicts Resolved", ...conflicts.map((c) => `- ${c}`));

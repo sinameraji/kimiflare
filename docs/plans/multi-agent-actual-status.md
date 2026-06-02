@@ -38,7 +38,7 @@
 ## What's still NOT real
 
 1. **Worker has no web search.** The in-sandbox kimiflare run uses whatever tools are registered in the kimiflare CLI installed inside the container. If you want web search, the CLI needs the tool wired (separate work).
-2. **No worker-level cost ceiling enforcement.** The `budget.maxCostUsd` field is plumbed but not honored — the worker runs until kimiflare exits or the CLI-side `KIMIFLARE_WORKER_TIMEOUT_MS` (default 10 min) trips.
+2. **No server-side worker-level cost ceiling enforcement.** The `budget.maxCostUsd` field is plumbed and the CLI now caps it to a hard ceiling (`KIMIFLARE_WORKER_BUDGET_MAX_USD`, default $5.00), but the Commute worker itself does not yet kill the sandbox when the budget is exceeded. The worker runs until kimiflare exits or the CLI-side `KIMIFLARE_WORKER_TIMEOUT_MS` (default 10 min) trips.
 3. **Sandbox release is best-effort.** Cleanup tries `sandbox.destroy/stop/kill/shutdown` speculatively (the `@cloudflare/sandbox` API doesn't document an explicit release), then falls back to platform recycling. `max_instances` bumped to 20 in `wrangler.toml` to give headroom.
 
 ### Recently closed
