@@ -159,8 +159,8 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
 });
 
 describe("decomposePrompt", () => {
-  it("splits an explicit numbered list into one worker per item", () => {
-    const workers = decomposePrompt(
+  it("splits an explicit numbered list into one worker per item", async () => {
+    const workers = await decomposePrompt(
       "Research the following:\n1. caching strategies\n2. testing approaches\n3. migration paths",
       "ctx",
     );
@@ -170,27 +170,171 @@ describe("decomposePrompt", () => {
     assert.ok(workers[2]?.task.includes("migration"));
   });
 
-  it("splits an explicit bulleted list", () => {
-    const workers = decomposePrompt("Look at:\n- auth\n- routing\n- billing", "ctx");
+  it("splits an explicit bulleted list", async () => {
+    const workers = await decomposePrompt("Look at:\n- auth\n- routing\n- billing", "ctx");
     assert.strictEqual(workers.length, 3);
   });
 
   // Regression: previously chopped this prose prompt into 3 nonsense fragments
   // by splitting on every "and". The user's "and" is grammatical conjunction,
   // not a list separator — workers must see the whole prompt.
-  it("does NOT split a cohesive prose prompt on conjunctions", () => {
+  it("does NOT split a cohesive prose prompt on conjunctions", async () => {
     const prompt =
       "do heavy exploration and research in this project and identify 1 high leverage large idea";
-    const workers = decomposePrompt(prompt, "ctx");
+    const workers = await decomposePrompt(prompt, "ctx");
     assert.strictEqual(workers.length, 2);
     for (const w of workers) {
       assert.ok(w.task.includes(prompt), `expected full prompt preserved: ${w.task}`);
     }
   });
 
-  it("falls back to 2 angled workers when there is no clear list", () => {
-    const workers = decomposePrompt("make the app faster", "ctx");
+  it("falls back to 2 angled workers when there is no clear list", async () => {
+    const workers = await decomposePrompt("make the app faster", "ctx");
     assert.strictEqual(workers.length, 2);
     assert.ok(workers.every((w) => w.mode === "plan"));
+  });
+
+  it("uses LLM decomposition for prose when strategy is llm and cfg is provided", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "text/event-stream"]]),
+        body: new ReadableStream({
+          start(controller) {
+            const payload = JSON.stringify({
+              choices: [{ delta: { content: '{"tasks":["Analyze auth.ts","Check middleware.ts"],"reasoning":"split by file"}' } }],
+              usage: null,
+            });
+            controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\n`));
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        }),
+        text: async () => "",
+        json: async () => ({}),
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const workers = await decomposePrompt("analyze our auth system", "ctx", {
+      cwd: process.cwd(),
+      cfg: {
+        accountId: "test",
+        apiToken: "test",
+        model: "@cf/moonshotai/kimi-k2.6",
+        decompositionStrategy: "llm",
+      },
+    });
+    globalThis.fetch = realFetch;
+
+    assert.strictEqual(workers.length, 2);
+    assert.ok(workers[0]!.task.includes("auth"));
+    assert.ok(workers[1]!.task.includes("middleware"));
+  });
+
+  it("falls back to regex when LLM returns invalid JSON", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "text/event-stream"]]),
+        body: new ReadableStream({
+          start(controller) {
+            const payload = JSON.stringify({
+              choices: [{ delta: { content: "not json at all" } }],
+              usage: null,
+            });
+            controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\n`));
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        }),
+        text: async () => "",
+        json: async () => ({}),
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    // Use a unique prompt so we don't hit the cache from the previous LLM test.
+    const workers = await decomposePrompt("analyze our auth system (invalid json case)", "ctx", {
+      cwd: process.cwd(),
+      cfg: {
+        accountId: "test",
+        apiToken: "test",
+        model: "@cf/moonshotai/kimi-k2.6",
+        decompositionStrategy: "llm",
+      },
+    });
+    globalThis.fetch = realFetch;
+
+    assert.strictEqual(workers.length, 2);
+    assert.ok(
+      workers[0]!.task.includes("Research overview"),
+      `expected fallback task, got: ${workers[0]!.task}`,
+    );
+  });
+
+  it("uses regex fallback when strategy is regex", async () => {
+    const workers = await decomposePrompt("analyze our auth system", "ctx", {
+      cwd: process.cwd(),
+      cfg: {
+        accountId: "test",
+        apiToken: "test",
+        model: "@cf/moonshotai/kimi-k2.6",
+        decompositionStrategy: "regex",
+      },
+    });
+    assert.strictEqual(workers.length, 2);
+    assert.ok(workers[0]!.task.includes("Research overview"));
+  });
+
+  it("caches decomposition results", async () => {
+    const realFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "text/event-stream"]]),
+        body: new ReadableStream({
+          start(controller) {
+            const payload = JSON.stringify({
+              choices: [{ delta: { content: '{"tasks":["Task A","Task B"],"reasoning":"ok"}' } }],
+              usage: null,
+            });
+            controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\n`));
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        }),
+        text: async () => "",
+        json: async () => ({}),
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const cfg = {
+      accountId: "test",
+      apiToken: "test",
+      model: "@cf/moonshotai/kimi-k2.6",
+      decompositionStrategy: "llm" as const,
+    };
+
+    const workers1 = await decomposePrompt("same prompt", "same ctx", { cwd: process.cwd(), cfg });
+    const workers2 = await decomposePrompt("same prompt", "same ctx", { cwd: process.cwd(), cfg });
+    globalThis.fetch = realFetch;
+
+    assert.strictEqual(calls, 1);
+    assert.deepStrictEqual(workers1, workers2);
+  });
+});
+
+describe("getFileTreeSnapshot", () => {
+  it("returns a non-empty string for the current directory", async () => {
+    const { getFileTreeSnapshot } = await import("./supervisor.js");
+    const tree = await getFileTreeSnapshot(process.cwd());
+    assert.ok(typeof tree === "string");
+    assert.ok(tree.length > 0);
   });
 });

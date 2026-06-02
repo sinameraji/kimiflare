@@ -10,9 +10,12 @@
 import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
-import type { WorkerResultMessage } from "./messages.js";
+import { runKimi } from "./client.js";
+import type { WorkerResultMessage, ChatMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
-import { loadConfig } from "../config.js";
+import { loadConfig, type KimiConfig } from "../config.js";
+import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -568,7 +571,8 @@ export class TurnSupervisor {
         "Wait for completion or cancel before starting a new heavy task.",
       );
     }
-    const workers = decomposePrompt(prompt, context);
+    const cfg = await loadConfig().catch(() => null);
+    const workers = await decomposePrompt(prompt, context, { cwd: process.cwd(), cfg: cfg ?? undefined });
 
     // Narrate the decomposition plan so the user knows what each agent will do
     const narrationLines: string[] = [
@@ -629,28 +633,74 @@ export class TurnSupervisor {
   }
 }
 
-/** Conservative heuristic to decompose a heavy prompt into parallel research tasks.
- *
- * Only splits the prompt when the user gave EXPLICIT list structure — numbered
- * (`1. … 2. … 3. …`) or bulleted (`- …`/`* …`) — because that's the only
- * cheap signal that's reliably a list. Earlier this also split on any
- * conjunction or comma, which chopped cohesive sentences like "do heavy
- * exploration AND research IN this project AND identify…" into nonsense
- * fragments.
- *
- * For prose prompts (no explicit list), spawn 2 workers with the FULL prompt
- * preserved and different angles. The synthesizer dedups overlapping findings,
- * so two well-formed angles beat N fragmented ones.
- */
-export function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
-  const items = extractListItems(prompt);
-  if (items.length >= 2) {
-    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
+/** In-memory cache for decomposition results keyed by prompt+context hash. */
+const decompositionCache = new Map<string, SpawnWorkerOpts[]>();
+
+const MAX_CACHE_ENTRIES = 50;
+
+function cacheKey(prompt: string, context: string, strategy: string): string {
+  return createHash("sha256").update(`${prompt}\0${context}\0${strategy}`).digest("hex");
+}
+
+function getCached(key: string): SpawnWorkerOpts[] | undefined {
+  return decompositionCache.get(key);
+}
+
+function setCached(key: string, value: SpawnWorkerOpts[]): void {
+  if (decompositionCache.size >= MAX_CACHE_ENTRIES) {
+    const first = decompositionCache.keys().next().value;
+    if (first !== undefined) decompositionCache.delete(first);
   }
-  return [
-    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
-    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
-  ];
+  decompositionCache.set(key, value);
+}
+
+/** Build a lightweight file-tree snapshot for the current working directory.
+ *  Returns top-level dirs + key files, capped at ~40 lines, excluding
+ *  build artifacts and dependency folders. */
+export async function getFileTreeSnapshot(cwd: string): Promise<string> {
+  const IGNORED = new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "out",
+    "target",
+    ".next",
+    ".nuxt",
+    ".astro",
+    "coverage",
+    ".coverage",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    ".idea",
+    ".vscode",
+    ".DS_Store",
+  ]);
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const dirs: string[] = [];
+    const files: string[] = [];
+    for (const e of entries) {
+      if (e.name.startsWith(".") && !e.name.startsWith(".github") && !e.name.startsWith(".config")) {
+        if (!e.isDirectory()) continue;
+      }
+      if (IGNORED.has(e.name)) continue;
+      if (e.isDirectory()) dirs.push(`${e.name}/`);
+      else files.push(e.name);
+    }
+    dirs.sort();
+    files.sort();
+    const lines = [...dirs, ...files];
+    if (lines.length === 0) return "(empty directory)";
+    if (lines.length > 40) {
+      return lines.slice(0, 40).join("\n") + "\n… (truncated)";
+    }
+    return lines.join("\n");
+  } catch {
+    return "(unable to read directory)";
+  }
 }
 
 /** Pull explicit list items from a prompt: numbered (`1. …`, `1) …`) or
@@ -662,4 +712,159 @@ function extractListItems(prompt: string): string[] {
   const bulleted = [...prompt.matchAll(/(?:^|\n)\s*[-*•]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
   if (bulleted.length >= 2) return bulleted.filter((s) => s.length > 0);
   return [];
+}
+
+const DECOMPOSITION_SYSTEM = `You are a task-decomposition assistant. Given a user's coding request and a snapshot of their project directory, produce 2–4 well-scoped, non-overlapping research tasks that can be executed in parallel by independent agents.
+
+Rules:
+- Each task must be self-contained and actionable.
+- Tasks must NOT overlap in scope. If two tasks would investigate the same file or concept, merge them.
+- Respect file/directory boundaries mentioned in the prompt or visible in the file tree.
+- Scale task count with perceived complexity: 2 tasks for simple questions, 3–4 for broad audits or multi-file changes.
+- Return ONLY a JSON object with this exact shape (no markdown fences, no extra text):
+  {"tasks":["task 1","task 2",...],"reasoning":"brief explanation of why you split this way"}`;
+
+async function decomposeWithLlm(
+  prompt: string,
+  context: string,
+  fileTree: string,
+  cfg: KimiConfig,
+): Promise<SpawnWorkerOpts[] | null> {
+  const model = cfg.decompositionModel ?? "@cf/moonshotai/kimi-k2.5";
+  const accountId = cfg.accountId;
+  const apiToken = cfg.apiToken;
+  if (!accountId || !apiToken) {
+    logger.warn("decompose:missing_creds", { reason: "no accountId or apiToken" });
+    return null;
+  }
+
+  const gateway = cfg.aiGatewayId
+    ? {
+        id: cfg.aiGatewayId,
+        cacheTtl: cfg.aiGatewayCacheTtl,
+        skipCache: cfg.aiGatewaySkipCache,
+        metadata: { feature: "decomposition", ...(cfg.aiGatewayMetadata ?? {}) },
+      }
+    : undefined;
+
+  const userContent = [
+    `User request: ${prompt}`,
+    context ? `Additional context: ${context}` : "",
+    `Project file tree (top-level):\n${fileTree}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: DECOMPOSITION_SYSTEM },
+    { role: "user", content: userContent },
+  ];
+
+  try {
+    let text = "";
+    const events = runKimi({
+      accountId,
+      apiToken,
+      model,
+      messages,
+      temperature: 0.1,
+      maxCompletionTokens: 2048,
+      reasoningEffort: "low",
+      gateway,
+    });
+    for await (const ev of events) {
+      if (ev.type === "text") text += ev.delta;
+    }
+
+    // Strip markdown fences if the model wrapped JSON in them
+    const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
+    const parsed = JSON.parse(cleaned) as { tasks?: unknown; reasoning?: string };
+    const rawTasks = parsed.tasks;
+    if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
+      logger.warn("decompose:invalid_tasks", { rawTasks });
+      return null;
+    }
+
+    const tasks = rawTasks
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t.length > 0);
+
+    if (tasks.length < 2) {
+      logger.warn("decompose:too_few_tasks", { count: tasks.length });
+      return null;
+    }
+
+    // Deduplicate near-identical tasks
+    const unique: string[] = [];
+    for (const t of tasks) {
+      const lower = t.toLowerCase();
+      if (!unique.some((u) => u.toLowerCase() === lower || lower.includes(u.toLowerCase()) || u.toLowerCase().includes(lower))) {
+        unique.push(t);
+      }
+    }
+
+    const capped = unique.slice(0, 4);
+    logger.debug("decompose:llm_success", { taskCount: capped.length, reasoning: parsed.reasoning });
+    return capped.map((task) => ({ mode: "plan" as const, task, context }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn("decompose:llm_failed", { error: msg });
+    return null;
+  }
+}
+
+/** Fallback decomposition for prose prompts without explicit list structure. */
+function fallbackDecomposition(prompt: string, context: string): SpawnWorkerOpts[] {
+  return [
+    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
+    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
+  ];
+}
+
+/** Decompose a heavy prompt into parallel research tasks.
+ *
+ * 1. Explicit list items (numbered/bulleted) → immediate return.
+ * 2. Check in-memory cache.
+ * 3. If strategy is "regex" → fallback to 2-angle split.
+ * 4. Otherwise → attempt LLM decomposition with file-tree awareness.
+ * 5. On any failure → log warning and fallback to 2-angle split.
+ */
+export async function decomposePrompt(
+  prompt: string,
+  context: string,
+  opts?: { cwd?: string; cfg?: KimiConfig },
+): Promise<SpawnWorkerOpts[]> {
+  const items = extractListItems(prompt);
+  if (items.length >= 2) {
+    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
+  }
+
+  const strategy = opts?.cfg?.decompositionStrategy ?? "llm";
+  const key = cacheKey(prompt, context, strategy);
+  const cached = getCached(key);
+  if (cached) {
+    logger.debug("decompose:cache_hit");
+    return cached;
+  }
+
+  if (strategy === "regex") {
+    const result = fallbackDecomposition(prompt, context);
+    setCached(key, result);
+    return result;
+  }
+
+  // "llm" or "hybrid" — try LLM decomposition
+  if (opts?.cfg) {
+    const cwd = opts.cwd ?? process.cwd();
+    const fileTree = await getFileTreeSnapshot(cwd);
+    const llmResult = await decomposeWithLlm(prompt, context, fileTree, opts.cfg);
+    if (llmResult) {
+      setCached(key, llmResult);
+      return llmResult;
+    }
+  }
+
+  const result = fallbackDecomposition(prompt, context);
+  setCached(key, result);
+  return result;
 }

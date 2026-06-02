@@ -133,6 +133,14 @@ export interface KimiConfig {
   /** When true, after plan workers synthesize, spawn one executor worker
    *  to implement the synthesized plan and open a PR. Off by default. */
   autoExecute?: boolean;
+  /** Model used for LLM-based task decomposition in multi-agent mode.
+   *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
+  decompositionModel?: string;
+  /** Strategy for decomposing heavy prompts into parallel research tasks.
+   *  - "llm": use a lightweight LLM call (default)
+   *  - "regex": pure regex heuristic (no LLM, fastest)
+   *  - "hybrid": regex for explicit lists, LLM for prose */
+  decompositionStrategy?: "llm" | "regex" | "hybrid";
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
