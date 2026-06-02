@@ -278,11 +278,28 @@ export class TurnSupervisor {
             while (Date.now() - startTime < timeoutMs) {
               await new Promise((r) => setTimeout(r, pollInterval));
 
-              const progressRes = await fetch(`${endpoint}/worker/${remoteWorkerId}/progress`, {
-                headers: apiKey ? { "X-Worker-Api-Key": apiKey } : {},
-              });
+              let progressRes: Response | undefined;
+              let lastPollErr: string | undefined;
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                  progressRes = await fetch(`${endpoint}/worker/${remoteWorkerId}/progress`, {
+                    headers: apiKey ? { "X-Worker-Api-Key": apiKey } : {},
+                  });
+                  break;
+                } catch (err) {
+                  lastPollErr = err instanceof Error ? err.message : String(err);
+                  if (attempt < 3) {
+                    await new Promise((r) => setTimeout(r, pollInterval * attempt));
+                  }
+                }
+              }
+              if (!progressRes) {
+                worker.logs.push(`[coordinator] Progress poll failed (3 retries): ${lastPollErr}`);
+                onUpdate?.([...activeWorkers.values()]);
+                continue;
+              }
               if (!progressRes.ok) {
-                worker.logs.push(`[coordinator] Progress poll failed: ${progressRes.status}`);
+                worker.logs.push(`[coordinator] Progress poll HTTP error: ${progressRes.status}`);
                 onUpdate?.([...activeWorkers.values()]);
                 continue;
               }
