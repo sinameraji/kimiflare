@@ -454,6 +454,36 @@ export function getMemoryById(db: Database.Database, id: string): Memory | null 
   return row ? rowToMemory(row) : null;
 }
 
+/** Return the most frequently referenced files across memories for a repo.
+ *  Scores by frequency × importance, limited to `limit` results. */
+export function getTopRelatedFiles(
+  db: Database.Database,
+  repoPath: string,
+  limit = 10,
+): string[] {
+  const rows = db
+    .prepare(
+      `SELECT related_files, importance FROM memories
+       WHERE repo_path = ? AND related_files != '[]'
+         AND forgotten = 0 AND superseded_by IS NULL
+       ORDER BY accessed_at DESC
+       LIMIT 200`,
+    )
+    .all(repoPath) as Array<{ related_files: string; importance: number }>;
+
+  const scores = new Map<string, number>();
+  for (const row of rows) {
+    const files = JSON.parse(row.related_files) as string[];
+    for (const file of files) {
+      if (!file) continue;
+      scores.set(file, (scores.get(file) ?? 0) + row.importance);
+    }
+  }
+
+  const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+  return sorted.slice(0, limit).map(([file]) => file);
+}
+
 export function countHighSignalMemoriesSince(
   db: Database.Database,
   repoPath: string,

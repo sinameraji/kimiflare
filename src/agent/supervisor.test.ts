@@ -1,8 +1,8 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert";
-import { TurnSupervisor, decomposePrompt, preReadFilesForWorkers } from "./supervisor.js";
+import { TurnSupervisor, decomposePrompt, preReadFilesForWorkers, getPreReadFilesFromMemory } from "./supervisor.js";
 import type { WorkerResultMessage, WorkerFinding } from "./messages.js";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -504,5 +504,72 @@ describe("preReadFilesForWorkers", () => {
     assert.strictEqual(out.filesRead.length, 1);
     assert.ok(out.text.includes("first.txt"));
     assert.ok(!out.text.includes("second.txt"));
+  });
+});
+
+describe("getPreReadFilesFromMemory", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "kf-mem-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty array when memory is disabled", () => {
+    const files = getPreReadFilesFromMemory({ memoryEnabled: false }, tmpDir);
+    assert.deepStrictEqual(files, []);
+  });
+
+  it("returns empty array when memory DB does not exist", () => {
+    const files = getPreReadFilesFromMemory({ memoryEnabled: true }, tmpDir);
+    assert.deepStrictEqual(files, []);
+  });
+
+  it("derives top files from memory relatedFiles", async () => {
+    const dbPath = join(tmpDir, ".kimiflare", "memory.db");
+    await mkdir(join(tmpDir, ".kimiflare"), { recursive: true });
+
+    // Use dynamic import to avoid top-level better-sqlite3 dependency in tests
+    const { openMemoryDb, insertMemory } = await import("../memory/db.js");
+    const { fetchEmbeddings } = await import("../memory/embeddings.js");
+    const db = openMemoryDb(dbPath);
+
+    // Create a dummy embedding
+    const embedding = new Float32Array(768);
+    embedding.fill(0);
+
+    await insertMemory(db, {
+      content: "Entry point info",
+      category: "fact",
+      sourceSessionId: "s1",
+      repoPath: tmpDir,
+      importance: 3,
+      relatedFiles: ["src/index.tsx"],
+    }, embedding);
+
+    await insertMemory(db, {
+      content: "Package info",
+      category: "fact",
+      sourceSessionId: "s1",
+      repoPath: tmpDir,
+      importance: 4,
+      relatedFiles: ["package.json", "src/index.tsx"],
+    }, embedding);
+
+    await insertMemory(db, {
+      content: "Other info",
+      category: "fact",
+      sourceSessionId: "s1",
+      repoPath: tmpDir,
+      importance: 2,
+      relatedFiles: ["README.md"],
+    }, embedding);
+
+    const files = getPreReadFilesFromMemory({ memoryEnabled: true }, tmpDir, 10);
+    // Scores: src/index.tsx = 3+4=7, package.json = 4, README.md = 2
+    assert.deepStrictEqual(files, ["src/index.tsx", "package.json", "README.md"]);
   });
 });

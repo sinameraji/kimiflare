@@ -19,7 +19,9 @@ import type { LspManager } from "../lsp/manager.js";
 import type { McpManager } from "../mcp/manager.js";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
+import { openMemoryDb, getTopRelatedFiles } from "../memory/db.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -116,6 +118,26 @@ export async function preReadFilesForWorkers(
     filesRead,
     chars,
   };
+}
+
+/** Derive a pre-read file list from the memory database.
+ *  Returns the top frequently-referenced files for the current repo,
+ *  or an empty array if memory is disabled or the DB is empty. */
+export function getPreReadFilesFromMemory(
+  cfg: { memoryEnabled?: boolean; memoryDbPath?: string },
+  repoRoot: string,
+  limit = 10,
+): string[] {
+  if (!cfg.memoryEnabled) return [];
+  const dbPath = cfg.memoryDbPath ?? join(repoRoot, ".kimiflare", "memory.db");
+  try {
+    const db = openMemoryDb(dbPath);
+    const files = getTopRelatedFiles(db, repoRoot, limit);
+    return files;
+  } catch {
+    // Memory DB may not exist or be unreadable — fall back gracefully
+    return [];
+  }
 }
 
 export class TurnSupervisor {
@@ -262,7 +284,15 @@ export class TurnSupervisor {
     const mcpManager = this.mcpManager;
 
     // ── Coordinator-side file cache: pre-read commonly accessed files ──
-    const preReadCfg = cfg.workerPreReadFiles;
+    let preReadCfg = cfg.workerPreReadFiles;
+    // If no explicit list, try to derive from memory (frequently referenced files)
+    if (!preReadCfg || preReadCfg.length === 0) {
+      const memoryFiles = getPreReadFilesFromMemory(cfg, process.cwd(), 10);
+      if (memoryFiles.length > 0) {
+        preReadCfg = memoryFiles;
+        logger.info("spawnWorkers:pre_read_from_memory", { files: memoryFiles });
+      }
+    }
     const preReadMax = cfg.workerPreReadMaxChars ?? DEFAULT_PRE_READ_MAX_CHARS;
     const preRead = preReadCfg && preReadCfg.length > 0
       ? await preReadFilesForWorkers(preReadCfg, process.cwd(), preReadMax)
@@ -271,6 +301,7 @@ export class TurnSupervisor {
       logger.info("spawnWorkers:pre_read", {
         files: preRead.filesRead,
         chars: preRead.chars,
+        source: cfg.workerPreReadFiles ? "config" : "memory",
       });
     }
 
