@@ -1,7 +1,10 @@
 import { describe, it, afterEach, beforeEach } from "node:test";
 import assert from "node:assert";
-import { TurnSupervisor, decomposePrompt } from "./supervisor.js";
+import { TurnSupervisor, decomposePrompt, preReadFilesForWorkers } from "./supervisor.js";
 import type { WorkerResultMessage, WorkerFinding } from "./messages.js";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 function result(
   workerId: string,
@@ -444,5 +447,62 @@ describe("getFileTreeSnapshot", () => {
     const tree = await getFileTreeSnapshot(process.cwd());
     assert.ok(typeof tree === "string");
     assert.ok(tree.length > 0);
+  });
+});
+
+describe("preReadFilesForWorkers", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "kf-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("reads files and formats them with separators", async () => {
+    await writeFile(join(tmpDir, "a.txt"), "hello", "utf8");
+    await writeFile(join(tmpDir, "b.txt"), "world", "utf8");
+    const out = await preReadFilesForWorkers(["a.txt", "b.txt"], tmpDir, 10_000);
+    assert.strictEqual(out.filesRead.length, 2);
+    assert.ok(out.text.includes("--- a.txt ---"));
+    assert.ok(out.text.includes("hello"));
+    assert.ok(out.text.includes("--- b.txt ---"));
+    assert.ok(out.text.includes("world"));
+    assert.strictEqual(out.chars, 10); // "hello" + "world" = 10 chars
+  });
+
+  it("respects maxChars and truncates", async () => {
+    await writeFile(join(tmpDir, "long.txt"), "a".repeat(100), "utf8");
+    const out = await preReadFilesForWorkers(["long.txt"], tmpDir, 50);
+    assert.strictEqual(out.filesRead.length, 1);
+    assert.ok(out.text.includes("a".repeat(50)));
+    assert.ok(out.text.includes("… (truncated)"));
+    assert.strictEqual(out.chars, 50 + "\n… (truncated)".length);
+  });
+
+  it("skips missing files gracefully", async () => {
+    await writeFile(join(tmpDir, "exists.txt"), "yes", "utf8");
+    const out = await preReadFilesForWorkers(["missing.txt", "exists.txt"], tmpDir, 10_000);
+    assert.strictEqual(out.filesRead.length, 1);
+    assert.ok(out.text.includes("exists.txt"));
+    assert.ok(!out.text.includes("missing.txt"));
+  });
+
+  it("returns empty result when no files are readable", async () => {
+    const out = await preReadFilesForWorkers(["nope.txt"], tmpDir, 10_000);
+    assert.strictEqual(out.filesRead.length, 0);
+    assert.strictEqual(out.text, "");
+    assert.strictEqual(out.chars, 0);
+  });
+
+  it("stops reading once maxChars is reached", async () => {
+    await writeFile(join(tmpDir, "first.txt"), "abc", "utf8");
+    await writeFile(join(tmpDir, "second.txt"), "def", "utf8");
+    const out = await preReadFilesForWorkers(["first.txt", "second.txt"], tmpDir, 2);
+    assert.strictEqual(out.filesRead.length, 1);
+    assert.ok(out.text.includes("first.txt"));
+    assert.ok(!out.text.includes("second.txt"));
   });
 });

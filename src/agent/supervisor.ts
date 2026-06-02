@@ -17,8 +17,9 @@ import { loadConfig, resolveWorkerBudgetUsd, type KimiConfig } from "../config.j
 import type { MemoryManager } from "../memory/manager.js";
 import type { LspManager } from "../lsp/manager.js";
 import type { McpManager } from "../mcp/manager.js";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -70,6 +71,51 @@ export interface ActiveWorker {
   steps?: WorkerStep[];
   /** Coordinator-side log of what happened during this worker's lifecycle. */
   logs: string[];
+  /** Files pre-read by the coordinator and injected into this worker's context. */
+  preReadFiles?: string[];
+  /** Total characters of pre-read content injected. */
+  preReadChars?: number;
+}
+
+const DEFAULT_PRE_READ_MAX_CHARS = 50_000;
+
+/** Pre-read files from the local filesystem and format them for worker context.
+ *  Respects maxChars, skips missing files, and returns a formatted block. */
+export async function preReadFilesForWorkers(
+  files: string[],
+  repoRoot: string,
+  maxChars = DEFAULT_PRE_READ_MAX_CHARS,
+): Promise<{ text: string; filesRead: string[]; chars: number }> {
+  const results: string[] = [];
+  const filesRead: string[] = [];
+  let chars = 0;
+
+  for (const file of files) {
+    if (chars >= maxChars) break;
+    const path = resolve(repoRoot, file);
+    try {
+      const s = await stat(path);
+      if (!s.isFile()) continue;
+      const raw = await readFile(path, "utf8");
+      const remaining = maxChars - chars;
+      const content = raw.length > remaining ? raw.slice(0, remaining) + "\n… (truncated)" : raw;
+      results.push(`--- ${file} ---\n${content}`);
+      filesRead.push(file);
+      chars += content.length;
+    } catch {
+      // Skip missing or unreadable files silently
+    }
+  }
+
+  if (results.length === 0) {
+    return { text: "", filesRead: [], chars: 0 };
+  }
+
+  return {
+    text: `The following files were pre-read by the coordinator and are available for reference.\nCheck here before using the read tool to avoid redundant file reads.\n\n${results.join("\n\n")}`,
+    filesRead,
+    chars,
+  };
 }
 
 export class TurnSupervisor {
@@ -215,6 +261,19 @@ export class TurnSupervisor {
     const lspManager = this.lspManager;
     const mcpManager = this.mcpManager;
 
+    // ── Coordinator-side file cache: pre-read commonly accessed files ──
+    const preReadCfg = cfg.workerPreReadFiles;
+    const preReadMax = cfg.workerPreReadMaxChars ?? DEFAULT_PRE_READ_MAX_CHARS;
+    const preRead = preReadCfg && preReadCfg.length > 0
+      ? await preReadFilesForWorkers(preReadCfg, process.cwd(), preReadMax)
+      : { text: "", filesRead: [] as string[], chars: 0 };
+    if (preRead.filesRead.length > 0) {
+      logger.info("spawnWorkers:pre_read", {
+        files: preRead.filesRead,
+        chars: preRead.chars,
+      });
+    }
+
     // Register all workers as pending
     for (const w of workers) {
       const id = `worker-${crypto.randomUUID().slice(0, 8)}`;
@@ -225,6 +284,8 @@ export class TurnSupervisor {
         status: "pending",
         startedAt: Date.now(),
         logs: [],
+        preReadFiles: preRead.filesRead,
+        preReadChars: preRead.chars,
       });
     }
     onUpdate?.(this.activeWorkers);
@@ -250,6 +311,11 @@ export class TurnSupervisor {
           const worker = activeWorkers.get(workerId)!;
           worker.status = "running";
           worker.logs.push(`[coordinator] Starting worker → POST ${endpoint}/worker`);
+          if (worker.preReadFiles && worker.preReadFiles.length > 0) {
+            worker.logs.push(
+              `[coordinator] Shared cache: ${worker.preReadFiles.length} file(s) pre-read (~${worker.preReadChars?.toLocaleString() ?? "?"} chars)`,
+            );
+          }
           onUpdate?.([...activeWorkers.values()]);
 
           try {
@@ -293,7 +359,9 @@ export class TurnSupervisor {
             const payload = {
               mode: w.mode,
               task: w.task,
-              context: w.context ?? "",
+              context: preRead.text
+                ? `${preRead.text}\n\n${w.context ?? ""}`
+                : (w.context ?? ""),
               budget: { maxCostUsd },
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),

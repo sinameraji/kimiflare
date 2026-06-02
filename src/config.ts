@@ -153,6 +153,13 @@ export interface KimiConfig {
    *  - "regex": pure regex heuristic (no LLM, fastest)
    *  - "hybrid": regex for explicit lists, LLM for prose */
   decompositionStrategy?: "llm" | "regex" | "hybrid";
+  /** Files to pre-read on the coordinator and inject into every worker's
+   *  context. Saves redundant `read` tool calls across workers. Paths are
+   *  relative to the repo root. */
+  workerPreReadFiles?: string[];
+  /** Max characters of pre-read content to inject per worker batch.
+   *  Default: 50_000. */
+  workerPreReadMaxChars?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -293,6 +300,10 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
   const envMultiAgentEnabled = readBooleanEnv("KIMIFLARE_MULTI_AGENT_ENABLED");
+  const envWorkerPreReadFiles = process.env.KIMIFLARE_WORKER_PRE_READ_FILES
+    ? process.env.KIMIFLARE_WORKER_PRE_READ_FILES.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+  const envWorkerPreReadMaxChars = readNumberEnv("KIMIFLARE_WORKER_PRE_READ_MAX_CHARS");
 
   if (envAccount && envToken) {
     return {
@@ -341,6 +352,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
       workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? true,
       workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? true,
+      workerPreReadFiles: envWorkerPreReadFiles ?? persisted?.workerPreReadFiles,
+      workerPreReadMaxChars: envWorkerPreReadMaxChars ?? persisted?.workerPreReadMaxChars,
     };
   }
 
@@ -393,6 +406,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         autoExecute: parsed.autoExecute,
         workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? parsed.workerShallowClone ?? true,
         workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? parsed.workerRepoCache ?? true,
+        workerPreReadFiles: envWorkerPreReadFiles ?? parsed.workerPreReadFiles,
+        workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
       };
     }
   }

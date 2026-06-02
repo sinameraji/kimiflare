@@ -48,6 +48,19 @@ export function WorkerList({ workers, isSynthesizing, narration }: Props) {
           {failed > 0 ? `${failed} failed · ` : ""}
         </Text>
       </Box>
+      {(() => {
+        const anyPreRead = workers.find((w) => w.preReadFiles && w.preReadFiles.length > 0);
+        if (!anyPreRead) return null;
+        const fileCount = anyPreRead.preReadFiles!.length;
+        const chars = anyPreRead.preReadChars ?? 0;
+        return (
+          <Box marginLeft={2}>
+            <Text color={theme.info.color}>
+              📦 Shared cache: {fileCount} file{fileCount > 1 ? "s" : ""} pre-read (~{chars.toLocaleString()} chars)
+            </Text>
+          </Box>
+        );
+      })()}
       {workers.map((w) => (
         <WorkerRow key={w.id} worker={w} />
       ))}
