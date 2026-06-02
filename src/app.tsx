@@ -435,6 +435,9 @@ function App({
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
   const submitRef = useRef<(full: string, display?: string) => void>(() => {});
+  /** AbortController for the current multi-agent spawn. Used by Escape to
+   *  cancel in-flight workers via the remote /cancel endpoint. */
+  const multiAgentAbortRef = useRef<AbortController | null>(null);
   const lspManagerRef = useRef(new LspManager());
   const lspToolsRef = useRef<ToolSpec[]>([]);
   const lspInitRef = useRef(false);
@@ -890,6 +893,13 @@ function App({
         hasPerm: hasPendingPermission(),
         hasLimit: limitResolveRef.current !== null,
       });
+      // Multi-agent cancel path: abort the dedicated controller so the
+      // polling loop breaks and /cancel fires on each active worker.
+      if (multiAgentAbortRef.current) {
+        multiAgentAbortRef.current.abort();
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cancelling multi-agent workers…" }]);
+        return;
+      }
       const outcome = runInterruptOrExit(interruptDepsRef.current!);
       if (!outcome.didInterruptTurn && !outcome.hadPermission && !outcome.hadLimit && !outcome.hadLoop) {
         logger.info("input:ctrl+c:exiting");
@@ -913,10 +923,21 @@ function App({
         resumeSessions !== null ||
         checkpointSession !== null ||
         showThemePicker;
-      if (!modalOpen && (busyRef.current || supervisorRef.current.isRunning) && activeScopeRef.current && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
-        lastEscapeAtRef.current = now;
-        runInterruptTurn(interruptDepsRef.current!);
-        return;
+      if (!modalOpen && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
+        // Multi-agent cancel path: workers are in flight but there is no
+        // activeScopeRef (multi-agent bypasses runAgentTurn). Abort the
+        // dedicated controller so the polling loop breaks and /cancel fires.
+        if (multiAgentAbortRef.current) {
+          lastEscapeAtRef.current = now;
+          multiAgentAbortRef.current.abort();
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cancelling multi-agent workers…" }]);
+          return;
+        }
+        if ((busyRef.current || supervisorRef.current.isRunning) && activeScopeRef.current) {
+          lastEscapeAtRef.current = now;
+          runInterruptTurn(interruptDepsRef.current!);
+          return;
+        }
       }
     }
     if (key.ctrl && inputChar === "r") {
@@ -951,6 +972,13 @@ function App({
       hasLimit: limitResolveRef.current !== null,
       hasLoop: loopResolveRef.current !== null,
     });
+    // Multi-agent cancel path: abort the dedicated controller so the
+    // polling loop breaks and /cancel fires on each active worker.
+    if (multiAgentAbortRef.current) {
+      multiAgentAbortRef.current.abort();
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "cancelling multi-agent workers…" }]);
+      return;
+    }
     // SIGINT preserves the pre-refactor asymmetry: it does NOT iterate
     // pendingToolCalls to mark them cancelled (the Ctrl+C path does).
     // Pass `skipPendingToolCleanup: true` so interruptTurn matches.
@@ -1648,23 +1676,32 @@ function App({
       // Two-gate check for multi-agent mode:
       // 1. Mode gate: multi-agent-experimental must be active
       // 2. Tier gate: task must be classified as "heavy"
+      // 3. Activity gate: don't spawn new workers if some are already in flight
       if (modeRef.current === "multi-agent-experimental") {
         if (classification.tier !== "heavy") {
           setEvents((e) => [
             ...e,
             { kind: "info", key: mkKey(), text: `multi-agent mode active, but task is ${classification.tier} — running locally` },
           ]);
+        } else if (activeWorkers.length > 0) {
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `multi-agent workers already active (${activeWorkers.length}) — routing to coordinator` },
+          ]);
         } else {
           setEvents((e) => [
             ...e,
             { kind: "info", key: mkKey(), text: "multi-agent mode: spawning parallel research workers..." },
           ]);
+          const controller = new AbortController();
+          multiAgentAbortRef.current = controller;
           try {
             const { plan, conflicts, recommendations, prUrl, executor } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,
               (workers) => setActiveWorkers(workers),
               (phase) => setIsSynthesizing(phase === "synthesizing"),
+              controller.signal,
             );
             setEvents((e) => [
               ...e,
@@ -1697,12 +1734,21 @@ function App({
           } catch (e) {
             setIsSynthesizing(false);
             const err = e as Error;
-            setEvents((e) => [
-              ...e,
-              { kind: "error", key: mkKey(), text: `multi-agent spawn failed: ${err.message}` },
-            ]);
+            if (err.message === "Cancelled by user") {
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "multi-agent cancelled" },
+              ]);
+            } else {
+              setEvents((e) => [
+                ...e,
+                { kind: "error", key: mkKey(), text: `multi-agent spawn failed: ${err.message}` },
+              ]);
+            }
             endTurn();
             return;
+          } finally {
+            multiAgentAbortRef.current = null;
           }
         }
       }
