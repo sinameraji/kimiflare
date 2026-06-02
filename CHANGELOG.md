@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.78.0](https://github.com/sinameraji/kimiflare/compare/v0.77.0...v0.78.0) (2026-06-02)
+
+
+### Features
+
+* **multi-agent:** add teardown, cleanup scripts, and workerName tracking ([#512](https://github.com/sinameraji/kimiflare/issues/512)) ([5895c9c](https://github.com/sinameraji/kimiflare/commit/5895c9c42cbce825942066650523917b7f1da48c))
+
+
+### Bug Fixes
+
+* **multi-agent:** abort signal, escape cancel, and user-message routing ([#514](https://github.com/sinameraji/kimiflare/issues/514)) ([34d7692](https://github.com/sinameraji/kimiflare/commit/34d7692f1e1c460685467146bb7e266f78702df7))
+
 ## [0.77.0](https://github.com/sinameraji/kimiflare/compare/v0.76.1...v0.77.0) (2026-06-02)
 
 
