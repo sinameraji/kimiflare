@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.77.0](https://github.com/sinameraji/kimiflare/compare/v0.76.1...v0.77.0) (2026-06-02)
+
+
+### Features
+
+* **multi-agent:** add worker execute mode + unit tests ([#506](https://github.com/sinameraji/kimiflare/issues/506)) ([45e314c](https://github.com/sinameraji/kimiflare/commit/45e314c19921e0bdba15e110960c58d7ef730b92))
+* **multi-agent:** full coordinator + worker architecture, one-tap deploy, TUI settings, and resilience fixes ([#511](https://github.com/sinameraji/kimiflare/issues/511)) ([c216ab8](https://github.com/sinameraji/kimiflare/commit/c216ab88387409f811b31cb48cc59829b8250a5c))
+* **multi-agent:** standalone worker client side ([#496](https://github.com/sinameraji/kimiflare/issues/496)) ([8bdce6f](https://github.com/sinameraji/kimiflare/commit/8bdce6fee6a7725d1432493d3462a363a3a95f88))
+
+
+### Bug Fixes
+
+* **multi-agent:** make experimental mode usable in both UIs ([#507](https://github.com/sinameraji/kimiflare/issues/507)) ([752555d](https://github.com/sinameraji/kimiflare/commit/752555d4cf014492aea1adfb6b0e4dba5db3fe4f))
+
 ## [0.76.1](https://github.com/sinameraji/kimiflare/compare/v0.76.0...v0.76.1) (2026-05-27)
 
 
