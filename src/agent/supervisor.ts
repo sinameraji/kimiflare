@@ -273,6 +273,7 @@ export class TurnSupervisor {
             const pollInterval = 3000;
             const startTime = Date.now();
             let lastLogCount = 0;
+            let lastStep = "";
             let data: WorkerResultMessage | undefined;
 
             while (Date.now() - startTime < timeoutMs) {
@@ -323,9 +324,16 @@ export class TurnSupervisor {
                 worker.logs.push(`[worker] ${logLine}`);
               }
 
-              // Show current step
-              worker.logs.push(`[coordinator] Step ${progress.stepIndex}/${progress.totalSteps}: ${progress.message}`);
-              onUpdate?.([...activeWorkers.values()]);
+              // Show current step (only when it changes)
+              const stepKey = `${progress.stepIndex}:${progress.step}`;
+              if (stepKey !== lastStep) {
+                lastStep = stepKey;
+                worker.logs.push(`[coordinator] Step ${progress.stepIndex}/${progress.totalSteps}: ${progress.message}`);
+                onUpdate?.([...activeWorkers.values()]);
+              } else if (newLogs.length > 0) {
+                // Still need to refresh if new worker logs arrived
+                onUpdate?.([...activeWorkers.values()]);
+              }
 
               if (progress.status === "completed" || progress.status === "failed") {
                 if (progress.result) {
