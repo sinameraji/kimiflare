@@ -1698,6 +1698,11 @@ function App({
           const controller = new AbortController();
           multiAgentAbortRef.current = controller;
           try {
+            // Wire coordinator managers so workers get memory/LSP/MCP context
+            supervisorRef.current!.memoryManager = memoryManagerRef.current;
+            supervisorRef.current!.lspManager = lspManagerRef.current;
+            supervisorRef.current!.mcpManager = mcpManagerRef.current;
+
             const { plan, conflicts, recommendations, prUrl, executor } = await supervisorRef.current!.autoSpawnWorkers(
               trimmed,
               `Current project: ${process.cwd()}`,

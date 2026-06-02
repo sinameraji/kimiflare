@@ -156,6 +156,64 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
     assert.strictEqual(results.length, 0);
     assert.strictEqual(sup.activeWorkers[0]?.status, "failed");
   });
+
+  it("forwards memoryContext, lspContext, and mcpContext in the payload", async () => {
+    let capturedBody = "";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/worker") && !url.includes("/progress")) {
+        capturedBody = (init?.body as string) ?? "";
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ workerId: "w1" }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "completed",
+          step: "done",
+          stepIndex: 1,
+          totalSteps: 1,
+          message: "finished",
+          logs: [],
+          completedSteps: ["done"],
+          result: {
+            workerId: "w1",
+            status: "completed",
+            task: "t",
+            findings: [],
+            recommendations: [],
+            filesRead: [],
+            webSources: [],
+            costUsd: 0,
+            tokensUsed: 0,
+            reasoning: "",
+          },
+        }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const sup = new TurnSupervisor();
+    await sup.spawnWorkers([
+      {
+        mode: "plan",
+        task: "alpha",
+        memoryContext: "mem: foo",
+        lspContext: "lsp: bar",
+        mcpContext: "mcp: baz",
+      },
+    ]);
+
+    const payload = JSON.parse(capturedBody);
+    assert.strictEqual(payload.memoryContext, "mem: foo");
+    assert.strictEqual(payload.lspContext, "lsp: bar");
+    assert.strictEqual(payload.mcpContext, "mcp: baz");
+  });
 });
 
 describe("decomposePrompt", () => {

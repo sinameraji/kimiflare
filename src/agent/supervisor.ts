@@ -13,6 +13,9 @@ import { logger } from "../util/logger.js";
 import type { WorkerResultMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
 import { loadConfig } from "../config.js";
+import type { MemoryManager } from "../memory/manager.js";
+import type { LspManager } from "../lsp/manager.js";
+import type { McpManager } from "../mcp/manager.js";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -32,6 +35,12 @@ export interface SpawnWorkerOpts {
   baseBranch?: string;
   prTitle?: string;
   prBody?: string;
+  /** Pre-computed memory context from coordinator's MemoryManager */
+  memoryContext?: string;
+  /** Pre-computed LSP context (workspace symbols, diagnostics) */
+  lspContext?: string;
+  /** Pre-computed MCP context (available tools, servers) */
+  mcpContext?: string;
 }
 
 export interface WorkerStep {
@@ -65,6 +74,13 @@ export class TurnSupervisor {
   private _phase: TurnPhase = "idle";
   private _killRequested = false;
   private _activeWorkers: Map<string, ActiveWorker> = new Map();
+
+  /** Coordinator-side MemoryManager for proxying memories to workers */
+  memoryManager: MemoryManager | null = null;
+  /** Coordinator-side LspManager for proxying LSP context to workers */
+  lspManager: LspManager | null = null;
+  /** Coordinator-side McpManager for proxying MCP context to workers */
+  mcpManager: McpManager | null = null;
 
   get phase(): TurnPhase {
     return this._phase;
@@ -186,6 +202,16 @@ export class TurnSupervisor {
     const userAccountId = cfg.accountId;
     const userApiToken = cfg.apiToken;
 
+    // Configurable proxy flags for worker capabilities
+    const proxyMemory = cfg?.workerProxyMemory ?? true;
+    const proxyLsp = cfg?.workerProxyLsp ?? false;
+    const proxyMcp = cfg?.workerProxyMcp ?? false;
+
+    // Capture coordinator managers for context gathering
+    const memoryManager = this.memoryManager;
+    const lspManager = this.lspManager;
+    const mcpManager = this.mcpManager;
+
     // Register all workers as pending
     for (const w of workers) {
       const id = `worker-${crypto.randomUUID().slice(0, 8)}`;
@@ -222,6 +248,37 @@ export class TurnSupervisor {
           onUpdate?.([...activeWorkers.values()]);
 
           try {
+            // Gather coordinator-side context for the worker
+            let memoryContext = w.memoryContext ?? "";
+            let lspContext = w.lspContext ?? "";
+            let mcpContext = w.mcpContext ?? "";
+
+            if (proxyMemory && memoryManager && !memoryContext) {
+              try {
+                const memories = await memoryManager.recall({ text: w.task, limit: 10 });
+                const { formatRecalledMemories } = await import("../memory/retrieval.js");
+                memoryContext = formatRecalledMemories(memories);
+              } catch (err) {
+                logger.warn("supervisor:memory_recall_failed", { task: w.task, error: (err as Error).message });
+              }
+            }
+
+            if (proxyLsp && lspManager && !lspContext) {
+              try {
+                lspContext = await lspManager.exportContext(process.cwd());
+              } catch (err) {
+                logger.warn("supervisor:lsp_export_failed", { error: (err as Error).message });
+              }
+            }
+
+            if (proxyMcp && mcpManager && !mcpContext) {
+              try {
+                mcpContext = mcpManager.exportContext();
+              } catch (err) {
+                logger.warn("supervisor:mcp_export_failed", { error: (err as Error).message });
+              }
+            }
+
             const payload = {
               mode: w.mode,
               task: w.task,
@@ -241,6 +298,10 @@ export class TurnSupervisor {
               // these are absent (older client + new server).
               userAccountId,
               userApiToken,
+              // Coordinator-side context proxying
+              ...(memoryContext ? { memoryContext } : {}),
+              ...(lspContext ? { lspContext } : {}),
+              ...(mcpContext ? { mcpContext } : {}),
               // Optionally override the in-sandbox kimiflare install so the
               // worker runs pre-release / branch code instead of the image-
               // baked version. e.g. `kimiflare@latest`, `kimiflare@1.2.3`,

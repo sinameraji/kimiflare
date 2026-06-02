@@ -27,6 +27,10 @@ const MAX_TURNS = parseInt(process.env.MAX_TURNS ?? "50", 10);
 const REASONING_EFFORT = (process.env.REASONING_EFFORT ?? "medium") as "low" | "medium" | "high";
 const ACCOUNT_ID = process.env.ACCOUNT_ID ?? "";
 const API_TOKEN = process.env.API_TOKEN ?? "";
+const TOOLS_MODE = process.env.TOOLS ?? "all";
+const MEMORY_CONTEXT = process.env.MEMORY_CONTEXT ?? "";
+const LSP_CONTEXT = process.env.LSP_CONTEXT ?? "";
+const MCP_CONTEXT = process.env.MCP_CONTEXT ?? "";
 
 const WORKSPACE = "/workspace";
 
@@ -100,7 +104,10 @@ async function runRemoteAgent(): Promise<void> {
     logInfo(`Checked out existing branch ${GITHUB_BRANCH}`);
   }
 
-  const tools = ALL_TOOLS;
+  // Filter tools based on coordinator's requested mode
+  const tools = TOOLS_MODE === "read-only"
+    ? ALL_TOOLS.filter((t) => !t.needsPermission)
+    : ALL_TOOLS;
   const executor = new ToolExecutor(tools);
   const callbacks = createProgressReporter();
   const permissionHandler = createHeadlessPermissionHandler();
@@ -113,6 +120,9 @@ async function runRemoteAgent(): Promise<void> {
         tools,
         model: MODEL,
         mode: "auto",
+        memoryContext: MEMORY_CONTEXT || undefined,
+        lspContext: LSP_CONTEXT || undefined,
+        mcpContext: MCP_CONTEXT || undefined,
       }),
     },
     {
