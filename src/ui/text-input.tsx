@@ -82,9 +82,25 @@ export function CustomTextInput({
   };
   const pastesRef = useRef<Map<string, string>>(new Map());
   const pasteCounterRef = useRef(0);
+  const prevValueRef = useRef(value);
 
   useEffect(() => {
     if (!focus) return;
+    const prevValue = prevValueRef.current;
+    prevValueRef.current = value;
+
+    if (value === prevValue) return;
+
+    // If the cursor was at the end of the previous value, keep it at the end
+    // (handles history navigation and other external value replacements).
+    if (cursorOffset === prevValue.length) {
+      if (cursorOffset !== value.length) {
+        setCursorOffset(value.length);
+      }
+      return;
+    }
+
+    // Otherwise just clamp to valid range.
     const next = cursorOffset > value.length ? value.length : cursorOffset;
     if (next !== cursorOffset) {
       setCursorOffset(next);
