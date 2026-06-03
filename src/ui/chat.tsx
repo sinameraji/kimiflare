@@ -70,6 +70,15 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
     if (count >= 3) repeatedSigs.add(sig);
   }
 
+  // Only the most recent assistant message should show a streaming spinner.
+  let lastAssistantIndex = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.kind === "assistant") {
+      lastAssistantIndex = i;
+      break;
+    }
+  }
+
   return (
     <Box flexDirection="column">
       {events.map((e, i) => {
@@ -88,7 +97,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} />
+            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} isLastAssistant={i === lastAssistantIndex} />
           </Box>
         );
       })}
@@ -102,12 +111,14 @@ const EventView = React.memo(function EventView({
   verbose,
   repeatedSigs,
   intentTier,
+  isLastAssistant,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
   verbose?: boolean;
   repeatedSigs?: Set<string>;
   intentTier?: IntentTier;
+  isLastAssistant?: boolean;
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
@@ -164,7 +175,7 @@ const EventView = React.memo(function EventView({
               </Box>
             ) : null}
             {evt.text ? <MD text={evt.text} /> : null}
-            {evt.streaming && (
+            {evt.streaming && isLastAssistant && (
               <Text color={theme.spinner}>
                 <Spinner type="dots" />
               </Text>
