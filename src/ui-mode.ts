@@ -22,7 +22,7 @@
 
 import { execSync, spawn } from "node:child_process";
 import { appendFileSync, openSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, unlink } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { platform } from "node:os";
 /** File logger gated by KIMIFLARE_EVENT_LOG. One JSON object per line. */
@@ -81,11 +81,13 @@ async function loadCamouflage() {
 }
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
+import { distillSessionPlan } from "./agent/distill.js";
 import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
 import { checkForUpdate } from "./util/update-check.js";
+import { writeToClipboard } from "./util/clipboard.js";
 import { calculateCost } from "./pricing.js";
-import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
+import { loadConfig, saveConfig, configPath, DEFAULT_MODEL } from "./config.js";
 import type { KimiConfig } from "./config.js";
 import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
 import { listAllSkills, setSkillEnabled, deleteSkill } from "./skills/manager.js";
@@ -2243,8 +2245,46 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           kind: "info", ttl_ms: 4000,
         });
         return true;
+      case "fresh": {
+        if (currentPhase !== "idle") {
+          cam.send("ShowToast", { text: "can't /fresh while model is running — press Esc to interrupt first", kind: "warn", ttl_ms: 2500 });
+          return true;
+        }
+        const plan = distillSessionPlan(messages);
+        if (!plan) {
+          cam.send("ShowToast", { text: "No plan found to start fresh with.", kind: "error", ttl_ms: 2500 });
+          return true;
+        }
+        const clipResult = writeToClipboard(plan);
+        // Reset session (reuse /clear logic)
+        const systemMessages = messages.filter((m) => m.role === "system");
+        messages.length = 0;
+        messages.push(...systemMessages);
+        sessionCostUsd = 0;
+        promptTokens = 0;
+        cachedTokens = 0;
+        completionTokens = 0;
+        cam.send("TranscriptCleared", {});
+        cam.send("StatusUpdate", {
+          segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
+        });
+        // Seed with plan
+        messages.push({ role: "user", content: plan });
+        cam.send("ShowToast", {
+          text: clipResult.success
+            ? "Plan copied to clipboard. Starting fresh session with plan only…"
+            : "Clipboard unavailable. Starting fresh session with plan only…",
+          kind: "info",
+          ttl_ms: 3000,
+        });
+        if (!clipResult.success) {
+          cam.send("UserMessageCreated", { text: "--- Plan ---\n" + plan });
+        }
+        return true;
+      }
       case "logout": {
-        cam.send("ShowToast", { text: "Cloud has been removed; nothing to log out of.", kind: "info", ttl_ms: 2500 });
+        unlink(configPath()).catch(() => {});
+        cam.send("ShowToast", { text: `credentials cleared from ${configPath()}`, kind: "success", ttl_ms: 2500 });
         return true;
       }
       case "remote": {
