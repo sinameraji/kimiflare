@@ -97,6 +97,7 @@ import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
 import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
+import type { PlanCompleteChoice } from "./ui/plan-complete-picker.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
 import { useTurnController } from "./ui/use-turn-controller.js";
 import {
@@ -109,6 +110,8 @@ import { runInit as runInitImpl } from "./init/run-init.js";
 import { runStartupTasks } from "./ui/run-startup-tasks.js";
 import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
 import { runCompact as runCompactImpl } from "./agent/run-compact.js";
+import { distillSessionPlan } from "./agent/distill.js";
+import { writeToClipboard } from "./util/clipboard.js";
 import {
   handleCommandDelete as handleCommandDeleteImpl,
   handleCommandSave as handleCommandSaveImpl,
@@ -301,6 +304,7 @@ function App({
     showGatewayPicker, setShowGatewayPicker,
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
+    showPlanCompletePicker, setShowPlanCompletePicker,
     hasFullscreenModal,
     hasAnyModal,
   } = modals;
@@ -1187,6 +1191,73 @@ function App({
       ]);
     },
     [mkKey, setShowUiPicker],
+  );
+
+  const handlePlanCompletePick = useCallback(
+    (picked: PlanCompleteChoice | null) => {
+      setShowPlanCompletePicker(false);
+      if (!picked || picked === "continue") return;
+
+      // Replicate /fresh logic
+      const plan = distillSessionPlan(messagesRef.current);
+      if (!plan) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
+        ]);
+        setMode(picked);
+        return;
+      }
+
+      const clipResult = writeToClipboard(plan);
+
+      // Reset session (reuse /clear logic)
+      if (cacheStableRef.current && messagesRef.current.length >= 2) {
+        messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
+      } else {
+        messagesRef.current = [messagesRef.current[0]!];
+      }
+      resetSession();
+      executorRef.current.clearArtifacts();
+      if (flushTimeoutRef.current) {
+        clearTimeout(flushTimeoutRef.current);
+        flushTimeoutRef.current = null;
+      }
+      pendingTextRef.current.clear();
+      activeAsstIdRef.current = null;
+      pendingToolCallsRef.current.clear();
+      usageRef.current = null;
+      turnCounterRef.current = 0;
+      setEvents([]);
+      setUsage(null);
+      setSessionUsage(null);
+      gatewayMetaRef.current = null;
+      setGatewayMeta(null);
+      clearTaskTracking();
+      compactSuggestedRef.current = false;
+      updateNudgedRef.current = false;
+
+      // Seed with plan
+      messagesRef.current.push({ role: "user", content: plan });
+
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: clipResult.success
+            ? `Plan copied to clipboard. Starting fresh session in ${picked} mode with plan only…`
+            : `Clipboard unavailable. Starting fresh session in ${picked} mode with plan only…`,
+        },
+      ]);
+
+      if (!clipResult.success) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan }]);
+      }
+
+      setMode(picked);
+    },
+    [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession],
   );
 
   const handleModelPick = useCallback(
@@ -2155,6 +2226,15 @@ function App({
             })();
 
             cleanupTurn();
+
+            // If the turn completed in plan mode and produced a substantive plan,
+            // prompt the user to choose the next step (auto, edit, or continue).
+            if (modeRef.current === "plan") {
+              const plan = distillSessionPlan(messagesRef.current);
+              if (plan) {
+                setShowPlanCompletePicker(true);
+              }
+            }
           },
           onError: async (e) => {
             if (e.name === "AbortError") {
@@ -2196,7 +2276,7 @@ function App({
         },
       );
     },
-    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
+    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta, setShowPlanCompletePicker],
   );
 
   useEffect(() => {
@@ -2443,6 +2523,7 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /skills ${action} <name> to ${action} a skill.` }]);
         }}
         onSkillsDone={() => setShowSkillsPicker(false)}
+        onPlanCompletePick={handlePlanCompletePick}
       />
     );
   }
