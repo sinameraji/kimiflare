@@ -9,7 +9,7 @@
  */
 import React from "react";
 import { join } from "node:path";
-import { unlink } from "node:fs/promises";
+import { unlink, writeFile } from "node:fs/promises";
 import QRCode from "qrcode";
 
 import type { Cfg } from "../app.js";
@@ -78,6 +78,7 @@ import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
 import { distillSessionPlan } from "../agent/distill.js";
 import { writeToClipboard } from "../util/clipboard.js";
+import { uploadSession } from "../share/upload.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -1593,6 +1594,92 @@ const handleRemote: Handler = (ctx, rest, arg) => {
   return true;
 };
 
+const handleShare: Handler = (ctx) => {
+  const { cfg, setEvents, mkKey, sessionIdRef, messagesRef, sessionStateRef, artifactStoreRef, compiledContextRef } = ctx;
+
+  const messages = messagesRef.current;
+  if (!messages || messages.length <= 1) {
+    setEvents((e) => [
+      ...e,
+      { kind: "error", key: mkKey(), text: "Nothing to share — start a conversation first." },
+    ]);
+    return true;
+  }
+
+  const sessionId = sessionIdRef.current ?? `session-${Date.now()}`;
+  const now = new Date().toISOString();
+  const firstUser = messages.find((m) => m.role === "user");
+  const title =
+    typeof firstUser?.content === "string"
+      ? firstUser.content.slice(0, 60)
+      : (firstUser?.content ?? []).find((p) => p.type === "text")?.text?.slice(0, 60) ?? "Untitled";
+
+  const sessionFile = {
+    id: sessionId,
+    cwd: process.cwd(),
+    model: cfg?.model ?? "unknown",
+    createdAt: now,
+    updatedAt: now,
+    title,
+    messages,
+    sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
+    artifactStore: serializeArtifactStore(artifactStoreRef.current),
+  };
+
+  const sessionJson = JSON.stringify(sessionFile, null, 2);
+
+  if (cfg?.shareWorkerUrl && cfg?.shareAuthSecret) {
+    (async () => {
+      try {
+        const result = await uploadSession(cfg.shareWorkerUrl!, cfg.shareAuthSecret!, sessionJson);
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `Shared! ${result.url}\nAnyone with the link can view this session.`,
+          },
+        ]);
+      } catch (err) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "error",
+            key: mkKey(),
+            text: `Share failed: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ]);
+      }
+    })();
+  } else {
+    const fileName = `kimi-session-${now.replace(/[:.]/g, "-")}.json`;
+    (async () => {
+      try {
+        await writeFile(fileName, sessionJson, "utf8");
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `Session saved locally: ${fileName}\nSet shareWorkerUrl + shareAuthSecret in config to enable link sharing.`,
+          },
+        ]);
+      } catch (err) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "error",
+            key: mkKey(),
+            text: `Failed to save session: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ]);
+      }
+    })();
+  }
+
+  return true;
+};
+
 const handleHelp: Handler = (ctx) => {
   ctx.setShowHelpMenu(true);
   return true;
@@ -1631,6 +1718,7 @@ const handlers: Record<string, Handler> = {
   "/logout": handleLogout,
   "/command": handleCommand,
   "/remote": handleRemote,
+  "/share": handleShare,
   "/help": handleHelp,
 };
 

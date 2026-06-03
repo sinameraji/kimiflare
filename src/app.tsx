@@ -169,6 +169,8 @@ export interface Cfg {
   theme?: string;
   remoteWorkerUrl?: string;
   remoteAuthSecret?: string;
+  shareWorkerUrl?: string;
+  shareAuthSecret?: string;
   remoteTtlMinutes?: number;
   remoteMaxInputTokens?: number;
   githubOAuthToken?: string;
