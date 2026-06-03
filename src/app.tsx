@@ -97,6 +97,7 @@ import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
 import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
+import { PlanCompletePicker } from "./ui/plan-complete-picker.js";
 import type { PlanCompleteChoice } from "./ui/plan-complete-picker.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
 import { useTurnController } from "./ui/use-turn-controller.js";
@@ -1237,9 +1238,6 @@ function App({
       compactSuggestedRef.current = false;
       updateNudgedRef.current = false;
 
-      // Seed with plan
-      messagesRef.current.push({ role: "user", content: plan });
-
       setEvents((e) => [
         ...e,
         {
@@ -1256,8 +1254,10 @@ function App({
       }
 
       setMode(picked);
+      modeRef.current = picked;
+      submitRef.current(plan);
     },
-    [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession],
+    [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession, submitRef],
   );
 
   const handleModelPick = useCallback(
@@ -2523,7 +2523,6 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /skills ${action} <name> to ${action} a skill.` }]);
         }}
         onSkillsDone={() => setShowSkillsPicker(false)}
-        onPlanCompletePick={handlePlanCompletePick}
       />
     );
   }
@@ -2553,6 +2552,8 @@ function App({
             onLimitResolved={() => { limitResolveRef.current = null; }}
             onLoopResolved={() => { loopResolveRef.current = null; }}
           />
+        ) : showPlanCompletePicker ? (
+          <PlanCompletePicker onPick={handlePlanCompletePick} />
         ) : (
           <Box flexDirection="column" marginTop={1}>
             {(activeWorkers.length > 0 || coordinatorNarration) && (

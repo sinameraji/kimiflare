@@ -257,9 +257,9 @@ export function computeModalFlags(s: ModalFlagsInput): ModalFlags {
     s.showMemoryPicker ||
     s.showGatewayPicker ||
     s.showSkillsPicker ||
-    s.showShellPicker ||
-    s.showPlanCompletePicker;
-  const hasOverlayModal = s.limitModal !== null || s.loopModal !== null;
+    s.showShellPicker;
+  const hasOverlayModal =
+    s.limitModal !== null || s.loopModal !== null || s.showPlanCompletePicker;
   return {
     hasFullscreenModal,
     hasOverlayModal,
