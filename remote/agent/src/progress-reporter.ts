@@ -23,6 +23,7 @@ export async function postFinalize(opts: {
   exitCode: number;
   hasChanges: boolean;
   errorLog?: string;
+  phases?: Array<{ name: string; ms: number }>;
 }): Promise<void> {
   if (!FINALIZE_URL) return;
   try {
@@ -38,6 +39,7 @@ export async function postFinalize(opts: {
 
 export function createProgressReporter() {
   let turn = 0;
+  const phases: Array<{ name: string; ms: number }> = [];
 
   return {
     onTurnStart: async () => {
@@ -59,5 +61,10 @@ export function createProgressReporter() {
     onDone: async () => {
       await reportProgress({ type: "done" });
     },
+    onPhaseComplete: async (name: string, ms: number) => {
+      phases.push({ name, ms });
+      await reportProgress({ type: "phase_complete", name, ms });
+    },
+    getPhases: () => phases,
   };
 }

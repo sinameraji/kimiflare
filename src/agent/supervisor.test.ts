@@ -157,6 +157,56 @@ describe("TurnSupervisor.spawnWorkers (regression: instance-field access)", () =
     assert.strictEqual(sup.activeWorkers[0]?.status, "failed");
   });
 
+  it("includes batchId, shallowClone, and repoCache in the payload", async () => {
+    let capturedBody = "";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/worker") && !url.includes("/progress")) {
+        capturedBody = (init?.body as string) ?? "";
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ workerId: "w1" }),
+          text: async () => "",
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "completed",
+          step: "done",
+          stepIndex: 1,
+          totalSteps: 1,
+          message: "finished",
+          logs: [],
+          completedSteps: ["done"],
+          result: {
+            workerId: "w1",
+            status: "completed",
+            task: "t",
+            findings: [],
+            recommendations: [],
+            filesRead: [],
+            webSources: [],
+            costUsd: 0,
+            tokensUsed: 0,
+            reasoning: "",
+          },
+        }),
+        text: async () => "",
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    const sup = new TurnSupervisor();
+    await sup.spawnWorkers([{ mode: "plan", task: "alpha" }]);
+
+    const payload = JSON.parse(capturedBody);
+    assert.ok(typeof payload.batchId === "string" && payload.batchId.startsWith("batch-"), "batchId should be a string starting with 'batch-'");
+    assert.strictEqual(payload.shallowClone, true, "shallowClone should default to true");
+    assert.strictEqual(payload.repoCache, true, "repoCache should default to true");
+  });
+
   it("forwards memoryContext, lspContext, and mcpContext in the payload", async () => {
     let capturedBody = "";
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

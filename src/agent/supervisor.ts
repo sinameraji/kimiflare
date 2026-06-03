@@ -237,7 +237,9 @@ export class TurnSupervisor {
     // the prototype — that caused "Cannot read properties of undefined (reading 'entries')".
     const activeWorkers = this._activeWorkers;
 
-    async function runBatch(batch: SpawnWorkerOpts[]): Promise<void> {
+    async function runBatch(batch: SpawnWorkerOpts[], batchId: string): Promise<void> {
+      const shallowClone = cfg?.workerShallowClone ?? true;
+      const repoCache = cfg?.workerRepoCache ?? true;
       await Promise.all(
         batch.map(async (w) => {
           const workerId = [...activeWorkers.entries()].find(
@@ -301,6 +303,11 @@ export class TurnSupervisor {
               // these are absent (older client + new server).
               userAccountId,
               userApiToken,
+              // Batch-level hints so the Commute worker can share a cloned
+              // repo across workers in the same batch and skip full clones.
+              batchId,
+              shallowClone,
+              repoCache,
               // Coordinator-side context proxying
               ...(memoryContext ? { memoryContext } : {}),
               ...(lspContext ? { lspContext } : {}),
@@ -323,6 +330,12 @@ export class TurnSupervisor {
 
             worker.logs.push(`[coordinator] Sending payload (${JSON.stringify(payload).length} bytes)`);
             worker.logs.push(`[coordinator] Worker will clone ${repo.owner}/${repo.repo} and run kimiflare inside Cloudflare Sandbox`);
+            const optHints: string[] = [];
+            if (shallowClone) optHints.push("shallow clone");
+            if (repoCache) optHints.push("repo cache");
+            if (optHints.length > 0) {
+              worker.logs.push(`[coordinator] Optimizations enabled: ${optHints.join(", ")}`);
+            }
             worker.logs.push(`[coordinator] Typical runtime: 1–4 min. Timeout: ${Math.round(timeoutMs / 1000)}s`);
             onUpdate?.([...activeWorkers.values()]);
 
@@ -509,7 +522,8 @@ export class TurnSupervisor {
 
     while (queue.length > 0) {
       const batch = queue.splice(0, maxParallel);
-      await runBatch(batch);
+      const batchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await runBatch(batch, batchId);
     }
 
     return results;
