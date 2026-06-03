@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Text, useInput } from "ink";
+import { Text, useInput, usePaste } from "ink";
 import chalk from "chalk";
 
 interface Props {
@@ -25,13 +25,13 @@ interface Props {
 const PASTE_CHAR_THRESHOLD = 200;
 const PASTE_NEWLINE_THRESHOLD = 1;
 
-function shouldTreatAsPaste(input: string): boolean {
+export function shouldTreatAsPaste(input: string): boolean {
   if (input.length >= PASTE_CHAR_THRESHOLD) return true;
   const newlines = (input.match(/\n/g) ?? []).length;
   return newlines >= PASTE_NEWLINE_THRESHOLD;
 }
 
-function makePastePreview(input: string, lines: number, id: number): string {
+export function makePastePreview(input: string, lines: number, id: number): string {
   const firstLine = input.split("\n")[0] ?? "";
   const cleaned = firstLine.trim().replace(/\s+/g, " ");
   const preview = cleaned.length > 20 ? cleaned.slice(0, 20) + "…" : cleaned;
@@ -39,17 +39,33 @@ function makePastePreview(input: string, lines: number, id: number): string {
   return `⦗"${text}" (${lines} line${lines === 1 ? "" : "s"}) #${id}⦘`;
 }
 
-function countLines(s: string): number {
+export function countLines(s: string): number {
   return s.split("\n").length;
 }
 
-function findWordBoundaryForward(text: string, pos: number): number {
+/** Strip control characters and ANSI escapes that corrupt terminal state. */
+export function sanitizeInput(input: string): string {
+  return (
+    input
+      // Normalize Windows line endings
+      .replace(/\r\n/g, "\n")
+      // Lone CR → LF so it behaves like a newline in text input
+      .replace(/\r/g, "\n")
+      // Strip ANSI escape sequences (CSI and single-byte)
+      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+      // Tabs are one char in the string but multi-column in the terminal;
+      // replace with two spaces to keep cursor alignment predictable.
+      .replace(/\t/g, "  ")
+  );
+}
+
+export function findWordBoundaryForward(text: string, pos: number): number {
   while (pos < text.length && /\w/.test(text[pos]!)) pos++;
   while (pos < text.length && !/\w/.test(text[pos]!)) pos++;
   return pos;
 }
 
-function findWordBoundaryBackward(text: string, pos: number): number {
+export function findWordBoundaryBackward(text: string, pos: number): number {
   while (pos > 0 && !/\w/.test(text[pos - 1]!)) pos--;
   while (pos > 0 && /\w/.test(text[pos - 1]!)) pos--;
   return pos;
@@ -83,6 +99,10 @@ export function CustomTextInput({
   const pastesRef = useRef<Map<string, string>>(new Map());
   const pasteCounterRef = useRef(0);
   const prevValueRef = useRef(value);
+  const cursorOffsetRef = useRef(cursorOffset);
+
+  // Keep ref in sync without adding cursorOffset to effect deps.
+  cursorOffsetRef.current = cursorOffset;
 
   useEffect(() => {
     if (!focus) return;
@@ -91,21 +111,50 @@ export function CustomTextInput({
 
     if (value === prevValue) return;
 
+    const currentCursor = cursorOffsetRef.current;
+
     // If the cursor was at the end of the previous value, keep it at the end
     // (handles history navigation and other external value replacements).
-    if (cursorOffset === prevValue.length) {
-      if (cursorOffset !== value.length) {
+    if (currentCursor === prevValue.length) {
+      if (currentCursor !== value.length) {
         setCursorOffset(value.length);
       }
       return;
     }
 
     // Otherwise just clamp to valid range.
-    const next = cursorOffset > value.length ? value.length : cursorOffset;
-    if (next !== cursorOffset) {
+    const next = currentCursor > value.length ? value.length : currentCursor;
+    if (next !== currentCursor) {
       setCursorOffset(next);
     }
-  }, [value, focus, cursorOffset]);
+  }, [value, focus]);
+
+  const handleInsert = (rawInput: string) => {
+    let toInsert = sanitizeInput(rawInput);
+    if (enablePaste && shouldTreatAsPaste(toInsert)) {
+      const lines = countLines(toInsert);
+      const id = ++pasteCounterRef.current;
+      const placeholder = makePastePreview(toInsert, lines, id);
+      pastesRef.current.set(placeholder, toInsert);
+      toInsert = placeholder;
+    }
+    const nextValue = value.slice(0, cursorOffset) + toInsert + value.slice(cursorOffset);
+    const nextCursor = cursorOffset + toInsert.length;
+    if (nextCursor !== cursorOffset) {
+      setCursorOffset(nextCursor);
+    }
+    if (nextValue !== value) {
+      onChange(nextValue);
+    }
+  };
+
+  usePaste(
+    (input) => {
+      if (!focus || !enablePaste) return;
+      handleInsert(input);
+    },
+    { isActive: focus && enablePaste },
+  );
 
   useInput(
     (input, key) => {
@@ -241,12 +290,14 @@ export function CustomTextInput({
         didDelete = true;
         nextValue = value.slice(0, cursorOffset);
       } else if (input.length > 0 && !key.ctrl && !key.meta) {
-        let toInsert = input;
-        if (enablePaste && shouldTreatAsPaste(input)) {
-          const lines = countLines(input);
+        // Sanitize even non-paste input to prevent control-character corruption.
+        const sanitized = sanitizeInput(input);
+        let toInsert = sanitized;
+        if (enablePaste && shouldTreatAsPaste(toInsert)) {
+          const lines = countLines(toInsert);
           const id = ++pasteCounterRef.current;
-          const placeholder = makePastePreview(input, lines, id);
-          pastesRef.current.set(placeholder, input);
+          const placeholder = makePastePreview(toInsert, lines, id);
+          pastesRef.current.set(placeholder, toInsert);
           toInsert = placeholder;
         }
         nextValue = value.slice(0, cursorOffset) + toInsert + value.slice(cursorOffset);
@@ -273,10 +324,9 @@ export function CustomTextInput({
   const displayValue = mask ? mask.repeat(value.length) : value;
 
   let renderedValue = "";
-  let i = 0;
-  for (const char of displayValue) {
+  for (let i = 0; i < displayValue.length; i++) {
+    const char = displayValue[i]!;
     renderedValue += i === cursorOffset ? chalk.inverse(char) : char;
-    i++;
   }
   if (displayValue.length === 0) {
     renderedValue = chalk.inverse(" ");
@@ -287,7 +337,7 @@ export function CustomTextInput({
   return <Text>{renderedValue}</Text>;
 }
 
-function findPasteTokenEndingAt(
+export function findPasteTokenEndingAt(
   value: string,
   pos: number,
   pastes: Map<string, string>,
