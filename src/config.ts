@@ -135,6 +135,24 @@ export interface KimiConfig {
   /** When true, after plan workers synthesize, spawn one executor worker
    *  to implement the synthesized plan and open a PR. Off by default. */
   autoExecute?: boolean;
+  /** Use shallow clone (`--depth 1`) for sandbox workers. Default: true. */
+  workerShallowClone?: boolean;
+  /** Enable repo caching / reuse hints for the Commute worker. Default: true. */
+  workerRepoCache?: boolean;
+  /** Forward memory context to multi-agent workers. Default: true. */
+  workerProxyMemory?: boolean;
+  /** Forward LSP context to multi-agent workers. Default: false. */
+  workerProxyLsp?: boolean;
+  /** Forward MCP context to multi-agent workers. Default: false. */
+  workerProxyMcp?: boolean;
+  /** Model used for LLM-based task decomposition in multi-agent mode.
+   *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
+  decompositionModel?: string;
+  /** Strategy for decomposing heavy prompts into parallel research tasks.
+   *  - "llm": use a lightweight LLM call (default)
+   *  - "regex": pure regex heuristic (no LLM, fastest)
+   *  - "hybrid": regex for explicit lists, LLM for prose */
+  decompositionStrategy?: "llm" | "regex" | "hybrid";
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -321,6 +339,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       multiAgentEnabled: envMultiAgentEnabled,
       workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY,
       autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
+      workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? true,
+      workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? true,
     };
   }
 
@@ -371,6 +391,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
         workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY ?? parsed.workerApiKey,
         autoExecute: parsed.autoExecute,
+        workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? parsed.workerShallowClone ?? true,
+        workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? parsed.workerRepoCache ?? true,
       };
     }
   }

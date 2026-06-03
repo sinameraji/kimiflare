@@ -10,9 +10,15 @@
 import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
-import type { WorkerResultMessage } from "./messages.js";
+import { runKimi } from "./client.js";
+import type { WorkerResultMessage, ChatMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
-import { loadConfig, resolveWorkerBudgetUsd } from "../config.js";
+import { loadConfig, resolveWorkerBudgetUsd, type KimiConfig } from "../config.js";
+import type { MemoryManager } from "../memory/manager.js";
+import type { LspManager } from "../lsp/manager.js";
+import type { McpManager } from "../mcp/manager.js";
+import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 export type TurnPhase = "idle" | "preparing" | "streaming" | "executing" | "compacting" | "error";
 
@@ -32,6 +38,12 @@ export interface SpawnWorkerOpts {
   baseBranch?: string;
   prTitle?: string;
   prBody?: string;
+  /** Pre-computed memory context from coordinator's MemoryManager */
+  memoryContext?: string;
+  /** Pre-computed LSP context (workspace symbols, diagnostics) */
+  lspContext?: string;
+  /** Pre-computed MCP context (available tools, servers) */
+  mcpContext?: string;
 }
 
 export interface WorkerStep {
@@ -65,6 +77,13 @@ export class TurnSupervisor {
   private _phase: TurnPhase = "idle";
   private _killRequested = false;
   private _activeWorkers: Map<string, ActiveWorker> = new Map();
+
+  /** Coordinator-side MemoryManager for proxying memories to workers */
+  memoryManager: MemoryManager | null = null;
+  /** Coordinator-side LspManager for proxying LSP context to workers */
+  lspManager: LspManager | null = null;
+  /** Coordinator-side McpManager for proxying MCP context to workers */
+  mcpManager: McpManager | null = null;
 
   get phase(): TurnPhase {
     return this._phase;
@@ -186,6 +205,16 @@ export class TurnSupervisor {
     const userAccountId = cfg.accountId;
     const userApiToken = cfg.apiToken;
 
+    // Configurable proxy flags for worker capabilities
+    const proxyMemory = cfg?.workerProxyMemory ?? true;
+    const proxyLsp = cfg?.workerProxyLsp ?? false;
+    const proxyMcp = cfg?.workerProxyMcp ?? false;
+
+    // Capture coordinator managers for context gathering
+    const memoryManager = this.memoryManager;
+    const lspManager = this.lspManager;
+    const mcpManager = this.mcpManager;
+
     // Register all workers as pending
     for (const w of workers) {
       const id = `worker-${crypto.randomUUID().slice(0, 8)}`;
@@ -208,7 +237,9 @@ export class TurnSupervisor {
     // the prototype — that caused "Cannot read properties of undefined (reading 'entries')".
     const activeWorkers = this._activeWorkers;
 
-    async function runBatch(batch: SpawnWorkerOpts[]): Promise<void> {
+    async function runBatch(batch: SpawnWorkerOpts[], batchId: string): Promise<void> {
+      const shallowClone = cfg?.workerShallowClone ?? true;
+      const repoCache = cfg?.workerRepoCache ?? true;
       await Promise.all(
         batch.map(async (w) => {
           const workerId = [...activeWorkers.entries()].find(
@@ -227,6 +258,37 @@ export class TurnSupervisor {
               worker.logs.push(
                 `[coordinator] Budget capped to ${maxCostUsd.toFixed(2)} (was ${(w.budgetUsd ?? 1.0).toFixed(2)})`,
               );
+            }
+
+            // Gather coordinator-side context for the worker
+            let memoryContext = w.memoryContext ?? "";
+            let lspContext = w.lspContext ?? "";
+            let mcpContext = w.mcpContext ?? "";
+
+            if (proxyMemory && memoryManager && !memoryContext) {
+              try {
+                const memories = await memoryManager.recall({ text: w.task, limit: 10 });
+                const { formatRecalledMemories } = await import("../memory/retrieval.js");
+                memoryContext = formatRecalledMemories(memories);
+              } catch (err) {
+                logger.warn("supervisor:memory_recall_failed", { task: w.task, error: (err as Error).message });
+              }
+            }
+
+            if (proxyLsp && lspManager && !lspContext) {
+              try {
+                lspContext = await lspManager.exportContext(process.cwd());
+              } catch (err) {
+                logger.warn("supervisor:lsp_export_failed", { error: (err as Error).message });
+              }
+            }
+
+            if (proxyMcp && mcpManager && !mcpContext) {
+              try {
+                mcpContext = mcpManager.exportContext();
+              } catch (err) {
+                logger.warn("supervisor:mcp_export_failed", { error: (err as Error).message });
+              }
             }
             const payload = {
               mode: w.mode,
@@ -247,6 +309,15 @@ export class TurnSupervisor {
               // these are absent (older client + new server).
               userAccountId,
               userApiToken,
+              // Batch-level hints so the Commute worker can share a cloned
+              // repo across workers in the same batch and skip full clones.
+              batchId,
+              shallowClone,
+              repoCache,
+              // Coordinator-side context proxying
+              ...(memoryContext ? { memoryContext } : {}),
+              ...(lspContext ? { lspContext } : {}),
+              ...(mcpContext ? { mcpContext } : {}),
               // Optionally override the in-sandbox kimiflare install so the
               // worker runs pre-release / branch code instead of the image-
               // baked version. e.g. `kimiflare@latest`, `kimiflare@1.2.3`,
@@ -265,6 +336,12 @@ export class TurnSupervisor {
 
             worker.logs.push(`[coordinator] Sending payload (${JSON.stringify(payload).length} bytes)`);
             worker.logs.push(`[coordinator] Worker will clone ${repo.owner}/${repo.repo} and run kimiflare inside Cloudflare Sandbox`);
+            const optHints: string[] = [];
+            if (shallowClone) optHints.push("shallow clone");
+            if (repoCache) optHints.push("repo cache");
+            if (optHints.length > 0) {
+              worker.logs.push(`[coordinator] Optimizations enabled: ${optHints.join(", ")}`);
+            }
             worker.logs.push(`[coordinator] Typical runtime: 1–4 min. Timeout: ${Math.round(timeoutMs / 1000)}s`);
             onUpdate?.([...activeWorkers.values()]);
 
@@ -469,7 +546,8 @@ export class TurnSupervisor {
 
     while (queue.length > 0) {
       const batch = queue.splice(0, maxParallel);
-      await runBatch(batch);
+      const batchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await runBatch(batch, batchId);
     }
 
     return results;
@@ -602,7 +680,8 @@ export class TurnSupervisor {
         "Wait for completion or cancel before starting a new heavy task.",
       );
     }
-    const workers = decomposePrompt(prompt, context);
+    const cfg = await loadConfig().catch(() => null);
+    const workers = await decomposePrompt(prompt, context, { cwd: process.cwd(), cfg: cfg ?? undefined });
 
     // Narrate the decomposition plan so the user knows what each agent will do
     const narrationLines: string[] = [
@@ -663,28 +742,74 @@ export class TurnSupervisor {
   }
 }
 
-/** Conservative heuristic to decompose a heavy prompt into parallel research tasks.
- *
- * Only splits the prompt when the user gave EXPLICIT list structure — numbered
- * (`1. … 2. … 3. …`) or bulleted (`- …`/`* …`) — because that's the only
- * cheap signal that's reliably a list. Earlier this also split on any
- * conjunction or comma, which chopped cohesive sentences like "do heavy
- * exploration AND research IN this project AND identify…" into nonsense
- * fragments.
- *
- * For prose prompts (no explicit list), spawn 2 workers with the FULL prompt
- * preserved and different angles. The synthesizer dedups overlapping findings,
- * so two well-formed angles beat N fragmented ones.
- */
-export function decomposePrompt(prompt: string, context: string): SpawnWorkerOpts[] {
-  const items = extractListItems(prompt);
-  if (items.length >= 2) {
-    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
+/** In-memory cache for decomposition results keyed by prompt+context hash. */
+const decompositionCache = new Map<string, SpawnWorkerOpts[]>();
+
+const MAX_CACHE_ENTRIES = 50;
+
+function cacheKey(prompt: string, context: string, strategy: string): string {
+  return createHash("sha256").update(`${prompt}\0${context}\0${strategy}`).digest("hex");
+}
+
+function getCached(key: string): SpawnWorkerOpts[] | undefined {
+  return decompositionCache.get(key);
+}
+
+function setCached(key: string, value: SpawnWorkerOpts[]): void {
+  if (decompositionCache.size >= MAX_CACHE_ENTRIES) {
+    const first = decompositionCache.keys().next().value;
+    if (first !== undefined) decompositionCache.delete(first);
   }
-  return [
-    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
-    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
-  ];
+  decompositionCache.set(key, value);
+}
+
+/** Build a lightweight file-tree snapshot for the current working directory.
+ *  Returns top-level dirs + key files, capped at ~40 lines, excluding
+ *  build artifacts and dependency folders. */
+export async function getFileTreeSnapshot(cwd: string): Promise<string> {
+  const IGNORED = new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "out",
+    "target",
+    ".next",
+    ".nuxt",
+    ".astro",
+    "coverage",
+    ".coverage",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    ".idea",
+    ".vscode",
+    ".DS_Store",
+  ]);
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const dirs: string[] = [];
+    const files: string[] = [];
+    for (const e of entries) {
+      if (e.name.startsWith(".") && !e.name.startsWith(".github") && !e.name.startsWith(".config")) {
+        if (!e.isDirectory()) continue;
+      }
+      if (IGNORED.has(e.name)) continue;
+      if (e.isDirectory()) dirs.push(`${e.name}/`);
+      else files.push(e.name);
+    }
+    dirs.sort();
+    files.sort();
+    const lines = [...dirs, ...files];
+    if (lines.length === 0) return "(empty directory)";
+    if (lines.length > 40) {
+      return lines.slice(0, 40).join("\n") + "\n… (truncated)";
+    }
+    return lines.join("\n");
+  } catch {
+    return "(unable to read directory)";
+  }
 }
 
 /** Pull explicit list items from a prompt: numbered (`1. …`, `1) …`) or
@@ -696,4 +821,159 @@ function extractListItems(prompt: string): string[] {
   const bulleted = [...prompt.matchAll(/(?:^|\n)\s*[-*•]\s+([^\n]+)/g)].map((m) => m[1]?.trim() ?? "");
   if (bulleted.length >= 2) return bulleted.filter((s) => s.length > 0);
   return [];
+}
+
+const DECOMPOSITION_SYSTEM = `You are a task-decomposition assistant. Given a user's coding request and a snapshot of their project directory, produce 2–4 well-scoped, non-overlapping research tasks that can be executed in parallel by independent agents.
+
+Rules:
+- Each task must be self-contained and actionable.
+- Tasks must NOT overlap in scope. If two tasks would investigate the same file or concept, merge them.
+- Respect file/directory boundaries mentioned in the prompt or visible in the file tree.
+- Scale task count with perceived complexity: 2 tasks for simple questions, 3–4 for broad audits or multi-file changes.
+- Return ONLY a JSON object with this exact shape (no markdown fences, no extra text):
+  {"tasks":["task 1","task 2",...],"reasoning":"brief explanation of why you split this way"}`;
+
+async function decomposeWithLlm(
+  prompt: string,
+  context: string,
+  fileTree: string,
+  cfg: KimiConfig,
+): Promise<SpawnWorkerOpts[] | null> {
+  const model = cfg.decompositionModel ?? "@cf/moonshotai/kimi-k2.5";
+  const accountId = cfg.accountId;
+  const apiToken = cfg.apiToken;
+  if (!accountId || !apiToken) {
+    logger.warn("decompose:missing_creds", { reason: "no accountId or apiToken" });
+    return null;
+  }
+
+  const gateway = cfg.aiGatewayId
+    ? {
+        id: cfg.aiGatewayId,
+        cacheTtl: cfg.aiGatewayCacheTtl,
+        skipCache: cfg.aiGatewaySkipCache,
+        metadata: { feature: "decomposition", ...(cfg.aiGatewayMetadata ?? {}) },
+      }
+    : undefined;
+
+  const userContent = [
+    `User request: ${prompt}`,
+    context ? `Additional context: ${context}` : "",
+    `Project file tree (top-level):\n${fileTree}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const messages: ChatMessage[] = [
+    { role: "system", content: DECOMPOSITION_SYSTEM },
+    { role: "user", content: userContent },
+  ];
+
+  try {
+    let text = "";
+    const events = runKimi({
+      accountId,
+      apiToken,
+      model,
+      messages,
+      temperature: 0.1,
+      maxCompletionTokens: 2048,
+      reasoningEffort: "low",
+      gateway,
+    });
+    for await (const ev of events) {
+      if (ev.type === "text") text += ev.delta;
+    }
+
+    // Strip markdown fences if the model wrapped JSON in them
+    const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
+    const parsed = JSON.parse(cleaned) as { tasks?: unknown; reasoning?: string };
+    const rawTasks = parsed.tasks;
+    if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
+      logger.warn("decompose:invalid_tasks", { rawTasks });
+      return null;
+    }
+
+    const tasks = rawTasks
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t.length > 0);
+
+    if (tasks.length < 2) {
+      logger.warn("decompose:too_few_tasks", { count: tasks.length });
+      return null;
+    }
+
+    // Deduplicate near-identical tasks
+    const unique: string[] = [];
+    for (const t of tasks) {
+      const lower = t.toLowerCase();
+      if (!unique.some((u) => u.toLowerCase() === lower || lower.includes(u.toLowerCase()) || u.toLowerCase().includes(lower))) {
+        unique.push(t);
+      }
+    }
+
+    const capped = unique.slice(0, 4);
+    logger.debug("decompose:llm_success", { taskCount: capped.length, reasoning: parsed.reasoning });
+    return capped.map((task) => ({ mode: "plan" as const, task, context }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn("decompose:llm_failed", { error: msg });
+    return null;
+  }
+}
+
+/** Fallback decomposition for prose prompts without explicit list structure. */
+function fallbackDecomposition(prompt: string, context: string): SpawnWorkerOpts[] {
+  return [
+    { mode: "plan", task: `Research overview and best practices for: ${prompt}`, context },
+    { mode: "plan", task: `Investigate implementation details, trade-offs, and risks for: ${prompt}`, context },
+  ];
+}
+
+/** Decompose a heavy prompt into parallel research tasks.
+ *
+ * 1. Explicit list items (numbered/bulleted) → immediate return.
+ * 2. Check in-memory cache.
+ * 3. If strategy is "regex" → fallback to 2-angle split.
+ * 4. Otherwise → attempt LLM decomposition with file-tree awareness.
+ * 5. On any failure → log warning and fallback to 2-angle split.
+ */
+export async function decomposePrompt(
+  prompt: string,
+  context: string,
+  opts?: { cwd?: string; cfg?: KimiConfig },
+): Promise<SpawnWorkerOpts[]> {
+  const items = extractListItems(prompt);
+  if (items.length >= 2) {
+    return items.slice(0, 4).map((task) => ({ mode: "plan" as const, task, context }));
+  }
+
+  const strategy = opts?.cfg?.decompositionStrategy ?? "llm";
+  const key = cacheKey(prompt, context, strategy);
+  const cached = getCached(key);
+  if (cached) {
+    logger.debug("decompose:cache_hit");
+    return cached;
+  }
+
+  if (strategy === "regex") {
+    const result = fallbackDecomposition(prompt, context);
+    setCached(key, result);
+    return result;
+  }
+
+  // "llm" or "hybrid" — try LLM decomposition
+  if (opts?.cfg) {
+    const cwd = opts.cwd ?? process.cwd();
+    const fileTree = await getFileTreeSnapshot(cwd);
+    const llmResult = await decomposeWithLlm(prompt, context, fileTree, opts.cfg);
+    if (llmResult) {
+      setCached(key, llmResult);
+      return llmResult;
+    }
+  }
+
+  const result = fallbackDecomposition(prompt, context);
+  setCached(key, result);
+  return result;
 }

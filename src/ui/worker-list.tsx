@@ -155,6 +155,15 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
           ))}
         </Box>
       )}
+
+      {/* Phase timing — shown when worker is done and data is available */}
+      {isDone && worker.result?.phases && worker.result.phases.length > 0 && (
+        <Box marginLeft={4}>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+            {worker.result.phases.map((p) => `${p.name}: ${formatElapsed(p.ms)}`).join(" · ")}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }
