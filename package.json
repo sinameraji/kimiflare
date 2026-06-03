@@ -1,6 +1,6 @@
 {
   "name": "kimiflare",
-  "version": "0.80.0",
+  "version": "0.81.0",
   "description": "A terminal coding agent powered by Kimi K2.6, routed through your own Cloudflare AI Gateway — per-request logs, response caching, authoritative cost. Web search, GitHub, headless browser, LSP, MCP, local memory, 262k context.",
   "keywords": [
     "ai",

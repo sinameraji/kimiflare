@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.81.0](https://github.com/sinameraji/kimiflare/compare/v0.80.0...v0.81.0) (2026-06-03)
+
+
+### Features
+
+* **agent:** LLM-based synthesis for multi-agent findings ([#546](https://github.com/sinameraji/kimiflare/issues/546)) ([0168a27](https://github.com/sinameraji/kimiflare/commit/0168a278f5f7176ebbedfcbd15b4c273060fe51a))
+* **ui:** auto-prompt /fresh when plan mode completes ([#544](https://github.com/sinameraji/kimiflare/issues/544)) ([b3e8cda](https://github.com/sinameraji/kimiflare/commit/b3e8cda5efaf7068e5beb90219b52735e44e39b6))
+
 ## [0.80.0](https://github.com/sinameraji/kimiflare/compare/v0.79.0...v0.80.0) (2026-06-03)
 
 
