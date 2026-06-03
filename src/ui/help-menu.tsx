@@ -60,6 +60,7 @@ const CATEGORIES: Category[] = [
       { command: "/resume", description: "pick a past conversation" },
       { command: "/compact", description: "summarize old turns to free context" },
       { command: "/clear", description: "clear current conversation" },
+      { command: "/fresh", description: "reset session and start fresh with the last plan" },
     ],
   },
   {

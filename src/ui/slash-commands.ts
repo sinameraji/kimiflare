@@ -76,6 +76,8 @@ import { startRemoteSession, streamRemoteProgress } from "../remote/worker-clien
 import { saveRemoteSession, type RemoteSession } from "../remote/session-store.js";
 import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
+import { distillSessionPlan } from "../agent/distill.js";
+import { writeToClipboard } from "../util/clipboard.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -209,6 +211,77 @@ const handleClear: Handler = (ctx) => {
   ctx.clearTaskTracking();
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
+  return true;
+};
+
+const handleFresh: Handler = (ctx) => {
+  const { busy, mkKey, setEvents } = ctx;
+  if (busy) {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: "can't /fresh while model is running — press Esc to interrupt first" },
+    ]);
+    return true;
+  }
+
+  const plan = distillSessionPlan(ctx.messagesRef.current);
+  if (!plan) {
+    setEvents((e) => [
+      ...e,
+      { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
+    ]);
+    return true;
+  }
+
+  const clipResult = writeToClipboard(plan);
+
+  // Reset session (reuse /clear logic)
+  if (ctx.cacheStableRef.current && ctx.messagesRef.current.length >= 2) {
+    ctx.messagesRef.current = [ctx.messagesRef.current[0]!, ctx.messagesRef.current[1]!];
+  } else {
+    ctx.messagesRef.current = [ctx.messagesRef.current[0]!];
+  }
+  ctx.resetSession();
+  ctx.executorRef.current.clearArtifacts();
+  if (ctx.flushTimeoutRef.current) {
+    clearTimeout(ctx.flushTimeoutRef.current);
+    ctx.flushTimeoutRef.current = null;
+  }
+  ctx.pendingTextRef.current.clear();
+  ctx.activeAsstIdRef.current = null;
+  ctx.pendingToolCallsRef.current.clear();
+  ctx.usageRef.current = null;
+  ctx.turnCounterRef.current = 0;
+  setEvents([]);
+  ctx.setUsage(null);
+  ctx.setSessionUsage(null);
+  ctx.gatewayMetaRef.current = null;
+  ctx.setGatewayMeta(null);
+  ctx.clearTaskTracking();
+  ctx.compactSuggestedRef.current = false;
+  ctx.updateNudgedRef.current = false;
+
+  // Seed with plan
+  ctx.messagesRef.current.push({ role: "user", content: plan });
+
+  setEvents((e) => [
+    ...e,
+    {
+      kind: "info",
+      key: mkKey(),
+      text: clipResult.success
+        ? "Plan copied to clipboard. Starting fresh session with plan only…"
+        : "Clipboard unavailable. Starting fresh session with plan only…",
+    },
+  ]);
+
+  if (!clipResult.success) {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan },
+    ]);
+  }
+
   return true;
 };
 
@@ -537,14 +610,25 @@ const handleGateway: Handler = (ctx, rest) => {
 };
 
 const handleMode: Handler = (ctx, _rest, arg) => {
-  const { setEvents, mkKey } = ctx;
+  const { setEvents, mkKey, mode } = ctx;
   if (!arg) {
     ctx.setShowModePicker(true);
     return true;
   }
   if (arg === "edit" || arg === "plan" || arg === "auto" || arg === "multi-agent-experimental") {
+    const prevMode = mode;
     ctx.setMode(arg);
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `mode: ${arg}` }]);
+    // Nudge about /fresh when switching from plan to auto/edit with heavy context
+    if (prevMode === "plan" && (arg === "auto" || arg === "edit")) {
+      const nonSystemCount = ctx.messagesRef.current.filter((m) => m.role !== "system").length;
+      if (nonSystemCount > 10) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Tip: you have extensive planning context. Run `/fresh` to start clean with just the plan." },
+        ]);
+      }
+    }
     return true;
   }
   setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto|multi-agent-experimental" }]);
@@ -1500,6 +1584,7 @@ const handleHelp: Handler = (ctx) => {
 const handlers: Record<string, Handler> = {
   "/exit": handleExit,
   "/clear": handleClear,
+  "/fresh": handleFresh,
   "/reasoning": handleReasoning,
   "/cost": handleCost,
   "/shell": handleShell,
