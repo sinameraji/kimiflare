@@ -153,6 +153,16 @@ export interface KimiConfig {
    *  - "regex": pure regex heuristic (no LLM, fastest)
    *  - "hybrid": regex for explicit lists, LLM for prose */
   decompositionStrategy?: "llm" | "regex" | "hybrid";
+  /** Model for synthesizing multi-agent findings.
+   *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
+  synthesisModel?: string;
+  /** Strategy for synthesizing worker findings.
+   *  - "llm": use a lightweight LLM call (default)
+   *  - "heuristic": pure heuristic (no LLM, fastest)
+   *  - "hybrid": try LLM, fall back to heuristic on failure */
+  synthesisStrategy?: "llm" | "heuristic" | "hybrid";
+  /** Explicit opt-out for LLM-based synthesis. When true, always uses heuristic. */
+  disableLlmSynthesis?: boolean;
   /** Files to pre-read on the coordinator and inject into every worker's
    *  context. Saves redundant `read` tool calls across workers. Paths are
    *  relative to the repo root. */

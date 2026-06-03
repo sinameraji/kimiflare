@@ -10,7 +10,8 @@
 import { runAgentTurn } from "./loop.js";
 import type { AgentTurnOpts } from "./loop.js";
 import { logger } from "../util/logger.js";
-import { runKimi } from "./client.js";
+import * as client from "./client.js";
+import type { AiGatewayOptions } from "./client.js";
 import type { WorkerResultMessage, ChatMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
 import { loadConfig, resolveWorkerBudgetUsd, type KimiConfig } from "../config.js";
@@ -145,6 +146,8 @@ export class TurnSupervisor {
   private _phase: TurnPhase = "idle";
   private _killRequested = false;
   private _activeWorkers: Map<string, ActiveWorker> = new Map();
+  /** Injectable LLM client for synthesis (overridable in tests). */
+  private _runKimi = client.runKimi;
 
   /** Coordinator-side MemoryManager for proxying memories to workers */
   memoryManager: MemoryManager | null = null;
@@ -655,17 +658,8 @@ export class TurnSupervisor {
     return results;
   }
 
-  /** Synthesize findings from multiple workers into a unified execution plan.
-   *
-   * Steps:
-   * 1. Deduplicate findings by topic (case-insensitive), keeping the highest-confidence version.
-   * 2. Detect conflicts — same topic with different recommendations.
-   * 3. Tie-breaker: when conflicting recommendations exist, prefer the one from
-   *    the worker with higher average confidence.
-   * 4. Produce a markdown execution plan the coordinator can present to the user
-   *    or feed into an executor worker.
-   */
-  synthesizeFindings(results: WorkerResultMessage[]): {
+  /** Heuristic synthesis — exact legacy behavior, preserved as fallback. */
+  private synthesizeFindingsHeuristic(results: WorkerResultMessage[]): {
     plan: string;
     conflicts: string[];
     recommendations: string[];
@@ -754,6 +748,160 @@ export class TurnSupervisor {
     };
   }
 
+  /** LLM-based synthesis with graceful fallback to heuristic. */
+  private async synthesizeFindingsLlm(
+    results: WorkerResultMessage[],
+    opts: {
+      prompt?: string;
+      accountId: string;
+      apiToken: string;
+      model: string;
+      gateway?: AiGatewayOptions;
+      signal?: AbortSignal;
+      onDelta?: (delta: string) => void;
+    },
+  ): Promise<{ plan: string; conflicts: string[]; recommendations: string[] }> {
+    const MAX_RAW_OUTPUT = 2000;
+    const MAX_REASONING = 2000;
+
+    const workerBlocks = results.map((r, i) => {
+      const findings = r.findings
+        .map(
+          (f) =>
+            `  - Topic: ${f.topic}\n    Summary: ${f.summary}\n    Confidence: ${f.confidence}\n    Relevance: ${f.relevance}\n    Sources: ${f.sources.join(", ") || "none"}`,
+        )
+        .join("\n");
+      const recs = r.recommendations.map((rec) => `  - ${rec}`).join("\n") || "  (none)";
+      const reasoning = r.reasoning ? r.reasoning.slice(0, MAX_REASONING) : "(none)";
+      const rawOutput = r.rawOutput ? r.rawOutput.slice(0, MAX_RAW_OUTPUT) : "(none)";
+      return [
+        `--- Worker ${r.workerId || `w${i + 1}`} ---`,
+        `Task: ${r.task}`,
+        `Status: ${r.status}`,
+        `Findings:\n${findings || "  (none)"}`,
+        `Recommendations:\n${recs}`,
+        `Reasoning:\n${reasoning}`,
+        `Raw Output (truncated):\n${rawOutput}`,
+      ].join("\n");
+    });
+
+    const userContent = [
+      opts.prompt ? `Original user request:\n${opts.prompt}` : "",
+      "",
+      "Worker outputs:",
+      workerBlocks.join("\n\n"),
+      "",
+      "Instructions:",
+      "1. Synthesize the worker findings into a coherent execution plan.",
+      "2. Detect and resolve any conflicts between workers.",
+      "3. Cite sources inline using [worker: <id>] notation.",
+      "4. Return ONLY valid JSON in this exact shape (no markdown fences):",
+      '{"plan":"markdown plan","conflicts":["string"],"recommendations":["string"],"reasoning":"optional string"}',
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const messages: ChatMessage[] = [
+      {
+        role: "system",
+        content:
+          "You are a synthesis engine. Combine findings from multiple research workers into a single coherent execution plan. Be concise. Return only valid JSON.",
+      },
+      { role: "user", content: userContent },
+    ];
+
+    let text = "";
+    const events = this._runKimi({
+      accountId: opts.accountId,
+      apiToken: opts.apiToken,
+      model: opts.model,
+      messages,
+      temperature: 0.2,
+      maxCompletionTokens: 4096,
+      reasoningEffort: "low",
+      gateway: opts.gateway,
+      signal: opts.signal,
+    });
+    for await (const ev of events) {
+      if (ev.type === "text") {
+        text += ev.delta;
+        opts.onDelta?.(ev.delta);
+      }
+    }
+
+    const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/gi, "").trim();
+    const parsed = JSON.parse(cleaned) as {
+      plan?: string;
+      conflicts?: string[];
+      recommendations?: string[];
+      reasoning?: string;
+    };
+
+    if (!parsed.plan || !Array.isArray(parsed.conflicts) || !Array.isArray(parsed.recommendations)) {
+      throw new Error("LLM synthesis returned malformed JSON");
+    }
+
+    return {
+      plan: parsed.plan,
+      conflicts: parsed.conflicts,
+      recommendations: parsed.recommendations,
+    };
+  }
+
+  /** Synthesize findings from multiple workers into a unified execution plan.
+   *
+   * Uses LLM-based synthesis by default (configurable via synthesisStrategy).
+   * Falls back to the heuristic path when credentials are missing, the strategy
+   * demands it, or the LLM call fails.
+   */
+  async synthesizeFindings(
+    results: WorkerResultMessage[],
+    opts?: {
+      prompt?: string;
+      accountId?: string;
+      apiToken?: string;
+      model?: string;
+      gateway?: AiGatewayOptions;
+      signal?: AbortSignal;
+      onDelta?: (delta: string) => void;
+      strategy?: "llm" | "heuristic" | "hybrid";
+      disableLlmSynthesis?: boolean;
+    },
+  ): Promise<{
+    plan: string;
+    conflicts: string[];
+    recommendations: string[];
+  }> {
+    const strategy = opts?.strategy ?? "llm";
+    const disableLlm = opts?.disableLlmSynthesis ?? false;
+    const hasCreds = !!opts?.accountId && !!opts?.apiToken;
+
+    const useHeuristic = !hasCreds || strategy === "heuristic" || disableLlm;
+    if (useHeuristic) {
+      return this.synthesizeFindingsHeuristic(results);
+    }
+
+    try {
+      const llmResult = await this.synthesizeFindingsLlm(results, {
+        prompt: opts?.prompt,
+        accountId: opts.accountId!,
+        apiToken: opts.apiToken!,
+        model: opts?.model ?? "@cf/moonshotai/kimi-k2.5",
+        gateway: opts?.gateway,
+        signal: opts?.signal,
+        onDelta: opts?.onDelta,
+      });
+      return llmResult;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("supervisor:synthesis_llm_failed", { error: msg });
+      if (strategy === "hybrid") {
+        return this.synthesizeFindingsHeuristic(results);
+      }
+      throw err;
+    }
+  }
+
   /** Automatically spawn research workers for a heavy prompt.
    *
    * Decomposes the prompt into 2-4 parallel research tasks using a simple
@@ -796,14 +944,33 @@ export class TurnSupervisor {
     try {
       const results = await this.spawnWorkers(workers, onUpdate, signal);
       onPhaseChange?.("synthesizing");
-      const synth = this.synthesizeFindings(results);
+
+      const gateway = cfg?.aiGatewayId
+        ? {
+            id: cfg.aiGatewayId,
+            cacheTtl: cfg.aiGatewayCacheTtl,
+            skipCache: cfg.aiGatewaySkipCache,
+            metadata: { feature: "synthesis", ...(cfg.aiGatewayMetadata ?? {}) },
+          }
+        : undefined;
+
+      const synth = await this.synthesizeFindings(results, {
+        prompt,
+        accountId: cfg?.accountId,
+        apiToken: cfg?.apiToken,
+        model: cfg?.synthesisModel,
+        gateway,
+        signal,
+        strategy: cfg?.synthesisStrategy,
+        disableLlmSynthesis: cfg?.disableLlmSynthesis,
+      });
 
       // Auto plan→execute chain ("the 4th agent"). Off by default for safety;
       // opt in via /multi-agent in the TUI or KIMIFLARE_AUTO_EXECUTE=1. Only
       // fires when synthesis produced actionable recommendations.
-      const cfg = await loadConfig().catch(() => null);
+      const cfg2 = await loadConfig().catch(() => null);
       const autoExecute =
-        cfg?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
+        cfg2?.autoExecute ?? /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_AUTO_EXECUTE ?? "");
       if (!autoExecute || synth.recommendations.length === 0) {
         return synth;
       }
@@ -973,7 +1140,7 @@ async function decomposeWithLlm(
 
   try {
     let text = "";
-    const events = runKimi({
+    const events = client.runKimi({
       accountId,
       apiToken,
       model,

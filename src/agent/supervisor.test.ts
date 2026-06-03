@@ -34,9 +34,15 @@ function finding(
 }
 
 describe("TurnSupervisor.synthesizeFindings", () => {
-  it("keeps all findings when topics do not overlap", () => {
+  let runKimiCalls: Array<{ model: string; messages: unknown[]; temperature?: number }> = [];
+
+  afterEach(() => {
+    runKimiCalls = [];
+  });
+
+  it("keeps all findings when topics do not overlap", async () => {
     const s = new TurnSupervisor();
-    const out = s.synthesizeFindings([
+    const out = await s.synthesizeFindings([
       result("w1", [finding("OAuth", "high")]),
       result("w2", [finding("Testing", "medium")]),
     ]);
@@ -45,9 +51,9 @@ describe("TurnSupervisor.synthesizeFindings", () => {
     assert.strictEqual(out.conflicts.length, 0);
   });
 
-  it("deduplicates by topic, keeping the higher-confidence finding", () => {
+  it("deduplicates by topic, keeping the higher-confidence finding", async () => {
     const s = new TurnSupervisor();
-    const out = s.synthesizeFindings([
+    const out = await s.synthesizeFindings([
       result("w1", [finding("OAuth", "low", "low-summary")]),
       result("w2", [finding("oauth", "high", "high-summary")]),
     ]);
@@ -55,9 +61,9 @@ describe("TurnSupervisor.synthesizeFindings", () => {
     assert.ok(!out.plan.includes("low-summary"));
   });
 
-  it("detects conflicting recommendations and prefers the higher-confidence one", () => {
+  it("detects conflicting recommendations and prefers the higher-confidence one", async () => {
     const s = new TurnSupervisor();
-    const out = s.synthesizeFindings([
+    const out = await s.synthesizeFindings([
       result("w1", [finding("OAuth", "low")], ["use OAuth library A"]),
       result("w2", [finding("OAuth", "high")], ["use OAuth library B"]),
     ]);
@@ -68,12 +74,140 @@ describe("TurnSupervisor.synthesizeFindings", () => {
     assert.ok(Array.isArray(out.recommendations));
   });
 
-  it("handles an empty results array without crashing", () => {
+  it("handles an empty results array without crashing", async () => {
     const s = new TurnSupervisor();
-    const out = s.synthesizeFindings([]);
+    const out = await s.synthesizeFindings([]);
     assert.strictEqual(out.conflicts.length, 0);
     assert.strictEqual(out.recommendations.length, 0);
     assert.ok(out.plan.includes("Synthesized Execution Plan"));
+  });
+
+  it("uses heuristic path when strategy is heuristic", async () => {
+    const s = new TurnSupervisor();
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")])],
+      { strategy: "heuristic", accountId: "a", apiToken: "t" },
+    );
+    assert.ok(out.plan.includes("OAuth"));
+  });
+
+  it("uses heuristic path when credentials are missing", async () => {
+    const s = new TurnSupervisor();
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")])],
+      { strategy: "llm" },
+    );
+    assert.ok(out.plan.includes("OAuth"));
+  });
+
+  it("uses LLM path when credentials are present and strategy is llm", async () => {
+    const s = new TurnSupervisor();
+    (s as unknown as Record<string, unknown>)._runKimi = async function* (opts: { model: string; messages: unknown[]; temperature?: number }) {
+      runKimiCalls.push(opts);
+      yield { type: "text" as const, delta: JSON.stringify({
+        plan: "# Unified Plan\n\nUse OAuth.",
+        conflicts: [],
+        recommendations: ["Use OAuth 2.0"],
+      }) };
+      yield { type: "done" as const, finishReason: "stop", usage: null };
+    };
+
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high", "summary")], ["Use OAuth 2.0"])],
+      { strategy: "llm", accountId: "a", apiToken: "t", model: "@cf/moonshotai/kimi-k2.5" },
+    );
+    assert.strictEqual(runKimiCalls.length, 1);
+    assert.strictEqual(runKimiCalls[0]?.model, "@cf/moonshotai/kimi-k2.5");
+    assert.strictEqual(runKimiCalls[0]?.temperature, 0.2);
+    assert.ok(out.plan.includes("Unified Plan"));
+    assert.deepStrictEqual(out.recommendations, ["Use OAuth 2.0"]);
+  });
+
+  it("falls back to heuristic when LLM returns bad JSON and strategy is hybrid", async () => {
+    const s = new TurnSupervisor();
+    (s as unknown as Record<string, unknown>)._runKimi = async function* () {
+      yield { type: "text" as const, delta: "not json" };
+      yield { type: "done" as const, finishReason: "stop", usage: null };
+    };
+
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")])],
+      { strategy: "hybrid", accountId: "a", apiToken: "t" },
+    );
+    assert.ok(out.plan.includes("Synthesized Execution Plan"));
+    assert.ok(out.plan.includes("OAuth"));
+  });
+
+  it("falls back to heuristic when LLM throws and strategy is hybrid", async () => {
+    const s = new TurnSupervisor();
+    (s as unknown as Record<string, unknown>)._runKimi = async function* () {
+      throw new Error("network error");
+    };
+
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")])],
+      { strategy: "hybrid", accountId: "a", apiToken: "t" },
+    );
+    assert.ok(out.plan.includes("OAuth"));
+  });
+
+  it("propagates LLM error when strategy is llm and LLM fails", async () => {
+    const s = new TurnSupervisor();
+    (s as unknown as Record<string, unknown>)._runKimi = async function* () {
+      throw new Error("network error");
+    };
+
+    await assert.rejects(
+      s.synthesizeFindings(
+        [result("w1", [finding("OAuth", "high")])],
+        { strategy: "llm", accountId: "a", apiToken: "t" },
+      ),
+      /network error/,
+    );
+  });
+
+  it("includes worker IDs in the LLM prompt for citation tracking", async () => {
+    const s = new TurnSupervisor();
+    let capturedUserContent = "";
+    (s as unknown as Record<string, unknown>)._runKimi = async function* (opts: { messages: Array<{ role: string; content: string }> }) {
+      const userMsg = opts.messages.find((m) => m.role === "user");
+      capturedUserContent = userMsg?.content ?? "";
+      yield { type: "text" as const, delta: JSON.stringify({
+        plan: "# Plan\n\n[worker: w1] Use OAuth.",
+        conflicts: [],
+        recommendations: ["Use OAuth"],
+      }) };
+      yield { type: "done" as const, finishReason: "stop", usage: null };
+    };
+
+    await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")], ["Use OAuth"])],
+      { strategy: "llm", accountId: "a", apiToken: "t", prompt: "Implement auth" },
+    );
+    assert.ok(capturedUserContent.includes("Worker w1"));
+    assert.ok(capturedUserContent.includes("Implement auth"));
+  });
+
+  it("streams deltas through onDelta callback", async () => {
+    const s = new TurnSupervisor();
+    (s as unknown as Record<string, unknown>)._runKimi = async function* () {
+      yield { type: "text" as const, delta: '{"plan":"# P' };
+      yield { type: "text" as const, delta: 'lan","conflicts":[],"recommendations":[]}' };
+      yield { type: "done" as const, finishReason: "stop", usage: null };
+    };
+
+    const deltas: string[] = [];
+    const out = await s.synthesizeFindings(
+      [result("w1", [finding("OAuth", "high")])],
+      {
+        strategy: "llm",
+        accountId: "a",
+        apiToken: "t",
+        onDelta: (d) => deltas.push(d),
+      },
+    );
+    assert.deepStrictEqual(deltas, ['{"plan":"# P', 'lan","conflicts":[],"recommendations":[]}' ]);
+    assert.ok(out.plan.includes("Plan"));
   });
 });
 
