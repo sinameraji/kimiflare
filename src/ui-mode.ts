@@ -740,6 +740,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             if (!(err instanceof Error && err.name === "AbortError")) {
               cam.send("ShowToast", { text: `multi-agent spawn failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 4000 });
             }
+          } finally {
+            multiAgentSupervisor.clearWorkers();
           }
           return;
         }

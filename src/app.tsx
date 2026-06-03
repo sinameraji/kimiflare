@@ -1731,6 +1731,8 @@ function App({
               },
             ]);
             messagesRef.current.push({ role: "assistant", content: plan });
+            setActiveWorkers([]);
+            supervisorRef.current!.clearWorkers();
             if (conflicts.length > 0) {
               setEvents((e) => [
                 ...e,
@@ -1769,6 +1771,8 @@ function App({
                 { kind: "error", key: mkKey(), text: `multi-agent spawn failed: ${err.message}` },
               ]);
             }
+            setActiveWorkers([]);
+            supervisorRef.current!.clearWorkers();
             endTurn();
             return;
           } finally {

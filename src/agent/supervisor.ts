@@ -431,7 +431,8 @@ export class TurnSupervisor {
                 : {}),
             };
 
-            const timeoutMs = parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "900000", 10);
+            const timeoutMs = cfg?.workerTimeoutMs
+              ?? parseInt(process.env.KIMIFLARE_WORKER_TIMEOUT_MS ?? "900000", 10);
 
             worker.logs.push(`[coordinator] Sending payload (${JSON.stringify(payload).length} bytes)`);
             worker.logs.push(`[coordinator] Worker will clone ${repo.owner}/${repo.repo} and run kimiflare inside Cloudflare Sandbox`);
@@ -464,12 +465,12 @@ export class TurnSupervisor {
 
             // ── Poll progress every 3s until done or timeout ──
             const pollInterval = 3000;
-            const startTime = Date.now();
+            let lastProgressAt = Date.now();
             let lastLogCount = 0;
             let lastStep = "";
             let data: WorkerResultMessage | undefined;
 
-            while (Date.now() - startTime < timeoutMs) {
+            while (Date.now() - lastProgressAt < timeoutMs) {
               if (signal?.aborted) {
                 worker.logs.push(`[coordinator] Cancelling worker (id: ${remoteWorkerId})…`);
                 onUpdate?.([...activeWorkers.values()]);
@@ -549,9 +550,11 @@ export class TurnSupervisor {
               const stepKey = `${progress.stepIndex}:${progress.step}`;
               if (stepKey !== lastStep) {
                 lastStep = stepKey;
+                lastProgressAt = Date.now();
                 worker.logs.push(`[coordinator] Step ${progress.stepIndex}/${progress.totalSteps}: ${progress.message}`);
                 onUpdate?.([...activeWorkers.values()]);
               } else if (newLogs.length > 0) {
+                lastProgressAt = Date.now();
                 // Still need to refresh if new worker logs arrived
                 onUpdate?.([...activeWorkers.values()]);
               }
