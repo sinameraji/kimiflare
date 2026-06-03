@@ -86,4 +86,14 @@ describe("computeModalFlags", () => {
       hasAnyModal: true,
     });
   });
+
+  it("flags plan complete picker as overlay, not fullscreen", () => {
+    const f = computeModalFlags({
+      ...EMPTY_MODAL_STATE,
+      showPlanCompletePicker: true,
+    });
+    assert.strictEqual(f.hasOverlayModal, true);
+    assert.strictEqual(f.hasFullscreenModal, false);
+    assert.strictEqual(f.hasAnyModal, true);
+  });
 });

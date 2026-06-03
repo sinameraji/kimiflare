@@ -24,7 +24,7 @@ import { InboxModal } from "./inbox-modal.js";
 import { MultiAgentModal, type MultiAgentSettings } from "./multi-agent-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
 import { HelpMenu } from "./help-menu.js";
-import { PlanCompletePicker, type PlanCompleteChoice } from "./plan-complete-picker.js";
+
 import type { Theme } from "./theme.js";
 import type { ModalHostController } from "./use-modal-host.js";
 import type { CustomCommand } from "../commands/types.js";
@@ -122,8 +122,6 @@ export interface ModalHostProps {
   // Skills picker
   onSkillsAction: (action: string) => void;
   onSkillsDone: () => void;
-  // Plan complete picker
-  onPlanCompletePick: (choice: PlanCompleteChoice | null) => void;
 }
 
 /**
@@ -436,16 +434,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <ModePicker current={props.currentMode} onPick={props.onPickMode} multiAgentEnabled={props.multiAgentEnabled} />
-        </Box>
-      </ThemeProvider>
-    );
-  }
-
-  if (modals.showPlanCompletePicker) {
-    return (
-      <ThemeProvider theme={theme}>
-        <Box flexDirection="column">
-          <PlanCompletePicker onPick={props.onPlanCompletePick} />
         </Box>
       </ThemeProvider>
     );
