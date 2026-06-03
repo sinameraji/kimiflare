@@ -64,7 +64,7 @@ import {
 import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
-import { checkForUpdate } from "../util/update-check.js";
+import { checkForUpdate, checkOptionalDependency } from "../util/update-check.js";
 import { getAppVersion } from "../util/version.js";
 import {
   detectGitHubRepo,
@@ -1002,8 +1002,27 @@ const handleInit: Handler = (ctx) => {
   return true;
 };
 
-const handleUpdate: Handler = (ctx) => {
+const handleUpdate: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
+  if (arg === "camouflage") {
+    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+      if (dep.hasUpdate && dep.latestVersion) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}` },
+        ]);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "run:  npm update camouflage-tui" },
+        ]);
+      } else if (dep.localVersion) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `camouflage-tui up to date (${dep.localVersion})` }]);
+      } else {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "camouflage-tui is not installed" }]);
+      }
+    });
+    return true;
+  }
   void checkForUpdate(true).then((result) => {
     if (result.hasUpdate) {
       ctx.setHasUpdate(true);

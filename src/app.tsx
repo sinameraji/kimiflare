@@ -43,7 +43,7 @@ import { join } from "node:path";
 import QRCode from "qrcode";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
-import { checkForUpdate } from "./util/update-check.js";
+import { checkForUpdate, checkOptionalDependency } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
@@ -666,6 +666,26 @@ function App({
         ]);
       }
     });
+    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+      if (dep.hasUpdate && dep.latestVersion) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
+          },
+        ]);
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: "run:  npm update camouflage-tui",
+          },
+        ]);
+      }
+    });
   }, [cfg, initialUpdateResult]);
 
   useEffect(() => {
@@ -726,6 +746,26 @@ function App({
               },
             ]);
           }
+        }
+      });
+      void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+        if (dep.hasUpdate && dep.latestVersion) {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
+            },
+          ]);
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: "run:  npm update camouflage-tui",
+            },
+          ]);
         }
       });
     }, 30 * 60 * 1000); // 30 minutes
