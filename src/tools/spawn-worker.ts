@@ -1,6 +1,7 @@
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import type { WorkerResultMessage } from "../agent/messages.js";
 import { logger } from "../util/logger.js";
+import { loadConfig, resolveWorkerBudgetUsd } from "../config.js";
 
 interface SpawnWorkerArgs {
   mode: "plan" | "execute";
@@ -155,7 +156,8 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
 
     const apiKey = process.env.KIMIFLARE_WORKER_API_KEY;
     const timeoutMs = readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS") ?? DEFAULT_WORKER_TIMEOUT_MS;
-    const budgetUsd = args.budget?.maxCostUsd ?? readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD") ?? DEFAULT_WORKER_BUDGET_USD;
+    const cfg = await loadConfig().catch(() => null);
+    const budgetUsd = resolveWorkerBudgetUsd(cfg);
 
     const payload = {
       mode: args.mode,
@@ -180,15 +182,15 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
     try {
       const result = await callWorkerEndpoint(endpoint, apiKey, payload, ctx.signal, timeoutMs);
 
-      if (result.status !== "completed") {
+      if (result.status !== "completed" && result.status !== "budget_exhausted") {
         const msg = `Worker ${result.workerId} ${result.status}: ${result.error ?? "unknown error"}`;
         const bytes = Buffer.byteLength(msg, "utf8");
         return { content: msg, rawBytes: bytes, reducedBytes: bytes };
       }
 
       const lines: string[] = [
-        `Worker ${result.workerId} completed.`,
-        `Cost: $${result.costUsd.toFixed(2)} · Tokens: ${result.tokensUsed.toLocaleString()}`,
+        `Worker ${result.workerId} ${result.status === "budget_exhausted" ? "budget_exhausted (partial result)" : "completed"}.`,
+        `Cost: ${result.costUsd.toFixed(2)} · Tokens: ${result.tokensUsed.toLocaleString()}`,
         "",
         "## Findings",
         ...result.findings.map(
@@ -198,6 +200,13 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
         "## Recommendations",
         ...result.recommendations.map((r) => `- ${r}`),
       ];
+
+      if (result.status === "budget_exhausted") {
+        lines.push(
+          "",
+          "> ⚠️ This worker hit its budget ceiling and returned partial results. Consider re-running with a higher budget if findings are incomplete.",
+        );
+      }
 
       if (result.filesRead.length > 0) {
         lines.push("", "## Files Read", ...result.filesRead.map((f) => `- ${f}`));

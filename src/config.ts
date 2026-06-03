@@ -120,6 +120,8 @@ export interface KimiConfig {
   workerEndpoint?: string;
   /** Max cost per worker in USD (default: 1.0). */
   workerBudgetUsd?: number;
+  /** Hard ceiling for workerBudgetUsd. Any configured or programmatic value above this is silently capped. Default: 5.0. */
+  workerBudgetMaxUsd?: number;
   /** Max workers to spawn in parallel (default: 3). */
   workerMaxParallel?: number;
   /** Timeout per worker in milliseconds (default: 300000 = 5 min). */
@@ -133,6 +135,41 @@ export interface KimiConfig {
   /** When true, after plan workers synthesize, spawn one executor worker
    *  to implement the synthesized plan and open a PR. Off by default. */
   autoExecute?: boolean;
+  /** Use shallow clone (`--depth 1`) for sandbox workers. Default: true. */
+  workerShallowClone?: boolean;
+  /** Enable repo caching / reuse hints for the Commute worker. Default: true. */
+  workerRepoCache?: boolean;
+  /** Forward memory context to multi-agent workers. Default: true. */
+  workerProxyMemory?: boolean;
+  /** Forward LSP context to multi-agent workers. Default: false. */
+  workerProxyLsp?: boolean;
+  /** Forward MCP context to multi-agent workers. Default: false. */
+  workerProxyMcp?: boolean;
+  /** Model used for LLM-based task decomposition in multi-agent mode.
+   *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
+  decompositionModel?: string;
+  /** Strategy for decomposing heavy prompts into parallel research tasks.
+   *  - "llm": use a lightweight LLM call (default)
+   *  - "regex": pure regex heuristic (no LLM, fastest)
+   *  - "hybrid": regex for explicit lists, LLM for prose */
+  decompositionStrategy?: "llm" | "regex" | "hybrid";
+  /** Model for synthesizing multi-agent findings.
+   *  Default: @cf/moonshotai/kimi-k2.5 (fast and cheap). */
+  synthesisModel?: string;
+  /** Strategy for synthesizing worker findings.
+   *  - "llm": use a lightweight LLM call (default)
+   *  - "heuristic": pure heuristic (no LLM, fastest)
+   *  - "hybrid": try LLM, fall back to heuristic on failure */
+  synthesisStrategy?: "llm" | "heuristic" | "hybrid";
+  /** Explicit opt-out for LLM-based synthesis. When true, always uses heuristic. */
+  disableLlmSynthesis?: boolean;
+  /** Files to pre-read on the coordinator and inject into every worker's
+   *  context. Saves redundant `read` tool calls across workers. Paths are
+   *  relative to the repo root. */
+  workerPreReadFiles?: string[];
+  /** Max characters of pre-read content to inject per worker batch.
+   *  Default: 50_000. */
+  workerPreReadMaxChars?: number;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
@@ -273,6 +310,10 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
   const envMultiAgentEnabled = readBooleanEnv("KIMIFLARE_MULTI_AGENT_ENABLED");
+  const envWorkerPreReadFiles = process.env.KIMIFLARE_WORKER_PRE_READ_FILES
+    ? process.env.KIMIFLARE_WORKER_PRE_READ_FILES.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+  const envWorkerPreReadMaxChars = readNumberEnv("KIMIFLARE_WORKER_PRE_READ_MAX_CHARS");
 
   if (envAccount && envToken) {
     return {
@@ -313,11 +354,16 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       unifiedBilling: envUnifiedBilling ?? persisted?.unifiedBilling,
       workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT,
       workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
+      workerBudgetMaxUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_MAX_USD"),
       workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
       workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
       multiAgentEnabled: envMultiAgentEnabled,
       workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY,
       autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
+      workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? true,
+      workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? true,
+      workerPreReadFiles: envWorkerPreReadFiles ?? persisted?.workerPreReadFiles,
+      workerPreReadMaxChars: envWorkerPreReadMaxChars ?? persisted?.workerPreReadMaxChars,
     };
   }
 
@@ -362,15 +408,48 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
         workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT ?? parsed.workerEndpoint,
         workerBudgetUsd: parsed.workerBudgetUsd,
+        workerBudgetMaxUsd: parsed.workerBudgetMaxUsd,
         workerMaxParallel: parsed.workerMaxParallel,
         workerTimeoutMs: parsed.workerTimeoutMs,
         multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
         workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY ?? parsed.workerApiKey,
         autoExecute: parsed.autoExecute,
+        workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? parsed.workerShallowClone ?? true,
+        workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? parsed.workerRepoCache ?? true,
+        workerPreReadFiles: envWorkerPreReadFiles ?? parsed.workerPreReadFiles,
+        workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
       };
     }
   }
   return null;
+}
+
+/** Resolve and validate a worker budget, applying the hard ceiling.
+ *
+ *  - If no budget is configured, returns the default (1.0).
+ *  - If the configured budget is ≤ 0, throws.
+ *  - If the configured budget exceeds the hard ceiling (default 5.0), it is
+ *    silently capped and a warning is logged.
+ */
+export function resolveWorkerBudgetUsd(cfg: KimiConfig | null): number {
+  const DEFAULT_WORKER_BUDGET_USD = 1.0;
+  const HARD_CEILING = cfg?.workerBudgetMaxUsd ?? 5.0;
+
+  const raw = cfg?.workerBudgetUsd ?? DEFAULT_WORKER_BUDGET_USD;
+  if (raw <= 0) {
+    throw new Error(
+      `Invalid workerBudgetUsd (${raw}). Must be > 0. Set via /multi-agent or KIMIFLARE_WORKER_BUDGET_USD.`,
+    );
+  }
+  if (raw > HARD_CEILING) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `kimiflare: workerBudgetUsd ${raw} exceeds hard ceiling ${HARD_CEILING}; capping to ${HARD_CEILING}. ` +
+        `Raise the ceiling with KIMIFLARE_WORKER_BUDGET_MAX_USD if you really need more.`,
+    );
+    return HARD_CEILING;
+  }
+  return raw;
 }
 
 export async function saveConfig(cfg: KimiConfig): Promise<string> {

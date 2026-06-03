@@ -55,7 +55,7 @@ export interface WorkerFinding {
 /** Result returned by a standalone research/executor worker. */
 export interface WorkerResultMessage {
   workerId: string;
-  status: "completed" | "failed" | "cancelled";
+  status: "completed" | "failed" | "cancelled" | "budget_exhausted";
   task: string;
   findings: WorkerFinding[];
   recommendations: string[];
@@ -73,6 +73,10 @@ export interface WorkerResultMessage {
   error?: string;
   /** Phase timing breakdown from the worker (for debugging cold-start). */
   phases?: Array<{ name: string; ms: number }>;
+  /** True when the worker was killed because it exceeded its budget ceiling. */
+  budgetExceeded?: boolean;
+  /** True when the result contains partial findings produced before budget exhaustion. */
+  partialResult?: boolean;
 }
 
 /** Replace lone UTF-16 surrogates with the replacement character (U+FFFD).

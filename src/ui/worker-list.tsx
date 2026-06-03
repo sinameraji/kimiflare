@@ -19,6 +19,7 @@ export function WorkerList({ workers, isSynthesizing, narration }: Props) {
   const running = workers.filter((w) => w.status === "running").length;
   const completed = workers.filter((w) => w.status === "completed").length;
   const failed = workers.filter((w) => w.status === "failed").length;
+  const budgetExhausted = workers.filter((w) => w.status === "budget_exhausted").length;
   const pending = workers.filter((w) => w.status === "pending").length;
 
   // Only show the synthesis spinner when workers are actually done and
@@ -43,9 +44,23 @@ export function WorkerList({ workers, isSynthesizing, narration }: Props) {
           Workers: {pending > 0 ? `${pending} todo · ` : ""}
           {running > 0 ? `${running} ongoing · ` : ""}
           {completed > 0 ? `${completed} done · ` : ""}
+          {budgetExhausted > 0 ? `${budgetExhausted} budget hit · ` : ""}
           {failed > 0 ? `${failed} failed · ` : ""}
         </Text>
       </Box>
+      {(() => {
+        const anyPreRead = workers.find((w) => w.preReadFiles && w.preReadFiles.length > 0);
+        if (!anyPreRead) return null;
+        const fileCount = anyPreRead.preReadFiles!.length;
+        const chars = anyPreRead.preReadChars ?? 0;
+        return (
+          <Box marginLeft={2}>
+            <Text color={theme.info.color}>
+              📦 Shared cache: {fileCount} file{fileCount > 1 ? "s" : ""} pre-read (~{chars.toLocaleString()} chars)
+            </Text>
+          </Box>
+        );
+      })()}
       {workers.map((w) => (
         <WorkerRow key={w.id} worker={w} />
       ))}
@@ -75,7 +90,7 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
   const modeLabel = worker.mode === "plan" ? "research" : "executor";
 
   // Status icons mirror the Camouflage TodoListUpdate protocol:
-  //   ☐ pending  |  ◐ running  |  ☑ completed  |  ☒ failed
+  //   ☐ pending  |  ◐ running  |  ☑ completed  |  ⚠ budget_exhausted  |  ☒ failed
   const statusIcon =
     worker.status === "pending" ? (
       <Text color={theme.muted?.color ?? theme.info.color}>☐</Text>
@@ -85,6 +100,8 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
       </Text>
     ) : worker.status === "completed" ? (
       <Text color={theme.palette.success}>☑</Text>
+    ) : worker.status === "budget_exhausted" ? (
+      <Text color={theme.info.color}>⚠</Text>
     ) : (
       <Text color={theme.palette.error}>☒</Text>
     );
@@ -96,9 +113,11 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
       ? "ongoing"
       : worker.status === "completed"
       ? "done"
+      : worker.status === "budget_exhausted"
+      ? "budget hit"
       : "failed";
 
-  const isDone = worker.status === "completed" || worker.status === "failed";
+  const isDone = worker.status === "completed" || worker.status === "failed" || worker.status === "budget_exhausted";
   const hasSteps = worker.steps && worker.steps.length > 0;
 
   return (
@@ -147,6 +166,15 @@ function WorkerRow({ worker }: { worker: ActiveWorker }) {
               {line.slice(0, 120)}
             </Text>
           ))}
+        </Box>
+      )}
+
+      {/* Phase timing — shown when worker is done and data is available */}
+      {isDone && worker.result?.phases && worker.result.phases.length > 0 && (
+        <Box marginLeft={4}>
+          <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+            {worker.result.phases.map((p) => `${p.name}: ${formatElapsed(p.ms)}`).join(" · ")}
+          </Text>
         </Box>
       )}
     </Box>

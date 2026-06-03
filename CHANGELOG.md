@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.81.0](https://github.com/sinameraji/kimiflare/compare/v0.80.0...v0.81.0) (2026-06-03)
+
+
+### Features
+
+* **agent:** LLM-based synthesis for multi-agent findings ([#546](https://github.com/sinameraji/kimiflare/issues/546)) ([0168a27](https://github.com/sinameraji/kimiflare/commit/0168a278f5f7176ebbedfcbd15b4c273060fe51a))
+* **ui:** auto-prompt /fresh when plan mode completes ([#544](https://github.com/sinameraji/kimiflare/issues/544)) ([b3e8cda](https://github.com/sinameraji/kimiflare/commit/b3e8cda5efaf7068e5beb90219b52735e44e39b6))
+
+## [0.80.0](https://github.com/sinameraji/kimiflare/compare/v0.79.0...v0.80.0) (2026-06-03)
+
+
+### Features
+
+* add /fresh command to reset session with distilled plan ([#533](https://github.com/sinameraji/kimiflare/issues/533)) ([5893acb](https://github.com/sinameraji/kimiflare/commit/5893acb8f0ee9649b8ee1bb48f4cdbeab6ff34f3))
+* **agent:** LLM-based task decomposition for multi-agent mode ([#529](https://github.com/sinameraji/kimiflare/issues/529)) ([c1d29df](https://github.com/sinameraji/kimiflare/commit/c1d29df9234ca36731a1a60ef59511f2440f0674)), closes [#518](https://github.com/sinameraji/kimiflare/issues/518)
+* **multi-agent:** client-side worker budget validation and partial-result handling ([#526](https://github.com/sinameraji/kimiflare/issues/526)) ([ef1900b](https://github.com/sinameraji/kimiflare/commit/ef1900b8fd714400c5638fbecabdaadecbf0562a)), closes [#517](https://github.com/sinameraji/kimiflare/issues/517)
+* **multi-agent:** coordinator hints, remote-agent phase timing, and shallow clone ([#528](https://github.com/sinameraji/kimiflare/issues/528)) ([6c8c0d9](https://github.com/sinameraji/kimiflare/commit/6c8c0d951f33e20b2f3a50825abe7b627e5b8392))
+* **multi-agent:** coordinator-side file-read cache for workers ([#527](https://github.com/sinameraji/kimiflare/issues/527)) ([4e7716d](https://github.com/sinameraji/kimiflare/commit/4e7716da5d442e58e93b8aab5c64f95a5a8dd0d5))
+* **multi-agent:** proxy memory, LSP, and MCP context to workers ([#531](https://github.com/sinameraji/kimiflare/issues/531)) ([34433cb](https://github.com/sinameraji/kimiflare/commit/34433cb5b2e8280f7f812b7e33107a943ca55bbb)), closes [#520](https://github.com/sinameraji/kimiflare/issues/520)
+
+
+### Bug Fixes
+
+* **multi-agent:** respect config timeout, extend on progress, and clear worker list after synthesis ([#532](https://github.com/sinameraji/kimiflare/issues/532)) ([dbc633d](https://github.com/sinameraji/kimiflare/commit/dbc633d927158539f76ecb0762d00849c0e41417))
+
 ## [0.79.0](https://github.com/sinameraji/kimiflare/compare/v0.78.0...v0.79.0) (2026-06-02)
 
 
