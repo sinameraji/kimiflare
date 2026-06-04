@@ -146,9 +146,8 @@ export function useModalHost(): ModalHostController {
       showMemoryPicker ||
       showGatewayPicker ||
       showSkillsPicker ||
-      showShellPicker ||
-      showPlanCompletePicker;
-    const hasOverlayModal = limitModal !== null || loopModal !== null;
+      showShellPicker;
+    const hasOverlayModal = limitModal !== null || loopModal !== null || showPlanCompletePicker;
     return {
       hasFullscreenModal,
       hasOverlayModal,

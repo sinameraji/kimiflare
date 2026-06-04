@@ -2066,6 +2066,7 @@ function App({
         clearPermissionResolveRef();
         limitResolveRef.current = null;
         loopResolveRef.current = null;
+        setLimitModal(null);
         setLoopModal(null);
         pendingToolCallsRef.current.clear();
 
