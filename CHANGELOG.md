@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.82.1](https://github.com/sinameraji/kimiflare/compare/v0.82.0...v0.82.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **ui:** prevent blank screen when PlanCompletePicker opens after plan mode ([#554](https://github.com/sinameraji/kimiflare/issues/554)) ([3b39304](https://github.com/sinameraji/kimiflare/commit/3b39304887c79643aa121e33038942494fb6a25f))
+
 ## [0.82.0](https://github.com/sinameraji/kimiflare/compare/v0.81.0...v0.82.0) (2026-06-03)
 
 
