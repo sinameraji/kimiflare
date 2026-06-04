@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What Is an AI Coding Harness? Definition, Components, and Example — kimiflare</title>
+  <meta name="description" content="An AI coding harness is the program that wraps a language model with tools, permissions, context management, and a UI to make it an autonomous coding agent. Learn the components and see how kimiflare implements one on Cloudflare.">
+  <meta name="keywords" content="AI coding harness, what is a coding harness, agent harness vs model, AI coding agent, tool use, permission model, context management, kimiflare">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="author" content="Sina Meraji">
+  <link rel="canonical" href="https://kimiflare.com/blog/what-is-an-ai-coding-harness">
+  <meta name="theme-color" content="#f48120">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="kimiflare">
+  <meta property="og:url" content="https://kimiflare.com/blog/what-is-an-ai-coding-harness">
+  <meta property="og:title" content="What Is an AI Coding Harness? Definition, Components, and Example">
+  <meta property="og:description" content="The harness is the program that wraps an LLM with tools, permissions, context management, and a UI to make it an autonomous coding agent. See how kimiflare implements one on Cloudflare.">
+  <meta property="og:image" content="https://kimiflare.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@sinasanm">
+  <meta name="twitter:title" content="What Is an AI Coding Harness?">
+  <meta name="twitter:description" content="The harness is the program that wraps an LLM with tools, permissions, context management, and a UI to make it an autonomous coding agent.">
+  <meta name="twitter:image" content="https://kimiflare.com/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        "headline": "What Is an AI Coding Harness?",
+        "description": "An AI coding harness is the program that wraps a language model with tools, permissions, context management, and a UI to make it an autonomous coding agent. Learn the components and see how kimiflare implements one on Cloudflare.",
+        "image": "https://kimiflare.com/og.png",
+        "author": { "@type": "Person", "name": "Sina Meraji", "url": "https://github.com/sinameraji" },
+        "publisher": { "@type": "Organization", "name": "kimiflare", "logo": { "@type": "ImageObject", "url": "https://kimiflare.com/logo.png" } },
+        "datePublished": "2026-06-04",
+        "dateModified": "2026-06-04",
+        "mainEntityOfPage": "https://kimiflare.com/blog/what-is-an-ai-coding-harness"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://kimiflare.com/" },
+          { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://kimiflare.com/blog/" },
+          { "@type": "ListItem", "position": 3, "name": "What is an AI coding harness?", "item": "https://kimiflare.com/blog/what-is-an-ai-coding-harness" }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="logo">
+      <img src="/logo.png" alt="kimiflare logo" class="logo-img">
+      kimiflare
+    </a>
+    <ul class="nav-links">
+      <li><a href="/#features">Features</a></li>
+      <li><a href="/#compare">Compare</a></li>
+      <li><a href="/faq">FAQ</a></li>
+      <li><a href="/#install">Install</a></li>
+      <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub →</a></li>
+    </ul>
+  </nav>
+
+  <article class="article">
+    <div class="breadcrumb"><a href="/">Home</a> / <a href="/blog/">Blog</a> / What is an AI coding harness?</div>
+    <h1>What is an AI coding harness?</h1>
+    <p class="lead">An AI coding harness is the program that wraps a language model with tools, a permission system, context management, and a user interface — turning a raw model into an autonomous coding agent. The model generates text; the harness is what lets it read files, edit code, run commands, recover from errors, and stay safe while doing it. In practice, the harness matters as much as the model.</p>
+    <div class="article-meta">June 4, 2026 · ~6 min read</div>
+
+    <p><strong>Short answer:</strong> A language model on its own can only produce text. A coding harness is the surrounding software that gives that model hands and guardrails — a tool layer to act on a codebase, a permission model to keep you in control, context management to feed it the right information, and a UI to show what it's doing. kimiflare is one example of such a harness, running on Cloudflare.</p>
+
+    <h2>Definition</h2>
+    <p>"Harness" is borrowed from testing and systems engineering, where a harness is the scaffolding that drives and observes a unit under test. In AI coding, the harness is the program that drives the model: it sends prompts, exposes tools the model can call, executes those tool calls, enforces permissions, manages what's in the context window, and renders the whole thing in a usable interface. Without a harness, a model can describe a code change but cannot make one.</p>
+
+    <h2>Why the harness matters as much as the model</h2>
+    <p>It's tempting to think the model is everything. But two agents built on the same model can feel completely different depending on the harness around it. The harness decides:</p>
+    <ul>
+      <li><strong>Tool design.</strong> Whether tools are clear, well-scoped, and reliable shapes how often the model succeeds. A good <code>edit</code> tool that applies precise diffs beats a blunt "rewrite the whole file" approach.</li>
+      <li><strong>Permissioning.</strong> How and when the agent is allowed to mutate files or run commands determines how much you can trust it.</li>
+      <li><strong>Context budgeting.</strong> Even a large context window is finite. The harness decides what code, history, and memory to include so the model sees what matters.</li>
+      <li><strong>Error recovery.</strong> Tool calls fail — a command errors, a file isn't found. A good harness feeds errors back so the model can adjust instead of giving up.</li>
+      <li><strong>Observability.</strong> Logs, cost, and a clear view of what the agent did are what make an agent usable in real work rather than a black box.</li>
+    </ul>
+
+    <h2>The typical components of a harness</h2>
+
+    <h3>Tool layer</h3>
+    <p>The set of actions the model can take. Common tools include reading and writing files, editing with diffs, running shell commands (bash), searching with grep and glob, fetching web pages and searching the web, driving a browser, querying a language server (LSP) for code intelligence, and connecting external tools via the Model Context Protocol (MCP).</p>
+
+    <h3>Permission model</h3>
+    <p>The rules governing which tool calls run automatically, which require approval, and which are blocked outright. This is the difference between a helpful assistant and an agent that quietly rewrites your repo.</p>
+
+    <h3>Context and memory management</h3>
+    <p>What the harness puts in front of the model on each turn: relevant files, prior conversation, and any persistent memory carried across sessions. Good context management is the quiet difference between an agent that stays on track and one that loses the thread.</p>
+
+    <h3>UI / TUI</h3>
+    <p>The interface — often a terminal UI (TUI) — that lets you give tasks, watch tool calls happen, review diffs, and approve actions.</p>
+
+    <h3>Observability and cost</h3>
+    <p>Logging of requests and results, plus a clear accounting of spend. This is what makes the agent auditable and predictable.</p>
+
+    <h2>Harness vs model vs agent</h2>
+    <p>These three terms are easy to conflate, so it helps to separate them:</p>
+    <ul>
+      <li><strong>Model</strong> — the language model itself (for example, Kimi K2.6). It predicts text and can request tool calls, but executes nothing on its own.</li>
+      <li><strong>Harness</strong> — the program around the model that provides tools, permissions, context, and UI.</li>
+      <li><strong>Agent</strong> — the model and harness working together as a system that can autonomously carry out multi-step tasks.</li>
+    </ul>
+    <blockquote>In short: the model is the brain, the harness is the body and the guardrails, and the agent is the two operating as one.</blockquote>
+
+    <h2>How kimiflare implements a harness on Cloudflare</h2>
+    <p>kimiflare is an open-source (MIT) coding harness that runs on your own Cloudflare account. It's a concrete worked example of every component above:</p>
+    <ul>
+      <li><strong>UI:</strong> a Node.js terminal UI (TUI) where you give tasks and review what the agent does, including a live task panel that shows the plan in progress.</li>
+      <li><strong>Model path:</strong> requests flow from the TUI through your own Cloudflare AI Gateway to Workers AI, where the Kimi K2.6 model (<code>@cf/moonshotai/kimi-k2.6</code>) runs with a 262K-token context window.</li>
+      <li><strong>Tool layer:</strong> read, write, edit, bash, glob, grep, web_fetch, web_search, github_read, browser_fetch, and tasks_set, plus LSP code intelligence and MCP extensibility.</li>
+      <li><strong>Memory:</strong> cross-session memory (remember / recall / forget) so context can persist between runs.</li>
+      <li><strong>Permission model:</strong> a permission modal prompts for write, edit, and bash actions — and edits arrive as a unified diff you approve before they're applied.</li>
+      <li><strong>Observability and cost:</strong> because every call goes through your AI Gateway, you get per-request logs and authoritative cost in the in-app <code>/cost</code> command — confirmed by the gateway, not estimated.</li>
+    </ul>
+
+    <h2>Install the example harness</h2>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+        <span class="code-lang">bash</span>
+      </div>
+      <div class="code-body">
+<span class="c"># Install the kimiflare harness</span><br>
+<span class="v">npm</span> install -g kimiflare<br>
+<br>
+<span class="c"># Run it (or use: npx kimiflare)</span><br>
+<span class="v">kimiflare</span>
+      </div>
+    </div>
+    <p>Requires Node.js ≥ 20 and works on macOS, Linux, and Windows. Reading a real harness end to end is one of the best ways to understand the concept — and because kimiflare is open source, you can do exactly that.</p>
+
+    <h2>Related</h2>
+    <ul>
+      <li><a href="/blog/run-ai-coding-agent-on-your-own-cloudflare-account">Run an AI coding agent on your own Cloudflare account</a></li>
+      <li><a href="/claude-code-alternative">The open-source Claude Code alternative</a></li>
+      <li><a href="/faq">kimiflare FAQ</a></li>
+      <li><a href="/vs/kimiflare-vs-claude-code">kimiflare vs Claude Code</a></li>
+    </ul>
+
+    <p style="margin-top:2rem;">
+      <a href="/#install" class="btn btn-primary">Install kimiflare</a>
+      &nbsp;
+      <a href="https://github.com/sinameraji/kimiflare" class="btn btn-secondary" target="_blank">View on GitHub</a>
+    </p>
+  </article>
+
+  <footer>
+    <span>Built by <a href="https://github.com/sinameraji" target="_blank">Sina</a> with <a href="https://github.com/sinameraji/kimiflare" target="_blank">kimiflare</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
+    <span>
+      <a href="/">Home</a> ·
+      <a href="/claude-code-alternative">Claude Code alternative</a> ·
+      <a href="/faq">FAQ</a> ·
+      <a href="/blog/">Blog</a> ·
+      <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a>
+    </span>
+  </footer>
+
+</body>
+</html>
