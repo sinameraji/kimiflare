@@ -20,10 +20,16 @@ export function PlanOptionsPicker({ options, onPick }: Props) {
     }
   });
 
-  const items = options.map((opt, i) => ({
-    label: `${i + 1}. ${opt.label}`,
-    value: i,
-  }));
+  const items = [
+    ...options.map((opt, i) => ({
+      label: `${i + 1}. ${opt.label}`,
+      value: String(i),
+    })),
+    {
+      label: "Chat about this",
+      value: "__chat__",
+    },
+  ];
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1}>
@@ -42,7 +48,11 @@ export function PlanOptionsPicker({ options, onPick }: Props) {
             if (idx >= 0) setSelectedIndex(idx);
           }}
           onSelect={(item) => {
-            const opt = options[item.value];
+            if (item.value === "__chat__") {
+              onPick(null);
+              return;
+            }
+            const opt = options[Number(item.value)];
             if (opt) {
               onPick(opt);
             } else {

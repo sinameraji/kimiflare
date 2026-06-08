@@ -1020,13 +1020,20 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         const pick = await selectList(cam, {
           id: `plan-options-${Date.now()}`,
           prompt: "Choose a plan to start fresh with",
-          options: options.map((o, i) => ({
-            value: String(i),
-            label: o.label,
-          })),
+          options: [
+            ...options.map((o, i) => ({
+              value: String(i),
+              label: o.label,
+            })),
+            { value: "__chat__", label: "Chat about this" },
+          ],
           allow_cancel: true,
         });
-        if (!pick.cancelled && pick.value !== null) {
+        if (pick.cancelled || pick.value === null) {
+          // cancelled — do nothing
+        } else if (pick.value === "__chat__") {
+          // user wants to keep chatting — do nothing
+        } else {
           const selected = options[Number(pick.value)];
           if (selected) {
             // Reset session (same as /clear)
