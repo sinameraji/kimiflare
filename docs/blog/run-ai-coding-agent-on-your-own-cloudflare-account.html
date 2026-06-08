@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How to Run an AI Coding Agent on Your Own Cloudflare Account — kimiflare</title>
+  <meta name="description" content="A practical guide to running a self-hosted AI coding agent on your own Cloudflare account with kimiflare: install, onboarding with AI Gateway, Kimi K2.6 on Workers AI, authoritative cost, and Plan/Edit/Auto modes.">
+  <meta name="keywords" content="run AI coding agent on Cloudflare, self-hosted AI coding agent, Cloudflare Workers AI coding agent, AI Gateway, Kimi K2 CLI, open-source Claude Code alternative">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="author" content="Sina Meraji">
+  <link rel="canonical" href="https://kimiflare.com/blog/run-ai-coding-agent-on-your-own-cloudflare-account">
+  <meta name="theme-color" content="#f48120">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="kimiflare">
+  <meta property="og:url" content="https://kimiflare.com/blog/run-ai-coding-agent-on-your-own-cloudflare-account">
+  <meta property="og:title" content="How to Run an AI Coding Agent on Your Own Cloudflare Account">
+  <meta property="og:description" content="Install kimiflare, connect your own Cloudflare account and AI Gateway, and run a Claude Code-style coding agent on Workers AI with authoritative per-turn cost.">
+  <meta property="og:image" content="https://kimiflare.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@sinasanm">
+  <meta name="twitter:title" content="How to Run an AI Coding Agent on Your Own Cloudflare Account">
+  <meta name="twitter:description" content="Install kimiflare, connect your own Cloudflare account and AI Gateway, and run a Claude Code-style coding agent on Workers AI.">
+  <meta name="twitter:image" content="https://kimiflare.com/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        "headline": "How to Run an AI Coding Agent on Your Own Cloudflare Account",
+        "description": "A practical guide to running a self-hosted AI coding agent on your own Cloudflare account with kimiflare: install, onboarding with AI Gateway, Kimi K2.6 on Workers AI, authoritative cost, and Plan/Edit/Auto modes.",
+        "image": "https://kimiflare.com/og.png",
+        "author": { "@type": "Person", "name": "Sina Meraji", "url": "https://github.com/sinameraji" },
+        "publisher": { "@type": "Organization", "name": "kimiflare", "logo": { "@type": "ImageObject", "url": "https://kimiflare.com/logo.png" } },
+        "datePublished": "2026-06-04",
+        "dateModified": "2026-06-04",
+        "mainEntityOfPage": "https://kimiflare.com/blog/run-ai-coding-agent-on-your-own-cloudflare-account"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://kimiflare.com/" },
+          { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://kimiflare.com/blog/" },
+          { "@type": "ListItem", "position": 3, "name": "Run an AI coding agent on your own Cloudflare account", "item": "https://kimiflare.com/blog/run-ai-coding-agent-on-your-own-cloudflare-account" }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="logo">
+      <img src="/logo.png" alt="kimiflare logo" class="logo-img">
+      kimiflare
+    </a>
+    <ul class="nav-links">
+      <li><a href="/#features">Features</a></li>
+      <li><a href="/#compare">Compare</a></li>
+      <li><a href="/faq">FAQ</a></li>
+      <li><a href="/#install">Install</a></li>
+      <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub →</a></li>
+    </ul>
+  </nav>
+
+  <article class="article">
+    <div class="breadcrumb"><a href="/">Home</a> / <a href="/blog/">Blog</a> / Run an AI coding agent on your own Cloudflare</div>
+    <h1>How to run an AI coding agent on your own Cloudflare account</h1>
+    <p class="lead">You can run a Claude Code-style AI coding agent entirely on infrastructure you control. With kimiflare — an open-source (MIT) terminal coding agent — you install one npm package, connect your own Cloudflare account during onboarding, and every model call runs on Cloudflare Workers AI through your own AI Gateway. No third-party API keys, no estimated billing, and authoritative per-turn cost.</p>
+    <div class="article-meta">June 4, 2026 · ~6 min read</div>
+
+    <p><strong>Short answer:</strong> Install kimiflare with <code>npm install -g kimiflare</code>, run <code>kimiflare</code>, and follow the onboarding to connect your Cloudflare account and AI Gateway. From then on, the agent reads and edits your code, runs commands, and answers questions using the Kimi K2.6 model on Workers AI — all under your own credentials, with logs and cost visible in your Cloudflare dashboard and the in-app <code>/cost</code> command.</p>
+
+    <h2>Why run a coding agent on your own cloud?</h2>
+    <p>Most hosted coding agents route your prompts and code through a vendor's servers and bill you on their terms. Running the agent on your own Cloudflare account changes the trade-offs:</p>
+    <ul>
+      <li><strong>Control.</strong> Inference runs on Cloudflare Workers AI under your account. You decide which model runs and you can see every request.</li>
+      <li><strong>Privacy.</strong> Requests flow through your own Cloudflare AI Gateway rather than a separate vendor's pipeline. There are no third-party API keys beyond your Cloudflare credentials.</li>
+      <li><strong>Authoritative cost.</strong> Because every call passes through your AI Gateway, the cost you see is gateway-confirmed — not a token estimate. The in-app <code>/cost</code> command reports cost per turn and per feature.</li>
+      <li><strong>No extra vendor.</strong> You already trust and pay Cloudflare. There is no additional company in the loop to onboard, audit, or pay separately.</li>
+    </ul>
+
+    <h2>What you need</h2>
+    <ul>
+      <li>A <strong>Cloudflare account</strong> (the agent connects to it during onboarding and uses Workers AI and AI Gateway).</li>
+      <li><strong>Node.js ≥ 20</strong> installed locally.</li>
+      <li>A terminal on macOS, Linux, or Windows.</li>
+    </ul>
+    <p>That's the entire prerequisite list. You do not need a separate model provider account or any API key other than your Cloudflare credentials.</p>
+
+    <h2>Install kimiflare</h2>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+        <span class="code-lang">bash</span>
+      </div>
+      <div class="code-body">
+<span class="c"># Install globally</span><br>
+<span class="v">npm</span> install -g kimiflare<br>
+<br>
+<span class="c"># Launch — first run starts onboarding</span><br>
+<span class="v">kimiflare</span>
+      </div>
+    </div>
+    <p>Prefer not to install globally? Run it on demand with <code>npx kimiflare</code>. Either way you need Node.js ≥ 20.</p>
+
+    <h2>Onboarding: connect your Cloudflare account</h2>
+    <p>The first time you run <code>kimiflare</code>, onboarding walks you through connecting your <strong>Cloudflare account</strong> and setting up an <strong>AI Gateway</strong>. The AI Gateway is the piece that makes the rest of the experience work: it sits in front of Workers AI, records a log for every request, can cache responses, and reports real cost. Once onboarding finishes, you're in the terminal UI and ready to give the agent tasks.</p>
+
+    <h2>What happens on each turn</h2>
+    <p>When you ask kimiflare to do something, a single turn flows like this:</p>
+    <ol>
+      <li>Your request leaves the terminal and goes to <strong>your own Cloudflare AI Gateway</strong>.</li>
+      <li>The gateway forwards it to <strong>Workers AI</strong>, where the <strong>Kimi K2.6</strong> model (<code>@cf/moonshotai/kimi-k2.6</code>) runs with a 262K-token context window.</li>
+      <li>The model decides which <strong>tools</strong> to call — reading files, editing code, running shell commands, searching, and so on.</li>
+      <li>Tool results feed back into the model until the task is done, and the <strong>result</strong> lands back in your terminal.</li>
+    </ol>
+    <p>Because the gateway is on the path of every call, you get logs and cost for free. If you ever want a different model, you can override the default with <code>--model</code>.</p>
+
+    <h2>Cost and observability via AI Gateway</h2>
+    <p>This is the practical payoff of running on your own cloud. Every request is logged in your Cloudflare AI Gateway, so you can inspect prompts, responses, latency, and spend directly in the Cloudflare dashboard. Inside the app, the <code>/cost</code> command surfaces authoritative cost broken down per turn and per feature — confirmed by the gateway rather than estimated from token counts. The gateway can also cache responses, which can reduce repeat spend.</p>
+
+    <h2>Stay in control with Plan, Edit, and Auto modes</h2>
+    <p>An autonomous agent that edits files and runs shell commands needs guardrails. kimiflare ships three modes so you can dial in how much it does on its own:</p>
+    <ul>
+      <li><strong>Plan</strong> — read-only. Mutating tools are hard-blocked, so the agent can explore and propose a plan without touching anything.</li>
+      <li><strong>Edit</strong> — the default. Mutating tools prompt for approval, and edits are shown as a unified diff before they're applied.</li>
+      <li><strong>Auto</strong> — auto-approves trusted tasks when you want the agent to move quickly.</li>
+    </ul>
+    <p>A common workflow is to start in Plan to scope the work, switch to Edit to apply changes with diffs you can review, and reach for Auto only on routine, low-risk tasks.</p>
+
+    <h2>First tasks to try</h2>
+    <p>Once you're set up, these are good ways to get a feel for the agent:</p>
+    <ul>
+      <li>Ask it to explain an unfamiliar module or trace how a feature works across files.</li>
+      <li>Have it add a small feature or fix a bug in Edit mode and review the diff before approving.</li>
+      <li>Run a one-shot task without the interactive UI: <code>kimiflare -p "summarize the changes in the last commit"</code>.</li>
+      <li>Drop in a screenshot of a UI bug — image understanding works inline.</li>
+      <li>Check <code>/cost</code> after a few turns to see authoritative spend from your AI Gateway.</li>
+    </ul>
+
+    <p>That's the whole loop: an open-source Claude Code alternative running on your own Cloudflare account, with the model, the logs, and the bill all in one place you already control.</p>
+
+    <h2>Related</h2>
+    <ul>
+      <li><a href="/blog/what-is-an-ai-coding-harness">What is an AI coding harness?</a></li>
+      <li><a href="/claude-code-alternative">The open-source Claude Code alternative</a></li>
+      <li><a href="/faq">kimiflare FAQ</a></li>
+      <li><a href="/vs/kimiflare-vs-claude-code">kimiflare vs Claude Code</a></li>
+    </ul>
+
+    <p style="margin-top:2rem;">
+      <a href="/#install" class="btn btn-primary">Install kimiflare</a>
+      &nbsp;
+      <a href="https://github.com/sinameraji/kimiflare" class="btn btn-secondary" target="_blank">View on GitHub</a>
+    </p>
+  </article>
+
+  <footer>
+    <span>Built by <a href="https://github.com/sinameraji" target="_blank">Sina</a> with <a href="https://github.com/sinameraji/kimiflare" target="_blank">kimiflare</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
+    <span>
+      <a href="/">Home</a> ·
+      <a href="/claude-code-alternative">Claude Code alternative</a> ·
+      <a href="/faq">FAQ</a> ·
+      <a href="/blog/">Blog</a> ·
+      <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a>
+    </span>
+  </footer>
+
+</body>
+</html>

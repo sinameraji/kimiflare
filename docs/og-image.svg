@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fbf6f0"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f48120"/>
+      <stop offset="1" stop-color="#e06b0a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- full square background so QuickLook renders 1:1, then we crop the centered 1200x630 band -->
+  <rect width="1200" height="1200" fill="#ffffff"/>
+
+  <!-- design band: 1200x630 centered vertically (y 285..915) -->
+  <g transform="translate(0,285)">
+    <rect width="1200" height="630" fill="url(#bg)"/>
+    <rect width="1200" height="8" fill="url(#accent)"/>
+
+    <!-- brand row -->
+    <g transform="translate(80,82)">
+      <rect x="0" y="-4" width="44" height="44" rx="10" fill="url(#accent)"/>
+      <text x="22" y="27" font-size="26" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="'SF Mono', Menlo, monospace">k</text>
+      <text x="62" y="30" font-size="30" font-weight="700" fill="#111827" font-family="'SF Mono', Menlo, monospace">kimiflare</text>
+    </g>
+
+    <!-- eyebrow -->
+    <text x="80" y="206" font-size="20" font-weight="600" letter-spacing="2.5" fill="#f48120" font-family="'SF Mono', Menlo, monospace">OPEN SOURCE · KIMI K2.6 · CLOUDFLARE WORKERS AI</text>
+
+    <!-- headline -->
+    <text x="78" y="282" font-size="62" font-weight="800" fill="#111827" letter-spacing="-1.5">The open-source</text>
+    <text x="78" y="352" font-size="62" font-weight="800" fill="#111827" letter-spacing="-1.5">Claude Code alternative.</text>
+
+    <!-- subhead -->
+    <text x="80" y="414" font-size="27" font-weight="500" fill="#6b7280">An AI coding agent on your own Cloudflare account.</text>
+
+    <!-- terminal motif -->
+    <g transform="translate(80,468)">
+      <rect x="0" y="0" width="700" height="92" rx="12" fill="#1f2937"/>
+      <circle cx="26" cy="24" r="6" fill="#ff5f56"/>
+      <circle cx="48" cy="24" r="6" fill="#ffbd2e"/>
+      <circle cx="70" cy="24" r="6" fill="#27c93f"/>
+      <text x="24" y="68" font-size="22" font-family="'SF Mono', Menlo, monospace" fill="#f3f4f6"><tspan fill="#f48120">› </tspan>npm install -g kimiflare</text>
+    </g>
+
+    <!-- footer url -->
+    <text x="1120" y="586" font-size="22" font-weight="600" fill="#9ca3af" text-anchor="end" font-family="'SF Mono', Menlo, monospace">kimiflare.com</text>
+  </g>
+</svg>
