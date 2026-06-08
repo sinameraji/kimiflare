@@ -20,6 +20,7 @@ import type { GatewayMeta } from "../agent/client.js";
 import type { Mode } from "../mode.js";
 import type { DailyUsage } from "../usage-tracker.js";
 import {
+  carryOverSessionBaseline,
   formatCostReport,
   formatFeatureBreakdown,
   formatGatewaySection,
@@ -235,6 +236,9 @@ const handleFresh: Handler = (ctx) => {
 
   const clipResult = writeToClipboard(plan);
 
+  // Capture old session ID before reset so we can carry its cost forward
+  const oldSessionId = ctx.sessionIdRef.current;
+
   // Reset session (reuse /clear logic)
   if (ctx.cacheStableRef.current && ctx.messagesRef.current.length >= 2) {
     ctx.messagesRef.current = [ctx.messagesRef.current[0]!, ctx.messagesRef.current[1]!];
@@ -263,6 +267,14 @@ const handleFresh: Handler = (ctx) => {
 
   // Seed with plan
   ctx.messagesRef.current.push({ role: "user", content: plan });
+
+  // Force creation of the new session ID and carry over the old cost baseline
+  const newSessionId = ctx.ensureSessionId() as string;
+  if (oldSessionId) {
+    void carryOverSessionBaseline(oldSessionId, newSessionId).then(() => {
+      void getCostReport(newSessionId).then((report) => ctx.setSessionUsage(report.session));
+    });
+  }
 
   setEvents((e) => [
     ...e,

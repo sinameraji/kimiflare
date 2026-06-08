@@ -67,6 +67,9 @@ export interface SessionUsage {
   gatewayCost?: number;
   gatewayLogs?: GatewayUsageSnapshot[];
   turns?: TurnCost[];
+  /** Carried-over cost from a previous session (e.g. after /fresh). Hidden
+   *  bookkeeping — added to the session display but NOT to daily aggregates. */
+  baselineCost?: number;
   // Cost attribution fields
   category?: string;
   confidence?: number;
@@ -446,7 +449,7 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
         promptTokens: rawSession.promptTokens,
         completionTokens: rawSession.completionTokens,
         cachedTokens: rawSession.cachedTokens,
-        cost: rawSession.cost,
+        cost: rawSession.cost + (rawSession.baselineCost ?? 0),
         gatewayRequests: rawSession.gatewayRequests,
         gatewayCachedRequests: rawSession.gatewayCachedRequests,
         gatewayCost: rawSession.gatewayCost,
@@ -498,6 +501,28 @@ export async function getCostReport(sessionId?: string): Promise<CostReport> {
   }
 
   return { session, today: todayUsage, month: monthUsage, allTime };
+}
+
+/** Copy the displayed cost from an old session into a new session as a hidden
+ *  baseline. Used by `/fresh` so the status-bar dollar amount stays continuous
+ *  across session resets. The baseline is added to the session display only —
+ *  it does NOT affect today/month/allTime aggregates. */
+export async function carryOverSessionBaseline(
+  fromSessionId: string,
+  toSessionId: string,
+): Promise<void> {
+  await withLock(async () => {
+    const log = pruneUsageLog(await loadLog());
+    const fromSession = log.sessions.find((s) => s.id === fromSessionId);
+    const baseline = fromSession
+      ? Math.max(0, fromSession.cost + (fromSession.baselineCost ?? 0))
+      : 0;
+
+    const toSession = getOrCreateSession(log, toSessionId, today());
+    toSession.baselineCost = baseline;
+
+    await saveLog(log);
+  });
 }
 
 function hasPendingReconcile(session: SessionUsage): boolean {
