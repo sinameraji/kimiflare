@@ -73,6 +73,8 @@ export interface ModalHostController {
   setShowSkillsPicker: (v: boolean) => void;
   showShellPicker: boolean;
   setShowShellPicker: (v: boolean) => void;
+  showPlanCompletePicker: boolean;
+  setShowPlanCompletePicker: (v: boolean) => void;
 
   /** Any fullscreen modal is active (would trigger an early return). */
   hasFullscreenModal: boolean;
@@ -120,6 +122,7 @@ export function useModalHost(): ModalHostController {
   const [showGatewayPicker, setShowGatewayPicker] = useState(false);
   const [showSkillsPicker, setShowSkillsPicker] = useState(false);
   const [showShellPicker, setShowShellPicker] = useState(false);
+  const [showPlanCompletePicker, setShowPlanCompletePicker] = useState(false);
 
   const flags = useMemo(() => {
     const hasFullscreenModal =
@@ -144,7 +147,7 @@ export function useModalHost(): ModalHostController {
       showGatewayPicker ||
       showSkillsPicker ||
       showShellPicker;
-    const hasOverlayModal = limitModal !== null || loopModal !== null;
+    const hasOverlayModal = limitModal !== null || loopModal !== null || showPlanCompletePicker;
     return {
       hasFullscreenModal,
       hasOverlayModal,
@@ -172,6 +175,7 @@ export function useModalHost(): ModalHostController {
     showGatewayPicker,
     showSkillsPicker,
     showShellPicker,
+    showPlanCompletePicker,
     limitModal,
     loopModal,
   ]);
@@ -200,6 +204,7 @@ export function useModalHost(): ModalHostController {
     showGatewayPicker, setShowGatewayPicker,
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
+    showPlanCompletePicker, setShowPlanCompletePicker,
     ...flags,
   };
 }
@@ -225,6 +230,7 @@ export interface ModalFlagsInput {
   showGatewayPicker: boolean;
   showSkillsPicker: boolean;
   showShellPicker: boolean;
+  showPlanCompletePicker: boolean;
 }
 
 export interface ModalFlags {
@@ -251,7 +257,8 @@ export function computeModalFlags(s: ModalFlagsInput): ModalFlags {
     s.showGatewayPicker ||
     s.showSkillsPicker ||
     s.showShellPicker;
-  const hasOverlayModal = s.limitModal !== null || s.loopModal !== null;
+  const hasOverlayModal =
+    s.limitModal !== null || s.loopModal !== null || s.showPlanCompletePicker;
   return {
     hasFullscreenModal,
     hasOverlayModal,
@@ -278,4 +285,5 @@ export const EMPTY_MODAL_STATE: ModalFlagsInput = {
   showGatewayPicker: false,
   showSkillsPicker: false,
   showShellPicker: false,
+  showPlanCompletePicker: false,
 };

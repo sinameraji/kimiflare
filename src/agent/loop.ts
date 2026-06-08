@@ -454,6 +454,19 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   let budgetExhausted = false;
   let loopExhausted = false;
 
+  // Task auto-advance heuristic: track tasks state and mutating tools since
+  // the last tasks_set so we can nudge the UI forward when the model forgets.
+  let currentTasks: Task[] = [];
+  let mutatingToolsSinceLastTasksSet = 0;
+  const MUTATING_TOOLS = new Set(["write", "edit", "bash"]);
+  const AUTO_ADVANCE_THRESHOLD = 3;
+  const originalOnTasks = opts.callbacks.onTasks;
+  const wrappedOnTasks = (tasks: Task[]) => {
+    currentTasks = tasks;
+    mutatingToolsSinceLastTasksSet = 0;
+    originalOnTasks?.(tasks);
+  };
+
   while (true) {
     // Budget enforcement: before starting a new turn, if we've already hit the
     // limit, run one final synthesis turn and then signal budget exhaustion.
@@ -720,7 +733,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     let blockedCount = 0;
-    for (const tc of toolCalls) {
+    for (const [i, tc] of toolCalls.entries()) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
 
       // Anti-loop guardrail
@@ -839,7 +852,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, onPlanOptions: opts.callbacks.onPlanOptions, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: wrappedOnTasks, onPlanOptions: opts.callbacks.onPlanOptions, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -913,7 +926,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           {
             cwd: opts.cwd,
             signal: opts.signal,
-            onTasks: opts.callbacks.onTasks,
+            onTasks: wrappedOnTasks,
             onPlanOptions: opts.callbacks.onPlanOptions,
             coauthor: opts.coauthor,
             memoryManager: opts.memoryManager,
@@ -1083,6 +1096,29 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      }
+
+      // Heuristic auto-advance: if the model has executed multiple mutating
+      // tools without calling tasks_set, nudge the task list forward so the
+      // UI stays honest. We only do this when tasks_set is not coming later
+      // in the same batch of tool calls.
+      if (MUTATING_TOOLS.has(tc.function.name)) {
+        mutatingToolsSinceLastTasksSet++;
+        const hasTasksSetComing = toolCalls.slice(i + 1).some((t) => t.function.name === "tasks_set");
+        if (!hasTasksSetComing && mutatingToolsSinceLastTasksSet >= AUTO_ADVANCE_THRESHOLD) {
+          const inProgressIdx = currentTasks.findIndex((t) => t.status === "in_progress");
+          const nextPendingIdx = currentTasks.findIndex((t) => t.status === "pending");
+          if (inProgressIdx !== -1 && nextPendingIdx !== -1) {
+            const updated = currentTasks.map((t, idx) => {
+              if (idx === inProgressIdx) return { ...t, status: "completed" as const };
+              if (idx === nextPendingIdx) return { ...t, status: "in_progress" as const };
+              return t;
+            });
+            currentTasks = updated;
+            mutatingToolsSinceLastTasksSet = 0;
+            wrappedOnTasks(updated);
+          }
+        }
       }
     }
 

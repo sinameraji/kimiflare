@@ -20,6 +20,7 @@ import type { GatewayMeta } from "../agent/client.js";
 import type { Mode } from "../mode.js";
 import type { DailyUsage } from "../usage-tracker.js";
 import {
+  carryOverSessionBaseline,
   formatCostReport,
   formatFeatureBreakdown,
   formatGatewaySection,
@@ -64,7 +65,7 @@ import {
 import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
-import { checkForUpdate } from "../util/update-check.js";
+import { checkForUpdate, checkOptionalDependency } from "../util/update-check.js";
 import { getAppVersion } from "../util/version.js";
 import {
   detectGitHubRepo,
@@ -215,6 +216,9 @@ const handleClear: Handler = (ctx) => {
 };
 
 export function executeFreshStart(ctx: SlashContext, planText: string): { success: boolean } {
+  // Capture old session ID before reset so we can carry its cost forward
+  const oldSessionId = ctx.sessionIdRef.current;
+
   // Reset session (reuse /clear logic)
   if (ctx.cacheStableRef.current && ctx.messagesRef.current.length >= 2) {
     ctx.messagesRef.current = [ctx.messagesRef.current[0]!, ctx.messagesRef.current[1]!];
@@ -243,6 +247,14 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
 
   // Seed with plan
   ctx.messagesRef.current.push({ role: "user", content: planText });
+
+  // Force creation of the new session ID and carry over the old cost baseline
+  const newSessionId = ctx.ensureSessionId() as string;
+  if (oldSessionId) {
+    void carryOverSessionBaseline(oldSessionId, newSessionId).then(() => {
+      void getCostReport(newSessionId).then((report) => ctx.setSessionUsage(report.session));
+    });
+  }
 
   return writeToClipboard(planText);
 }
@@ -1090,8 +1102,27 @@ const handleInit: Handler = (ctx) => {
   return true;
 };
 
-const handleUpdate: Handler = (ctx) => {
+const handleUpdate: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
+  if (arg === "camouflage") {
+    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+      if (dep.hasUpdate && dep.latestVersion) {
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}` },
+        ]);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "run:  npm update camouflage-tui" },
+        ]);
+      } else if (dep.localVersion) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `camouflage-tui up to date (${dep.localVersion})` }]);
+      } else {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "camouflage-tui is not installed" }]);
+      }
+    });
+    return true;
+  }
   void checkForUpdate(true).then((result) => {
     if (result.hasUpdate) {
       ctx.setHasUpdate(true);

@@ -24,6 +24,7 @@ import { InboxModal } from "./inbox-modal.js";
 import { MultiAgentModal, type MultiAgentSettings } from "./multi-agent-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
 import { HelpMenu } from "./help-menu.js";
+
 import type { Theme } from "./theme.js";
 import type { ModalHostController } from "./use-modal-host.js";
 import type { CustomCommand } from "../commands/types.js";

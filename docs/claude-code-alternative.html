@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Open-Source Claude Code Alternative on Cloudflare — kimiflare</title>
+  <meta name="description" content="kimiflare is an open-source Claude Code alternative for the terminal. It runs on your own Cloudflare account using Kimi K2.6 on Workers AI, with AI Gateway logs, caching, and authoritative cost. MIT-licensed.">
+  <meta name="keywords" content="Claude Code alternative, open-source Claude Code alternative, free Claude Code alternative, Cloudflare AI coding agent, terminal coding agent, Kimi K2 CLI">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="author" content="Sina Meraji">
+  <link rel="canonical" href="https://kimiflare.com/claude-code-alternative">
+  <meta name="theme-color" content="#f48120">
+
+  <meta property="og:title" content="Open-Source Claude Code Alternative on Cloudflare — kimiflare">
+  <meta property="og:description" content="A self-hosted, open-source Claude Code alternative that runs on your own Cloudflare account using Kimi K2.6 on Workers AI.">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="kimiflare">
+  <meta property="og:url" content="https://kimiflare.com/claude-code-alternative">
+  <meta property="og:image" content="https://kimiflare.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@sinasanm">
+  <meta name="twitter:title" content="Open-Source Claude Code Alternative on Cloudflare — kimiflare">
+  <meta name="twitter:description" content="A self-hosted, open-source Claude Code alternative that runs on your own Cloudflare account using Kimi K2.6 on Workers AI.">
+  <meta name="twitter:image" content="https://kimiflare.com/og.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="stylesheet" href="styles.css">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "headline": "Open-Source Claude Code Alternative on Cloudflare",
+        "description": "kimiflare is an open-source Claude Code alternative for the terminal that runs on your own Cloudflare account using Kimi K2.6 on Workers AI.",
+        "image": "https://kimiflare.com/og.png",
+        "author": { "@type": "Person", "name": "Sina Meraji", "url": "https://github.com/sinameraji" },
+        "publisher": { "@type": "Organization", "name": "kimiflare", "logo": { "@type": "ImageObject", "url": "https://kimiflare.com/logo.png" } },
+        "datePublished": "2026-06-04",
+        "dateModified": "2026-06-04",
+        "mainEntityOfPage": "https://kimiflare.com/claude-code-alternative"
+      },
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://kimiflare.com/" },
+          { "@type": "ListItem", "position": 2, "name": "Claude Code alternative", "item": "https://kimiflare.com/claude-code-alternative" }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="logo">
+      <img src="logo.png" alt="kimiflare logo" class="logo-img">
+      kimiflare
+    </a>
+    <ul class="nav-links">
+      <li><a href="/#features">Features</a></li>
+      <li><a href="/#compare">Compare</a></li>
+      <li><a href="/faq">FAQ</a></li>
+      <li><a href="/#install">Install</a></li>
+      <li><a href="https://github.com/sinameraji/kimiflare" class="nav-cta" target="_blank">GitHub →</a></li>
+    </ul>
+  </nav>
+
+  <article class="article">
+    <div class="breadcrumb"><a href="/">Home</a> / Claude Code alternative</div>
+    <h1>The open-source Claude Code alternative that runs on your own Cloudflare account</h1>
+    <p class="lead">kimiflare is a terminal AI coding agent — an open-source, self-hosted alternative to Claude Code — powered by Kimi K2.6 on Cloudflare Workers AI. Same agentic workflow, your cloud, your cost, MIT-licensed.</p>
+    <div class="article-meta">Updated June 2026 · ~6 min read</div>
+
+    <p><strong>Short answer:</strong> If you want a Claude Code-style coding agent in your terminal but prefer open source, self-hosting, and running on infrastructure you control, kimiflare is the closest Cloudflare-native option. You install it from npm, connect your own Cloudflare account, and every model call runs on Cloudflare Workers AI through your own AI Gateway — so you get per-request logs, response caching, and authoritative cost, not estimates.</p>
+
+    <h2>What kimiflare and Claude Code have in common</h2>
+    <p>Both are terminal-first agentic coding tools. They read and edit files, run shell commands, research the web, understand images, and work through multi-step tasks with a permission model that keeps you in control. Both support the Model Context Protocol (MCP) for plugging in external tools.</p>
+
+    <h2>Where kimiflare is different</h2>
+    <ul>
+      <li><strong>Open source (MIT).</strong> The entire harness is on <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a> — read it, fork it, self-host it.</li>
+      <li><strong>Runs on your own Cloudflare account.</strong> Inference happens on Cloudflare Workers AI under your credentials. There is no separate vendor API to pay or trust.</li>
+      <li><strong>Kimi K2.6 with a 262K-token context window.</strong> Read entire modules, large configs, and full stack traces without losing the thread.</li>
+      <li><strong>Authoritative cost.</strong> Every request flows through your Cloudflare AI Gateway, so the <code>/cost</code> command reports gateway-confirmed cost per turn and per feature — not a token estimate.</li>
+      <li><strong>No extra API keys.</strong> Beyond your Cloudflare credentials, nothing else is required to get started.</li>
+    </ul>
+
+    <h2>kimiflare vs Claude Code at a glance</h2>
+    <div class="compare-wrap">
+      <table class="compare-table">
+        <thead>
+          <tr><th scope="col">Capability</th><th scope="col" class="col-self">kimiflare</th><th scope="col">Claude Code</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">License</th><td class="col-self"><span class="yes">Open source (MIT)</span></td><td>Proprietary</td></tr>
+          <tr><th scope="row">Runs on</th><td class="col-self">Your own Cloudflare account</td><td>Anthropic's API</td></tr>
+          <tr><th scope="row">Default model</th><td class="col-self">Kimi K2.6 (Workers AI)</td><td>Claude</td></tr>
+          <tr><th scope="row">Context window</th><td class="col-self">262K tokens</td><td>200K+</td></tr>
+          <tr><th scope="row">Cost reporting</th><td class="col-self"><span class="yes">Authoritative</span> (AI Gateway logs)</td><td>Estimated</td></tr>
+          <tr><th scope="row">Image understanding</th><td class="col-self"><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">MCP support</th><td class="col-self"><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td></tr>
+          <tr><th scope="row">LSP code intelligence</th><td class="col-self"><span class="yes">Yes</span></td><td>Partial</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color: var(--text-faint); font-size: 0.78rem; margin-top: 1rem;">Reflects publicly documented capabilities at time of writing; both tools evolve quickly.</p>
+
+    <h2>When to choose kimiflare</h2>
+    <p>Choose kimiflare if you want an open-source coding agent, already use (or want to use) Cloudflare, care about keeping inference and logs in your own account, or want authoritative per-turn cost. Claude Code remains an excellent choice if you specifically want Anthropic's Claude models and a managed experience.</p>
+
+    <h2>Get started in two commands</h2>
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+        <span class="code-lang">bash</span>
+      </div>
+      <div class="code-body">
+<span class="c"># Install</span><br>
+<span class="v">npm</span> install -g kimiflare<br>
+<br>
+<span class="c"># Run — onboarding connects your Cloudflare account</span><br>
+<span class="v">kimiflare</span>
+      </div>
+    </div>
+    <p>Or run without installing: <code>npx kimiflare</code>. Requires Node.js ≥ 20.</p>
+
+    <p style="margin-top:2rem;">
+      <a href="/#install" class="btn btn-primary">Install kimiflare</a>
+      &nbsp;
+      <a href="/faq" class="btn btn-secondary">Read the FAQ</a>
+    </p>
+
+    <h2>Related</h2>
+    <ul>
+      <li><a href="/vs/kimiflare-vs-claude-code">kimiflare vs Claude Code (detailed)</a></li>
+      <li><a href="/vs/kimiflare-vs-aider">kimiflare vs Aider</a></li>
+      <li><a href="/vs/kimiflare-vs-gemini-cli">kimiflare vs Gemini CLI</a></li>
+      <li><a href="/vs/kimiflare-vs-codex-cli">kimiflare vs Codex CLI</a></li>
+      <li><a href="/blog/run-ai-coding-agent-on-your-own-cloudflare-account">Run an AI coding agent on your own Cloudflare account</a></li>
+    </ul>
+  </article>
+
+  <footer>
+    <span>Built by <a href="https://github.com/sinameraji" target="_blank">Sina</a> with <a href="https://github.com/sinameraji/kimiflare" target="_blank">kimiflare</a> · <a href="https://x.com/sinasanm" target="_blank">X @sinasanm</a></span>
+    <span>
+      <a href="/">Home</a> ·
+      <a href="/faq">FAQ</a> ·
+      <a href="/blog/">Blog</a> ·
+      <a href="https://github.com/sinameraji/kimiflare" target="_blank">GitHub</a> ·
+      <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE" target="_blank">MIT License</a>
+    </span>
+  </footer>
+
+</body>
+</html>

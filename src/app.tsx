@@ -44,7 +44,7 @@ import { join } from "node:path";
 import QRCode from "qrcode";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
-import { checkForUpdate } from "./util/update-check.js";
+import { checkForUpdate, checkOptionalDependency } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
@@ -98,6 +98,8 @@ import { SlashPicker } from "./ui/slash-picker.js";
 import { usePickerController } from "./ui/use-picker-controller.js";
 import { useModalHost } from "./ui/use-modal-host.js";
 import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
+import { PlanCompletePicker } from "./ui/plan-complete-picker.js";
+import type { PlanCompleteChoice } from "./ui/plan-complete-picker.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
 import { useTurnController } from "./ui/use-turn-controller.js";
 import {
@@ -110,6 +112,8 @@ import { runInit as runInitImpl } from "./init/run-init.js";
 import { runStartupTasks } from "./ui/run-startup-tasks.js";
 import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
 import { runCompact as runCompactImpl } from "./agent/run-compact.js";
+import { distillSessionPlan } from "./agent/distill.js";
+import { writeToClipboard } from "./util/clipboard.js";
 import {
   handleCommandDelete as handleCommandDeleteImpl,
   handleCommandSave as handleCommandSaveImpl,
@@ -304,6 +308,7 @@ function App({
     showGatewayPicker, setShowGatewayPicker,
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
+    showPlanCompletePicker, setShowPlanCompletePicker,
     hasFullscreenModal,
     hasAnyModal,
   } = modals;
@@ -669,6 +674,26 @@ function App({
         ]);
       }
     });
+    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+      if (dep.hasUpdate && dep.latestVersion) {
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
+          },
+        ]);
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "info",
+            key: mkKey(),
+            text: "run:  npm update camouflage-tui",
+          },
+        ]);
+      }
+    });
   }, [cfg, initialUpdateResult]);
 
   useEffect(() => {
@@ -729,6 +754,26 @@ function App({
               },
             ]);
           }
+        }
+      });
+      void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
+        if (dep.hasUpdate && dep.latestVersion) {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
+            },
+          ]);
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: "run:  npm update camouflage-tui",
+            },
+          ]);
         }
       });
     }, 30 * 60 * 1000); // 30 minutes
@@ -1191,6 +1236,72 @@ function App({
       ]);
     },
     [mkKey, setShowUiPicker],
+  );
+
+  const handlePlanCompletePick = useCallback(
+    (picked: PlanCompleteChoice | null) => {
+      setShowPlanCompletePicker(false);
+      if (!picked || picked === "continue") return;
+
+      // Replicate /fresh logic
+      const plan = distillSessionPlan(messagesRef.current);
+      if (!plan) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
+        ]);
+        setMode(picked);
+        return;
+      }
+
+      const clipResult = writeToClipboard(plan);
+
+      // Reset session (reuse /clear logic)
+      if (cacheStableRef.current && messagesRef.current.length >= 2) {
+        messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
+      } else {
+        messagesRef.current = [messagesRef.current[0]!];
+      }
+      resetSession();
+      executorRef.current.clearArtifacts();
+      if (flushTimeoutRef.current) {
+        clearTimeout(flushTimeoutRef.current);
+        flushTimeoutRef.current = null;
+      }
+      pendingTextRef.current.clear();
+      activeAsstIdRef.current = null;
+      pendingToolCallsRef.current.clear();
+      usageRef.current = null;
+      turnCounterRef.current = 0;
+      setEvents([]);
+      setUsage(null);
+      setSessionUsage(null);
+      gatewayMetaRef.current = null;
+      setGatewayMeta(null);
+      clearTaskTracking();
+      compactSuggestedRef.current = false;
+      updateNudgedRef.current = false;
+
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: clipResult.success
+            ? `Plan copied to clipboard. Starting fresh session in ${picked} mode with plan only…`
+            : `Clipboard unavailable. Starting fresh session in ${picked} mode with plan only…`,
+        },
+      ]);
+
+      if (!clipResult.success) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan }]);
+      }
+
+      setMode(picked);
+      modeRef.current = picked;
+      submitRef.current(plan);
+    },
+    [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession, submitRef],
   );
 
   const handleModelPick = useCallback(
@@ -1962,6 +2073,7 @@ function App({
         clearPermissionResolveRef();
         limitResolveRef.current = null;
         loopResolveRef.current = null;
+        setLimitModal(null);
         setLoopModal(null);
         pendingToolCallsRef.current.clear();
 
@@ -2163,6 +2275,15 @@ function App({
 
             cleanupTurn();
 
+            // If the turn completed in plan mode and produced a substantive plan,
+            // prompt the user to choose the next step (auto, edit, or continue).
+            if (modeRef.current === "plan") {
+              const plan = distillSessionPlan(messagesRef.current);
+              if (plan) {
+                setShowPlanCompletePicker(true);
+              }
+            }
+
             if (planOptionsRef.current) {
               setPlanOptions(planOptionsRef.current);
             }
@@ -2207,7 +2328,7 @@ function App({
         },
       );
     },
-    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta],
+    [cfg, handleSlash, updateAssistant, updateTool, saveSessionSafe, updateGatewayMeta, setShowPlanCompletePicker],
   );
 
   useEffect(() => {
@@ -2519,6 +2640,8 @@ function App({
             onLimitResolved={() => { limitResolveRef.current = null; }}
             onLoopResolved={() => { loopResolveRef.current = null; }}
           />
+        ) : showPlanCompletePicker ? (
+          <PlanCompletePicker onPick={handlePlanCompletePick} />
         ) : (
           <Box flexDirection="column" marginTop={1}>
             {(activeWorkers.length > 0 || coordinatorNarration) && (

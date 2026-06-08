@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.82.1](https://github.com/sinameraji/kimiflare/compare/v0.82.0...v0.82.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **ui:** prevent blank screen when PlanCompletePicker opens after plan mode ([#554](https://github.com/sinameraji/kimiflare/issues/554)) ([3b39304](https://github.com/sinameraji/kimiflare/commit/3b39304887c79643aa121e33038942494fb6a25f))
+
+## [0.82.0](https://github.com/sinameraji/kimiflare/compare/v0.81.0...v0.82.0) (2026-06-03)
+
+
+### Features
+
+* **update:** check for camouflage-tui optional dependency updates ([#550](https://github.com/sinameraji/kimiflare/issues/550)) ([f07da38](https://github.com/sinameraji/kimiflare/commit/f07da38e8eba1ead1ff523f6bc1dd7358bf1f23f))
+
+
+### Bug Fixes
+
+* **camouflage:** wire /logout and /fresh slash commands ([#549](https://github.com/sinameraji/kimiflare/issues/549)) ([0122870](https://github.com/sinameraji/kimiflare/commit/0122870d2de8c3c33e249f4e66870c7c153ce5ca)), closes [#1](https://github.com/sinameraji/kimiflare/issues/1)
+* **ui:** correct cursor rendering, add paste sanitization and usePaste hook ([#552](https://github.com/sinameraji/kimiflare/issues/552)) ([ea6946a](https://github.com/sinameraji/kimiflare/commit/ea6946adfaf8e45f78698746934ccdc4dc5b58ca))
+* **ui:** keep cursor at end on history nav + only spinner on latest assistant msg ([#547](https://github.com/sinameraji/kimiflare/issues/547)) ([debe4cc](https://github.com/sinameraji/kimiflare/commit/debe4cc4e708bb8732854ab009752c6f94383c62))
+* **ui:** make PlanCompletePicker an inline overlay and auto-submit plan ([#551](https://github.com/sinameraji/kimiflare/issues/551)) ([7724f13](https://github.com/sinameraji/kimiflare/commit/7724f1332028cd685b08e7dfc53b5b961b4e68ea))
+
+## [0.81.0](https://github.com/sinameraji/kimiflare/compare/v0.80.0...v0.81.0) (2026-06-03)
+
+
+### Features
+
+* **agent:** LLM-based synthesis for multi-agent findings ([#546](https://github.com/sinameraji/kimiflare/issues/546)) ([0168a27](https://github.com/sinameraji/kimiflare/commit/0168a278f5f7176ebbedfcbd15b4c273060fe51a))
+* **ui:** auto-prompt /fresh when plan mode completes ([#544](https://github.com/sinameraji/kimiflare/issues/544)) ([b3e8cda](https://github.com/sinameraji/kimiflare/commit/b3e8cda5efaf7068e5beb90219b52735e44e39b6))
+
 ## [0.80.0](https://github.com/sinameraji/kimiflare/compare/v0.79.0...v0.80.0) (2026-06-03)
 
 

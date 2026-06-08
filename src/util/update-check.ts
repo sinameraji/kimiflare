@@ -12,6 +12,13 @@ interface CacheEntry {
   latestVersion: string;
 }
 
+export interface OptionalDepCheckResult {
+  name: string;
+  hasUpdate: boolean;
+  localVersion: string | null;
+  latestVersion: string | null;
+}
+
 function cachePath(): string {
   const xdg = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(xdg, "kimiflare", "update-check.json");
@@ -89,6 +96,47 @@ function isNewer(local: string, remote: string): boolean {
     if (av > bv) return false;
   }
   return false;
+}
+
+async function readOptionalDepVersion(name: string): Promise<string | null> {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidate = join(here, "..", "..", "node_modules", name, "package.json");
+    const raw = await readFile(candidate, "utf8");
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDistTagVersion(name: string, tag: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name}/${tag}`, {
+      headers: { "User-Agent": getUserAgent(), Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { version?: string };
+    return data.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function checkOptionalDependency(
+  name: string,
+  tag: string,
+): Promise<OptionalDepCheckResult> {
+  const localVersion = await readOptionalDepVersion(name);
+  if (!localVersion) {
+    return { name, hasUpdate: false, localVersion: null, latestVersion: null };
+  }
+  const latestVersion = await fetchDistTagVersion(name, tag);
+  if (!latestVersion) {
+    return { name, hasUpdate: false, localVersion, latestVersion: null };
+  }
+  const hasUpdate = isNewer(localVersion, latestVersion);
+  return { name, hasUpdate, localVersion, latestVersion };
 }
 
 export interface UpdateCheckResult {
