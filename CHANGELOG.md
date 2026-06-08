@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.83.0](https://github.com/sinameraji/kimiflare/compare/v0.82.1...v0.83.0) (2026-06-08)
+
+
+### Features
+
+* **seo:** SEO + GEO overhaul of kimiflare.com ([#556](https://github.com/sinameraji/kimiflare/issues/556)) ([39966e1](https://github.com/sinameraji/kimiflare/commit/39966e11ed8e34ba742ef93be5405b9f4239049d))
+* **tools:** present_plan_options tool with dual-UI support ([#563](https://github.com/sinameraji/kimiflare/issues/563)) ([c413081](https://github.com/sinameraji/kimiflare/commit/c413081711a7237b18f306ca3da7dc98a6cc73de))
+* **usage:** carry over cost baseline on /fresh ([#560](https://github.com/sinameraji/kimiflare/issues/560)) ([8198283](https://github.com/sinameraji/kimiflare/commit/81982837f6cac6073955310dcac3b96aa23c055d))
+
+
+### Bug Fixes
+
+* **agent:** strengthen tasks_set prompt and add heuristic auto-advance ([#559](https://github.com/sinameraji/kimiflare/issues/559)) ([5ed1e9b](https://github.com/sinameraji/kimiflare/commit/5ed1e9b27fefa12eefff77dd5bad310a9ba2678e))
+* **docs:** shorten hero copy and remove text-heavy sections ([#561](https://github.com/sinameraji/kimiflare/issues/561)) ([546a81a](https://github.com/sinameraji/kimiflare/commit/546a81a65fcb486c01495934c818aed1c91f7aad))
+
 ## [0.82.1](https://github.com/sinameraji/kimiflare/compare/v0.82.0...v0.82.1) (2026-06-04)
 
 
