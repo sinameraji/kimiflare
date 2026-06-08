@@ -1610,6 +1610,65 @@ const handleHelp: Handler = (ctx) => {
   return true;
 };
 
+const handleChangelogImage: Handler = (ctx, rest) => {
+  const { cfg, setEvents, mkKey } = ctx;
+  if (!cfg) {
+    setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Not configured yet." }]);
+    return true;
+  }
+
+  // Parse args: /changelog-image [owner/repo] [days]
+  let owner = cfg.githubRepo?.split("/")[0];
+  let repo = cfg.githubRepo?.split("/")[1];
+  let days = 7;
+
+  if (rest.length > 0 && rest[0]!.includes("/")) {
+    const parts = rest[0]!.split("/");
+    owner = parts[0];
+    repo = parts[1];
+  }
+  if (rest.length > 1) {
+    const d = parseInt(rest[1]!, 10);
+    if (!Number.isNaN(d)) days = d;
+  }
+
+  if (!owner || !repo) {
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "error",
+        key: mkKey(),
+        text: "Usage: /changelog-image [owner/repo] [days]\nSet githubRepo in config or pass owner/repo explicitly.",
+      },
+    ]);
+    return true;
+  }
+
+  setEvents((e) => [
+    ...e,
+    { kind: "info", key: mkKey(), text: `Generating changelog image for ${owner}/${repo} (last ${days} days)...` },
+  ]);
+
+  void (async () => {
+    try {
+      const { changelogImageTool } = await import("../tools/changelog-image.js");
+      const result = await changelogImageTool.run({ owner, repo, days }, {
+        cwd: process.cwd(),
+        githubToken: cfg.githubOAuthToken,
+      });
+      const text = typeof result === "string" ? result : result.content;
+      setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+    } catch (err) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
+      ]);
+    }
+  })();
+
+  return true;
+};
+
 // ── Registry ─────────────────────────────────────────────────────────────
 
 const handlers: Record<string, Handler> = {
@@ -1643,6 +1702,7 @@ const handlers: Record<string, Handler> = {
   "/logout": handleLogout,
   "/command": handleCommand,
   "/remote": handleRemote,
+  "/changelog-image": handleChangelogImage,
   "/help": handleHelp,
 };
 

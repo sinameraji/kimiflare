@@ -43,6 +43,121 @@ function getToken(ctx: ToolContext): string | undefined {
   return ctx.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 }
 
+// ─── github_list_merged_prs ──────────────────────────────────────────────────
+
+interface ListMergedPrsArgs {
+  owner: string;
+  repo: string;
+  days?: number;
+}
+
+export const githubListMergedPrsTool: ToolSpec<ListMergedPrsArgs> = {
+  name: "github_list_merged_prs",
+  description:
+    "List merged pull requests for a repository within the last N days. " +
+    "Returns PR number, title, author, merge date, and URL for each merged PR.",
+  parameters: {
+    type: "object",
+    properties: {
+      owner: { type: "string", description: "Repository owner (user or organization)." },
+      repo: { type: "string", description: "Repository name." },
+      days: { type: "integer", description: "Number of days to look back. Default: 7.", minimum: 1, maximum: 90 },
+    },
+    required: ["owner", "repo"],
+    additionalProperties: false,
+  },
+  needsPermission: false,
+  render: (args) => ({ title: `GitHub merged PRs ${args.owner ?? ""}/${args.repo ?? ""}` }),
+  async run(args, ctx): Promise<ToolOutput> {
+    const token = getToken(ctx);
+    const days = args.days ?? 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+    // Fetch merged PRs sorted by updated desc, then filter by merged_at
+    const prs = await githubFetch(
+      `/repos/${args.owner}/${args.repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
+      token,
+    ) as Array<{
+      number: number;
+      title: string;
+      user: { login: string };
+      merged_at: string | null;
+      html_url: string;
+      body: string | null;
+    }>;
+
+    const merged = prs
+      .filter((p) => p.merged_at && p.merged_at >= since)
+      .sort((a, b) => (b.merged_at ?? "").localeCompare(a.merged_at ?? ""));
+
+    if (merged.length === 0) {
+      return makeOutput(`No merged PRs in ${args.owner}/${args.repo} within the last ${days} day(s).`);
+    }
+
+    const lines = merged.map((p) =>
+      `#${p.number} ${p.title} — @${p.user.login} — merged ${p.merged_at!.slice(0, 10)} — ${p.html_url}`,
+    );
+
+    return makeOutput(
+      [`Merged PRs in ${args.owner}/${args.repo} (last ${days} days):`, "", ...lines].join("\n"),
+    );
+  },
+};
+
+// ─── github_list_releases ────────────────────────────────────────────────────
+
+interface ListReleasesArgs {
+  owner: string;
+  repo: string;
+  limit?: number;
+}
+
+export const githubListReleasesTool: ToolSpec<ListReleasesArgs> = {
+  name: "github_list_releases",
+  description:
+    "List recent GitHub releases for a repository. " +
+    "Returns tag name, name, published date, and URL for each release.",
+  parameters: {
+    type: "object",
+    properties: {
+      owner: { type: "string", description: "Repository owner (user or organization)." },
+      repo: { type: "string", description: "Repository name." },
+      limit: { type: "integer", description: "Max releases to return. Default: 5.", minimum: 1, maximum: 20 },
+    },
+    required: ["owner", "repo"],
+    additionalProperties: false,
+  },
+  needsPermission: false,
+  render: (args) => ({ title: `GitHub releases ${args.owner ?? ""}/${args.repo ?? ""}` }),
+  async run(args, ctx): Promise<ToolOutput> {
+    const token = getToken(ctx);
+    const limit = args.limit ?? 5;
+
+    const releases = await githubFetch(
+      `/repos/${args.owner}/${args.repo}/releases?per_page=${limit}`,
+      token,
+    ) as Array<{
+      tag_name: string;
+      name: string;
+      published_at: string;
+      html_url: string;
+      body: string | null;
+    }>;
+
+    if (releases.length === 0) {
+      return makeOutput(`No releases found for ${args.owner}/${args.repo}.`);
+    }
+
+    const lines = releases.map((r) =>
+      `${r.tag_name} — ${r.name} — published ${r.published_at.slice(0, 10)} — ${r.html_url}`,
+    );
+
+    return makeOutput(
+      [`Releases for ${args.owner}/${args.repo}:`, "", ...lines].join("\n"),
+    );
+  },
+};
+
 // ─── github_read_pr ──────────────────────────────────────────────────────────
 
 interface ReadPrArgs {
