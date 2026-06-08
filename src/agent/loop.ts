@@ -4,7 +4,7 @@ import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
 import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
 import type { ChatMessage, ToolCall, Usage } from "./messages.js";
-import type { Task } from "../tools/registry.js";
+import type { Task, PlanOption } from "../tools/registry.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { HybridResult } from "../memory/schema.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
@@ -36,6 +36,7 @@ export interface AgentCallbacks {
   onAssistantFinal?: (msg: ChatMessage) => void;
   onToolResult?: (result: ToolResult) => void;
   onTasks?: (tasks: Task[]) => void;
+  onPlanOptions?: (options: PlanOption[]) => void;
   /** Called once per session when the sandbox falls back to node:vm. */
   onWarning?: (message: string) => void;
   /** Called when a tool's content was truncated before being shown to the model.
@@ -838,7 +839,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           tools: opts.tools,
           executor: opts.executor,
           askPermission: opts.callbacks.askPermission,
-          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
+          ctx: { cwd: opts.cwd, signal: opts.signal, onTasks: opts.callbacks.onTasks, onPlanOptions: opts.callbacks.onPlanOptions, coauthor: opts.coauthor, memoryManager: opts.memoryManager, sessionId: opts.sessionId, githubToken: opts.githubToken },
           timeoutMs: 30000,
           memoryLimitMB: 128,
         });
@@ -913,6 +914,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             cwd: opts.cwd,
             signal: opts.signal,
             onTasks: opts.callbacks.onTasks,
+            onPlanOptions: opts.callbacks.onPlanOptions,
             coauthor: opts.coauthor,
             memoryManager: opts.memoryManager,
             sessionId: opts.sessionId,

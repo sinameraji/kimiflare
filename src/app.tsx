@@ -35,9 +35,10 @@ import { usePermissionController } from "./ui/use-permission-controller.js";
 import type { LimitDecision, LoopDecision } from "./ui/limit-modal.js";
 import { ResumePicker } from "./ui/resume-picker.js";
 import { CheckpointPicker } from "./ui/checkpoint-picker.js";
+import { PlanOptionsPicker } from "./ui/plan-options-picker.js";
 import { TaskList } from "./ui/task-list.js";
 import { WorkerList } from "./ui/worker-list.js";
-import type { Task } from "./tools/registry.js";
+import type { Task, PlanOption } from "./tools/registry.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import QRCode from "qrcode";
@@ -104,7 +105,7 @@ import {
   interruptOrExit as runInterruptOrExit,
   type InterruptDeps,
 } from "./ui/input-handlers.js";
-import { dispatchSlashCommand, type SlashContext } from "./ui/slash-commands.js";
+import { dispatchSlashCommand, type SlashContext, executeFreshStart } from "./ui/slash-commands.js";
 import { runInit as runInitImpl } from "./init/run-init.js";
 import { runStartupTasks } from "./ui/run-startup-tasks.js";
 import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
@@ -257,6 +258,8 @@ function App({
     tasksStartTokens, setTasksStartTokens,
     beginTurn, endTurn, clearTaskTracking,
   } = turn;
+  const [planOptions, setPlanOptions] = useState<PlanOption[] | null>(null);
+  const planOptionsRef = useRef<PlanOption[] | null>(null);
   const {
     pending: perm,
     askPermission: askForPermission,
@@ -923,6 +926,7 @@ function App({
         commandToDelete !== null ||
         resumeSessions !== null ||
         checkpointSession !== null ||
+        planOptions !== null ||
         showThemePicker;
       if (!modalOpen && !isAbortingRef.current && now - lastEscapeAtRef.current > 500) {
         // Multi-agent cancel path: workers are in flight but there is no
@@ -1897,6 +1901,9 @@ function App({
             setTasksStartTokens(0);
           }
         },
+        onPlanOptions: (options: PlanOption[]) => {
+          planOptionsRef.current = options;
+        },
         askPermission: askForPermission,
         onToolLimitReached: () =>
           new Promise<LimitDecision>((resolve) => {
@@ -2155,6 +2162,10 @@ function App({
             })();
 
             cleanupTurn();
+
+            if (planOptionsRef.current) {
+              setPlanOptions(planOptionsRef.current);
+            }
           },
           onError: async (e) => {
             if (e.name === "AbortError") {
@@ -2276,6 +2287,42 @@ function App({
             ]);
           }}
         />
+      </ThemeProvider>
+    );
+  }
+
+  if (planOptions !== null) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <PlanOptionsPicker
+            options={planOptions}
+            onPick={(option) => {
+              setPlanOptions(null);
+              planOptionsRef.current = null;
+              if (option) {
+                const ctx = buildSlashContext();
+                const clipResult = executeFreshStart(ctx, option.plan);
+                setEvents((e) => [
+                  ...e,
+                  {
+                    kind: "info",
+                    key: mkKey(),
+                    text: clipResult.success
+                      ? `Plan "${option.label}" copied to clipboard. Starting fresh session with plan only…`
+                      : `Starting fresh session with plan "${option.label}"…`,
+                  },
+                ]);
+                if (!clipResult.success) {
+                  setEvents((e) => [
+                    ...e,
+                    { kind: "info", key: mkKey(), text: "--- Plan ---\n" + option.plan },
+                  ]);
+                }
+              }
+            }}
+          />
+        </Box>
       </ThemeProvider>
     );
   }

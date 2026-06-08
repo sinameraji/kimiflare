@@ -214,6 +214,39 @@ const handleClear: Handler = (ctx) => {
   return true;
 };
 
+export function executeFreshStart(ctx: SlashContext, planText: string): { success: boolean } {
+  // Reset session (reuse /clear logic)
+  if (ctx.cacheStableRef.current && ctx.messagesRef.current.length >= 2) {
+    ctx.messagesRef.current = [ctx.messagesRef.current[0]!, ctx.messagesRef.current[1]!];
+  } else {
+    ctx.messagesRef.current = [ctx.messagesRef.current[0]!];
+  }
+  ctx.resetSession();
+  ctx.executorRef.current.clearArtifacts();
+  if (ctx.flushTimeoutRef.current) {
+    clearTimeout(ctx.flushTimeoutRef.current);
+    ctx.flushTimeoutRef.current = null;
+  }
+  ctx.pendingTextRef.current.clear();
+  ctx.activeAsstIdRef.current = null;
+  ctx.pendingToolCallsRef.current.clear();
+  ctx.usageRef.current = null;
+  ctx.turnCounterRef.current = 0;
+  ctx.setEvents([]);
+  ctx.setUsage(null);
+  ctx.setSessionUsage(null);
+  ctx.gatewayMetaRef.current = null;
+  ctx.setGatewayMeta(null);
+  ctx.clearTaskTracking();
+  ctx.compactSuggestedRef.current = false;
+  ctx.updateNudgedRef.current = false;
+
+  // Seed with plan
+  ctx.messagesRef.current.push({ role: "user", content: planText });
+
+  return writeToClipboard(planText);
+}
+
 const handleFresh: Handler = (ctx) => {
   const { busy, mkKey, setEvents } = ctx;
   if (busy) {
@@ -233,36 +266,7 @@ const handleFresh: Handler = (ctx) => {
     return true;
   }
 
-  const clipResult = writeToClipboard(plan);
-
-  // Reset session (reuse /clear logic)
-  if (ctx.cacheStableRef.current && ctx.messagesRef.current.length >= 2) {
-    ctx.messagesRef.current = [ctx.messagesRef.current[0]!, ctx.messagesRef.current[1]!];
-  } else {
-    ctx.messagesRef.current = [ctx.messagesRef.current[0]!];
-  }
-  ctx.resetSession();
-  ctx.executorRef.current.clearArtifacts();
-  if (ctx.flushTimeoutRef.current) {
-    clearTimeout(ctx.flushTimeoutRef.current);
-    ctx.flushTimeoutRef.current = null;
-  }
-  ctx.pendingTextRef.current.clear();
-  ctx.activeAsstIdRef.current = null;
-  ctx.pendingToolCallsRef.current.clear();
-  ctx.usageRef.current = null;
-  ctx.turnCounterRef.current = 0;
-  setEvents([]);
-  ctx.setUsage(null);
-  ctx.setSessionUsage(null);
-  ctx.gatewayMetaRef.current = null;
-  ctx.setGatewayMeta(null);
-  ctx.clearTaskTracking();
-  ctx.compactSuggestedRef.current = false;
-  ctx.updateNudgedRef.current = false;
-
-  // Seed with plan
-  ctx.messagesRef.current.push({ role: "user", content: plan });
+  const clipResult = executeFreshStart(ctx, plan);
 
   setEvents((e) => [
     ...e,

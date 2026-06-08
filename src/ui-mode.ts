@@ -657,6 +657,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // Cleared at the top of every runTurn so the warning resets across turns.
   const repeatedToolSignatures = new Map<string, number>();
 
+  // Holds plan options presented by the agent during a turn. Checked in
+  // the finally block after the turn ends so the user can pick one.
+  const planOptionsRef: { current: import("./tools/registry.js").PlanOption[] | null } = { current: null };
+
   async function runTurn(text: string): Promise<void> {
     kimiLog({ dir: "turn", phase: "start", text_preview: text.slice(0, 80) });
     // UserMessageCreated is sent in the `userInput` handler now —
@@ -838,6 +842,9 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
               cam.send("BackgroundTaskUpdate", { task_id: t.id, label: t.title, state });
             }
           },
+          onPlanOptions: (options) => {
+            planOptionsRef.current = options;
+          },
           onSkillsSelected: (result) => {
             const n = (result as any)?.selected?.length ?? 0;
             if (n > 0) {
@@ -1006,6 +1013,45 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       setPhase("idle");
       cam.send("StatusUpdate", { segments: { elapsed: "" } });
       kimiLog({ dir: "turn", phase: "end" });
+
+      if (planOptionsRef.current && !currentController?.signal.aborted) {
+        const options = planOptionsRef.current;
+        planOptionsRef.current = null;
+        const pick = await selectList(cam, {
+          id: `plan-options-${Date.now()}`,
+          prompt: "Choose a plan to start fresh with",
+          options: options.map((o, i) => ({
+            value: String(i),
+            label: o.label,
+          })),
+          allow_cancel: true,
+        });
+        if (!pick.cancelled && pick.value !== null) {
+          const selected = options[Number(pick.value)];
+          if (selected) {
+            // Reset session (same as /clear)
+            const systemMessages = messages.filter((m) => m.role === "system");
+            messages.length = 0;
+            messages.push(...systemMessages);
+            sessionCostUsd = 0;
+            promptTokens = 0;
+            cachedTokens = 0;
+            completionTokens = 0;
+            cam.send("TranscriptCleared", {});
+            cam.send("StatusUpdate", {
+              segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
+            });
+            // Seed with plan
+            messages.push({ role: "user", content: selected.plan });
+            cam.send("UserMessageCreated", { text: selected.plan });
+            cam.send("ShowToast", {
+              text: `Starting fresh with plan: ${selected.label}`,
+              kind: "success",
+              ttl_ms: 3000,
+            });
+          }
+        }
+      }
     }
   }
 

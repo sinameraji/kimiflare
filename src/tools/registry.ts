@@ -1,9 +1,15 @@
 import type { ToolDef } from "../agent/messages.js";
 
+export interface PlanOption {
+  label: string;
+  plan: string;
+}
+
 export interface ToolContext {
   cwd: string;
   signal?: AbortSignal;
   onTasks?: (tasks: Task[]) => void;
+  onPlanOptions?: (options: PlanOption[]) => void;
   coauthor?: { name: string; email: string };
   memoryManager?: import("../memory/manager.js").MemoryManager | null;
   sessionId?: string;
