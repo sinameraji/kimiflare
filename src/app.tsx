@@ -126,6 +126,7 @@ import {
   compactEventsVisual,
   CONTEXT_LIMIT,
   detectGitBranch,
+  detectGitHubRepo,
   findImagePaths,
   gatewayFromConfig,
   gatewayUsageLookupFromConfig,
@@ -306,6 +307,7 @@ function App({
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
     showPlanCompletePicker, setShowPlanCompletePicker,
+    showChangelogImagePicker, setShowChangelogImagePicker,
     hasFullscreenModal,
     hasAnyModal,
   } = modals;
@@ -350,6 +352,8 @@ function App({
   const [activeWorkers, setActiveWorkers] = useState<import("./agent/supervisor.js").ActiveWorker[]>([]);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [coordinatorNarration, setCoordinatorNarration] = useState<string>("");
+  const [changelogImageRepo, setChangelogImageRepo] = useState<{ owner: string; name: string } | null>(null);
+  const [changelogImageDays, setChangelogImageDays] = useState(7);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1486,6 +1490,9 @@ function App({
     setShowGatewayPicker,
     setShowSkillsPicker,
     setShowShellPicker,
+    setShowChangelogImagePicker,
+    setChangelogImageRepo,
+    setChangelogImageDays,
     lspScope,
     lspProjectPath,
     resetSession,
@@ -1528,6 +1535,7 @@ function App({
     setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setShowModePicker, setKeyEntryFor,
     setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal, setShowHelpMenu,
     setShowMemoryPicker, setShowGatewayPicker, setShowSkillsPicker, setShowShellPicker,
+    setShowChangelogImagePicker, setChangelogImageRepo, setChangelogImageDays,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -2564,6 +2572,31 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /skills ${action} <name> to ${action} a skill.` }]);
         }}
         onSkillsDone={() => setShowSkillsPicker(false)}
+        changelogImageRepo={changelogImageRepo}
+        changelogImageDays={changelogImageDays}
+        changelogImageToken={cfg?.githubOAuthToken}
+        onChangelogImageGenerate={(owner, repo, days) => {
+          setShowChangelogImagePicker(false);
+          setTimeout(() => {
+            void (async () => {
+              try {
+                const { changelogImageTool } = await import("./tools/changelog-image.js");
+                const result = await changelogImageTool.run({ owner, repo, days }, {
+                  cwd: process.cwd(),
+                  githubToken: cfg?.githubOAuthToken,
+                });
+                const text = typeof result === "string" ? result : result.content;
+                setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+              } catch (err) {
+                setEvents((e) => [
+                  ...e,
+                  { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
+                ]);
+              }
+            })();
+          }, 0);
+        }}
+        onChangelogImageCancel={() => setShowChangelogImagePicker(false)}
       />
     );
   }

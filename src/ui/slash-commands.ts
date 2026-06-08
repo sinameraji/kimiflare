@@ -126,6 +126,9 @@ export interface SlashContext {
   setShowGatewayPicker: (v: boolean) => void;
   setShowSkillsPicker: (v: boolean) => void;
   setShowShellPicker: (v: boolean) => void;
+  setShowChangelogImagePicker: (v: boolean) => void;
+  setChangelogImageRepo: React.Dispatch<React.SetStateAction<{ owner: string; name: string } | null>>;
+  setChangelogImageDays: React.Dispatch<React.SetStateAction<number>>;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -1611,7 +1614,7 @@ const handleHelp: Handler = (ctx) => {
 };
 
 const handleChangelogImage: Handler = (ctx, rest) => {
-  const { cfg, setEvents, mkKey } = ctx;
+  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo, setChangelogImageDays } = ctx;
   if (!cfg) {
     setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Not configured yet." }]);
     return true;
@@ -1632,7 +1635,41 @@ const handleChangelogImage: Handler = (ctx, rest) => {
     if (!Number.isNaN(d)) days = d;
   }
 
-  if (!owner || !repo) {
+  const runGeneration = (o: string, r: string, d: number) => {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: `Generating changelog image for ${o}/${r} (last ${d} days)...` },
+    ]);
+    void (async () => {
+      try {
+        const { changelogImageTool } = await import("../tools/changelog-image.js");
+        const result = await changelogImageTool.run({ owner: o, repo: r, days: d }, {
+          cwd: process.cwd(),
+          githubToken: cfg.githubOAuthToken,
+        });
+        const text = typeof result === "string" ? result : result.content;
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+      } catch (err) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
+        ]);
+      }
+    })();
+  };
+
+  const tryOpenPicker = (o: string | undefined, r: string | undefined) => {
+    if (o && r) {
+      // If no explicit args given, open the TUI picker
+      if (rest.length === 0) {
+        setChangelogImageRepo({ owner: o, name: r });
+        setChangelogImageDays(days);
+        setShowChangelogImagePicker(true);
+        return;
+      }
+      runGeneration(o, r, days);
+      return;
+    }
     setEvents((e) => [
       ...e,
       {
@@ -1641,30 +1678,18 @@ const handleChangelogImage: Handler = (ctx, rest) => {
         text: "Usage: /changelog-image [owner/repo] [days]\nSet githubRepo in config or pass owner/repo explicitly.",
       },
     ]);
+  };
+
+  if (owner && repo) {
+    tryOpenPicker(owner, repo);
     return true;
   }
 
-  setEvents((e) => [
-    ...e,
-    { kind: "info", key: mkKey(), text: `Generating changelog image for ${owner}/${repo} (last ${days} days)...` },
-  ]);
-
-  void (async () => {
-    try {
-      const { changelogImageTool } = await import("../tools/changelog-image.js");
-      const result = await changelogImageTool.run({ owner, repo, days }, {
-        cwd: process.cwd(),
-        githubToken: cfg.githubOAuthToken,
-      });
-      const text = typeof result === "string" ? result : result.content;
-      setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
-    } catch (err) {
-      setEvents((e) => [
-        ...e,
-        { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
-      ]);
-    }
-  })();
+  // Auto-detect from git remote
+  void import("../ui/app-helpers.js").then(({ detectGitHubRepo }) => {
+    const detected = detectGitHubRepo();
+    tryOpenPicker(detected?.owner, detected?.name);
+  });
 
   return true;
 };
