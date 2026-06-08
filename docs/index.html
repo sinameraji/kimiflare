@@ -188,22 +188,17 @@
   <section class="hero">
     <div class="hero-label fade-in">Open source · Kimi K2.6 · Cloudflare Workers AI</div>
     <h1 class="fade-in delay-1">
-      The open-source Claude Code alternative — an AI coding agent on your own Cloudflare account.
+      A terminal coding agent on your Cloudflare account.
     </h1>
     <p class="hero-subtitle fade-in delay-2">
-      kimiflare is a terminal AI coding agent powered by Kimi K2.6 on Cloudflare Workers AI. It reads and edits your code, runs commands, and researches the web — running entirely on your own Cloudflare account, with AI Gateway logs, caching, and authoritative cost.
+      Open-source, powered by Kimi K2.6 on Cloudflare Workers AI — with AI Gateway observability.
     </p>
     <div class="hero-cta fade-in delay-3">
       <a href="#install" class="btn btn-primary">Install</a>
       <a href="https://github.com/sinameraji/kimiflare" class="btn btn-secondary" target="_blank">View source</a>
     </div>
 
-    <div class="quick-answer fade-in delay-3">
-      <p><strong>What is kimiflare?</strong> kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code, Aider, Gemini CLI, and Codex CLI — that runs on your own Cloudflare account. It is powered by the <strong>Kimi K2.6</strong> model on <strong>Cloudflare Workers AI</strong> with a 262K-token context window, and routes every request through your own <strong>Cloudflare AI Gateway</strong> for per-request logs, response caching, and authoritative cost.</p>
-      <p>Install it with <code style="font-family:var(--font-mono);background:var(--bg);padding:0.1rem 0.35rem;border-radius:4px;">npm install -g kimiflare</code>. It needs no API keys beyond your Cloudflare credentials, is MIT-licensed, and works on macOS, Linux, and Windows.</p>
-    </div>
-
-    <div class="fade-in delay-3" style="margin-top: 1.5rem;">
+    <div class="fade-in delay-3" style="margin-top: 2.5rem;">
       <a href="https://www.producthunt.com/products/kimiflare?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-kimiflare" target="_blank" rel="noopener noreferrer">
         <img alt="kimiflare - kimi k2.6 cli code editor on cloudflare ai gateway | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1129412&theme=light&t=1776822277935">
       </a>
@@ -470,8 +465,7 @@
   <section id="compare">
     <div class="section-header">
       <span class="section-label">Comparison</span>
-      <h2>kimiflare vs Claude Code, Aider, Gemini CLI &amp; Codex CLI</h2>
-      <p>How kimiflare compares to other terminal AI coding agents. kimiflare is the Cloudflare-native, open-source option that runs on your own cloud.</p>
+      <h2>How we compare</h2>
     </div>
 
     <div class="compare-wrap">
@@ -620,91 +614,10 @@
     </div>
   </section>
 
-  <section>
-    <div class="section-header">
-      <span class="section-label">Tools</span>
-      <h2>Core tools</h2>
-    </div>
-
-    <table class="tools-table">
-      <thead>
-        <tr>
-          <th>Tool</th>
-          <th>Permission</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>read</td>
-          <td>auto</td>
-          <td>Read a text file (≤ 2MB) with optional line range</td>
-        </tr>
-        <tr>
-          <td>write</td>
-          <td>prompt</td>
-          <td>Create or overwrite a file. Shows a diff before approval</td>
-        </tr>
-        <tr>
-          <td>edit</td>
-          <td>prompt</td>
-          <td>Replace an exact substring. Fails unless unique match</td>
-        </tr>
-        <tr>
-          <td>bash</td>
-          <td>prompt</td>
-          <td>Run a shell command. Session-allow keyed by first token</td>
-        </tr>
-        <tr>
-          <td>glob</td>
-          <td>auto</td>
-          <td>Match files by pattern, sorted by mtime</td>
-        </tr>
-        <tr>
-          <td>grep</td>
-          <td>auto</td>
-          <td>Regex search. Uses ripgrep if available</td>
-        </tr>
-        <tr>
-          <td>web_fetch</td>
-          <td>auto</td>
-          <td>Fetch a URL, convert HTML → markdown (≤ 100KB)</td>
-        </tr>
-        <tr>
-          <td>web_search</td>
-          <td>auto</td>
-          <td>Search the web and return summarized results</td>
-        </tr>
-        <tr>
-          <td>github_read</td>
-          <td>auto</td>
-          <td>Read files and issues from public GitHub repos</td>
-        </tr>
-        <tr>
-          <td>browser_fetch</td>
-          <td>auto</td>
-          <td>Headless browser for JavaScript-rendered pages</td>
-        </tr>
-        <tr>
-          <td>tasks_set</td>
-          <td>auto</td>
-          <td>Publish a live task list for multi-step work</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <p style="margin-top: 1.5rem; color: var(--text-secondary); font-size: 0.9rem;">
-      Plus <strong>LSP intelligence</strong> (hover, go-to-definition, references, diagnostics),
-      <strong>cross-session memory</strong> (remember / recall / forget),
-      and <strong>MCP extensibility</strong> for plugging in external tool servers.
-    </p>
-  </section>
-
   <section id="faq">
     <div class="section-header">
       <span class="section-label">FAQ</span>
       <h2>Frequently asked questions</h2>
-      <p>Common questions about kimiflare — the open-source, Cloudflare-native AI coding agent.</p>
     </div>
 
     <div class="faq-list">
