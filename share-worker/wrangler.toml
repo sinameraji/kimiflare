@@ -1,0 +1,17 @@
+name = "kimiflare-share"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[[r2_buckets]]
+bucket_name = "kimiflare-shares"
+binding = "SHARE_BUCKET"
+
+# Set SHARE_AUTH_SECRET via `wrangler secret put SHARE_AUTH_SECRET` — do not commit the value.
+# This secret protects the /api/upload endpoint.
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true

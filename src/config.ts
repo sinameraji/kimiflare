@@ -76,6 +76,10 @@ export interface KimiConfig {
   remoteWorkerUrl?: string;
   /** Shared secret for authenticating with the remote Worker. */
   remoteAuthSecret?: string;
+  /** URL of the share Worker (for /share link generation). */
+  shareWorkerUrl?: string;
+  /** Shared secret for authenticating with the share Worker. */
+  shareAuthSecret?: string;
   /** Configurable TTL for remote sessions in minutes (default: 30). */
   remoteTtlMinutes?: number;
   /** Max input token budget per remote job (default: 5_000_000). */

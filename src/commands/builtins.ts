@@ -32,6 +32,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "fresh", description: "Reset session and start fresh with the last plan", source: "builtin" },
   { name: "init", description: "Scan repo and write KIMI.md", source: "builtin" },
   { name: "remote", argHint: "<prompt>", description: "Run a remote session on Cloudflare", source: "builtin" },
+  { name: "share", description: "Share current session as a web link", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },
   { name: "hello", description: "Send a voice note to the creator", source: "builtin" },
   { name: "report", argHint: "[send] [note]", description: "Report the last API error with diagnostic logs", source: "builtin" },
