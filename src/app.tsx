@@ -1491,6 +1491,8 @@ function App({
     setShowShellPicker,
     setShowChangelogImagePicker,
     setChangelogImageRepo,
+    setTasks: turn.setTasks,
+    setTasksStartedAt: turn.setTasksStartedAt,
     lspScope,
     lspProjectPath,
     resetSession,
@@ -1536,7 +1538,7 @@ function App({
     setShowChangelogImagePicker, setChangelogImageRepo,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
-    turn.setShowReasoning,
+    turn.setShowReasoning, turn.setTasks, turn.setTasksStartedAt,
     resetSession, clearTaskTracking, openResumePicker, runCompact, runInit,
     initMcp, initLsp, ensureSessionId,
   ]);
@@ -2585,9 +2587,26 @@ function App({
               streaming: true,
             },
           ]);
+
+          const taskList: import("./tools/registry.js").Task[] = [
+            { id: "fetch-prs", title: "Fetch merged PRs", status: "pending" },
+            { id: "fetch-release", title: "Fetch latest release", status: "pending" },
+            { id: "summarize", title: "Summarize with LLM", status: "pending" },
+            { id: "render", title: "Render changelog image", status: "pending" },
+            { id: "save", title: "Save PNG file", status: "pending" },
+          ];
+          turn.setTasks(taskList);
+          turn.setTasksStartedAt(Date.now());
+
+          const updateTask = (id: string, status: import("./tools/registry.js").Task["status"]) => {
+            turn.setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+          };
+
           setTimeout(() => {
             void (async () => {
               try {
+                updateTask("fetch-prs", "in_progress");
+                updateTask("fetch-release", "in_progress");
                 const { changelogImageTool } = await import("./tools/changelog-image.js");
                 const result = await changelogImageTool.run({ owner, repo, days }, {
                   cwd: process.cwd(),
@@ -2597,6 +2616,12 @@ function App({
                   model: cfg?.model,
                   gateway: gatewayFromConfig(cfg),
                 });
+                updateTask("fetch-prs", "completed");
+                updateTask("fetch-release", "completed");
+                updateTask("summarize", "completed");
+                updateTask("render", "completed");
+                updateTask("save", "completed");
+
                 const text = typeof result === "string" ? result : result.content;
                 setEvents((e) =>
                   e.map((ev) =>
@@ -2614,6 +2639,8 @@ function App({
                       : ev,
                   ),
                 );
+              } finally {
+                turn.setTasksStartedAt(null);
               }
             })();
           }, 0);

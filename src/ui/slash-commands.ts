@@ -80,6 +80,7 @@ import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
 import { distillSessionPlan } from "../agent/distill.js";
 import { writeToClipboard } from "../util/clipboard.js";
+import type { Task } from "../tools/registry.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -129,6 +130,10 @@ export interface SlashContext {
   setShowShellPicker: (v: boolean) => void;
   setShowChangelogImagePicker: (v: boolean) => void;
   setChangelogImageRepo: React.Dispatch<React.SetStateAction<{ owner: string; name: string } | null>>;
+
+  // Task tracking (for non-turn UI like changelog-image generation)
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  setTasksStartedAt: (n: number | null) => void;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -1614,7 +1619,7 @@ const handleHelp: Handler = (ctx) => {
 };
 
 const handleChangelogImage: Handler = (ctx, rest) => {
-  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo } = ctx;
+  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo, setTasks, setTasksStartedAt } = ctx;
   if (!cfg) {
     setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Not configured yet." }]);
     return true;
@@ -1648,10 +1653,28 @@ const handleChangelogImage: Handler = (ctx, rest) => {
         streaming: true,
       },
     ]);
+
+    const taskList: Task[] = [
+      { id: "fetch-prs", title: "Fetch merged PRs", status: "pending" },
+      { id: "fetch-release", title: "Fetch latest release", status: "pending" },
+      { id: "summarize", title: "Summarize with LLM", status: "pending" },
+      { id: "render", title: "Render changelog image", status: "pending" },
+      { id: "save", title: "Save PNG file", status: "pending" },
+    ];
+    setTasks(taskList);
+    setTasksStartedAt(Date.now());
+
+    const updateTask = (id: string, status: Task["status"]) => {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+    };
+
     void (async () => {
       try {
         const { changelogImageTool } = await import("../tools/changelog-image.js");
         const { gatewayFromConfig } = await import("./app-helpers.js");
+
+        updateTask("fetch-prs", "in_progress");
+        updateTask("fetch-release", "in_progress");
         const result = await changelogImageTool.run({ owner: o, repo: r, days: d }, {
           cwd: process.cwd(),
           githubToken: cfg.githubOAuthToken,
@@ -1660,6 +1683,12 @@ const handleChangelogImage: Handler = (ctx, rest) => {
           model: cfg.model,
           gateway: gatewayFromConfig(cfg),
         });
+        updateTask("fetch-prs", "completed");
+        updateTask("fetch-release", "completed");
+        updateTask("summarize", "completed");
+        updateTask("render", "completed");
+        updateTask("save", "completed");
+
         const text = typeof result === "string" ? result : result.content;
         setEvents((e) =>
           e.map((ev) =>
@@ -1677,6 +1706,8 @@ const handleChangelogImage: Handler = (ctx, rest) => {
               : ev,
           ),
         );
+      } finally {
+        setTasksStartedAt(null);
       }
     })();
   };
