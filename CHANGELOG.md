@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.1](https://github.com/sinameraji/kimiflare/compare/v0.84.0...v0.84.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* **ui:** rebuild system prompt when switching from plan to execution mode ([#567](https://github.com/sinameraji/kimiflare/issues/567)) ([c328f63](https://github.com/sinameraji/kimiflare/commit/c328f639ad9a83bf37f849f51b4177c169e279f1))
+
 ## [0.84.0](https://github.com/sinameraji/kimiflare/compare/v0.83.0...v0.84.0) (2026-06-11)
 
 
