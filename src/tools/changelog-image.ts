@@ -83,59 +83,48 @@ function buildChangelogSvg(opts: {
 }): string {
   const { owner, repo, version, prs, logoBase64 } = opts;
   const width = 1200;
-  const headerHeight = 280;
-  const prItemHeight = 90;
-  const footerHeight = 80;
-  const padding = 60;
+  const padding = 80;
+  const contentWidth = width - padding * 2;
+  const headerHeight = 200;
+  const prItemHeight = 78;
+  const footerHeight = 60;
   const height = headerHeight + prs.length * prItemHeight + footerHeight + padding * 2;
 
   const prItems = prs.map((pr, i) => {
     const y = headerHeight + padding + i * prItemHeight;
-    const title = escapeXml(pr.title.length > 70 ? pr.title.slice(0, 67) + "..." : pr.title);
+    const title = escapeXml(pr.title.length > 80 ? pr.title.slice(0, 77) + "…" : pr.title);
     const date = pr.merged_at.slice(0, 10);
+    const isLast = i === prs.length - 1;
+    const separator = isLast
+      ? ""
+      : `<line x1="0" y1="${prItemHeight}" x2="${contentWidth}" y2="${prItemHeight}" stroke="#e5e7eb" stroke-width="1"/>`;
     return `
       <g transform="translate(${padding}, ${y})">
-        <rect x="0" y="0" width="${width - padding * 2}" height="${prItemHeight - 16}" rx="12" fill="#1a1a2e" stroke="#2a2a4e" stroke-width="1"/>
-        <text x="24" y="38" fill="#e0e0ff" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="600">${title}</text>
-        <text x="24" y="64" fill="#8888aa" font-family="system-ui, -apple-system, sans-serif" font-size="16">#${pr.number} by @${escapeXml(pr.user.login)} · merged ${date}</text>
-        <circle cx="${width - padding * 2 - 30}" cy="${(prItemHeight - 16) / 2}" r="8" fill="#4ade80"/>
+        <text x="0" y="30" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500">${title}</text>
+        <text x="0" y="54" fill="#9ca3af" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14">#${pr.number} by @${escapeXml(pr.user.login)} · ${date}</text>
+        ${separator}
       </g>
     `;
   }).join("");
 
   const logoSection = logoBase64
-    ? `<image x="${width / 2 - 48}" y="40" width="96" height="96" href="${logoBase64}"/>`
-    : `<circle cx="${width / 2}" cy="88" r="48" fill="#f59e0b"/><text x="${width / 2}" y="100" text-anchor="middle" fill="#0f0f1a" font-family="system-ui, sans-serif" font-size="36" font-weight="bold">${escapeXml(repo[0]?.toUpperCase() ?? "?")}</text>`;
+    ? `<image x="${padding}" y="${padding + 8}" width="32" height="32" href="${logoBase64}"/>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0f0f1a"/>
-      <stop offset="100%" stop-color="#1a1a2e"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#f59e0b"/>
-      <stop offset="100%" stop-color="#f97316"/>
-    </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-  </defs>
-
   <!-- Background -->
-  <rect width="${width}" height="${height}" fill="url(#bg)"/>
+  <rect width="${width}" height="${height}" fill="#fafafa"/>
 
-  <!-- Decorative top line -->
-  <rect x="0" y="0" width="${width}" height="4" fill="url(#accent)"/>
+  <!-- Top accent line -->
+  <rect x="${padding}" y="${padding}" width="40" height="3" fill="#f97316" rx="1.5"/>
 
   <!-- Header -->
-  <g transform="translate(0, 20)">
+  <g transform="translate(0, 0)">
     ${logoSection}
-    <text x="${width / 2}" y="170" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="42" font-weight="700">${escapeXml(owner)}/${escapeXml(repo)}</text>
-    <text x="${width / 2}" y="215" text-anchor="middle" fill="#f59e0b" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="600">${escapeXml(version)}</text>
-    <text x="${width / 2}" y="255" text-anchor="middle" fill="#8888aa" font-family="system-ui, -apple-system, sans-serif" font-size="18">What's new in this release</text>
+    <text x="${padding + (logoBase64 ? 44 : 0)}" y="${padding + 32}" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="600">${escapeXml(owner)}/${escapeXml(repo)}</text>
+    <text x="${padding}" y="${padding + 72}" fill="#6b7280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15">Changelog</text>
+    <text x="${padding + 90}" y="${padding + 72}" fill="#f97316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="500">${escapeXml(version)}</text>
   </g>
 
   <!-- PR List -->
@@ -143,8 +132,7 @@ function buildChangelogSvg(opts: {
 
   <!-- Footer -->
   <g transform="translate(0, ${height - footerHeight})">
-    <rect x="0" y="0" width="${width}" height="${footerHeight}" fill="#0a0a14"/>
-    <text x="${width / 2}" y="48" text-anchor="middle" fill="#555577" font-family="system-ui, -apple-system, sans-serif" font-size="16">Generated with KimiFlare · ${escapeXml(new Date().toISOString().slice(0, 10))}</text>
+    <text x="${padding}" y="30" fill="#d1d5db" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">Generated with KimiFlare · ${escapeXml(new Date().toISOString().slice(0, 10))}</text>
   </g>
 </svg>`;
 }
