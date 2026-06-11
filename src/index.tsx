@@ -22,7 +22,7 @@ program
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
-  .option("--continue-on-limit", "reset tool-call counter and continue when the 50-call limit is hit (print mode only)")
+  .option("--continue-on-limit", "reset tool-call counter and continue when the 200-call limit is hit (print mode only)")
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")

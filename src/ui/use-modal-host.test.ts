@@ -15,7 +15,7 @@ describe("computeModalFlags", () => {
   it("flags limit overlay only", () => {
     const f = computeModalFlags({
       ...EMPTY_MODAL_STATE,
-      limitModal: { limit: 50, resolve: () => {} },
+      limitModal: { limit: 200, resolve: () => {} },
     });
     assert.strictEqual(f.hasOverlayModal, true);
     assert.strictEqual(f.hasFullscreenModal, false);
@@ -77,7 +77,7 @@ describe("computeModalFlags", () => {
   it("combines flags when both overlay and fullscreen are open", () => {
     const f = computeModalFlags({
       ...EMPTY_MODAL_STATE,
-      limitModal: { limit: 50, resolve: () => {} },
+      limitModal: { limit: 200, resolve: () => {} },
       showLspWizard: true,
     });
     assert.deepStrictEqual(f, {

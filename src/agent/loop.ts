@@ -258,7 +258,7 @@ function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
 export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   const turnStart = performance.now();
   logger.info("turn:start", { sessionId: opts.sessionId, codeMode: opts.codeMode ?? false });
-  const max = opts.maxToolIterations ?? 50;
+  const max = opts.maxToolIterations ?? 200;
   const codeMode = opts.codeMode ?? false;
 
   // M6.1: fire the Stop hook on any clean exit (turn ended normally,

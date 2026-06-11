@@ -2019,7 +2019,7 @@ function App({
         onToolLimitReached: () =>
           new Promise<LimitDecision>((resolve) => {
             limitResolveRef.current = resolve;
-            setLimitModal({ limit: 50, resolve });
+            setLimitModal({ limit: 200, resolve });
           }),
         onLoopDetected: () =>
           new Promise<LoopDecision>((resolve) => {
