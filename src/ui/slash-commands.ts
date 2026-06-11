@@ -168,6 +168,7 @@ export interface SlashContext {
   compiledContextRef: React.MutableRefObject<boolean>;
   lastApiErrorRef: React.MutableRefObject<{ httpStatus?: number; code?: number; message: string } | null>;
   activeScopeRef: React.MutableRefObject<AbortScope | null>;
+  sessionPlanRef: React.MutableRefObject<string | null>;
 }
 
 type Handler = (ctx: SlashContext, rest: string[], arg: string) => boolean;
@@ -212,6 +213,7 @@ const handleClear: Handler = (ctx) => {
   ctx.clearTaskTracking();
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
+  ctx.sessionPlanRef.current = null;
   return true;
 };
 
@@ -244,6 +246,7 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
   ctx.clearTaskTracking();
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
+  ctx.sessionPlanRef.current = null;
 
   // Seed with plan
   ctx.messagesRef.current.push({ role: "user", content: planText });
@@ -269,7 +272,9 @@ const handleFresh: Handler = (ctx) => {
     return true;
   }
 
-  const plan = distillSessionPlan(ctx.messagesRef.current);
+  // Prefer the plan captured when plan-mode completed so follow-up discussion
+  // doesn't bury the original plan in message history.
+  const plan = ctx.sessionPlanRef.current ?? distillSessionPlan(ctx.messagesRef.current);
   if (!plan) {
     setEvents((e) => [
       ...e,

@@ -464,6 +464,8 @@ function App({
   }, []);
   const sessionStartRecallRef = useRef<Promise<import("./memory/schema.js").HybridResult[]> | null>(null);
   const kimiMdStaleNudgedRef = useRef(false);
+  /** Stores the plan distilled from a plan-mode session so it survives follow-up discussion. */
+  const sessionPlanRef = useRef<string | null>(null);
 
   const sessionMgr = useSessionManager({
     cfg,
@@ -1243,8 +1245,9 @@ function App({
       setShowPlanCompletePicker(false);
       if (!picked || picked === "continue") return;
 
-      // Replicate /fresh logic
-      const plan = distillSessionPlan(messagesRef.current);
+      // Use the plan captured when the picker was first shown so follow-up
+      // discussion doesn't bury the original plan in message history.
+      const plan = sessionPlanRef.current ?? distillSessionPlan(messagesRef.current);
       if (!plan) {
         setEvents((e) => [
           ...e,
@@ -1281,6 +1284,7 @@ function App({
       clearTaskTracking();
       compactSuggestedRef.current = false;
       updateNudgedRef.current = false;
+      sessionPlanRef.current = null;
 
       setEvents((e) => [
         ...e,
@@ -1526,6 +1530,7 @@ function App({
     compiledContextRef,
     lastApiErrorRef,
     activeScopeRef,
+    sessionPlanRef,
   }), [
     exit, busy, cfg, mode, lspScope, lspProjectPath,
     setCfg, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta,
@@ -2280,6 +2285,7 @@ function App({
             if (modeRef.current === "plan") {
               const plan = distillSessionPlan(messagesRef.current);
               if (plan) {
+                sessionPlanRef.current = plan;
                 setShowPlanCompletePicker(true);
               }
             }

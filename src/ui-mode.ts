@@ -205,6 +205,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let currentThemeName = "everforest-dark";
   const branch = tryGitBranch();
   let currentSessionFilePath: string | null = null;
+  /** Stores the plan distilled from a plan-mode session so it survives follow-up discussion. */
+  let sessionPlan: string | null = null;
 
   // Multi-agent (experimental): the mode is hidden from the cycle unless
   // explicitly enabled. We honor the env var directly in addition to the
@@ -1028,6 +1030,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       cam.send("StatusUpdate", { segments: { elapsed: "" } });
       kimiLog({ dir: "turn", phase: "end" });
 
+      // If the turn completed in plan mode and produced a substantive plan,
+      // capture it so follow-up discussion doesn't bury the original plan.
+      if (currentMode === "plan" && !currentController?.signal.aborted) {
+        const plan = distillSessionPlan(messages);
+        if (plan) {
+          sessionPlan = plan;
+        }
+      }
+
       if (planOptionsRef.current && !currentController?.signal.aborted) {
         const options = planOptionsRef.current;
         planOptionsRef.current = null;
@@ -1058,6 +1069,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             promptTokens = 0;
             cachedTokens = 0;
             completionTokens = 0;
+            sessionPlan = null;
             cam.send("TranscriptCleared", {});
             cam.send("StatusUpdate", {
               segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
@@ -1679,6 +1691,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         promptTokens = 0;
         cachedTokens = 0;
         completionTokens = 0;
+        sessionPlan = null;
         cam.send("TranscriptCleared", {});
         cam.send("StatusUpdate", {
           segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
@@ -2335,7 +2348,9 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "can't /fresh while model is running — press Esc to interrupt first", kind: "warn", ttl_ms: 2500 });
           return true;
         }
-        const plan = distillSessionPlan(messages);
+        // Prefer the plan captured when plan-mode completed so follow-up
+        // discussion doesn't bury the original plan in message history.
+        const plan = sessionPlan ?? distillSessionPlan(messages);
         if (!plan) {
           cam.send("ShowToast", { text: "No plan found to start fresh with.", kind: "error", ttl_ms: 2500 });
           return true;
@@ -2349,6 +2364,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         promptTokens = 0;
         cachedTokens = 0;
         completionTokens = 0;
+        sessionPlan = null;
         cam.send("TranscriptCleared", {});
         cam.send("StatusUpdate", {
           segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
