@@ -887,7 +887,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           onToolLimitReached: async () => {
             const r = await confirm(cam, {
               id: `lim-${Date.now()}`,
-              prompt: "Tool-call limit reached (50). Continue running?",
+              prompt: "Tool-call limit reached (200). Continue running?",
               yes_label: "Continue",
               no_label: "Stop turn",
               default: "no",
