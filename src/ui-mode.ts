@@ -43,12 +43,21 @@ import { TurnSupervisor } from "./agent/supervisor.js";
 import { classifyIntent } from "./intent/classify.js";
 import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
-import { buildSystemPrompt } from "./agent/system-prompt.js";
-import { rebuildSystemPromptForMode } from "./ui/app-helpers.js";
+import { buildSystemPrompt, buildSessionPrefix } from "./agent/system-prompt.js";
+import { rebuildSystemPromptForMode, gatewayFromConfig } from "./ui/app-helpers.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
+import { MemoryManager } from "./memory/manager.js";
+import { getMemoryDb, openMemoryDb } from "./memory/db.js";
+import { McpManager } from "./mcp/manager.js";
+import { LspManager } from "./lsp/manager.js";
+import { HooksManager } from "./hooks/manager.js";
+import { makeLspTools } from "./tools/lsp.js";
+import { initSkillsSchema, indexSkills } from "./skills/index.js";
+import { RETENTION } from "./storage-limits.js";
+import type { ToolSpec } from "./tools/registry.js";
 
 async function requireCamouflage(): Promise<typeof import("camouflage-tui")> {
   try {
@@ -223,6 +232,67 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   const multiAgentSupervisor = new TurnSupervisor();
   const availableModes = (): Mode[] =>
     multiAgentEnabled ? [...MODES] : MODES.filter((m) => m !== "multi-agent-experimental");
+
+  // ── Manager instantiation (Ink parity) ──────────────────────────────────
+  const mcpManager = new McpManager();
+  const lspManager = new LspManager();
+  const hooksManager = new HooksManager(process.cwd());
+  let memoryManager: MemoryManager | null = null;
+  const mcpTools: ToolSpec[] = [];
+  const lspTools: ToolSpec[] = [];
+  let mcpInit = false;
+  let lspInit = false;
+
+  // Wire hooks into the executor so PreToolUse / PostToolUse fire for every
+  // tool call, including code-mode sandbox-generated calls.
+  // (executor is created below; we set hooks after construction.)
+
+  // Initialize memory manager if enabled
+  if (startupCfg?.memoryEnabled) {
+    const dbPath = startupCfg.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+    memoryManager = new MemoryManager({
+      dbPath,
+      accountId: opts.accountId,
+      apiToken: opts.apiToken,
+      model: opts.model,
+      plumbingModel: startupCfg.plumbingModel,
+      extractionModel: startupCfg.memoryExtractionModel,
+      embeddingModel: startupCfg.memoryEmbeddingModel,
+      gateway: gatewayFromConfig(startupCfg),
+      maxAgeDays: startupCfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
+      maxEntries: startupCfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
+    });
+    memoryManager.open();
+    // Run cleanup and backfill in the background (fire-and-forget)
+    void memoryManager.cleanup(process.cwd()).then((result) => {
+      const total = result.oldDeleted + result.excessDeleted + result.duplicatesMerged;
+      if (total > 0) {
+        cam.send("ShowToast", { text: `memory cleanup: removed ${total} stale entries`, kind: "info", ttl_ms: 3000 });
+      }
+    });
+    void memoryManager.backfill(process.cwd()).then((fixed) => {
+      if (fixed > 0) {
+        cam.send("ShowToast", { text: `memory backfill: embedded ${fixed} un-vectorized entries`, kind: "info", ttl_ms: 3000 });
+      }
+    });
+  }
+
+  // Initialize skills index (independent of memory feature flag)
+  const skillDbPath = startupCfg?.memoryDbPath ?? join(process.cwd(), ".kimiflare", "memory.db");
+  const skillDb = getMemoryDb() ?? openMemoryDb(skillDbPath);
+  initSkillsSchema(skillDb);
+  void indexSkills({
+    cwd: process.cwd(),
+    db: skillDb,
+    accountId: opts.accountId,
+    apiToken: opts.apiToken,
+    gateway: startupCfg ? gatewayFromConfig(startupCfg) : undefined,
+    embeddingModel: startupCfg?.memoryEmbeddingModel,
+  }).then((result) => {
+    if (result.indexed > 0) {
+      cam.send("ShowToast", { text: `indexed ${result.indexed} skill${result.indexed === 1 ? "" : "s"}`, kind: "info", ttl_ms: 2500 });
+    }
+  });
 
   if (opts.splash && opts.splash.length > 0) {
     cam.send("Splash", { text: opts.splash });
@@ -666,9 +736,80 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
 
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
+  executor.setHooks(hooksManager);
+
   const messages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
   ];
+
+  // ── MCP / LSP init helpers (mirrors Ink's manager-init.ts) ──────────────
+  async function initMcp(): Promise<void> {
+    if (!startupCfg?.mcpServers || mcpInit) return;
+    mcpInit = true;
+    let totalTools = 0;
+    for (const [name, server] of Object.entries(startupCfg.mcpServers)) {
+      if ((server as { enabled?: boolean }).enabled === false) continue;
+      try {
+        if (server.type === "local" && server.command && server.command.length > 0) {
+          await mcpManager.addLocalServer(name, server.command, server.env, { timeoutMs: server.timeoutMs });
+        } else if (server.type === "remote" && server.url) {
+          await mcpManager.addRemoteServer(name, server.url, server.headers, { timeoutMs: server.timeoutMs });
+        } else {
+          cam.send("ShowToast", { text: `MCP server "${name}" has invalid config`, kind: "error", ttl_ms: 3000 });
+          continue;
+        }
+        const tools = mcpManager.getAllTools();
+        const newTools = tools.filter((t) => !mcpTools.some((mt) => mt.name === t.name));
+        for (const tool of newTools) {
+          executor.register(tool);
+        }
+        mcpTools.length = 0;
+        mcpTools.push(...tools);
+        totalTools = tools.length;
+      } catch (e) {
+        cam.send("ShowToast", { text: `MCP server "${name}" failed: ${(e as Error).message}`, kind: "error", ttl_ms: 3000 });
+      }
+    }
+    if (totalTools > 0) {
+      messages[0] = {
+        role: "system",
+        content: buildSystemPrompt({ cwd, tools: [...ALL_TOOLS, ...mcpTools, ...lspTools], model: opts.model }),
+      };
+      cam.send("ShowToast", { text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available`, kind: "success", ttl_ms: 2500 });
+    }
+  }
+
+  async function initLsp(): Promise<void> {
+    if (!startupCfg?.lspEnabled || !startupCfg.lspServers || lspInit) return;
+    lspInit = true;
+    let totalServers = 0;
+    for (const [name, server] of Object.entries(startupCfg.lspServers)) {
+      if ((server as { enabled?: boolean }).enabled === false) continue;
+      try {
+        await lspManager.startServer(name, server as LspServerConfig, cwd);
+        totalServers++;
+      } catch (e) {
+        cam.send("ShowToast", { text: `LSP server "${name}" failed: ${(e as Error).message}`, kind: "error", ttl_ms: 3000 });
+      }
+    }
+    if (totalServers > 0) {
+      const tools = makeLspTools(lspManager);
+      for (const tool of tools) {
+        executor.register(tool);
+      }
+      lspTools.length = 0;
+      lspTools.push(...tools);
+      messages[0] = {
+        role: "system",
+        content: buildSystemPrompt({ cwd, tools: [...ALL_TOOLS, ...mcpTools, ...lspTools], model: opts.model }),
+      };
+      cam.send("ShowToast", { text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active`, kind: "success", ttl_ms: 2500 });
+    }
+  }
+
+  // Start MCP/LSP in the background if configured
+  void initMcp().catch(() => {});
+  void initLsp().catch(() => {});
 
   let streamCounter = 0;
   let currentStreamId: string | null = null;
@@ -726,6 +867,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         } else {
           setPhase("thinking");
           cam.send("ShowToast", { text: "multi-agent mode: spawning parallel research workers…", kind: "info", ttl_ms: 2500 });
+          // Wire coordinator managers so workers get memory/LSP/MCP context
+          multiAgentSupervisor.memoryManager = memoryManager;
+          multiAgentSupervisor.lspManager = lspManager;
+          multiAgentSupervisor.mcpManager = mcpManager;
           try {
             let lastDone = -1;
             const { plan, conflicts, recommendations, prUrl, executor } = await multiAgentSupervisor.autoSpawnWorkers(
@@ -777,13 +922,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         model: opts.model,
         gateway: gatewayFromOpts(opts),
         messages,
-        tools: ALL_TOOLS,
+        tools: [...ALL_TOOLS, ...mcpTools, ...lspTools],
         executor,
         cwd,
         signal: currentController.signal,
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
+        memoryManager,
+        hooks: hooksManager,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;
@@ -2019,10 +2166,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       }
       case "memory": {
         // Sub-actions match Ink: on / off / clear / search <query>.
-        // Bare /memory shows the stats KV view (recall stats requires
-        // an initialised MemoryManager which the Camouflage path
-        // doesn't construct — we surface the persisted config + a hint
-        // instead).
         const sub = args.split(/\s+/)[0] ?? "";
         if (sub === "on" || sub === "off") {
           const cfg2 = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
@@ -2036,26 +2179,82 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           return true;
         }
         if (sub === "clear") {
-          cam.send("ShowToast", { text: "memory clear requires Ink runtime; not yet wired in Camouflage UI", kind: "warn", ttl_ms: 3000 });
+          if (!memoryManager) {
+            cam.send("ShowToast", { text: "memory manager not initialized — enable memory first with /memory on", kind: "warn", ttl_ms: 3000 });
+            return true;
+          }
+          const r = await confirm(cam, {
+            id: `mem-clear-${Date.now()}`,
+            prompt: "Clear all memories for this repo? This cannot be undone.",
+            yes_label: "Clear",
+            no_label: "Cancel",
+            default: "no",
+            allow_cancel: true,
+          });
+          if (r.value) {
+            const cleared = memoryManager.clearRepo(process.cwd());
+            cam.send("ShowToast", { text: `cleared ${cleared} memories for this repo`, kind: "success", ttl_ms: 3000 });
+          }
           return true;
         }
         if (sub === "search") {
-          cam.send("ShowToast", { text: "memory search requires Ink runtime (MemoryManager); not yet wired", kind: "warn", ttl_ms: 3000 });
+          const query = args.slice(sub.length).trim();
+          if (!query) {
+            cam.send("ShowToast", { text: "usage: /memory search <query>", kind: "info", ttl_ms: 2500 });
+            return true;
+          }
+          if (!memoryManager) {
+            cam.send("ShowToast", { text: "memory manager not initialized — enable memory first with /memory on", kind: "warn", ttl_ms: 3000 });
+            return true;
+          }
+          cam.send("ShowToast", { text: `searching memories for "${query}"…`, kind: "info", ttl_ms: 1500 });
+          const results = await memoryManager.recall({ text: query, repoPath: process.cwd(), limit: 10 });
+          if (results.length === 0) {
+            cam.send("ShowToast", { text: "no memories found", kind: "info", ttl_ms: 2500 });
+          } else {
+            cam.send("ShowKeyValueView", {
+              id: `mem-search-${Date.now()}`,
+              title: `memory search: "${query}"`,
+              items: results.map((r) => ({
+                label: `[${r.memory.category}] score ${r.combinedScore.toFixed(2)}`,
+                value: r.memory.content,
+              })),
+            });
+          }
           return true;
         }
-        const cfg = await loadConfig();
-        cam.send("ShowKeyValueView", {
-          id: `mem-${Date.now()}`,
-          title: "memory",
-          items: [
-            { label: "enabled", value: cfg?.memoryEnabled ? "yes" : "no" },
-            { label: "db path", value: cfg?.memoryDbPath ?? "(default)" },
-            { label: "max age (days)", value: String(cfg?.memoryMaxAgeDays ?? 90) },
-            { label: "max entries", value: String(cfg?.memoryMaxEntries ?? 1000) },
-            { label: "embedding model", value: cfg?.memoryEmbeddingModel ?? "@cf/baai/bge-base-en-v1.5" },
-            { label: "tip", value: "/memory on|off  ·  /memory search <q> (Ink only)" },
-          ],
-        });
+        // Bare /memory — show stats
+        const stats = memoryManager?.getStats();
+        if (stats) {
+          const sizeKb = Math.round(stats.dbSizeBytes / 1024);
+          cam.send("ShowKeyValueView", {
+            id: `mem-${Date.now()}`,
+            title: "memory",
+            items: [
+              { label: "total", value: `${stats.totalCount} memories (${sizeKb} KB)` },
+              { label: "fact", value: String(stats.byCategory.fact) },
+              { label: "event", value: String(stats.byCategory.event) },
+              { label: "instruction", value: String(stats.byCategory.instruction) },
+              { label: "task", value: String(stats.byCategory.task) },
+              { label: "preference", value: String(stats.byCategory.preference) },
+              { label: "last cleanup", value: stats.lastCleanupAt ? new Date(stats.lastCleanupAt).toISOString() : "never" },
+            ],
+          });
+        } else {
+          const cfg = await loadConfig();
+          cam.send("ShowKeyValueView", {
+            id: `mem-${Date.now()}`,
+            title: "memory",
+            items: [
+              { label: "enabled", value: cfg?.memoryEnabled ? "yes" : "no" },
+              { label: "db path", value: cfg?.memoryDbPath ?? "(default)" },
+              { label: "max age (days)", value: String(cfg?.memoryMaxAgeDays ?? 90) },
+              { label: "max entries", value: String(cfg?.memoryMaxEntries ?? 1000) },
+              { label: "embedding model", value: cfg?.memoryEmbeddingModel ?? "@cf/baai/bge-base-en-v1.5" },
+              { label: "tip", value: "enable memory with /memory on" },
+            ],
+          });
+        }
         return true;
       }
       case "gateway": {
@@ -2139,10 +2338,31 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       case "mcp": {
         const sub = args.split(/\s+/)[0] ?? "";
         if (sub === "reload") {
-          cam.send("ShowToast", {
-            text: "MCP reload requires a live manager (Ink runtime); restart kimiflare to pick up config changes",
-            kind: "warn", ttl_ms: 4000,
+          cam.send("ShowToast", { text: "reloading MCP servers…", kind: "info", ttl_ms: 2000 });
+          for (const tool of mcpTools) {
+            executor.unregister(tool.name);
+          }
+          mcpTools.length = 0;
+          mcpInit = false;
+          await initMcp().catch((e) => {
+            cam.send("ShowToast", { text: `MCP reload failed: ${(e as Error).message}`, kind: "error", ttl_ms: 3000 });
           });
+          return true;
+        }
+        if (sub === "list") {
+          const servers = mcpManager.listServers();
+          if (servers.length === 0) {
+            cam.send("ShowToast", { text: "no MCP servers connected", kind: "info", ttl_ms: 2500 });
+          } else {
+            cam.send("ShowKeyValueView", {
+              id: `mcp-${Date.now()}`,
+              title: `mcp servers (${servers.length})`,
+              items: servers.map((s) => ({
+                label: s.name,
+                value: `${s.type} — ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`,
+              })),
+            });
+          }
           return true;
         }
         const cfg = await loadConfig();
@@ -2163,9 +2383,6 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         return true;
       }
       case "lsp": {
-        // /lsp config → wizard; /lsp list → KV view; /lsp scope → toast.
-        // Bare /lsp opens the wizard (Ink behaviour: bare /lsp shows status,
-        // but the wizard's main menu already shows the same listing).
         const sub = args.split(/\s+/)[0] ?? "";
         if (sub === "" || sub === "config") {
           await openLspWizard();
@@ -2175,15 +2392,37 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "LSP config persists to ~/.config/kimiflare/config.json (global)", kind: "info", ttl_ms: 3000 });
           return true;
         }
+        if (sub === "reload") {
+          cam.send("ShowToast", { text: "reloading LSP servers…", kind: "info", ttl_ms: 2000 });
+          for (const tool of lspTools) {
+            executor.unregister(tool.name);
+          }
+          lspTools.length = 0;
+          lspInit = false;
+          await initLsp().catch((e) => {
+            cam.send("ShowToast", { text: `LSP reload failed: ${(e as Error).message}`, kind: "error", ttl_ms: 3000 });
+          });
+          return true;
+        }
+        if (sub === "list") {
+          const servers = lspManager.listActive();
+          if (servers.length === 0) {
+            cam.send("ShowToast", { text: "no LSP servers active", kind: "info", ttl_ms: 2500 });
+          } else {
+            cam.send("ShowKeyValueView", {
+              id: `lsp-${Date.now()}`,
+              title: `lsp servers (${servers.length})`,
+              items: servers.map((s) => ({
+                label: s.id,
+                value: `${s.rootUri} — ${s.state}, ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}`,
+              })),
+            });
+          }
+          return true;
+        }
         const cfg = await loadConfig();
         const servers = cfg?.lspServers ?? {};
         const names = Object.keys(servers);
-        if (sub === "list" || sub === "reload") {
-          if (sub === "reload") {
-            cam.send("ShowToast", { text: "LSP reload requires Ink runtime; restart kimiflare for now", kind: "warn", ttl_ms: 3000 });
-            return true;
-          }
-        }
         if (names.length === 0) {
           cam.send("ShowToast", {
             text: cfg?.lspEnabled === false ? "LSP disabled in config" : "no LSP servers configured — try /lsp config",
@@ -2219,7 +2458,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           return true;
         }
         if (sub === "reload") {
-          cam.send("ShowToast", { text: "hooks reload requires Ink runtime; restart kimiflare to pick up settings", kind: "warn", ttl_ms: 3500 });
+          hooksManager.reload();
+          cam.send("ShowToast", { text: "hooks reloaded", kind: "success", ttl_ms: 2500 });
           return true;
         }
         if (sub === "enable" || sub === "disable") {
