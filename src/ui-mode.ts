@@ -44,8 +44,9 @@ import { classifyIntent } from "./intent/classify.js";
 import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt, buildSessionPrefix } from "./agent/system-prompt.js";
-import { rebuildSystemPromptForMode, gatewayFromConfig } from "./ui/app-helpers.js";
+import { rebuildSystemPromptForMode, gatewayFromConfig, buildFilePickerIgnoreList } from "./ui/app-helpers.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
+import { glob } from "./util/glob.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
@@ -220,6 +221,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   let currentSessionFilePath: string | null = null;
   /** Stores the plan distilled from a plan-mode session so it survives follow-up discussion. */
   let sessionPlan: string | null = null;
+  /** Stores rendered diffs keyed by tool_call_id so onToolResult can prepend ANSI-formatted diff output. */
+  const diffStore = new Map<string, { path: string; before: string; after: string }>();
 
   // Multi-agent (experimental): the mode is hidden from the cycle unless
   // explicitly enabled. We honor the env var directly in addition to the
@@ -963,6 +966,19 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             const sig = `${call.function.name}::${call.function.arguments}`;
             const prev = repeatedToolSignatures.get(sig) ?? 0;
             repeatedToolSignatures.set(sig, prev + 1);
+            // Capture diff for ANSI rendering in onToolResult (P0.3).
+            const tool = ALL_TOOLS.find((t) => t.name === call.function.name);
+            if (tool?.render) {
+              try {
+                const args = JSON.parse(call.function.arguments || "{}") as Record<string, unknown>;
+                const rendered = tool.render(args);
+                if (rendered.diff) {
+                  diffStore.set(call.id, rendered.diff);
+                }
+              } catch {
+                // malformed args from the model — ignore
+              }
+            }
             cam.send("ToolExecutionStarted", {
               tool_id: call.id,
               tool: call.function.name,
@@ -971,10 +987,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             });
           },
           onToolResult: (result) => {
-            if (result.content && result.content.length > 0) {
+            let chunk = result.content;
+            const diff = diffStore.get(result.tool_call_id);
+            if (diff) {
+              chunk = formatAnsiDiff(diff) + (chunk ? "\n\n" + chunk : "");
+              diffStore.delete(result.tool_call_id);
+            }
+            if (chunk && chunk.length > 0) {
               cam.send(result.ok ? "ToolExecutionStdout" : "ToolExecutionStderr", {
                 tool_id: result.tool_call_id,
-                chunk: result.content,
+                chunk,
               });
             }
             // Map KimiFlare's ToolResult to Camouflage's ToolStatus glyph
@@ -2706,38 +2728,33 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   }
 }
 
-/** @-mention candidate registration. Walks cwd one level deep (skipping
- *  dot-prefixed entries + node_modules + common build dirs) and registers
- *  up to 200 file paths. Best-effort — failures are silent. */
+/** @-mention candidate registration. Uses glob for comprehensive file
+ *  discovery (mirrors Ink's loadFilePickerItems) and registers up to 300
+ *  paths. Recent files bubble to the top via the `recent` flag.
+ *  Best-effort — failures are silent. */
 async function registerMentions(cam: CamouflageHandle, recents: Set<string>): Promise<void> {
-  const SKIP = new Set(["node_modules", "dist", "build", "target", ".git", ".next", ".cache"]);
   const cwd = process.cwd();
-  const collected: string[] = [];
-  async function walk(dir: string, depth: number): Promise<void> {
-    if (depth > 3 || collected.length >= 200) return;
-    let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); }
-    catch { return; }
-    for (const e of entries) {
-      if (collected.length >= 200) return;
-      if (e.name.startsWith(".") || SKIP.has(e.name)) continue;
-      const full = join(dir, e.name);
-      if (e.isDirectory()) {
-        await walk(full, depth + 1);
-      } else if (e.isFile()) {
-        collected.push(relative(cwd, full));
-      }
-    }
+  try {
+    const entries = await glob("**/*", {
+      cwd,
+      ignore: buildFilePickerIgnoreList(cwd),
+      dot: false,
+      onlyFiles: false,
+      markDirectories: true,
+    });
+    const candidates = entries.slice(0, 300).map((p) => {
+      const token = p.endsWith("/") ? p.slice(0, -1) : p;
+      return {
+        token,
+        kind: "file",
+        ...(recents.has(token) ? { recent: true } : {}),
+      };
+    });
+    if (candidates.length === 0) return;
+    cam.send("MentionCandidatesRegistered", { candidates });
+  } catch {
+    /* best-effort */
   }
-  await walk(cwd, 0);
-  if (collected.length === 0) return;
-  cam.send("MentionCandidatesRegistered", {
-    candidates: collected.map((p) => ({
-      token: p,
-      kind: "file",
-      ...(recents.has(p) ? { recent: true } : {}),
-    })),
-  });
 }
 
 /** Ports RemoteDashboard's formatSessionLine — icon + prompt + outcome +
@@ -2898,6 +2915,20 @@ function formatElapsed(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}m ${s}s`;
+}
+
+/** Formats a before/after diff as ANSI for Camouflage's stdout stream.
+ *  Green `+` for additions, red `-` for deletions. No renderer changes needed. */
+function formatAnsiDiff(diff: { path: string; before: string; after: string }): string {
+  const lines: string[] = [`\x1b[1m${diff.path}\x1b[0m`, ""];
+  for (const line of diff.before.split("\n")) {
+    if (line.length > 0) lines.push(`\x1b[31m- ${line}\x1b[0m`);
+  }
+  if (diff.before.length > 0 && diff.after.length > 0) lines.push("");
+  for (const line of diff.after.split("\n")) {
+    if (line.length > 0) lines.push(`\x1b[32m+ ${line}\x1b[0m`);
+  }
+  return lines.join("\n");
 }
 
 function tryGitBranch(): string {
