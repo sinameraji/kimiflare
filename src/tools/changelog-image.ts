@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
+import type { ToolSpec, ToolContext, ToolOutput, Task } from "./registry.js";
 import { Resvg } from "@resvg/resvg-js";
 import { runKimi } from "../agent/client.js";
 
@@ -177,10 +177,10 @@ function buildChangelogSvg(opts: {
   const repoFontSize = 22;
   const labelFontSize = 12;
   const bodyFontSize = 16;
-  const bodyLineHeight = 26; // tighter for wrapped bullets
+  const bodyLineHeight = 24; // tighter for wrapped bullets
   const bulletIndent = 20;
   const bulletGap = 32; // space between bullet items
-  const paraGap = 14; // space between wrapped lines within a bullet
+  const paraGap = 8; // space between wrapped lines within a bullet
 
   // ── Header ────────────────────────────────────────────────────────
   const logoW = 28;
@@ -306,8 +306,8 @@ function buildChangelogSvg(opts: {
     <text x="${padX}" y="${labelY}" fill="#9ca3af" font-size="${labelFontSize}" font-weight="500" letter-spacing="0.08em">CHANGELOG</text>
 
     <!-- Version pill -->
-    <rect x="${padX + 88}" y="${labelY - 11}" width="${Math.max(40, version.length * 7 + 16)}" height="20" fill="#fff7ed" rx="10"/>
-    <text x="${padX + 88 + 10}" y="${labelY + 2}" fill="#f97316" font-size="${labelFontSize}" font-weight="500">${escapeXml(version)}</text>
+    <rect x="${padX + 88}" y="${labelY - 10}" width="${Math.max(40, version.length * 7 + 16)}" height="20" fill="#fff7ed" rx="10"/>
+    <text x="${padX + 88 + 10}" y="${labelY}" fill="#f97316" font-size="${labelFontSize}" font-weight="500">${escapeXml(version)}</text>
   </g>
 
   <!-- Separator -->
@@ -351,7 +351,21 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
     const token = getToken(ctx);
     const days = args.days ?? 7;
 
+    const tasks: Task[] = [
+      { id: "1", title: "Fetch merged PRs from GitHub", status: "pending" },
+      { id: "2", title: "Determine latest version", status: "pending" },
+      { id: "3", title: "Summarize changes with LLM", status: "pending" },
+      { id: "4", title: "Render changelog image", status: "pending" },
+      { id: "5", title: "Save PNG to file", status: "pending" },
+    ];
+    const setTask = (id: string, status: Task["status"]) => {
+      const t = tasks.find((x) => x.id === id);
+      if (t) t.status = status;
+      ctx.onTasks?.(tasks.map((x) => ({ ...x })));
+    };
+
     // 1. Fetch merged PRs
+    setTask("1", "in_progress");
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     const prs = await githubFetch(
       `/repos/${args.owner}/${args.repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100`,
@@ -363,14 +377,17 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
       .sort((a, b) => (b.merged_at ?? "").localeCompare(a.merged_at ?? ""));
 
     if (merged.length === 0) {
+      setTask("1", "completed");
       return {
         content: `No merged PRs in ${args.owner}/${args.repo} within the last ${days} day(s).`,
         rawBytes: 0,
         reducedBytes: 0,
       };
     }
+    setTask("1", "completed");
 
     // 2. Fetch latest release
+    setTask("2", "in_progress");
     let version = "latest";
     try {
       const releases = await githubFetch(
@@ -393,29 +410,34 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
         // leave as "latest"
       }
     }
+    setTask("2", "completed");
 
     // 3. Summarize with LLM
+    setTask("3", "in_progress");
     const writeUp = await summarizeWithLlm(merged, ctx);
+    setTask("3", "completed");
 
-    // 4. Load logo
+    // 4. Load logo & build SVG
+    setTask("4", "in_progress");
     const logoBase64 = await loadLogoBase64();
-
-    // 5. Build SVG
     const svg = buildChangelogSvg({ owner: args.owner, repo: args.repo, version, writeUp, logoBase64 });
 
-    // 6. Render to PNG
+    // 5. Render to PNG
     const resvg = new Resvg(svg, {
-      fitTo: { mode: "original" },
+      fitTo: { mode: "zoom", value: 2 },
       font: {
         defaultFontFamily: "system-ui",
       },
     });
     const pngData = resvg.render();
     const pngBuffer = pngData.asPng();
+    setTask("4", "completed");
 
-    // 7. Save
+    // 6. Save
+    setTask("5", "in_progress");
     const outputPath = args.output ?? `./changelog-${args.repo}-${version.replace(/[^a-zA-Z0-9._-]/g, "_")}.png`;
     await writeFile(outputPath, pngBuffer);
+    setTask("5", "completed");
 
     const periodLabel = days === 1 ? "past day" : `past ${days} days`;
     const content = `✓ Changelog image saved to ${outputPath}\n  ${merged.length} PR${merged.length === 1 ? "" : "s"} from the ${periodLabel} · ${version} · ${resvg.width}×${resvg.height}`;
