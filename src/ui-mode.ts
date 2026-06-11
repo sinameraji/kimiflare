@@ -44,6 +44,7 @@ import { classifyIntent } from "./intent/classify.js";
 import { deployCommute, teardownCommute, findExistingCommuteWorkers } from "./remote/deploy-commute.js";
 import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
+import { rebuildSystemPromptForMode } from "./ui/app-helpers.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
 import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
@@ -1074,6 +1075,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             cam.send("StatusUpdate", {
               segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
             });
+            // Rebuild system prompt for the current mode so the agent sees
+            // the correct instructions instead of a stale plan-mode prompt.
+            rebuildSystemPromptForMode(
+              messages,
+              false, // Camouflage UI always uses single system message
+              opts.model,
+              currentMode,
+              ALL_TOOLS,
+            );
             // Seed with plan
             messages.push({ role: "user", content: selected.plan });
             cam.send("UserMessageCreated", { text: selected.plan });
@@ -2369,6 +2379,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("StatusUpdate", {
           segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
         });
+        // Rebuild system prompt for the current mode so the agent sees
+        // the correct instructions instead of a stale plan-mode prompt.
+        rebuildSystemPromptForMode(
+          messages,
+          false, // Camouflage UI always uses single system message
+          opts.model,
+          currentMode,
+          ALL_TOOLS,
+        );
         // Seed with plan
         messages.push({ role: "user", content: plan });
         cam.send("ShowToast", {

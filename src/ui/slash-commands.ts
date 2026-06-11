@@ -49,7 +49,7 @@ import {
   serializeArtifactStore,
   type SessionState,
 } from "../agent/session-state.js";
-import type { ToolExecutor } from "../tools/executor.js";
+import { ALL_TOOLS, type ToolExecutor } from "../tools/executor.js";
 import type { ToolSpec } from "../tools/registry.js";
 import type { McpManager } from "../mcp/manager.js";
 import type { LspManager } from "../lsp/manager.js";
@@ -72,6 +72,7 @@ import {
   FEEDBACK_WORKER_URL,
   formatTokens,
   openBrowser,
+  rebuildSystemPromptForMode,
 } from "./app-helpers.js";
 import { startRemoteSession, streamRemoteProgress } from "../remote/worker-client.js";
 import { saveRemoteSession, type RemoteSession } from "../remote/session-store.js";
@@ -247,6 +248,16 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
   ctx.sessionPlanRef.current = null;
+
+  // Rebuild system prompt for the current mode so the agent sees the
+  // correct instructions (e.g. auto mode) instead of a stale plan-mode prompt.
+  rebuildSystemPromptForMode(
+    ctx.messagesRef.current,
+    ctx.cacheStableRef.current,
+    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.6",
+    ctx.mode,
+    [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
+  );
 
   // Seed with plan
   ctx.messagesRef.current.push({ role: "user", content: planText });
