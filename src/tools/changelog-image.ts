@@ -177,10 +177,10 @@ function buildChangelogSvg(opts: {
   const repoFontSize = 22;
   const labelFontSize = 12;
   const bodyFontSize = 16;
-  const bodyLineHeight = 30; // 1.875× for airy readability
+  const bodyLineHeight = 26; // tighter for wrapped bullets
   const bulletIndent = 20;
-  const bulletGap = 28; // space between bullet items
-  const paraGap = 18; // space between paragraphs / wrapped lines
+  const bulletGap = 32; // space between bullet items
+  const paraGap = 14; // space between wrapped lines within a bullet
 
   // ── Header ────────────────────────────────────────────────────────
   const logoW = 28;
@@ -188,34 +188,70 @@ function buildChangelogSvg(opts: {
   const logoY = padTop + 4;
   const repoTextX = padX + (logoBase64 ? logoW + 14 : 0);
   const repoTextY = padTop + 24;
-  const labelY = repoTextY + 28;
-  const headerBottom = labelY + 28;
+  const labelY = repoTextY + 32; // extra breathing room
+  const headerBottom = labelY + 32;
 
-  // ── Wrap body text ────────────────────────────────────────────────
-  const bodyLines = wrapText(writeUp, contentW - bulletIndent, bodyFontSize);
+  // ── Parse write-up into blocks ────────────────────────────────────
+  // A block is either a bullet item (starts with "•") or a paragraph.
+  // Empty lines separate blocks.
+  interface Block {
+    type: "bullet" | "paragraph";
+    lines: string[]; // already-wrapped lines
+  }
 
-  // Group consecutive non-empty lines; a blank line starts a new paragraph.
-  // Bullet lines (starting with "•") get extra gap after their group.
+  const rawLines = writeUp.split("\n").map((l) => l.trim());
+  const blocks: Block[] = [];
+  let currentBlock: Block | null = null;
+
+  for (const raw of rawLines) {
+    if (!raw) {
+      // blank line ends current block
+      if (currentBlock) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+      continue;
+    }
+
+    const isBullet = raw.startsWith("•");
+    const text = isBullet ? raw.slice(1).trim() : raw;
+
+    if (!currentBlock || currentBlock.type !== (isBullet ? "bullet" : "paragraph")) {
+      if (currentBlock) blocks.push(currentBlock);
+      currentBlock = { type: isBullet ? "bullet" : "paragraph", lines: [] };
+    }
+
+    // Wrap text
+    const wrapW = isBullet ? contentW - bulletIndent : contentW;
+    const wrapped = wrapText(text, wrapW, bodyFontSize);
+    currentBlock.lines.push(...wrapped);
+  }
+  if (currentBlock) blocks.push(currentBlock);
+
+  // ── Layout blocks ─────────────────────────────────────────────────
   let bodyHeight = 0;
-  const lineMeta: { text: string; y: number; isBullet: boolean }[] = [];
+  const lineMeta: { text: string; y: number; isBullet: boolean; isFirst: boolean }[] = [];
   let y = headerBottom;
 
-  for (let i = 0; i < bodyLines.length; i++) {
-    const line = bodyLines[i]!;
-    const trimmed = line.trim();
-    const isBullet = trimmed.startsWith("•");
-    const display = isBullet ? trimmed.slice(1).trim() : trimmed;
-
-    lineMeta.push({ text: display, y, isBullet });
-    y += bodyLineHeight;
-
-    // Add spacing after this line if it's the end of a bullet group
-    // or if next line is blank
-    const nextLine = bodyLines[i + 1];
-    if (isBullet && nextLine !== undefined && !nextLine.trim().startsWith("•")) {
-      y += bulletGap - bodyLineHeight + paraGap;
-    } else if (nextLine !== undefined && nextLine.trim() === "") {
-      y += paraGap;
+  for (let b = 0; b < blocks.length; b++) {
+    const block = blocks[b]!;
+    for (let i = 0; i < block.lines.length; i++) {
+      const line = block.lines[i]!;
+      lineMeta.push({
+        text: line,
+        y,
+        isBullet: block.type === "bullet",
+        isFirst: i === 0,
+      });
+      y += bodyLineHeight;
+      // Tight extra spacing for wrapped lines inside a bullet
+      if (block.type === "bullet" && i < block.lines.length - 1) {
+        y += paraGap;
+      }
+    }
+    // Gap between blocks
+    if (b < blocks.length - 1) {
+      y += bulletGap;
     }
   }
   bodyHeight = y - headerBottom;
@@ -228,7 +264,8 @@ function buildChangelogSvg(opts: {
     : "";
 
   const bodySpans = lineMeta
-    .map(({ text, y: ly, isBullet }) => {
+    .map(({ text, y: ly, isBullet, isFirst }) => {
+      // All lines of a bullet block are indented; first line also gets the dot
       const x = isBullet ? padX + bulletIndent : padX;
       const weight = isBullet ? 'font-weight="500"' : "";
       const fill = isBullet ? "#1f2937" : "#4b5563";
@@ -236,9 +273,9 @@ function buildChangelogSvg(opts: {
     })
     .join("");
 
-  // Small orange dots for bullets
+  // Small orange dots for first lines of bullet blocks only
   const bulletDots = lineMeta
-    .filter((m) => m.isBullet)
+    .filter((m) => m.isBullet && m.isFirst)
     .map(({ y: ly }) => {
       const cy = ly - bodyFontSize * 0.35;
       return `<circle cx="${padX + 6}" cy="${cy}" r="3" fill="#f97316"/>`;
@@ -274,7 +311,7 @@ function buildChangelogSvg(opts: {
   </g>
 
   <!-- Separator -->
-  <line x1="${padX}" y1="${headerBottom - 8}" x2="${width - padX}" y2="${headerBottom - 8}" stroke="#f3f4f6" stroke-width="1"/>
+  <line x1="${padX}" y1="${headerBottom - 10}" x2="${width - padX}" y2="${headerBottom - 10}" stroke="#f3f4f6" stroke-width="1"/>
 
   <!-- Body -->
   <g class="font">
