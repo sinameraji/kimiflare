@@ -71,6 +71,7 @@ import {
   detectGitHubRepo,
   FEEDBACK_WORKER_URL,
   formatTokens,
+  mkAssistantId,
   openBrowser,
 } from "./app-helpers.js";
 import { startRemoteSession, streamRemoteProgress } from "../remote/worker-client.js";
@@ -1635,9 +1636,17 @@ const handleChangelogImage: Handler = (ctx, rest) => {
   }
 
   const runGeneration = (o: string, r: string, d: number) => {
+    const asstId = mkAssistantId();
     setEvents((e) => [
       ...e,
-      { kind: "info", key: mkKey(), text: `Generating changelog image for ${o}/${r} (last ${d} days)...` },
+      {
+        kind: "assistant",
+        key: `asst_${asstId}`,
+        id: asstId,
+        text: `Generating changelog image for ${o}/${r} (last ${d} day${d === 1 ? "" : "s"})…`,
+        reasoning: "",
+        streaming: true,
+      },
     ]);
     void (async () => {
       try {
@@ -1652,12 +1661,22 @@ const handleChangelogImage: Handler = (ctx, rest) => {
           gateway: gatewayFromConfig(cfg),
         });
         const text = typeof result === "string" ? result : result.content;
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+        setEvents((e) =>
+          e.map((ev) =>
+            ev.kind === "assistant" && ev.id === asstId
+              ? { ...ev, text, streaming: false }
+              : ev,
+          ),
+        );
       } catch (err) {
-        setEvents((e) => [
-          ...e,
-          { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
-        ]);
+        const msg = `changelog-image failed: ${err instanceof Error ? err.message : String(err)}`;
+        setEvents((e) =>
+          e.map((ev) =>
+            ev.kind === "assistant" && ev.id === asstId
+              ? { ...ev, text: msg, streaming: false }
+              : ev,
+          ),
+        );
       }
     })();
   };

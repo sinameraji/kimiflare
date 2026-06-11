@@ -2573,9 +2573,17 @@ function App({
         changelogImageRepo={changelogImageRepo}
         onChangelogImageGenerate={(owner, repo, days) => {
           setShowChangelogImagePicker(false);
+          const asstId = mkAssistantId();
           setEvents((e) => [
             ...e,
-            { kind: "info", key: mkKey(), text: `Generating changelog image for ${owner}/${repo} (last ${days} day${days === 1 ? "" : "s"})…` },
+            {
+              kind: "assistant",
+              key: `asst_${asstId}`,
+              id: asstId,
+              text: `Generating changelog image for ${owner}/${repo} (last ${days} day${days === 1 ? "" : "s"})…`,
+              reasoning: "",
+              streaming: true,
+            },
           ]);
           setTimeout(() => {
             void (async () => {
@@ -2590,12 +2598,22 @@ function App({
                   gateway: gatewayFromConfig(cfg),
                 });
                 const text = typeof result === "string" ? result : result.content;
-                setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+                setEvents((e) =>
+                  e.map((ev) =>
+                    ev.kind === "assistant" && ev.id === asstId
+                      ? { ...ev, text, streaming: false }
+                      : ev,
+                  ),
+                );
               } catch (err) {
-                setEvents((e) => [
-                  ...e,
-                  { kind: "error", key: mkKey(), text: `changelog-image failed: ${err instanceof Error ? err.message : String(err)}` },
-                ]);
+                const msg = `changelog-image failed: ${err instanceof Error ? err.message : String(err)}`;
+                setEvents((e) =>
+                  e.map((ev) =>
+                    ev.kind === "assistant" && ev.id === asstId
+                      ? { ...ev, text: msg, streaming: false }
+                      : ev,
+                  ),
+                );
               }
             })();
           }, 0);
