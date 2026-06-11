@@ -79,6 +79,7 @@ import { saveRemoteSession, type RemoteSession } from "../remote/session-store.j
 import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
 import { distillSessionPlan } from "../agent/distill.js";
+import { generateContinuationSummary } from "../agent/continuation-summary.js";
 import { writeToClipboard } from "../util/clipboard.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
@@ -163,6 +164,7 @@ export interface SlashContext {
   sessionIdRef: React.MutableRefObject<string | null>;
   compactSuggestedRef: React.MutableRefObject<boolean>;
   updateNudgedRef: React.MutableRefObject<boolean>;
+  freshSuggestedRef: React.MutableRefObject<boolean>;
   memoryManagerRef: React.MutableRefObject<MemoryManager | null>;
   artifactStoreRef: React.MutableRefObject<ArtifactStore>;
   sessionStateRef: React.MutableRefObject<SessionState>;
@@ -172,7 +174,7 @@ export interface SlashContext {
   sessionPlanRef: React.MutableRefObject<string | null>;
 }
 
-type Handler = (ctx: SlashContext, rest: string[], arg: string) => boolean;
+type Handler = (ctx: SlashContext, rest: string[], arg: string) => boolean | Promise<boolean>;
 
 // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -214,11 +216,12 @@ const handleClear: Handler = (ctx) => {
   ctx.clearTaskTracking();
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
+  ctx.freshSuggestedRef.current = false;
   ctx.sessionPlanRef.current = null;
   return true;
 };
 
-export function executeFreshStart(ctx: SlashContext, planText: string): { success: boolean } {
+export function executeFreshStart(ctx: SlashContext, planText: string, overrideMode?: Mode): { success: boolean } {
   // Capture old session ID before reset so we can carry its cost forward
   const oldSessionId = ctx.sessionIdRef.current;
 
@@ -247,6 +250,7 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
   ctx.clearTaskTracking();
   ctx.compactSuggestedRef.current = false;
   ctx.updateNudgedRef.current = false;
+  ctx.freshSuggestedRef.current = false;
   ctx.sessionPlanRef.current = null;
 
   // Rebuild system prompt for the current mode so the agent sees the
@@ -255,7 +259,7 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
     ctx.messagesRef.current,
     ctx.cacheStableRef.current,
     ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.6",
-    ctx.mode,
+    overrideMode ?? ctx.mode,
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
   );
 
@@ -273,8 +277,8 @@ export function executeFreshStart(ctx: SlashContext, planText: string): { succes
   return writeToClipboard(planText);
 }
 
-const handleFresh: Handler = (ctx) => {
-  const { busy, mkKey, setEvents } = ctx;
+const handleFresh: Handler = async (ctx) => {
+  const { busy, mkKey, setEvents, cfg } = ctx;
   if (busy) {
     setEvents((e) => [
       ...e,
@@ -283,18 +287,36 @@ const handleFresh: Handler = (ctx) => {
     return true;
   }
 
-  // Prefer the plan captured when plan-mode completed so follow-up discussion
-  // doesn't bury the original plan in message history.
-  const plan = ctx.sessionPlanRef.current ?? distillSessionPlan(ctx.messagesRef.current);
-  if (!plan) {
+  // Mode-aware summary: plan mode uses the distilled plan;
+  // auto/edit/multi-agent produce a handoff document via LLM.
+  const summary = await generateContinuationSummary({
+    messages: ctx.messagesRef.current,
+    mode: ctx.mode,
+    accountId: cfg?.accountId ?? "",
+    apiToken: cfg?.apiToken ?? "",
+    model: cfg?.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+    gateway: cfg?.aiGatewayId
+      ? {
+          id: cfg.aiGatewayId,
+          cacheTtl: cfg.aiGatewayCacheTtl,
+          skipCache: cfg.aiGatewaySkipCache,
+          collectLogPayload: cfg.aiGatewayCollectLogPayload,
+          metadata: cfg.aiGatewayMetadata,
+        }
+      : undefined,
+    memoryManager: ctx.memoryManagerRef.current,
+    memoryEnabled: cfg?.memoryEnabled,
+  });
+
+  if (!summary) {
     setEvents((e) => [
       ...e,
-      { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
+      { kind: "error", key: mkKey(), text: "No plan or summary found to start fresh with." },
     ]);
     return true;
   }
 
-  const clipResult = executeFreshStart(ctx, plan);
+  const clipResult = executeFreshStart(ctx, summary);
 
   setEvents((e) => [
     ...e,
@@ -302,15 +324,15 @@ const handleFresh: Handler = (ctx) => {
       kind: "info",
       key: mkKey(),
       text: clipResult.success
-        ? "Plan copied to clipboard. Starting fresh session with plan only…"
-        : "Clipboard unavailable. Starting fresh session with plan only…",
+        ? "Summary copied to clipboard. Starting fresh session with continuation context…"
+        : "Clipboard unavailable. Starting fresh session with continuation context…",
     },
   ]);
 
   if (!clipResult.success) {
     setEvents((e) => [
       ...e,
-      { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan },
+      { kind: "info", key: mkKey(), text: "--- Continuation Context ---\n" + summary },
     ]);
   }
 
@@ -1672,7 +1694,7 @@ const handlers: Record<string, Handler> = {
  * command, false if `cmd` is unrecognized (so the caller can fall through
  * to custom-command lookup).
  */
-export function dispatchSlashCommand(ctx: SlashContext, cmd: string): boolean {
+export function dispatchSlashCommand(ctx: SlashContext, cmd: string): boolean | Promise<boolean> {
   const raw = cmd.trim();
   const [head, ...rest] = raw.split(/\s+/);
   const c = (head ?? "").toLowerCase();

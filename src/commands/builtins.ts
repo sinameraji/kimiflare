@@ -29,7 +29,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "checkpoints", description: "List checkpoints in current session", source: "builtin" },
   { name: "compact", description: "Summarize old turns to free context", source: "builtin" },
   { name: "clear", description: "Clear current conversation", source: "builtin" },
-  { name: "fresh", description: "Reset session and start fresh with the last plan", source: "builtin" },
+  { name: "fresh", description: "Start a fresh session with a summarized plan or continuation context", source: "builtin" },
   { name: "init", description: "Scan repo and write KIMI.md", source: "builtin" },
   { name: "remote", argHint: "<prompt>", description: "Run a remote session on Cloudflare", source: "builtin" },
   { name: "update", description: "Check for updates", source: "builtin" },

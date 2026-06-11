@@ -83,6 +83,7 @@ async function loadCamouflage() {
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { distillSessionPlan } from "./agent/distill.js";
+import { generateContinuationSummary } from "./agent/continuation-summary.js";
 import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
 import { checkForUpdate, checkOptionalDependency } from "./util/update-check.js";
@@ -116,6 +117,8 @@ export interface UiModeOpts {
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   aiGatewayId?: string;
+  /** Model for internal plumbing tasks (memory verification, hypothetical queries, continuation summaries). Default: @cf/moonshotai/kimi-k2.5. */
+  plumbingModel?: string;
   /** Optional path to the camouflage-tui binary. Defaults to PATH lookup. */
   camouflageBin?: string;
   /** Optional multi-line ANSI text (e.g. the CLI logo) to pin above the
@@ -2358,48 +2361,57 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "can't /fresh while model is running — press Esc to interrupt first", kind: "warn", ttl_ms: 2500 });
           return true;
         }
-        // Prefer the plan captured when plan-mode completed so follow-up
-        // discussion doesn't bury the original plan in message history.
-        const plan = sessionPlan ?? distillSessionPlan(messages);
-        if (!plan) {
-          cam.send("ShowToast", { text: "No plan found to start fresh with.", kind: "error", ttl_ms: 2500 });
-          return true;
-        }
-        const clipResult = writeToClipboard(plan);
-        // Reset session (reuse /clear logic)
-        const systemMessages = messages.filter((m) => m.role === "system");
-        messages.length = 0;
-        messages.push(...systemMessages);
-        sessionCostUsd = 0;
-        promptTokens = 0;
-        cachedTokens = 0;
-        completionTokens = 0;
-        sessionPlan = null;
-        cam.send("TranscriptCleared", {});
-        cam.send("StatusUpdate", {
-          segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
-        });
-        // Rebuild system prompt for the current mode so the agent sees
-        // the correct instructions instead of a stale plan-mode prompt.
-        rebuildSystemPromptForMode(
-          messages,
-          false, // Camouflage UI always uses single system message
-          opts.model,
-          currentMode,
-          ALL_TOOLS,
-        );
-        // Seed with plan
-        messages.push({ role: "user", content: plan });
-        cam.send("ShowToast", {
-          text: clipResult.success
-            ? "Plan copied to clipboard. Starting fresh session with plan only…"
-            : "Clipboard unavailable. Starting fresh session with plan only…",
-          kind: "info",
-          ttl_ms: 3000,
-        });
-        if (!clipResult.success) {
-          cam.send("UserMessageCreated", { text: "--- Plan ---\n" + plan });
-        }
+        // Mode-aware summary: plan mode uses the distilled plan;
+        // auto/edit/multi-agent produce a handoff document via LLM.
+        void (async () => {
+          const summary = await generateContinuationSummary({
+            messages,
+            mode: currentMode,
+            accountId: opts.accountId,
+            apiToken: opts.apiToken,
+            model: opts.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+            gateway: gatewayFromOpts(opts),
+          });
+          if (!summary) {
+            cam.send("ShowToast", { text: "No plan or summary found to start fresh with.", kind: "error", ttl_ms: 2500 });
+            return;
+          }
+          const clipResult = writeToClipboard(summary);
+          // Reset session (reuse /clear logic)
+          const systemMessages = messages.filter((m) => m.role === "system");
+          messages.length = 0;
+          messages.push(...systemMessages);
+          sessionCostUsd = 0;
+          promptTokens = 0;
+          cachedTokens = 0;
+          completionTokens = 0;
+          sessionPlan = null;
+          cam.send("TranscriptCleared", {});
+          cam.send("StatusUpdate", {
+            segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
+          });
+          // Rebuild system prompt for the current mode so the agent sees
+          // the correct instructions instead of a stale plan-mode prompt.
+          rebuildSystemPromptForMode(
+            messages,
+            false, // Camouflage UI always uses single system message
+            opts.model,
+            currentMode,
+            ALL_TOOLS,
+          );
+          // Seed with summary
+          messages.push({ role: "user", content: summary });
+          cam.send("ShowToast", {
+            text: clipResult.success
+              ? "Summary copied to clipboard. Starting fresh session with continuation context…"
+              : "Clipboard unavailable. Starting fresh session with continuation context…",
+            kind: "info",
+            ttl_ms: 3000,
+          });
+          if (!clipResult.success) {
+            cam.send("UserMessageCreated", { text: "--- Continuation Context ---\n" + summary });
+          }
+        })();
         return true;
       }
       case "logout": {

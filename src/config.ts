@@ -128,6 +128,10 @@ export interface KimiConfig {
   workerTimeoutMs?: number;
   /** Enable multi-agent-experimental mode in the mode cycle. Default: false. */
   multiAgentEnabled?: boolean;
+  /** Turn count at which KimiFlare suggests /fresh in auto/edit mode. 0 = disabled. Default: 30. */
+  autoFreshSuggestionTurns?: number;
+  /** If true, automatically execute /fresh when the threshold is hit instead of just suggesting it. Default: false. */
+  autoFreshEnabled?: boolean;
   /** Bearer/secret for the worker endpoint (sent as X-Worker-Api-Key). */
   workerApiKey?: string;
   /** Name of the deployed multi-agent Worker. Used for tear-down. */

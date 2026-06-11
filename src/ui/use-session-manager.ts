@@ -22,6 +22,8 @@ import { getCostReport } from "../usage-tracker.js";
 import type { DailyUsage } from "../usage-tracker.js";
 import type { ChatEvent } from "./chat.js";
 import { setLogSessionId } from "../util/log-sink.js";
+import type { Mode } from "../mode.js";
+import { DEFAULT_AUTO_FRESH_SUGGESTION_TURNS } from "./app-helpers.js";
 
 /**
  * Pull the first chunk of user text out of a message list — used to
@@ -44,7 +46,9 @@ export function extractFirstUserText(messages: ChatMessage[]): string {
 
 export interface SessionManagerDeps {
   /** Model name + other config needed at save time. Null while booting. */
-  cfg: { model: string } | null;
+  cfg: { model: string; autoFreshSuggestionTurns?: number } | null;
+  /** Current agent mode. */
+  mode: Mode;
   // Refs the hook needs to read/write at save and resume time. These
   // belong to the wider app (the agent loop mutates them too), so they're
   // injected rather than owned.
@@ -182,10 +186,31 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           }
         }
 
+        const nonSystemCount = file.messages.filter((m) => m.role !== "system").length;
         const msg = checkpointId
           ? `resumed session ${file.id} from checkpoint`
-          : `resumed session ${file.id} (${file.messages.filter((m) => m.role !== "system").length} msgs)`;
+          : `resumed session ${file.id} (${nonSystemCount} msgs)`;
         d.setEvents([{ kind: "info", key: d.mkKey(), text: msg }]);
+
+        // Suggest /fresh for long auto/edit sessions resumed without a checkpoint
+        if (!checkpointId) {
+          const threshold = d.cfg?.autoFreshSuggestionTurns ?? DEFAULT_AUTO_FRESH_SUGGESTION_TURNS;
+          if (
+            threshold > 0 &&
+            nonSystemCount >= threshold &&
+            (d.mode === "auto" || d.mode === "edit" || d.mode === "multi-agent-experimental")
+          ) {
+            d.setEvents((es) => [
+              ...es,
+              {
+                kind: "info",
+                key: d.mkKey(),
+                text: `This session has ${nonSystemCount} turns. The model may slow down with accumulated context. Run /fresh to continue with a summarized state, or /compact to compress history.`,
+              },
+            ]);
+          }
+        }
+
         const userMsgs = file.messages
           .filter((m) => m.role === "user" && m.content)
           .map((m) => {

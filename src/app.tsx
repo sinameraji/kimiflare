@@ -108,6 +108,7 @@ import {
   type InterruptDeps,
 } from "./ui/input-handlers.js";
 import { dispatchSlashCommand, type SlashContext, executeFreshStart } from "./ui/slash-commands.js";
+import { generateContinuationSummary } from "./agent/continuation-summary.js";
 import { runInit as runInitImpl } from "./init/run-init.js";
 import { runStartupTasks } from "./ui/run-startup-tasks.js";
 import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
@@ -126,6 +127,7 @@ import {
   capEvents,
   compactEventsVisual,
   CONTEXT_LIMIT,
+  DEFAULT_AUTO_FRESH_SUGGESTION_TURNS,
   detectGitBranch,
   findImagePaths,
   gatewayFromConfig,
@@ -199,6 +201,8 @@ export interface Cfg {
   workerApiKey?: string;
   workerName?: string;
   autoExecute?: boolean;
+  autoFreshSuggestionTurns?: number;
+  autoFreshEnabled?: boolean;
 }
 function App({
   initialCfg,
@@ -441,6 +445,7 @@ function App({
   const compiledContextRef = useRef(initialCfg?.compiledContext === true);
   const updateNudgedRef = useRef(false);
   const compactSuggestedRef = useRef(false);
+  const freshSuggestedRef = useRef(false);
   const mcpManagerRef = useRef(new McpManager());
   const mcpToolsRef = useRef<ToolSpec[]>([]);
   const mcpInitRef = useRef(false);
@@ -470,6 +475,7 @@ function App({
 
   const sessionMgr = useSessionManager({
     cfg,
+    mode,
     messagesRef,
     sessionStateRef,
     artifactStoreRef,
@@ -1241,81 +1247,6 @@ function App({
     [mkKey, setShowUiPicker],
   );
 
-  const handlePlanCompletePick = useCallback(
-    (picked: PlanCompleteChoice | null) => {
-      setShowPlanCompletePicker(false);
-      if (!picked || picked === "continue") return;
-
-      // Use the plan captured when the picker was first shown so follow-up
-      // discussion doesn't bury the original plan in message history.
-      const plan = sessionPlanRef.current ?? distillSessionPlan(messagesRef.current);
-      if (!plan) {
-        setEvents((e) => [
-          ...e,
-          { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
-        ]);
-        setMode(picked);
-        return;
-      }
-
-      const clipResult = writeToClipboard(plan);
-
-      // Reset session (reuse /clear logic)
-      if (cacheStableRef.current && messagesRef.current.length >= 2) {
-        messagesRef.current = [messagesRef.current[0]!, messagesRef.current[1]!];
-      } else {
-        messagesRef.current = [messagesRef.current[0]!];
-      }
-      resetSession();
-      executorRef.current.clearArtifacts();
-      if (flushTimeoutRef.current) {
-        clearTimeout(flushTimeoutRef.current);
-        flushTimeoutRef.current = null;
-      }
-      pendingTextRef.current.clear();
-      activeAsstIdRef.current = null;
-      pendingToolCallsRef.current.clear();
-      usageRef.current = null;
-      turnCounterRef.current = 0;
-      setEvents([]);
-      setUsage(null);
-      setSessionUsage(null);
-      gatewayMetaRef.current = null;
-      setGatewayMeta(null);
-      clearTaskTracking();
-      compactSuggestedRef.current = false;
-      updateNudgedRef.current = false;
-      sessionPlanRef.current = null;
-
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: clipResult.success
-            ? `Plan copied to clipboard. Starting fresh session in ${picked} mode with plan only…`
-            : `Clipboard unavailable. Starting fresh session in ${picked} mode with plan only…`,
-        },
-      ]);
-
-      if (!clipResult.success) {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan }]);
-      }
-
-      setMode(picked);
-      modeRef.current = picked;
-      rebuildSystemPromptForMode(
-        messagesRef.current,
-        cacheStableRef.current,
-        cfg?.model ?? DEFAULT_MODEL,
-        picked,
-        [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
-      );
-      submitRef.current(plan);
-    },
-    [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession, submitRef],
-  );
-
   const handleModelPick = useCallback(
     (picked: ModelEntry | null) => {
       setShowModelPicker(false);
@@ -1532,6 +1463,7 @@ function App({
     sessionIdRef,
     compactSuggestedRef,
     updateNudgedRef,
+    freshSuggestedRef,
     memoryManagerRef,
     artifactStoreRef,
     sessionStateRef,
@@ -1552,8 +1484,49 @@ function App({
     initMcp, initLsp, ensureSessionId,
   ]);
 
+  const handlePlanCompletePick = useCallback(
+    (picked: PlanCompleteChoice | null) => {
+      setShowPlanCompletePicker(false);
+      if (!picked || picked === "continue") return;
+
+      // Use the plan captured when the picker was first shown so follow-up
+      // discussion doesn't bury the original plan in message history.
+      const plan = sessionPlanRef.current ?? distillSessionPlan(messagesRef.current);
+      if (!plan) {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: "No plan found to start fresh with." },
+        ]);
+        setMode(picked);
+        return;
+      }
+
+      const clipResult = executeFreshStart(buildSlashContext(), plan, picked);
+
+      setEvents((e) => [
+        ...e,
+        {
+          kind: "info",
+          key: mkKey(),
+          text: clipResult.success
+            ? `Plan copied to clipboard. Starting fresh session in ${picked} mode with plan only…`
+            : `Clipboard unavailable. Starting fresh session in ${picked} mode with plan only…`,
+        },
+      ]);
+
+      if (!clipResult.success) {
+        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "--- Plan ---\n" + plan }]);
+      }
+
+      setMode(picked);
+      modeRef.current = picked;
+      submitRef.current(plan);
+    },
+    [mkKey, setShowPlanCompletePicker, setMode, setEvents, submitRef, buildSlashContext],
+  );
+
   const handleSlash = useCallback(
-    (cmd: string): boolean => dispatchSlashCommand(buildSlashContext(), cmd),
+    async (cmd: string): Promise<boolean> => dispatchSlashCommand(buildSlashContext(), cmd),
     [buildSlashContext],
   );
 
@@ -1624,7 +1597,7 @@ function App({
       if (trimmed.startsWith("/")) {
         const head = trimmed.split(/\s+/)[0]!.toLowerCase();
         const selfManaged = ["/compact", "/init"].includes(head);
-        if (handleSlash(trimmed)) {
+        if (await handleSlash(trimmed)) {
           if (!selfManaged) {
             endTurn();
           }
@@ -1779,6 +1752,70 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "Tip: Rerunning /init occasionally helps KimiFlare stay accurate as your project evolves." },
         ]);
+      }
+
+      // Auto-fresh suggestion for long auto/edit sessions
+      const autoFreshThreshold = cfg?.autoFreshSuggestionTurns ?? DEFAULT_AUTO_FRESH_SUGGESTION_TURNS;
+      if (
+        autoFreshThreshold > 0 &&
+        turnCounterRef.current >= autoFreshThreshold &&
+        (modeRef.current === "auto" || modeRef.current === "edit" || modeRef.current === "multi-agent-experimental") &&
+        !freshSuggestedRef.current
+      ) {
+        freshSuggestedRef.current = true;
+        if (cfg?.autoFreshEnabled) {
+          // Auto-execute /fresh after a silent checkpoint
+          void (async () => {
+            try {
+              const turnIndex = messagesRef.current.length;
+              if (turnIndex > 0) {
+                const cp: Checkpoint = {
+                  id: `cp_prefresh_${Date.now()}`,
+                  label: "pre-fresh auto-save",
+                  turnIndex,
+                  timestamp: new Date().toISOString(),
+                  sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
+                  artifactStore: serializeArtifactStore(artifactStoreRef.current),
+                };
+                ensureSessionId();
+                const { sessionsDir } = await import("./sessions.js");
+                const filePath = join(sessionsDir(), `${sessionIdRef.current}.json`);
+                await addCheckpoint(filePath, cp);
+              }
+              const summary = await generateContinuationSummary({
+                messages: messagesRef.current,
+                mode: modeRef.current,
+                accountId: cfg.accountId,
+                apiToken: cfg.apiToken,
+                model: cfg.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+                gateway: gatewayFromConfig(cfg),
+                memoryManager: memoryManagerRef.current,
+                memoryEnabled: cfg.memoryEnabled,
+              });
+              if (summary) {
+                executeFreshStart(buildSlashContext(), summary);
+                setEvents((e) => [
+                  ...e,
+                  { kind: "info", key: mkKey(), text: "Auto-fresh triggered: starting new session with continuation context…" },
+                ]);
+              }
+            } catch (e) {
+              setEvents((es) => [
+                ...es,
+                { kind: "error", key: mkKey(), text: `Auto-fresh failed: ${(e as Error).message}` },
+              ]);
+            }
+          })();
+        } else {
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "info",
+              key: mkKey(),
+              text: `Session has run for ${turnCounterRef.current} turns. The model may slow down with accumulated context. Run /fresh to continue with a summarized state, or /compact to compress history.`,
+            },
+          ]);
+        }
       }
 
       gatewayMetaRef.current = null;
