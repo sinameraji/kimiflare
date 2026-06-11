@@ -128,7 +128,6 @@ export interface SlashContext {
   setShowShellPicker: (v: boolean) => void;
   setShowChangelogImagePicker: (v: boolean) => void;
   setChangelogImageRepo: React.Dispatch<React.SetStateAction<{ owner: string; name: string } | null>>;
-  setChangelogImageDays: React.Dispatch<React.SetStateAction<number>>;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -1614,7 +1613,7 @@ const handleHelp: Handler = (ctx) => {
 };
 
 const handleChangelogImage: Handler = (ctx, rest) => {
-  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo, setChangelogImageDays } = ctx;
+  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo } = ctx;
   if (!cfg) {
     setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Not configured yet." }]);
     return true;
@@ -1643,9 +1642,14 @@ const handleChangelogImage: Handler = (ctx, rest) => {
     void (async () => {
       try {
         const { changelogImageTool } = await import("../tools/changelog-image.js");
+        const { gatewayFromConfig } = await import("./app-helpers.js");
         const result = await changelogImageTool.run({ owner: o, repo: r, days: d }, {
           cwd: process.cwd(),
           githubToken: cfg.githubOAuthToken,
+          accountId: cfg.accountId,
+          apiToken: cfg.apiToken,
+          model: cfg.model,
+          gateway: gatewayFromConfig(cfg),
         });
         const text = typeof result === "string" ? result : result.content;
         setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
@@ -1663,7 +1667,6 @@ const handleChangelogImage: Handler = (ctx, rest) => {
       // If no explicit args given, open the TUI picker
       if (rest.length === 0) {
         setChangelogImageRepo({ owner: o, name: r });
-        setChangelogImageDays(days);
         setShowChangelogImagePicker(true);
         return;
       }

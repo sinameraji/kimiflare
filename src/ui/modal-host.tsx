@@ -125,8 +125,6 @@ export interface ModalHostProps {
   onSkillsDone: () => void;
   // Changelog image picker
   changelogImageRepo: { owner: string; name: string } | null;
-  changelogImageDays: number;
-  changelogImageToken: string | undefined;
   onChangelogImageGenerate: (owner: string, repo: string, days: number) => void;
   onChangelogImageCancel: () => void;
 }
@@ -499,8 +497,6 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
           <ChangelogImagePicker
             owner={props.changelogImageRepo.owner}
             repo={props.changelogImageRepo.name}
-            days={props.changelogImageDays}
-            githubToken={props.changelogImageToken}
             onGenerate={props.onChangelogImageGenerate}
             onCancel={props.onChangelogImageCancel}
           />

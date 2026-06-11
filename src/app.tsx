@@ -353,7 +353,6 @@ function App({
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [coordinatorNarration, setCoordinatorNarration] = useState<string>("");
   const [changelogImageRepo, setChangelogImageRepo] = useState<{ owner: string; name: string } | null>(null);
-  const [changelogImageDays, setChangelogImageDays] = useState(7);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1492,7 +1491,6 @@ function App({
     setShowShellPicker,
     setShowChangelogImagePicker,
     setChangelogImageRepo,
-    setChangelogImageDays,
     lspScope,
     lspProjectPath,
     resetSession,
@@ -1535,7 +1533,7 @@ function App({
     setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setShowModePicker, setKeyEntryFor,
     setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal, setShowHelpMenu,
     setShowMemoryPicker, setShowGatewayPicker, setShowSkillsPicker, setShowShellPicker,
-    setShowChangelogImagePicker, setChangelogImageRepo, setChangelogImageDays,
+    setShowChangelogImagePicker, setChangelogImageRepo,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
     turn.setShowReasoning,
@@ -2573,8 +2571,6 @@ function App({
         }}
         onSkillsDone={() => setShowSkillsPicker(false)}
         changelogImageRepo={changelogImageRepo}
-        changelogImageDays={changelogImageDays}
-        changelogImageToken={cfg?.githubOAuthToken}
         onChangelogImageGenerate={(owner, repo, days) => {
           setShowChangelogImagePicker(false);
           setTimeout(() => {
@@ -2584,6 +2580,10 @@ function App({
                 const result = await changelogImageTool.run({ owner, repo, days }, {
                   cwd: process.cwd(),
                   githubToken: cfg?.githubOAuthToken,
+                  accountId: cfg?.accountId,
+                  apiToken: cfg?.apiToken,
+                  model: cfg?.model,
+                  gateway: gatewayFromConfig(cfg),
                 });
                 const text = typeof result === "string" ? result : result.content;
                 setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);

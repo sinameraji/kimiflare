@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { Resvg } from "@resvg/resvg-js";
+import { runKimi } from "../agent/client.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const TIMEOUT_MS = 20_000;
@@ -17,6 +18,7 @@ interface ChangelogImageArgs {
 interface MergedPr {
   number: number;
   title: string;
+  body: string | null;
   user: { login: string };
   merged_at: string;
   html_url: string;
@@ -52,7 +54,7 @@ async function githubFetch(path: string, token?: string): Promise<unknown> {
 }
 
 function getToken(ctx: ToolContext): string | undefined {
-  return ctx.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  return ctx.githubToken;
 }
 
 function escapeXml(str: string): string {
@@ -66,46 +68,141 @@ function escapeXml(str: string): string {
 
 async function loadLogoBase64(): Promise<string | null> {
   try {
-    const logoPath = join(process.cwd(), "docs", "logo.png");
-    const buf = await readFile(logoPath);
+    const buf = await readFile(join(process.cwd(), "docs", "logo.png"));
     return `data:image/png;base64,${buf.toString("base64")}`;
   } catch {
     return null;
   }
 }
 
+/** Simple word-wrap: splits text into lines that fit within maxWidth pixels
+ *  at the given font size. Uses a rough heuristic of ~0.55× font-size per char. */
+function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+  const avgCharWidth = fontSize * 0.55;
+  const maxChars = Math.floor(maxWidth / avgCharWidth);
+  const lines: string[] = [];
+  const rawLines = text.split("\n");
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      lines.push("");
+      continue;
+    }
+    let remaining = trimmed;
+    while (remaining.length > maxChars) {
+      let cut = maxChars;
+      while (cut > 0 && remaining[cut] !== " ") cut--;
+      if (cut === 0) cut = maxChars;
+      lines.push(remaining.slice(0, cut).trimEnd());
+      remaining = remaining.slice(cut).trimStart();
+    }
+    if (remaining) lines.push(remaining);
+  }
+  return lines;
+}
+
+const CHANGELOG_SYSTEM_PROMPT = `You are a senior technical product writer. Your job is to write release notes that make users excited about new features while being completely accurate and grounded only in the provided pull requests.
+
+Rules:
+- Write 3–6 bullet points maximum. Highlight only the most significant, user-facing changes.
+- Focus on USER VALUE and IMPACT, not implementation details or internal refactors.
+- Use confident, clear, engaging language — like Apple product release notes.
+- Group related changes under themes when it makes sense.
+- Each bullet should be 1–2 sentences.
+- Include the PR number in square brackets at the end of each bullet, e.g. [PR #123]
+- Do NOT include changes that are purely internal (chores, refactors, dependency updates, version bumps) unless they have clear user-facing impact.
+- Do NOT hallucinate features not present in the PRs.
+- If there are no meaningful user-facing changes, say so briefly.
+
+Format your response as plain text bullet points, one per line, starting with "• ". Do not use markdown headers or bold/italic.`;
+
+async function summarizeWithLlm(
+  prs: MergedPr[],
+  ctx: ToolContext,
+): Promise<string> {
+  if (!ctx.accountId || !ctx.apiToken || !ctx.model) {
+    // Fallback: just list PR titles if no LLM credentials
+    return prs.map((p) => `• ${p.title} [PR #${p.number}]`).join("\n");
+  }
+
+  const prDescriptions = prs
+    .map((p) => {
+      const bodySnippet = p.body ? `\n  ${p.body.slice(0, 300).replace(/\n/g, " ")}` : "";
+      return `PR #${p.number}: ${p.title} (merged ${p.merged_at.slice(0, 10)} by @${p.user.login})${bodySnippet}`;
+    })
+    .join("\n\n");
+
+  let summary = "";
+  const events = runKimi({
+    accountId: ctx.accountId,
+    apiToken: ctx.apiToken,
+    model: ctx.model,
+    messages: [
+      { role: "system", content: CHANGELOG_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `Write a changelog summary for the following merged pull requests:\n\n${prDescriptions}`,
+      },
+    ],
+    signal: ctx.signal,
+    temperature: 0.4,
+    reasoningEffort: "low",
+    gateway: ctx.gateway,
+    idleTimeoutMs: 60_000,
+  });
+
+  for await (const ev of events) {
+    if (ev.type === "text") summary += ev.delta;
+  }
+
+  return summary.trim() || prs.map((p) => `• ${p.title} [PR #${p.number}]`).join("\n");
+}
+
 function buildChangelogSvg(opts: {
   owner: string;
   repo: string;
   version: string;
-  prs: MergedPr[];
+  writeUp: string;
   logoBase64: string | null;
 }): string {
-  const { owner, repo, version, prs, logoBase64 } = opts;
+  const { owner, repo, version, writeUp, logoBase64 } = opts;
   const width = 1200;
   const padding = 80;
   const contentWidth = width - padding * 2;
   const headerHeight = 200;
-  const prItemHeight = 78;
   const footerHeight = 60;
-  const height = headerHeight + prs.length * prItemHeight + footerHeight + padding * 2;
+  const lineHeight = 28;
+  const bulletSpacing = 18;
 
-  const prItems = prs.map((pr, i) => {
-    const y = headerHeight + padding + i * prItemHeight;
-    const title = escapeXml(pr.title.length > 80 ? pr.title.slice(0, 77) + "…" : pr.title);
-    const date = pr.merged_at.slice(0, 10);
-    const isLast = i === prs.length - 1;
-    const separator = isLast
-      ? ""
-      : `<line x1="0" y1="${prItemHeight}" x2="${contentWidth}" y2="${prItemHeight}" stroke="#e5e7eb" stroke-width="1"/>`;
-    return `
-      <g transform="translate(${padding}, ${y})">
-        <text x="0" y="30" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500">${title}</text>
-        <text x="0" y="54" fill="#9ca3af" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14">#${pr.number} by @${escapeXml(pr.user.login)} · ${date}</text>
-        ${separator}
-      </g>
-    `;
-  }).join("");
+  // Wrap the write-up text
+  const writeUpLines = wrapText(writeUp, contentWidth, 18);
+
+  // Calculate body height: each line is lineHeight, with extra spacing after blank lines
+  let bodyHeight = 0;
+  for (const line of writeUpLines) {
+    bodyHeight += lineHeight;
+  }
+  // Add some padding between bullet groups (detected by lines starting with "•")
+  const bulletCount = writeUpLines.filter((l) => l.trim().startsWith("•")).length;
+  bodyHeight += bulletCount * bulletSpacing;
+
+  const height = headerHeight + bodyHeight + footerHeight + padding * 2;
+
+  // Build body text as tspan elements
+  let currentY = headerHeight + padding;
+  const bodySpans = writeUpLines
+    .map((line) => {
+      const isBullet = line.trim().startsWith("•");
+      const y = currentY;
+      currentY += lineHeight + (isBullet ? bulletSpacing : 0);
+      const fontWeight = isBullet ? "font-weight=\"500\"" : "";
+      const fill = isBullet ? "#111827" : "#374151";
+      // Indent bullets slightly
+      const x = isBullet ? padding + 16 : padding;
+      const displayLine = isBullet ? line.trim().slice(1).trim() : line;
+      return `<tspan x="${x}" y="${y}" fill="${fill}" ${fontWeight}>${escapeXml(displayLine)}</tspan>`;
+    })
+    .join("");
 
   const logoSection = logoBase64
     ? `<image x="${padding}" y="${padding + 8}" width="32" height="32" href="${logoBase64}"/>`
@@ -127,8 +224,10 @@ function buildChangelogSvg(opts: {
     <text x="${padding + 90}" y="${padding + 72}" fill="#f97316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="500">${escapeXml(version)}</text>
   </g>
 
-  <!-- PR List -->
-  ${prItems}
+  <!-- Write-up -->
+  <text font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" line-height="${lineHeight}">
+    ${bodySpans}
+  </text>
 
   <!-- Footer -->
   <g transform="translate(0, ${height - footerHeight})">
@@ -141,8 +240,8 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
   name: "changelog_image",
   description:
     "Generate a beautiful changelog image for a GitHub repository. " +
-    "Fetches merged PRs from the last N days and the latest release, " +
-    "then renders a shareable PNG with the project logo, version, and PR list.",
+    "Fetches merged PRs from the last N days, uses an LLM to write a creative summary, " +
+    "then renders a shareable PNG with the project logo, version, and highlights.",
   parameters: {
     type: "object",
     properties: {
@@ -190,7 +289,6 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
         version = releases[0]!.tag_name;
       }
     } catch {
-      // Fallback: try to get latest tag
       try {
         const tags = await githubFetch(
           `/repos/${args.owner}/${args.repo}/tags?per_page=1`,
@@ -204,24 +302,26 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
       }
     }
 
-    // 3. Load logo
+    // 3. Summarize with LLM
+    const writeUp = await summarizeWithLlm(merged, ctx);
+
+    // 4. Load logo
     const logoBase64 = await loadLogoBase64();
 
-    // 4. Build SVG
-    const svg = buildChangelogSvg({ owner: args.owner, repo: args.repo, version, prs: merged, logoBase64 });
+    // 5. Build SVG
+    const svg = buildChangelogSvg({ owner: args.owner, repo: args.repo, version, writeUp, logoBase64 });
 
-    // 5. Render to PNG
+    // 6. Render to PNG
     const resvg = new Resvg(svg, {
       fitTo: { mode: "original" },
       font: {
-        // Use system fonts; resvg will fallback gracefully
         defaultFontFamily: "system-ui",
       },
     });
     const pngData = resvg.render();
     const pngBuffer = pngData.asPng();
 
-    // 6. Save
+    // 7. Save
     const outputPath = args.output ?? `./changelog-${args.repo}-${version.replace(/[^a-zA-Z0-9._-]/g, "_")}.png`;
     await writeFile(outputPath, pngBuffer);
 
@@ -229,12 +329,12 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
       `✓ Changelog image generated: ${outputPath}`,
       `  Repository: ${args.owner}/${args.repo}`,
       `  Version: ${version}`,
-      `  PRs included: ${merged.length}`,
+      `  PRs analyzed: ${merged.length}`,
       `  Lookback: ${days} days`,
       `  Dimensions: ${resvg.width}x${resvg.height}px`,
       "",
-      "Merged PRs:",
-      ...merged.map((p) => `  #${p.number} ${p.title} — @${p.user.login}`),
+      "Summary:",
+      ...writeUp.split("\n").map((l) => `  ${l}`),
     ].join("\n");
 
     const bytes = Buffer.byteLength(content, "utf8");
