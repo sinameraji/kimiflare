@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.84.0](https://github.com/sinameraji/kimiflare/compare/v0.83.0...v0.84.0) (2026-06-11)
+
+
+### Features
+
+* **agent:** increase default tool-call limit from 50 to 200 ([#564](https://github.com/sinameraji/kimiflare/issues/564)) ([e2ceabc](https://github.com/sinameraji/kimiflare/commit/e2ceabcf414a72bfba042385861e6274a2a7edae))
+
+
+### Bug Fixes
+
+* **plan-mode:** preserve original plan across follow-up discussion ([#566](https://github.com/sinameraji/kimiflare/issues/566)) ([5aa0d59](https://github.com/sinameraji/kimiflare/commit/5aa0d597a4014df3fcd23b5c8cbd5ddc0bcb22b5))
+
 ## [0.83.0](https://github.com/sinameraji/kimiflare/compare/v0.82.1...v0.83.0) (2026-06-08)
 
 
