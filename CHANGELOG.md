@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.85.0](https://github.com/sinameraji/kimiflare/compare/v0.84.1...v0.85.0) (2026-06-11)
+
+
+### Features
+
+* add /changelog-image command to generate shareable changelog PNGs ([#562](https://github.com/sinameraji/kimiflare/issues/562)) ([43db05b](https://github.com/sinameraji/kimiflare/commit/43db05b1c917fe3e0fe2d559aaf16f6d6308cf05))
+* **agent:** mode-aware /fresh with continuation summaries ([#570](https://github.com/sinameraji/kimiflare/issues/570)) ([e9368bb](https://github.com/sinameraji/kimiflare/commit/e9368bbfa37dbdccb21a5ce53999c21a35e8740a))
+
 ## [0.84.1](https://github.com/sinameraji/kimiflare/compare/v0.84.0...v0.84.1) (2026-06-11)
 
 
