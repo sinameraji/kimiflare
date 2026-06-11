@@ -28,14 +28,14 @@ Camouflage (`src/ui-mode.ts`) is the experimental terminal UI renderer that will
 - **Files:** `src/ui-mode.ts`
 - **PR:** #571
 
-### P0.3 Add diff rendering support
-- [ ] Send diff output as pre-formatted ANSI in `ToolExecutionStdout`, or
-- [ ] Add `ShowDiffView` event to Camouflage protocol
-- **Files:** `src/ui-mode.ts`, Camouflage renderer crate
+### P0.3 Add diff rendering support ✅
+- [x] Send diff output as pre-formatted ANSI in `ToolExecutionStdout`
+- [x] `formatAnsiDiff` helper renders `+` green / `-` red; no renderer changes needed
+- **Files:** `src/ui-mode.ts`
 
-### P0.4 Fuzzy file picker overlay
-- [ ] Add `ShowFilePicker` event or reuse `selectList` with `allow_filter: true`
-- [ ] Mirror Ink's recent-files bubbling behavior
+### P0.4 Fuzzy file picker overlay ✅
+- [x] `registerMentions` now uses `glob("**/*")` with `buildFilePickerIgnoreList` (Ink parity)
+- [x] Recent-files bubbling preserved via `recent` flag on `MentionCandidatesRegistered`
 - **Files:** `src/ui-mode.ts`
 
 ---
