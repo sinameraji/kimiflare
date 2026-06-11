@@ -380,17 +380,8 @@ export const changelogImageTool: ToolSpec<ChangelogImageArgs> = {
     const outputPath = args.output ?? `./changelog-${args.repo}-${version.replace(/[^a-zA-Z0-9._-]/g, "_")}.png`;
     await writeFile(outputPath, pngBuffer);
 
-    const content = [
-      `✓ Changelog image generated: ${outputPath}`,
-      `  Repository: ${args.owner}/${args.repo}`,
-      `  Version: ${version}`,
-      `  PRs analyzed: ${merged.length}`,
-      `  Lookback: ${days} days`,
-      `  Dimensions: ${resvg.width}x${resvg.height}px`,
-      "",
-      "Summary:",
-      ...writeUp.split("\n").map((l) => `  ${l}`),
-    ].join("\n");
+    const periodLabel = days === 1 ? "past day" : `past ${days} days`;
+    const content = `✓ Changelog image saved to ${outputPath}\n  ${merged.length} PR${merged.length === 1 ? "" : "s"} from the ${periodLabel} · ${version} · ${resvg.width}×${resvg.height}`;
 
     const bytes = Buffer.byteLength(content, "utf8");
     return { content, rawBytes: bytes, reducedBytes: bytes };
