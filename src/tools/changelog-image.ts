@@ -166,72 +166,127 @@ function buildChangelogSvg(opts: {
   logoBase64: string | null;
 }): string {
   const { owner, repo, version, writeUp, logoBase64 } = opts;
-  const width = 1200;
-  const padding = 80;
-  const contentWidth = width - padding * 2;
-  const headerHeight = 200;
-  const footerHeight = 60;
-  const lineHeight = 28;
-  const bulletSpacing = 18;
 
-  // Wrap the write-up text
-  const writeUpLines = wrapText(writeUp, contentWidth, 18);
+  // ── Layout constants ──────────────────────────────────────────────
+  const width = 900;
+  const padX = 72;
+  const padTop = 64;
+  const padBottom = 56;
+  const contentW = width - padX * 2;
 
-  // Calculate body height: each line is lineHeight, with extra spacing after blank lines
+  const repoFontSize = 22;
+  const labelFontSize = 12;
+  const bodyFontSize = 16;
+  const bodyLineHeight = 30; // 1.875× for airy readability
+  const bulletIndent = 20;
+  const bulletGap = 28; // space between bullet items
+  const paraGap = 18; // space between paragraphs / wrapped lines
+
+  // ── Header ────────────────────────────────────────────────────────
+  const logoW = 28;
+  const logoH = 28;
+  const logoY = padTop + 4;
+  const repoTextX = padX + (logoBase64 ? logoW + 14 : 0);
+  const repoTextY = padTop + 24;
+  const labelY = repoTextY + 28;
+  const headerBottom = labelY + 28;
+
+  // ── Wrap body text ────────────────────────────────────────────────
+  const bodyLines = wrapText(writeUp, contentW - bulletIndent, bodyFontSize);
+
+  // Group consecutive non-empty lines; a blank line starts a new paragraph.
+  // Bullet lines (starting with "•") get extra gap after their group.
   let bodyHeight = 0;
-  for (const line of writeUpLines) {
-    bodyHeight += lineHeight;
+  const lineMeta: { text: string; y: number; isBullet: boolean }[] = [];
+  let y = headerBottom;
+
+  for (let i = 0; i < bodyLines.length; i++) {
+    const line = bodyLines[i]!;
+    const trimmed = line.trim();
+    const isBullet = trimmed.startsWith("•");
+    const display = isBullet ? trimmed.slice(1).trim() : trimmed;
+
+    lineMeta.push({ text: display, y, isBullet });
+    y += bodyLineHeight;
+
+    // Add spacing after this line if it's the end of a bullet group
+    // or if next line is blank
+    const nextLine = bodyLines[i + 1];
+    if (isBullet && nextLine !== undefined && !nextLine.trim().startsWith("•")) {
+      y += bulletGap - bodyLineHeight + paraGap;
+    } else if (nextLine !== undefined && nextLine.trim() === "") {
+      y += paraGap;
+    }
   }
-  // Add some padding between bullet groups (detected by lines starting with "•")
-  const bulletCount = writeUpLines.filter((l) => l.trim().startsWith("•")).length;
-  bodyHeight += bulletCount * bulletSpacing;
+  bodyHeight = y - headerBottom;
 
-  const height = headerHeight + bodyHeight + footerHeight + padding * 2;
+  const height = headerBottom + bodyHeight + padBottom;
 
-  // Build body text as tspan elements
-  let currentY = headerHeight + padding;
-  const bodySpans = writeUpLines
-    .map((line) => {
-      const isBullet = line.trim().startsWith("•");
-      const y = currentY;
-      currentY += lineHeight + (isBullet ? bulletSpacing : 0);
-      const fontWeight = isBullet ? "font-weight=\"500\"" : "";
-      const fill = isBullet ? "#111827" : "#374151";
-      // Indent bullets slightly
-      const x = isBullet ? padding + 16 : padding;
-      const displayLine = isBullet ? line.trim().slice(1).trim() : line;
-      return `<tspan x="${x}" y="${y}" fill="${fill}" ${fontWeight}>${escapeXml(displayLine)}</tspan>`;
+  // ── Build SVG elements ────────────────────────────────────────────
+  const logoEl = logoBase64
+    ? `<image x="${padX}" y="${logoY}" width="${logoW}" height="${logoH}" href="${logoBase64}"/>`
+    : "";
+
+  const bodySpans = lineMeta
+    .map(({ text, y: ly, isBullet }) => {
+      const x = isBullet ? padX + bulletIndent : padX;
+      const weight = isBullet ? 'font-weight="500"' : "";
+      const fill = isBullet ? "#1f2937" : "#4b5563";
+      return `<tspan x="${x}" y="${ly}" fill="${fill}" ${weight}>${escapeXml(text)}</tspan>`;
     })
     .join("");
 
-  const logoSection = logoBase64
-    ? `<image x="${padding}" y="${padding + 8}" width="32" height="32" href="${logoBase64}"/>`
-    : "";
+  // Small orange dots for bullets
+  const bulletDots = lineMeta
+    .filter((m) => m.isBullet)
+    .map(({ y: ly }) => {
+      const cy = ly - bodyFontSize * 0.35;
+      return `<circle cx="${padX + 6}" cy="${cy}" r="3" fill="#f97316"/>`;
+    })
+    .join("");
+
+  const today = escapeXml(new Date().toISOString().slice(0, 10));
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <!-- Background -->
-  <rect width="${width}" height="${height}" fill="#fafafa"/>
+  <defs>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    </style>
+  </defs>
 
-  <!-- Top accent line -->
-  <rect x="${padding}" y="${padding}" width="40" height="3" fill="#f97316" rx="1.5"/>
+  <!-- Background -->
+  <rect width="${width}" height="${height}" fill="#ffffff"/>
+
+  <!-- Top accent bar -->
+  <rect x="${padX}" y="${padTop}" width="36" height="3" fill="#f97316" rx="1.5"/>
 
   <!-- Header -->
-  <g transform="translate(0, 0)">
-    ${logoSection}
-    <text x="${padding + (logoBase64 ? 44 : 0)}" y="${padding + 32}" fill="#111827" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="600">${escapeXml(owner)}/${escapeXml(repo)}</text>
-    <text x="${padding}" y="${padding + 72}" fill="#6b7280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15">Changelog</text>
-    <text x="${padding + 90}" y="${padding + 72}" fill="#f97316" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="500">${escapeXml(version)}</text>
+  <g class="font">
+    ${logoEl}
+    <text x="${repoTextX}" y="${repoTextY}" fill="#111827" font-size="${repoFontSize}" font-weight="600">${escapeXml(owner)}/${escapeXml(repo)}</text>
+
+    <text x="${padX}" y="${labelY}" fill="#9ca3af" font-size="${labelFontSize}" font-weight="500" letter-spacing="0.08em">CHANGELOG</text>
+
+    <!-- Version pill -->
+    <rect x="${padX + 88}" y="${labelY - 11}" width="${Math.max(40, version.length * 7 + 16)}" height="20" fill="#fff7ed" rx="10"/>
+    <text x="${padX + 88 + 10}" y="${labelY + 2}" fill="#f97316" font-size="${labelFontSize}" font-weight="500">${escapeXml(version)}</text>
   </g>
 
-  <!-- Write-up -->
-  <text font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="18" line-height="${lineHeight}">
-    ${bodySpans}
-  </text>
+  <!-- Separator -->
+  <line x1="${padX}" y1="${headerBottom - 8}" x2="${width - padX}" y2="${headerBottom - 8}" stroke="#f3f4f6" stroke-width="1"/>
+
+  <!-- Body -->
+  <g class="font">
+    ${bulletDots}
+    <text font-size="${bodyFontSize}" line-height="${bodyLineHeight}">
+      ${bodySpans}
+    </text>
+  </g>
 
   <!-- Footer -->
-  <g transform="translate(0, ${height - footerHeight})">
-    <text x="${padding}" y="30" fill="#d1d5db" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13">Generated with KimiFlare · ${escapeXml(new Date().toISOString().slice(0, 10))}</text>
+  <g class="font" transform="translate(0, ${height - padBottom + 20})">
+    <text x="${padX}" y="0" fill="#d1d5db" font-size="11">Generated with KimiFlare · ${today}</text>
   </g>
 </svg>`;
 }
