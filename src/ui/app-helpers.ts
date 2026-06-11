@@ -303,6 +303,33 @@ export function makePrefixMessages(
   ];
 }
 
+/**
+ * Rebuild the system prompt message(s) in `messages` to match `mode`.
+ * Must be called synchronously before starting a new turn after a mode
+ * change, because the React effect that updates the system prompt may
+ * not have fired yet.
+ */
+export function rebuildSystemPromptForMode(
+  messages: ChatMessage[],
+  cacheStable: boolean,
+  model: string,
+  mode: Mode,
+  tools: ToolSpec[],
+): void {
+  if (cacheStable) {
+    const rebuilt = buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
+    messages[0] = rebuilt[0]!;
+    if (rebuilt[1]) {
+      messages[1] = rebuilt[1];
+    }
+  } else {
+    messages[0] = {
+      role: "system",
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
+    };
+  }
+}
+
 // ── Image-path extraction ────────────────────────────────────────────────
 
 export function findImagePaths(text: string): string[] {

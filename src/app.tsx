@@ -135,6 +135,7 @@ import {
   mkAssistantId,
   mkKey,
   openBrowser,
+  rebuildSystemPromptForMode,
   trackRecentFile,
 } from "./ui/app-helpers.js";
 
@@ -1303,6 +1304,13 @@ function App({
 
       setMode(picked);
       modeRef.current = picked;
+      rebuildSystemPromptForMode(
+        messagesRef.current,
+        cacheStableRef.current,
+        cfg?.model ?? DEFAULT_MODEL,
+        picked,
+        [...ALL_TOOLS, ...mcpToolsRef.current, ...lspToolsRef.current],
+      );
       submitRef.current(plan);
     },
     [mkKey, setShowPlanCompletePicker, setMode, setEvents, setUsage, setSessionUsage, setGatewayMeta, clearTaskTracking, resetSession, submitRef],
