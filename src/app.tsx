@@ -2573,6 +2573,10 @@ function App({
         changelogImageRepo={changelogImageRepo}
         onChangelogImageGenerate={(owner, repo, days) => {
           setShowChangelogImagePicker(false);
+          setEvents((e) => [
+            ...e,
+            { kind: "info", key: mkKey(), text: `Generating changelog image for ${owner}/${repo} (last ${days} day${days === 1 ? "" : "s"})…` },
+          ]);
           setTimeout(() => {
             void (async () => {
               try {
