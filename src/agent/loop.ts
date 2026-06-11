@@ -934,6 +934,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             githubToken: opts.githubToken,
             shell: opts.shell,
             intentTier: opts.intentClassification?.tier,
+            accountId: opts.accountId,
+            apiToken: opts.apiToken,
+            model: opts.model,
+            gateway: opts.gateway,
           },
           opts.onFileChange,
         );

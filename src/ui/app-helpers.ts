@@ -207,7 +207,7 @@ export function detectGitHubRepo(cachedRepo?: string): { owner: string; name: st
     if (parts.length === 2) return { owner: parts[0]!, name: parts[1]! };
   }
   try {
-    const remoteUrl = execSync("git remote get-url origin", { cwd: process.cwd(), encoding: "utf8" }).trim();
+    const remoteUrl = execSync("git remote get-url origin", { cwd: process.cwd(), encoding: "utf8" }).trim().replace(/\/+$/,"");
     const httpsMatch = remoteUrl.match(/github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?$/);
     if (httpsMatch) return { owner: httpsMatch[1]!, name: httpsMatch[2]! };
     const sshMatch = remoteUrl.match(/github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/);

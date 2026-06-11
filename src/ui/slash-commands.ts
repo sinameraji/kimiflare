@@ -71,6 +71,7 @@ import {
   detectGitHubRepo,
   FEEDBACK_WORKER_URL,
   formatTokens,
+  mkAssistantId,
   openBrowser,
   rebuildSystemPromptForMode,
 } from "./app-helpers.js";
@@ -80,6 +81,7 @@ import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
 import { distillSessionPlan } from "../agent/distill.js";
 import { writeToClipboard } from "../util/clipboard.js";
+import type { Task } from "../tools/registry.js";
 
 type SetEvents = React.Dispatch<React.SetStateAction<ChatEvent[]>>;
 
@@ -127,6 +129,12 @@ export interface SlashContext {
   setShowGatewayPicker: (v: boolean) => void;
   setShowSkillsPicker: (v: boolean) => void;
   setShowShellPicker: (v: boolean) => void;
+  setShowChangelogImagePicker: (v: boolean) => void;
+  setChangelogImageRepo: React.Dispatch<React.SetStateAction<{ owner: string; name: string } | null>>;
+
+  // Task tracking (for non-turn UI like changelog-image generation)
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  setTasksStartedAt: (n: number | null) => void;
 
   // LSP scope (for /lsp scope)
   lspScope: "project" | "global";
@@ -1630,6 +1638,135 @@ const handleHelp: Handler = (ctx) => {
   return true;
 };
 
+const handleChangelogImage: Handler = (ctx, rest) => {
+  const { cfg, setEvents, mkKey, setShowChangelogImagePicker, setChangelogImageRepo, setTasks, setTasksStartedAt } = ctx;
+  if (!cfg) {
+    setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Not configured yet." }]);
+    return true;
+  }
+
+  // Parse args: /changelog-image [owner/repo] [days]
+  let owner = cfg.githubRepo?.split("/")[0];
+  let repo = cfg.githubRepo?.split("/")[1];
+  let days = 7;
+
+  if (rest.length > 0 && rest[0]!.includes("/")) {
+    const parts = rest[0]!.split("/");
+    owner = parts[0];
+    repo = parts[1];
+  }
+  if (rest.length > 1) {
+    const d = parseInt(rest[1]!, 10);
+    if (!Number.isNaN(d)) days = d;
+  }
+
+  const runGeneration = (o: string, r: string, d: number) => {
+    const asstId = mkAssistantId();
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "assistant",
+        key: `asst_${asstId}`,
+        id: asstId,
+        text: `Generating changelog image for ${o}/${r} (last ${d} day${d === 1 ? "" : "s"})…`,
+        reasoning: "",
+        streaming: true,
+      },
+    ]);
+
+    const taskList: Task[] = [
+      { id: "fetch-prs", title: "Fetch merged PRs", status: "pending" },
+      { id: "fetch-release", title: "Fetch latest release", status: "pending" },
+      { id: "summarize", title: "Summarize with LLM", status: "pending" },
+      { id: "render", title: "Render changelog image", status: "pending" },
+      { id: "save", title: "Save PNG file", status: "pending" },
+    ];
+    setTasks(taskList);
+    setTasksStartedAt(Date.now());
+
+    const updateTask = (id: string, status: Task["status"]) => {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+    };
+
+    void (async () => {
+      try {
+        const { changelogImageTool } = await import("../tools/changelog-image.js");
+        const { gatewayFromConfig } = await import("./app-helpers.js");
+
+        updateTask("fetch-prs", "in_progress");
+        updateTask("fetch-release", "in_progress");
+        const result = await changelogImageTool.run({ owner: o, repo: r, days: d }, {
+          cwd: process.cwd(),
+          githubToken: cfg.githubOAuthToken,
+          accountId: cfg.accountId,
+          apiToken: cfg.apiToken,
+          model: cfg.model,
+          gateway: gatewayFromConfig(cfg),
+        });
+        updateTask("fetch-prs", "completed");
+        updateTask("fetch-release", "completed");
+        updateTask("summarize", "completed");
+        updateTask("render", "completed");
+        updateTask("save", "completed");
+
+        const text = typeof result === "string" ? result : result.content;
+        setEvents((e) =>
+          e.map((ev) =>
+            ev.kind === "assistant" && ev.id === asstId
+              ? { ...ev, text, streaming: false }
+              : ev,
+          ),
+        );
+      } catch (err) {
+        const msg = `changelog-image failed: ${err instanceof Error ? err.message : String(err)}`;
+        setEvents((e) =>
+          e.map((ev) =>
+            ev.kind === "assistant" && ev.id === asstId
+              ? { ...ev, text: msg, streaming: false }
+              : ev,
+          ),
+        );
+      } finally {
+        setTasksStartedAt(null);
+      }
+    })();
+  };
+
+  const tryOpenPicker = (o: string | undefined, r: string | undefined) => {
+    if (o && r) {
+      // If no explicit args given, open the TUI picker
+      if (rest.length === 0) {
+        setChangelogImageRepo({ owner: o, name: r });
+        setShowChangelogImagePicker(true);
+        return;
+      }
+      runGeneration(o, r, days);
+      return;
+    }
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "error",
+        key: mkKey(),
+        text: "Usage: /changelog-image [owner/repo] [days]\nSet githubRepo in config or pass owner/repo explicitly.",
+      },
+    ]);
+  };
+
+  if (owner && repo) {
+    tryOpenPicker(owner, repo);
+    return true;
+  }
+
+  // Auto-detect from git remote
+  void import("../ui/app-helpers.js").then(({ detectGitHubRepo }) => {
+    const detected = detectGitHubRepo();
+    tryOpenPicker(detected?.owner, detected?.name);
+  });
+
+  return true;
+};
+
 // ── Registry ─────────────────────────────────────────────────────────────
 
 const handlers: Record<string, Handler> = {
@@ -1663,6 +1800,7 @@ const handlers: Record<string, Handler> = {
   "/logout": handleLogout,
   "/command": handleCommand,
   "/remote": handleRemote,
+  "/changelog-image": handleChangelogImage,
   "/help": handleHelp,
 };
 

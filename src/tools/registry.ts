@@ -24,6 +24,14 @@ export interface ToolContext {
    * and SDK consumers may not have a tier.
    */
   intentTier?: "light" | "medium" | "heavy";
+  /** Cloudflare account id for tools that need to call an LLM. */
+  accountId?: string;
+  /** Cloudflare API token for tools that need to call an LLM. */
+  apiToken?: string;
+  /** Model id for tools that need to call an LLM. */
+  model?: string;
+  /** AI Gateway options for tools that need to call an LLM. */
+  gateway?: import("../agent/client.js").AiGatewayOptions;
 }
 
 export interface ToolRender {

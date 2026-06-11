@@ -127,6 +127,7 @@ import {
   compactEventsVisual,
   CONTEXT_LIMIT,
   detectGitBranch,
+  detectGitHubRepo,
   findImagePaths,
   gatewayFromConfig,
   gatewayUsageLookupFromConfig,
@@ -310,6 +311,7 @@ function App({
     showSkillsPicker, setShowSkillsPicker,
     showShellPicker, setShowShellPicker,
     showPlanCompletePicker, setShowPlanCompletePicker,
+    showChangelogImagePicker, setShowChangelogImagePicker,
     hasFullscreenModal,
     hasAnyModal,
   } = modals;
@@ -354,6 +356,7 @@ function App({
   const [activeWorkers, setActiveWorkers] = useState<import("./agent/supervisor.js").ActiveWorker[]>([]);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [coordinatorNarration, setCoordinatorNarration] = useState<string>("");
+  const [changelogImageRepo, setChangelogImageRepo] = useState<{ owner: string; name: string } | null>(null);
 
   useEffect(() => {
     setGitBranch(detectGitBranch());
@@ -1502,6 +1505,10 @@ function App({
     setShowGatewayPicker,
     setShowSkillsPicker,
     setShowShellPicker,
+    setShowChangelogImagePicker,
+    setChangelogImageRepo,
+    setTasks: turn.setTasks,
+    setTasksStartedAt: turn.setTasksStartedAt,
     lspScope,
     lspProjectPath,
     resetSession,
@@ -1545,9 +1552,10 @@ function App({
     setHasUpdate, setLatestVersion, setShowThemePicker, setShowModelPicker, setShowModePicker, setKeyEntryFor,
     setBillingChooserFor, setUnifiedProbeFor, setShowInboxModal, setShowHelpMenu,
     setShowMemoryPicker, setShowGatewayPicker, setShowSkillsPicker, setShowShellPicker,
+    setShowChangelogImagePicker, setChangelogImageRepo,
     setShowLspWizard, setShowRemoteDashboard, setShowCommandList,
     setCommandWizard, setCommandPicker,
-    turn.setShowReasoning,
+    turn.setShowReasoning, turn.setTasks, turn.setTasksStartedAt,
     resetSession, clearTaskTracking, openResumePicker, runCompact, runInit,
     initMcp, initLsp, ensureSessionId,
   ]);
@@ -2625,6 +2633,80 @@ function App({
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `Type /skills ${action} <name> to ${action} a skill.` }]);
         }}
         onSkillsDone={() => setShowSkillsPicker(false)}
+        changelogImageRepo={changelogImageRepo}
+        onChangelogImageGenerate={(owner, repo, days) => {
+          setShowChangelogImagePicker(false);
+          const asstId = mkAssistantId();
+          setEvents((e) => [
+            ...e,
+            {
+              kind: "assistant",
+              key: `asst_${asstId}`,
+              id: asstId,
+              text: `Generating changelog image for ${owner}/${repo} (last ${days} day${days === 1 ? "" : "s"})…`,
+              reasoning: "",
+              streaming: true,
+            },
+          ]);
+
+          const taskList: import("./tools/registry.js").Task[] = [
+            { id: "fetch-prs", title: "Fetch merged PRs", status: "pending" },
+            { id: "fetch-release", title: "Fetch latest release", status: "pending" },
+            { id: "summarize", title: "Summarize with LLM", status: "pending" },
+            { id: "render", title: "Render changelog image", status: "pending" },
+            { id: "save", title: "Save PNG file", status: "pending" },
+          ];
+          turn.setTasks(taskList);
+          turn.setTasksStartedAt(Date.now());
+
+          const updateTask = (id: string, status: import("./tools/registry.js").Task["status"]) => {
+            turn.setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
+          };
+
+          setTimeout(() => {
+            void (async () => {
+              try {
+                updateTask("fetch-prs", "in_progress");
+                updateTask("fetch-release", "in_progress");
+                const { changelogImageTool } = await import("./tools/changelog-image.js");
+                const result = await changelogImageTool.run({ owner, repo, days }, {
+                  cwd: process.cwd(),
+                  githubToken: cfg?.githubOAuthToken,
+                  accountId: cfg?.accountId,
+                  apiToken: cfg?.apiToken,
+                  model: cfg?.model,
+                  gateway: gatewayFromConfig(cfg),
+                });
+                updateTask("fetch-prs", "completed");
+                updateTask("fetch-release", "completed");
+                updateTask("summarize", "completed");
+                updateTask("render", "completed");
+                updateTask("save", "completed");
+
+                const text = typeof result === "string" ? result : result.content;
+                setEvents((e) =>
+                  e.map((ev) =>
+                    ev.kind === "assistant" && ev.id === asstId
+                      ? { ...ev, text, streaming: false }
+                      : ev,
+                  ),
+                );
+              } catch (err) {
+                const msg = `changelog-image failed: ${err instanceof Error ? err.message : String(err)}`;
+                setEvents((e) =>
+                  e.map((ev) =>
+                    ev.kind === "assistant" && ev.id === asstId
+                      ? { ...ev, text: msg, streaming: false }
+                      : ev,
+                  ),
+                );
+              } finally {
+                turn.setTasksStartedAt(null);
+              }
+            })();
+          }, 0);
+        }}
+        onChangelogImageCancel={() => setShowChangelogImagePicker(false)}
       />
     );
   }

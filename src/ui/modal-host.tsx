@@ -24,6 +24,7 @@ import { InboxModal } from "./inbox-modal.js";
 import { MultiAgentModal, type MultiAgentSettings } from "./multi-agent-modal.js";
 import { HooksDashboard } from "./hooks-dashboard.js";
 import { HelpMenu } from "./help-menu.js";
+import { ChangelogImagePicker } from "./changelog-image-picker.js";
 
 import type { Theme } from "./theme.js";
 import type { ModalHostController } from "./use-modal-host.js";
@@ -122,6 +123,10 @@ export interface ModalHostProps {
   // Skills picker
   onSkillsAction: (action: string) => void;
   onSkillsDone: () => void;
+  // Changelog image picker
+  changelogImageRepo: { owner: string; name: string } | null;
+  onChangelogImageGenerate: (owner: string, repo: string, days: number) => void;
+  onChangelogImageCancel: () => void;
 }
 
 /**
@@ -479,6 +484,21 @@ export function ModalHost(props: ModalHostProps): React.ReactElement | null {
             secretsStoreId={secretsStoreId}
             onSave={(result) => onSaveProviderKey(model, result)}
             onCancel={onCancelKeyEntry}
+          />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (modals.showChangelogImagePicker && props.changelogImageRepo) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column">
+          <ChangelogImagePicker
+            owner={props.changelogImageRepo.owner}
+            repo={props.changelogImageRepo.name}
+            onGenerate={props.onChangelogImageGenerate}
+            onCancel={props.onChangelogImageCancel}
           />
         </Box>
       </ThemeProvider>

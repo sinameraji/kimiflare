@@ -13,3 +13,4 @@ dist/
 sessions/
 coverage/
 .kimiflare/
+changelog-*.png

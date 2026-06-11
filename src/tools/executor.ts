@@ -9,7 +9,8 @@ import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { webFetchTool } from "./web-fetch.js";
 import { searchWebTool } from "./web-search.js";
-import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool } from "./github.js";
+import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool, githubListMergedPrsTool, githubListReleasesTool } from "./github.js";
+import { changelogImageTool } from "./changelog-image.js";
 import { browserFetchTool } from "./browser.js";
 import { tasksSetTool } from "./tasks.js";
 import { memoryRememberTool, memoryRecallTool, memoryForgetTool } from "./memory.js";
@@ -31,6 +32,9 @@ export const ALL_TOOLS: ToolSpec[] = [
   githubReadPrTool,
   githubReadIssueTool,
   githubReadCodeTool,
+  githubListMergedPrsTool,
+  githubListReleasesTool,
+  changelogImageTool,
   browserFetchTool,
   tasksSetTool,
   memoryRememberTool,
