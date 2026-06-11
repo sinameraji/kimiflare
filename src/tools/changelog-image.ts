@@ -306,7 +306,7 @@ function buildChangelogSvg(opts: {
     <text x="${padX}" y="${labelY}" fill="#9ca3af" font-size="${labelFontSize}" font-weight="500" letter-spacing="0.08em">CHANGELOG</text>
 
     <!-- Version pill -->
-    <rect x="${padX + 88}" y="${labelY - 10}" width="${Math.max(40, version.length * 7 + 16)}" height="20" fill="#fff7ed" rx="10"/>
+    <rect x="${padX + 88}" y="${labelY - 14}" width="${Math.max(40, version.length * 7 + 16)}" height="22" fill="#fff7ed" rx="11"/>
     <text x="${padX + 88 + 10}" y="${labelY}" fill="#f97316" font-size="${labelFontSize}" font-weight="500">${escapeXml(version)}</text>
   </g>
 
