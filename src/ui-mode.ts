@@ -751,6 +751,46 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     }
   });
 
+  // Mouse click support (P3.17). The renderer may emit MouseClick events
+  // when the user clicks interactive transcript rows. Host-side reactions:
+  // copy code blocks, open files, acknowledge tool toggles.
+  // This is forward-looking — the renderer does not yet emit MouseClick
+  // events, but the handler is wired so kimiflare is ready when it does.
+  cam.on("event", (ev: { event_type: string; payload?: Record<string, unknown> }) => {
+    if (ev.event_type !== "MouseClick") return;
+    const payload = ev.payload as {
+      row_id?: string;
+      kind?: "code_block" | "file_path" | "tool_execution" | "generic";
+      data?: string;
+      line?: number;
+    } | undefined;
+    if (!payload) return;
+
+    if (payload.kind === "code_block" && payload.data) {
+      const result = writeToClipboard(payload.data);
+      cam.send("ShowToast", {
+        text: result.message,
+        kind: result.success ? "success" : "error",
+        ttl_ms: 2000,
+      });
+    } else if (payload.kind === "file_path" && payload.data) {
+      const filePath = payload.data;
+      const line = payload.line;
+      const editor = process.env.EDITOR || (platform() === "darwin" ? "open" : platform() === "win32" ? "code" : "xdg-open");
+      try {
+        const args = line != null ? [`${filePath}:${line}`] : [filePath];
+        const child = spawn(editor, args, { detached: true, stdio: "ignore" });
+        child.unref();
+        cam.send("ShowToast", { text: `Opened ${filePath}${line != null ? `:${line}` : ""}`, kind: "success", ttl_ms: 2000 });
+      } catch {
+        cam.send("ShowToast", { text: `Failed to open ${filePath}`, kind: "error", ttl_ms: 2000 });
+      }
+    } else if (payload.kind === "tool_execution" && payload.row_id) {
+      // The renderer handles the visual toggle; host acknowledges.
+      cam.send("ShowToast", { text: "Toggled tool output", kind: "info", ttl_ms: 1500 });
+    }
+  });
+
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
   executor.setHooks(hooksManager);
@@ -3338,6 +3378,8 @@ const HELP_KEYS = [
   { key: "?", desc: "toggle help overlay (when input empty)" },
   { key: "M", desc: "toggle metrics overlay (when input empty)" },
   { key: "T", desc: "cycle theme (when input empty)" },
+  { key: "S", desc: "toggle mouse capture (when input empty)" },
+  { key: "Click", desc: "click code blocks to copy, files to open (when mouse capture ON)" },
 ];
 
 function openBrowser(url: string): void {

@@ -3,7 +3,7 @@
 > This document tracks the incremental migration of features from Ink to Camouflage UI mode.
 > Last updated: 2026-06-12
 >
-> **Current status:** P0–P2 fully complete. P3.14–P3.16 complete. P3.17 pending renderer support.
+> **Current status:** P0–P2 fully complete. P3.14–P3.17 host-side complete. Renderer-side mouse events pending upstream.
 
 ## Overview
 
@@ -137,15 +137,20 @@ Camouflage (`src/ui-mode.ts`) is the experimental terminal UI renderer that will
 - [x] No host changes required — renderer handles bracketed paste and sanitization natively
 - **Files:** `package.json` (optionalDependency)
 
-### P3.17 Mouse support
-- [ ] Click to expand tools, click to copy code blocks
-- **Status:** Blocked on renderer support. ratatui supports mouse events; Camouflage does not yet wire them to actions.
-- **Proposed implementation:**
-  1. Renderer: enable crossterm mouse capture mode on startup
-  2. Renderer: track click coordinates → map to row IDs in the transcript
-  3. Renderer: on click inside a tool-execution row, toggle expand/collapse
-  4. Renderer: on click inside a code block, copy contents to clipboard (via OSC 52 or external command)
-  5. Host: add `MouseClick` outbound event if the host needs to react (e.g. open a file at clicked line)
+### P3.17 Mouse support ✅ (host-side)
+- [x] Host: handle `MouseClick` events from the renderer
+  - Click on code block → copy to clipboard via `writeToClipboard`
+  - Click on file path → open in `$EDITOR` (with optional line number)
+  - Click on tool execution → acknowledge toggle
+- [ ] Renderer: emit `MouseClick` events when user clicks interactive rows
+- **Status:** Host-side complete. Renderer-side pending upstream support.
+- **Implementation:**
+  1. Renderer: enable crossterm mouse capture mode on startup ✅ (already supported via `S` key)
+  2. Renderer: track click coordinates → map to row IDs in the transcript ⏳ pending upstream
+  3. Renderer: on click inside a tool-execution row, toggle expand/collapse ⏳ pending upstream
+  4. Renderer: on click inside a code block, copy contents to clipboard ⏳ pending upstream
+  5. Host: handle `MouseClick` inbound events ✅ (`src/ui-mode.ts`)
+- **Files:** `src/ui-mode.ts`
 - **Upstream issue:** sinameraji/camouflage#?? (file when ready)
 
 ---
