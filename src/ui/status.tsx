@@ -48,7 +48,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
     return () => clearInterval(id);
   }, [thinking, turnStartedAt]);
 
-  const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
+  const elapsed = turnStartedAt !== null ? formatElapsed(Math.max(0, now - turnStartedAt)) : null;
 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
