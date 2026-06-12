@@ -79,25 +79,36 @@ Camouflage (`src/ui-mode.ts`) is the experimental terminal UI renderer that will
 
 *Goal: Full feature parity plus Camouflage-native enhancements.*
 
-### P2.9 Billing/Cost detailed view
-- [ ] Add `/cost` handler that opens `ShowKeyValueView` with breakdown
+### P2.9 Billing/Cost detailed view ✅
+- [x] Add `/cost` handler that opens `ShowKeyValueView` with breakdown
+- [x] Uses `getCostReport`, `formatCostReport`, `formatGatewaySection` for session/today/month/all-time + gateway section
 - **Files:** `src/ui-mode.ts`
+- **PR:** #575
 
-### P2.10 Multi-agent worker list
-- [ ] Add `ShowWorkerList` event or render workers as `BackgroundTaskUpdate` entries
-- **Files:** `src/ui-mode.ts`, Camouflage renderer
-
-### P2.11 Hooks dashboard
-- [ ] Port `HooksDashboard` to sequential `selectList` + `ShowKeyValueView` flows
+### P2.10 Multi-agent worker list ✅
+- [x] Render workers as `BackgroundTaskUpdate` entries during multi-agent execution
+- [x] Add `/workers` command to list active workers via `ShowKeyValueView`
 - **Files:** `src/ui-mode.ts`
+- **PR:** #575
 
-### P2.12 QR code support
-- [ ] Add `ShowQrCode` event to Camouflage renderer, or render as ASCII art
-- **Files:** `src/ui-mode.ts`, Camouflage renderer
-
-### P2.13 Changelog image picker
-- [ ] Port to `form` + `selectList` flow (owner/repo/days inputs)
+### P2.11 Hooks dashboard ✅
+- [x] Port `HooksDashboard` to sequential `selectList` + `ShowKeyValueView` flows
+- [x] `/hooks dashboard` shows configured + recommended hooks in selectList
+- [x] Enter toggles enable/disable; `+ Create custom hook` opens form
 - **Files:** `src/ui-mode.ts`
+- **PR:** #575
+
+### P2.12 QR code support ✅
+- [x] `/hello` generates QR code as ASCII art via `QRCode.toString` and renders in `ShowKeyValueView`
+- **Files:** `src/ui-mode.ts`
+- **PR:** #575
+
+### P2.13 Changelog image picker ✅
+- [x] Port to `form` + `selectList` flow (owner/repo/days inputs)
+- [x] `/changelog-image` with no args opens form; days picked via selectList
+- [x] Runs `changelogImageTool` with `BackgroundTaskUpdate` task tracking
+- **Files:** `src/ui-mode.ts`
+- **PR:** #575
 
 ---
 

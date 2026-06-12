@@ -25,6 +25,8 @@ import { appendFileSync, openSync } from "node:fs";
 import { readdir, unlink } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { platform } from "node:os";
+import { randomUUID } from "node:crypto";
+import { getAppVersion } from "./util/version.js";
 /** File logger gated by KIMIFLARE_EVENT_LOG. One JSON object per line. */
 const KIMI_LOG_PATH = process.env.KIMIFLARE_EVENT_LOG ?? null;
 if (KIMI_LOG_PATH) {
@@ -100,6 +102,7 @@ import { checkForUpdate, checkOptionalDependency } from "./util/update-check.js"
 import { writeToClipboard } from "./util/clipboard.js";
 import { calculateCost } from "./pricing.js";
 import { loadConfig, saveConfig, configPath, DEFAULT_MODEL } from "./config.js";
+import { getCostReport, formatCostReport, formatGatewaySection, formatFeatureBreakdown, getSessionGatewayLogs } from "./usage-tracker.js";
 import type { KimiConfig } from "./config.js";
 import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
 import { listAllSkills, setSkillEnabled, deleteSkill, createSkill, findSkillFile } from "./skills/manager.js";
@@ -111,10 +114,12 @@ import { getRemoteStatus, cancelRemoteSession } from "./remote/worker-client.js"
 import { BUILTIN_COMMAND_NAMES } from "./commands/builtins.js";
 import type { CustomCommand } from "./commands/types.js";
 import type { LspServerConfig } from "./config.js";
-import { loadHooksSettings, globalSettingsPath, projectSettingsPath, setHookEnabled } from "./hooks/settings.js";
+import { loadHooksSettings, globalSettingsPath, projectSettingsPath, setHookEnabled, appendHook, deriveHookId } from "./hooks/settings.js";
 import { HOOK_EVENTS } from "./hooks/types.js";
+import { RECOMMENDED_HOOKS } from "./hooks/recommended.js";
 import { buildInitPrompt } from "./init/context-generator.js";
 import { isBlockedInPlanMode, isReadOnlyBash } from "./mode.js";
+import QRCode from "qrcode";
 
 export interface UiModeOpts {
   accountId: string;
@@ -887,6 +892,15 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
                 if (done !== lastDone) {
                   lastDone = done;
                   cam.send("ShowToast", { text: `workers: ${running} running · ${done}/${workers.length} done`, kind: "info", ttl_ms: 1500 });
+                }
+                // Render each worker as a background task entry
+                for (const w of workers) {
+                  const state = w.status === "completed" ? "done" : w.status === "failed" || w.status === "budget_exhausted" ? "done" : "running";
+                  cam.send("BackgroundTaskUpdate", {
+                    task_id: `worker-${w.id}`,
+                    label: `${w.mode}: ${w.task.slice(0, 40)}${w.task.length > 40 ? "…" : ""}`,
+                    state,
+                  });
                 }
               },
             );
@@ -1912,6 +1926,22 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         await handleMultiAgentCommand(args);
         return true;
       }
+      case "workers": {
+        const workers = multiAgentSupervisor.activeWorkers;
+        if (workers.length === 0) {
+          cam.send("ShowToast", { text: "no active workers", kind: "info", ttl_ms: 2500 });
+          return true;
+        }
+        cam.send("ShowKeyValueView", {
+          id: `workers-${Date.now()}`,
+          title: `active workers (${workers.length})`,
+          items: workers.map((w) => ({
+            label: `${w.status === "completed" ? "✓" : w.status === "failed" ? "✗" : w.status === "budget_exhausted" ? "⚠" : "●"} [${w.mode}] ${w.id}`,
+            value: `${w.task.slice(0, 60)}${w.task.length > 60 ? "…" : ""}${w.error ? `  — error: ${w.error}` : ""}`,
+          })),
+        });
+        return true;
+      }
       case "model":
         cam.send("ShowToast", { text: `model: ${opts.model}`, kind: "info", ttl_ms: 2500 });
         return true;
@@ -2143,7 +2173,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       }
       case "cost": {
         // Sub-actions: on / off toggle costAttribution. Bare /cost
-        // shows the KV report.
+        // shows the detailed breakdown report.
         const sub = args.split(/\s+/)[0] ?? "";
         if (sub === "on" || sub === "off") {
           const cfg2 = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
@@ -2156,17 +2186,35 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           }
           return true;
         }
-        cam.send("ShowKeyValueView", {
-          id: `cost-${Date.now()}`,
-          title: "session cost",
-          items: [
-            { label: "model", value: opts.model },
-            { label: "prompt tokens", value: String(promptTokens) },
-            { label: "cached prompt", value: String(cachedTokens) },
-            { label: "completion tokens", value: String(completionTokens) },
-            { label: "total $", value: formatUsd(sessionCostUsd) },
-          ],
-        });
+        try {
+          const report = await getCostReport();
+          const cfg = await loadConfig();
+          const gatewayId = cfg?.aiGatewayId ?? opts.aiGatewayId;
+          let gatewaySection = "";
+          if (gatewayId && cfg?.accountId && cfg?.apiToken) {
+            gatewaySection = formatGatewaySection(report, cfg.accountId, gatewayId);
+          }
+          const items: { label: string; value: string }[] = [];
+          // Session data from live counters (ui-mode.ts has no sessionId tracking)
+          const sessionCached = cachedTokens > 0 ? ` (${formatK(cachedTokens)} cached)` : "";
+          items.push({ label: "Session", value: `${formatUsd(sessionCostUsd)}  (in: ${formatK(promptTokens)}${sessionCached}  out: ${formatK(completionTokens)})` });
+          items.push({ label: "Today", value: `${report.today.cost.toFixed(4)}  (in: ${formatK(report.today.promptTokens)}${report.today.cachedTokens > 0 ? ` (${formatK(report.today.cachedTokens)} cached)` : ""}  out: ${formatK(report.today.completionTokens)})` });
+          items.push({ label: "Month", value: `${report.month.cost.toFixed(4)}  (in: ${formatK(report.month.promptTokens)}${report.month.cachedTokens > 0 ? ` (${formatK(report.month.cachedTokens)} cached)` : ""}  out: ${formatK(report.month.completionTokens)})` });
+          items.push({ label: "All time", value: `${report.allTime.cost.toFixed(4)}  (in: ${formatK(report.allTime.promptTokens)}${report.allTime.cachedTokens > 0 ? ` (${formatK(report.allTime.cachedTokens)} cached)` : ""}  out: ${formatK(report.allTime.completionTokens)})` });
+          if (gatewaySection) {
+            items.push({ label: "", value: "" });
+            for (const line of gatewaySection.split("\n")) {
+              items.push({ label: "", value: line });
+            }
+          }
+          cam.send("ShowKeyValueView", {
+            id: `cost-${Date.now()}`,
+            title: "cost breakdown",
+            items,
+          });
+        } catch (err) {
+          cam.send("ShowToast", { text: `cost report failed: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+        }
         return true;
       }
       case "reasoning":
@@ -2523,7 +2571,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       }
       case "hooks": {
         // Sub-actions: list (default) / path / enable <id> / disable <id> /
-        // reload. Recommended catalog is Ink-only.
+        // reload / dashboard. Recommended catalog is Ink-only.
         const parts = args.split(/\s+/).filter(Boolean);
         const sub = parts[0] ?? "list";
         const id = parts.slice(1).join(" ");
@@ -2549,30 +2597,124 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             return true;
           }
           const path = setHookEnabled(process.cwd(), id, sub === "enable");
-          if (path) cam.send("ShowToast", { text: `${id}: ${sub}d in ${path}`, kind: "success", ttl_ms: 3000 });
-          else cam.send("ShowToast", { text: `hook id "${id}" not found`, kind: "error", ttl_ms: 2500 });
+          if (path) {
+            hooksManager.reload();
+            cam.send("ShowToast", { text: `${id}: ${sub}d in ${path}`, kind: "success", ttl_ms: 3000 });
+          } else {
+            cam.send("ShowToast", { text: `hook id "${id}" not found`, kind: "error", ttl_ms: 2500 });
+          }
           return true;
         }
         if (sub === "recommended") {
           cam.send("ShowToast", { text: "recommended catalog is Ink-only; see docs/hooks.md", kind: "warn", ttl_ms: 3000 });
           return true;
         }
-        // list (default)
-        const settings = loadHooksSettings(process.cwd());
-        const items: { label: string; value: string }[] = [];
-        for (const ev of HOOK_EVENTS) {
-          const list = settings.hooks?.[ev] ?? [];
-          if (list.length === 0) continue;
-          items.push({ label: ev, value: `${list.length} hook${list.length === 1 ? "" : "s"}` });
+        if (sub === "dashboard" || sub === "list") {
+          // Interactive dashboard: selectList of configured + recommended hooks
+          const settings = loadHooksSettings(process.cwd());
+          const configured: { event: import("./hooks/types.js").HookEvent; hook: import("./hooks/types.js").HookConfig }[] = [];
+          for (const ev of HOOK_EVENTS) {
+            const list = settings.hooks?.[ev] ?? [];
+            for (const h of list) configured.push({ event: ev, hook: h });
+          }
+          const configuredIds = new Set(configured.map((c) => c.hook.id ?? deriveHookId(c.event, c.hook.command)));
+          const options: { value: string; label: string; description?: string }[] = [];
+          for (const c of configured) {
+            const hid = c.hook.id ?? deriveHookId(c.event, c.hook.command);
+            const enabled = c.hook.enabled !== false;
+            options.push({
+              value: `toggle:${hid}`,
+              label: `${enabled ? "✓" : "✗"} [${c.event}] ${hid}`,
+              description: c.hook.description ?? c.hook.command,
+            });
+          }
+          for (const r of RECOMMENDED_HOOKS) {
+            if (configuredIds.has(r.id)) continue;
+            options.push({
+              value: `add:${r.id}`,
+              label: `+ [${r.event}] ${r.id}`,
+              description: r.hook.description ?? r.hook.command,
+            });
+          }
+          options.push({ value: "__create__", label: "+ Create custom hook …" });
+          options.push({ value: "__done__", label: "← Done" });
+          const choice = await selectList(cam, {
+            id: `hooks-dash-${Date.now()}`,
+            prompt: "Hooks dashboard  ·  ↑↓ navigate · Enter toggle/add · Esc done",
+            options,
+            allow_filter: true,
+            allow_cancel: true,
+          });
+          if (choice.cancelled || !choice.value || choice.value === "__done__") return true;
+          if (choice.value === "__create__") {
+            const f = await form(cam, {
+              id: `hooks-create-${Date.now()}`,
+              title: "Create custom hook",
+              fields: [
+                { name: "event", label: "Event", required: true, placeholder: "PreToolUse | PostToolUse | UserPromptSubmit | Stop | PreCompact" },
+                { name: "command", label: "Command", required: true, placeholder: "shell command to run" },
+                { name: "description", label: "Description", placeholder: "what this hook does" },
+              ],
+              allow_cancel: true,
+            });
+            if (f.cancelled || !f.values) return true;
+            const ev = (f.values.event ?? "").trim() as import("./hooks/types.js").HookEvent;
+            if (!HOOK_EVENTS.includes(ev)) {
+              cam.send("ShowToast", { text: `invalid event: ${ev}`, kind: "error", ttl_ms: 3000 });
+              return true;
+            }
+            const cmd = (f.values.command ?? "").trim();
+            if (!cmd) {
+              cam.send("ShowToast", { text: "command is required", kind: "error", ttl_ms: 2500 });
+              return true;
+            }
+            const path = appendHook("project", process.cwd(), ev, {
+              command: cmd,
+              description: (f.values.description ?? "").trim() || undefined,
+              enabled: true,
+            });
+            hooksManager.reload();
+            cam.send("ShowToast", { text: `created hook → ${path}`, kind: "success", ttl_ms: 3000 });
+            return true;
+          }
+          if (choice.value.startsWith("toggle:")) {
+            const hid = choice.value.slice("toggle:".length);
+            // Look up current enabled state so we can toggle it
+            const settings2 = loadHooksSettings(process.cwd());
+            let currentEnabled = false;
+            for (const ev of HOOK_EVENTS) {
+              const list = settings2.hooks?.[ev] ?? [];
+              const found = list.find((h) => (h.id ?? deriveHookId(ev, h.command)) === hid);
+              if (found) {
+                currentEnabled = found.enabled !== false;
+                break;
+              }
+            }
+            const path = setHookEnabled(process.cwd(), hid, !currentEnabled);
+            if (path) {
+              hooksManager.reload();
+              cam.send("ShowToast", { text: `${!currentEnabled ? "enabled" : "disabled"} ${hid} → ${path}`, kind: "success", ttl_ms: 3000 });
+            } else {
+              cam.send("ShowToast", { text: `hook id "${hid}" not found`, kind: "error", ttl_ms: 2500 });
+            }
+            return true;
+          }
+          if (choice.value.startsWith("add:")) {
+            const rid = choice.value.slice("add:".length);
+            const rec = RECOMMENDED_HOOKS.find((r) => r.id === rid);
+            if (!rec) {
+              cam.send("ShowToast", { text: `recommended hook "${rid}" not found`, kind: "error", ttl_ms: 2500 });
+              return true;
+            }
+            const path = appendHook("project", process.cwd(), rec.event, { ...rec.hook, enabled: true });
+            hooksManager.reload();
+            cam.send("ShowToast", { text: `enabled ${rid} (${rec.event}) → ${path}`, kind: "success", ttl_ms: 3000 });
+            return true;
+          }
+          return true;
         }
-        items.push({ label: "(global settings)", value: globalSettingsPath() });
-        items.push({ label: "(project settings)", value: projectSettingsPath(process.cwd()) });
-        cam.send("ShowKeyValueView", {
-          id: `hooks-${Date.now()}`,
-          title: items.length > 2 ? "hooks" : "no hooks enabled",
-          items,
-        });
-        return true;
+        // Bare /hooks — default to dashboard
+        return await handleSlashCommand("/hooks dashboard");
       }
       case "skills": {
         // Sub-actions match Ink: list (default) / enable <n> / disable <n>
@@ -2775,10 +2917,128 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         }
         return true;
       }
-      case "hello":
-        openBrowser("https://hello.kimiflare.com");
-        cam.send("ShowToast", { text: "opened hello.kimiflare.com — leave the creator a voice note", kind: "info", ttl_ms: 3500 });
+      case "changelog-image": {
+        // Parse args: /changelog-image [owner/repo] [days]
+        let owner: string | undefined;
+        let repo: string | undefined;
+        let days = 7;
+        const cfg = await loadConfig();
+        if (args) {
+          const parts = args.split(/\s+/).filter(Boolean);
+          if (parts[0] && parts[0].includes("/")) {
+            const [o, r] = parts[0].split("/");
+            owner = o;
+            repo = r;
+          }
+          if (parts[1]) {
+            const d = parseInt(parts[1], 10);
+            if (!Number.isNaN(d)) days = d;
+          }
+        }
+        if (!owner || !repo) {
+          // Try to infer from config
+          const inferred = cfg?.githubRepo?.split("/");
+          if (inferred && inferred.length === 2) {
+            owner = inferred[0];
+            repo = inferred[1];
+          }
+        }
+        if (!owner || !repo) {
+          // Form flow for owner/repo
+          const f = await form(cam, {
+            id: `changelog-form-${Date.now()}`,
+            title: "changelog image",
+            fields: [
+              { name: "owner", label: "Owner", required: true, placeholder: "e.g. cloudflare" },
+              { name: "repo", label: "Repo", required: true, placeholder: "e.g. workers-sdk" },
+            ],
+            allow_cancel: true,
+          });
+          if (f.cancelled || !f.values) return true;
+          owner = (f.values.owner ?? "").trim();
+          repo = (f.values.repo ?? "").trim();
+          if (!owner || !repo) {
+            cam.send("ShowToast", { text: "owner and repo are required", kind: "error", ttl_ms: 2500 });
+            return true;
+          }
+        }
+        // Days picker
+        const dayChoice = await selectList(cam, {
+          id: `changelog-days-${Date.now()}`,
+          prompt: `Generate changelog for ${owner}/${repo} — select period`,
+          options: [
+            { value: "1", label: "Past 24 hours" },
+            { value: "7", label: "Past 7 days" },
+            { value: "30", label: "Past 30 days" },
+          ],
+          default: String(days),
+          allow_cancel: true,
+        });
+        if (dayChoice.cancelled || !dayChoice.value) return true;
+        days = parseInt(dayChoice.value, 10);
+
+        // Run generation
+        const sid = `s${++streamCounter}`;
+        cam.send("AssistantStreamStarted", { stream_id: sid });
+        cam.send("AssistantTokenDelta", { stream_id: sid, token: `Generating changelog image for ${owner}/${repo} (last ${days} day${days === 1 ? "" : "s"})…\n` });
+        const taskList = [
+          { id: "fetch-prs", title: "Fetch merged PRs", status: "pending" as const },
+          { id: "fetch-release", title: "Fetch latest release", status: "pending" as const },
+          { id: "summarize", title: "Summarize with LLM", status: "pending" as const },
+          { id: "render", title: "Render changelog image", status: "pending" as const },
+          { id: "save", title: "Save PNG file", status: "pending" as const },
+        ];
+        for (const t of taskList) {
+          cam.send("BackgroundTaskUpdate", { task_id: t.id, label: t.title, state: "running" });
+        }
+        void (async () => {
+          try {
+            const { changelogImageTool } = await import("./tools/changelog-image.js");
+            const result = await changelogImageTool.run({ owner, repo, days }, {
+              cwd: process.cwd(),
+              githubToken: cfg?.githubOAuthToken,
+              accountId: opts.accountId,
+              apiToken: opts.apiToken,
+              model: opts.model,
+              gateway: gatewayFromOpts(opts),
+            });
+            for (const t of taskList) {
+              cam.send("BackgroundTaskUpdate", { task_id: t.id, label: t.title, state: "done" });
+            }
+            const text = typeof result === "string" ? result : result.content;
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `\n${text}` });
+          } catch (err) {
+            for (const t of taskList) {
+              cam.send("BackgroundTaskUpdate", { task_id: t.id, label: t.title, state: "done" });
+            }
+            cam.send("AssistantTokenDelta", { stream_id: sid, token: `\nchangelog-image failed: ${err instanceof Error ? err.message : String(err)}\n` });
+          } finally {
+            cam.send("AssistantMessageCompleted", { stream_id: sid });
+          }
+        })();
         return true;
+      }
+      case "hello": {
+        const session = randomUUID();
+        const url = `https://hello.kimiflare.com/?s=${session}&v=${getAppVersion()}`;
+        openBrowser(url);
+        try {
+          const qr = await QRCode.toString(url, { type: "terminal", small: true });
+          const lines = qr.split("\n").map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+          cam.send("ShowKeyValueView", {
+            id: `qr-${Date.now()}`,
+            title: "hello.kimiflare.com",
+            items: [
+              { label: "", value: "Scan this QR code with your phone to send a voice note:" },
+              ...lines.map((line) => ({ label: "", value: line })),
+              { label: "", value: `Also opened in your browser: ${url}` },
+            ],
+          });
+        } catch {
+          cam.send("ShowToast", { text: `opened ${url} in your browser`, kind: "info", ttl_ms: 3500 });
+        }
+        return true;
+      }
       case "inbox":
         await openInboxModal();
         return true;
