@@ -78,6 +78,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path", "line", "column"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -99,6 +100,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path", "line", "column"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -120,6 +122,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path", "line", "column"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -139,6 +142,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -158,6 +162,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["query"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const query = typeof args.query === "string" ? args.query : "";
         // Use first available client for workspace-wide queries
@@ -185,6 +190,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -253,6 +259,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path", "line", "column"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);
@@ -274,6 +281,7 @@ export function makeLspTools(manager: LspManager): ToolSpec[] {
         required: ["path", "line", "column"],
       },
       needsPermission: false,
+      isReadOnly: true,
       run: async (args, ctx) => {
         const path = resolveLspPath(args, ctx);
         const client = manager.resolveClientForPath(path);

@@ -52,6 +52,9 @@ export interface ToolSpec<Args = any> {
   description: string;
   parameters: Record<string, unknown>;
   needsPermission: boolean;
+  /** When true, the tool only reads state and never mutates the workspace.
+   *  Read-only tools within a single turn may be executed in parallel. */
+  isReadOnly?: boolean;
   render?: (args: Args) => ToolRender;
   run: (args: Args, ctx: ToolContext) => Promise<string | ToolOutput>;
 }

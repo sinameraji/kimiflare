@@ -48,7 +48,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
     return () => clearInterval(id);
   }, [thinking, turnStartedAt]);
 
-  const elapsed = turnStartedAt !== null ? formatElapsed(now - turnStartedAt) : null;
+  const elapsed = turnStartedAt !== null ? formatElapsed(Math.max(0, now - turnStartedAt)) : null;
 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
@@ -62,6 +62,9 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
   if (memoryRecalled) {
     metaParts.push("memory");
   }
+
+  const elapsedMs = turnStartedAt !== null ? Math.max(0, now - turnStartedAt) : 0;
+  const rotateIndex = Math.min(Math.floor(elapsedMs / 2000), 2);
 
   const phaseLabel = phase === "generating"
     ? humanizePhase("generating", intentTier)
@@ -78,12 +81,24 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
   const activePhaseLabel = thinking && phase === "waiting"
     ? humanizePhase("generating", intentTier)
     : phaseLabel;
+
+  // Rotate the generating label every 2s so long waits don't feel frozen.
+  const rotatingLabel = (() => {
+    if (!thinking || phase === "executing") return activePhaseLabel;
+    const tier = intentTier ?? "medium";
+    const labels = tier === "heavy"
+      ? ["reasoning", "synthesizing", "composing"]
+      : tier === "light"
+        ? ["thinking", "reasoning", "composing"]
+        : ["thinking", "reasoning", "synthesizing"];
+    return labels[rotateIndex] ?? labels[labels.length - 1]!;
+  })();
   const idleMs = lastActivityAt && thinking ? now - lastActivityAt : 0;
   const idleLabel = idleMs > 30_000 ? ` (idle ${formatElapsed(Math.floor(idleMs / 1000))})` : "";
 
   const thinkingText = metaParts.length > 0
-    ? `${activePhaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
-    : `${activePhaseLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
+    ? `${rotatingLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel} · ${metaParts.join(" · ")}`
+    : `${rotatingLabel}${elapsed ? ` · ${elapsed}` : ""}${idleLabel}`;
 
   const readyText = idleParts.length > 0
     ? `${idleParts.join(" · ")} · ready`

@@ -24,6 +24,7 @@ export interface AgentCallbacks {
   onAssistantStart?: () => void;
   onReasoningDelta?: (text: string) => void;
   onTextDelta?: (text: string) => void;
+  onInfo?: (text: string) => void;
   onToolCallStart?: (index: number, id: string, name: string) => void;
   onToolCallArgs?: (index: number, delta: string) => void;
   onToolCallFinalized?: (call: ToolCall) => void;
@@ -733,7 +734,266 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     let blockedCount = 0;
-    for (const [i, tc] of toolCalls.entries()) {
+
+    // Determine if every tool in this batch is read-only.  When they are,
+    // we can execute them in parallel because there are no write-order
+    // dependencies or mutation side-effects to sequence.
+    const allReadOnly =
+      toolCalls.length > 1 &&
+      toolCalls.every((tc) => {
+        const tool = opts.executor.list().find((t) => t.name === tc.function.name);
+        return tool?.isReadOnly === true;
+      });
+
+    // NOTE: Extending parallel execution to *mutable* tool calls is
+    // possible but requires an explicit dependency graph (e.g. a write to
+    // file X must complete before a subsequent read of file X).  Without
+    // such ordering guarantees, parallelising mutable calls risks race
+    // conditions and non-deterministic results.  If you want to add this
+    // in the future, build a DAG of tool dependencies first, then execute
+    // each topological layer in parallel while respecting the sequential
+    // order within a layer.
+    if (allReadOnly) {
+      opts.callbacks.onInfo?.(`${toolCalls.length} read-only tools running in parallel`);
+      type ParallelItem =
+        | { kind: "blocked"; tc: ToolCall; loopSignature: string; result: ToolResult }
+        | { kind: "run"; tc: ToolCall; loopSignature: string };
+
+      const items: ParallelItem[] = [];
+      for (const tc of toolCalls) {
+        if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
+        const loopSignature = `${tc.function.name}:${stableStringify(tc.function.arguments)}`;
+        const loopCount = recentToolCalls.filter((s) => s === loopSignature).length;
+        if (loopCount >= LOOP_THRESHOLD) {
+          items.push({
+            kind: "blocked",
+            tc,
+            loopSignature,
+            result: {
+              tool_call_id: tc.id,
+              name: tc.function.name,
+              content: `Loop detected: you have called ${tc.function.name} with the same arguments multiple times in a row. Consider a different approach.`,
+              ok: false,
+            },
+          });
+          continue;
+        }
+        if (tc.function.name === "web_fetch") {
+          const args = JSON.parse(tc.function.arguments || "{}") as { url?: string };
+          const url = args.url || "";
+          try {
+            const domain = new URL(url).hostname;
+            const domainCount = webFetchHistory.filter((h) => h.domain === domain).length;
+            const totalSessionFetches = webFetchHistory.length;
+            if (
+              webFetchesThisTurn >= MAX_WEB_FETCH_PER_TURN ||
+              totalSessionFetches >= SESSION_WEB_FETCH_CAP ||
+              domainCount >= WEB_FETCH_DOMAIN_THRESHOLD
+            ) {
+              let warning: string;
+              if (webFetchesThisTurn >= MAX_WEB_FETCH_PER_TURN) {
+                warning = `Research budget exceeded: you have already made ${MAX_WEB_FETCH_PER_TURN} web requests this turn. Synthesize what you have learned instead of fetching more pages.`;
+              } else if (totalSessionFetches >= SESSION_WEB_FETCH_CAP) {
+                warning = `Session research budget exceeded: ${totalSessionFetches} web fetches across this session. Synthesize what you have learned from prior fetches instead of starting another page.`;
+              } else {
+                warning = `Loop detected: you have fetched from ${domain} multiple times. Consider a different approach or synthesize existing findings.`;
+              }
+              items.push({
+                kind: "blocked",
+                tc,
+                loopSignature,
+                result: { tool_call_id: tc.id, name: "web_fetch", content: warning, ok: false },
+              });
+              continue;
+            }
+            webFetchHistory.push({ url, domain });
+            webFetchesThisTurn++;
+          } catch {
+            // Invalid URL, let it fail normally
+          }
+        }
+        items.push({ kind: "run", tc, loopSignature });
+      }
+
+      const runItems = items.filter((it): it is ParallelItem & { kind: "run" } => it.kind === "run");
+      const executed = await Promise.all(
+        runItems.map(async (it) => {
+          opts.callbacks.onToolWillExecute?.(it.tc.id, it.tc.function.name);
+          logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: it.tc.function.name, toolCallId: it.tc.id });
+          const result = await opts.executor.run(
+            { id: it.tc.id, name: it.tc.function.name, arguments: it.tc.function.arguments },
+            opts.callbacks.askPermission,
+            {
+              cwd: opts.cwd,
+              signal: opts.signal,
+              onTasks: wrappedOnTasks,
+              onPlanOptions: opts.callbacks.onPlanOptions,
+              coauthor: opts.coauthor,
+              memoryManager: opts.memoryManager,
+              sessionId: opts.sessionId,
+              githubToken: opts.githubToken,
+              shell: opts.shell,
+              intentTier: opts.intentClassification?.tier,
+              accountId: opts.accountId,
+              apiToken: opts.apiToken,
+              model: opts.model,
+              gateway: opts.gateway,
+            },
+            opts.onFileChange,
+          );
+          let content = result.content;
+          if (content.length > MAX_TOOL_CONTENT_CHARS) {
+            const rawBytes = content.length;
+            content = content.slice(0, MAX_TOOL_CONTENT_CHARS) + `\n\n[truncated: ${rawBytes - MAX_TOOL_CONTENT_CHARS} chars omitted]`;
+            opts.callbacks.onTruncation?.({
+              tool: it.tc.function.name,
+              toolCallId: it.tc.id,
+              rawBytes,
+              reducedBytes: content.length,
+              artifactId: result.artifactId,
+            });
+          }
+          return { ...result, content } as ToolResult;
+        }),
+      );
+
+      const resultMap = new Map<string, ToolResult>();
+      for (let i = 0; i < runItems.length; i++) {
+        resultMap.set(runItems[i]!.tc.id, executed[i]!);
+      }
+
+      for (const it of items) {
+        if (it.kind === "blocked") {
+          toolResults.push(it.result);
+          opts.messages.push({
+            role: "tool",
+            tool_call_id: it.tc.id,
+            content: sanitizeString(it.result.content),
+            name: it.tc.function.name,
+          });
+          opts.callbacks.onToolResult?.(it.result);
+          recentToolCalls.push(it.loopSignature);
+          if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+          blockedCount++;
+          continue;
+        }
+
+        const result = resultMap.get(it.tc.id)!;
+        if (!result.ok && result.errorCode === "policy_rejection") {
+          logger.warn("hook:vetoed_tool_call", {
+            sessionId: opts.sessionId,
+            tool: it.tc.function.name,
+            toolCallId: it.tc.id,
+          });
+        }
+        logger.debug("turn:tool_end", { sessionId: opts.sessionId, tool: it.tc.function.name, toolCallId: it.tc.id, ok: result.ok });
+        if (!result.ok && result.errorCode) {
+          logger.warn("tool:error_classified", {
+            sessionId: opts.sessionId,
+            tool: it.tc.function.name,
+            toolCallId: it.tc.id,
+            code: result.errorCode,
+            recoverable: result.recoverable,
+          });
+        }
+        toolResults.push(result);
+        opts.messages.push({
+          role: "tool",
+          tool_call_id: result.tool_call_id,
+          content: sanitizeString(result.content),
+          name: result.name,
+        });
+        opts.callbacks.onToolResult?.(result);
+
+        if (opts.memoryManager) {
+          let filePath: string | undefined;
+          let toolArgs: Record<string, unknown> = {};
+          try {
+            toolArgs = JSON.parse(it.tc.function.arguments || "{}") as Record<string, unknown>;
+            filePath = toolArgs.path as string | undefined;
+          } catch {
+            // ignore parse errors
+          }
+          const lastAssistant = [...opts.messages].reverse().find(
+            (m) => m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0
+          );
+          const assistantMessage = lastAssistant?.content ?? "";
+          const llmOpts = opts.memoryManager.getExtractionLlmOpts();
+          const turnAtMemoryCommit = turn;
+          for (const extractor of EXTRACTORS) {
+            if (extractor.match(it.tc.function.name, filePath)) {
+              void (async () => {
+                try {
+                  const memory = await extractor.extract(result.content, filePath, {
+                    toolArgs: { ...toolArgs, _toolName: it.tc.function.name },
+                    assistantMessage: typeof assistantMessage === "string" ? assistantMessage : "",
+                    llmOpts: { ...llmOpts, signal: opts.signal },
+                  });
+                  if (memory) {
+                    await opts.memoryManager!.remember(
+                      memory.content,
+                      memory.category,
+                      memory.importance,
+                      opts.cwd,
+                      opts.sessionId ?? "unknown",
+                      opts.signal,
+                      undefined,
+                      memory.topicKey,
+                    );
+                    if (isHighSignalMemory(memory)) {
+                      const sid = opts.sessionId ?? "default";
+                      const events = driftEvents.get(sid) ?? [];
+                      events.push(turnAtMemoryCommit);
+                      const cutoff = turnAtMemoryCommit - DRIFT_WINDOW + 1;
+                      const recent = events.filter((t) => t >= cutoff);
+                      driftEvents.set(sid, recent);
+                      if (recent.length >= DRIFT_THRESHOLD) {
+                        try {
+                          opts.callbacks.onKimiMdStale?.();
+                        } catch (cbErr) {
+                          logger.debug("memory:onKimiMdStale_threw", {
+                            sessionId: opts.sessionId,
+                            error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+                          });
+                        }
+                        driftEvents.set(sid, []);
+                      }
+                    }
+                  }
+                } catch (err) {
+                  const sid = opts.sessionId ?? "default";
+                  const next = (memoryExtractionErrorCounts.get(sid) ?? 0) + 1;
+                  memoryExtractionErrorCounts.set(sid, next);
+                  const msg = err instanceof Error ? err.message : String(err);
+                  logger.debug("memory:extract_error", {
+                    sessionId: opts.sessionId,
+                    tool: it.tc.function.name,
+                    count: next,
+                    error: msg,
+                  });
+                  if (next === 1) {
+                    try {
+                      opts.callbacks.onWarning?.(
+                        `[memory] auto-extraction failed (${msg}). Subsequent failures will be counted silently; check /memory health.`,
+                      );
+                    } catch (cbErr) {
+                      logger.debug("memory:onWarning_threw", {
+                        sessionId: opts.sessionId,
+                        error: cbErr instanceof Error ? cbErr.message : String(cbErr),
+                      });
+                    }
+                  }
+                }
+              })();
+            }
+          }
+        }
+
+        recentToolCalls.push(it.loopSignature);
+        if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      }
+    } else {
+      for (const [i, tc] of toolCalls.entries()) {
       if (opts.signal.aborted) throw new DOMException("aborted", "AbortError");
 
       // Anti-loop guardrail
@@ -1124,6 +1384,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           }
         }
       }
+    }
     }
 
     if (blockedCount === toolCalls.length && toolCalls.length > 0) {

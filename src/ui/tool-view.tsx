@@ -27,7 +27,7 @@ interface Props {
 
 function formatElapsed(ms: number): string {
   const total = Math.floor(ms / 1000);
-  if (total < 1) return "<1s";
+  if (total < 1) return `${ms}ms`;
   const m = Math.floor(total / 60);
   const s = total % 60;
   if (m === 0) return `${s}s`;
