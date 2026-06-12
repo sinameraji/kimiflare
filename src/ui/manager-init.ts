@@ -129,10 +129,7 @@ export async function initLsp(deps: InitLspDeps): Promise<void> {
   if (!cfg.lspEnabled || !cfg.lspServers || lspInitRef.current) {
     if (lspInitRef.current) return;
     if (!cfg.lspEnabled) {
-      setEvents((es) => [
-        ...es,
-        { kind: "info", key: mkKey(), text: "LSP is disabled. Enable it in config to use language servers." },
-      ]);
+      return;
     } else if (!cfg.lspServers || Object.keys(cfg.lspServers).length === 0) {
       setEvents((es) => [
         ...es,

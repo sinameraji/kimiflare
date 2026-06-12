@@ -20,8 +20,7 @@ import { loadCustomCommands } from "../commands/loader.js";
 import { MemoryManager } from "../memory/manager.js";
 import { getMemoryDb, openMemoryDb } from "../memory/db.js";
 import { indexSkills, initSkillsSchema } from "../skills/index.js";
-import { markCreatorMessageSeen, shouldShowCreatorMessage } from "../util/state.js";
-import { getAppVersion } from "../util/version.js";
+
 import { RETENTION } from "../storage-limits.js";
 import type { HybridResult } from "../memory/schema.js";
 import { gatewayFromConfig } from "./app-helpers.js";
@@ -46,48 +45,16 @@ export function runStartupTasks(deps: RunStartupTasksDeps): void {
     customCommandsRef, setCustomCommandsVersion,
   } = deps;
 
-  // Prune old sessions on startup
-  void import("../sessions.js").then(({ pruneSessions }) =>
-    pruneSessions().then((removed) => {
-      if (removed > 0) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `pruned ${removed} old session files` },
-        ]);
-      }
-    }),
-  );
+  // Prune old sessions on startup (silent)
+  void import("../sessions.js").then(({ pruneSessions }) => pruneSessions());
 
   // Prune old structured logs (M5.1) and surface the current path once.
-  void import("../util/log-sink.js").then(({ pruneOldLogs, logPathFor, isLogSinkEnabled }) => {
+  void import("../util/log-sink.js").then(({ pruneOldLogs, isLogSinkEnabled }) => {
     if (!isLogSinkEnabled()) return;
     try {
       pruneOldLogs();
     } catch {
       // Non-fatal: log retention is best-effort.
-    }
-    setEvents((e) => [
-      ...e,
-      {
-        kind: "info",
-        key: mkKey(),
-        text: `structured logs: ${logPathFor()} (tail with: tail -f $(kimiflare logs path) | jq)`,
-      },
-    ]);
-  });
-
-  // Show creator welcome message once per version
-  void shouldShowCreatorMessage(getAppVersion()).then((shouldShow) => {
-    if (shouldShow) {
-      setEvents((e) => [
-        ...e,
-        {
-          kind: "info",
-          key: mkKey(),
-          text: "Hey, how do you like this version? I'd love to hear from you — type /hello to send me a voice note. Only I see it, and I may DM you back.",
-        },
-      ]);
-      void markCreatorMessageSeen(getAppVersion());
     }
   });
 
