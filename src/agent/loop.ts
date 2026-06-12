@@ -744,6 +744,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         return tool?.isReadOnly === true;
       });
 
+    // NOTE: Extending parallel execution to *mutable* tool calls is
+    // possible but requires an explicit dependency graph (e.g. a write to
+    // file X must complete before a subsequent read of file X).  Without
+    // such ordering guarantees, parallelising mutable calls risks race
+    // conditions and non-deterministic results.  If you want to add this
+    // in the future, build a DAG of tool dependencies first, then execute
+    // each topological layer in parallel while respecting the sequential
+    // order within a layer.
     if (allReadOnly) {
       type ParallelItem =
         | { kind: "blocked"; tc: ToolCall; loopSignature: string; result: ToolResult }
