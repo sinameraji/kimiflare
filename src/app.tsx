@@ -1983,6 +1983,9 @@ function App({
           if (id !== null) updateAssistant(id, (e) => ({ text: e.text + d }));
           setLastActivityAt(Date.now());
         },
+        onInfo: (text: string) => {
+          setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
+        },
         onAssistantFinal: () => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));

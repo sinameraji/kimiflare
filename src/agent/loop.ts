@@ -24,6 +24,7 @@ export interface AgentCallbacks {
   onAssistantStart?: () => void;
   onReasoningDelta?: (text: string) => void;
   onTextDelta?: (text: string) => void;
+  onInfo?: (text: string) => void;
   onToolCallStart?: (index: number, id: string, name: string) => void;
   onToolCallArgs?: (index: number, delta: string) => void;
   onToolCallFinalized?: (call: ToolCall) => void;
@@ -753,6 +754,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     // each topological layer in parallel while respecting the sequential
     // order within a layer.
     if (allReadOnly) {
+      opts.callbacks.onInfo?.(`${toolCalls.length} read-only tools running in parallel`);
       type ParallelItem =
         | { kind: "blocked"; tc: ToolCall; loopSignature: string; result: ToolResult }
         | { kind: "run"; tc: ToolCall; loopSignature: string };
