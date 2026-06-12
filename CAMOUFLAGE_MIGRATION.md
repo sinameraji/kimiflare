@@ -2,6 +2,8 @@
 
 > This document tracks the incremental migration of features from Ink to Camouflage UI mode.
 > Last updated: 2026-06-12
+>
+> **Current status:** P0–P2 fully complete. P3.14–P3.16 complete. P3.17 pending renderer support.
 
 ## Overview
 
@@ -116,17 +118,49 @@ Camouflage (`src/ui-mode.ts`) is the experimental terminal UI renderer that will
 
 *Goal: Users switching to Camouflage get *more* than they had in Ink.*
 
-### P3.14 Native scrollback search
-- [ ] Add `/` search through chat history in Rust renderer
+### P3.14 Native scrollback search ✅
+- [x] Renderer-native: `Ctrl+F` opens the transcript search overlay (ratatui viewport search)
+- [x] Documented in `HELP_KEYS` (`src/ui-mode.ts:3323`)
+- [x] No host code required — works automatically in camouflage-tui ≥ 1.0.0
+- **Note:** The renderer's SQLite-backed event log enables full-text search across the entire session history, not just the visible viewport.
 
-### P3.15 Persistent log buffer
-- [ ] Keep full session logs in memory for instant resume
+### P3.15 Persistent log buffer ✅
+- [x] Pass `--db <path>` to renderer pointing to `~/.config/kimiflare/camouflage-sessions.db`
+- [x] Directory created recursively at boot via `mkdirSync`
+- [x] Renderer persists every inbound event to SQLite WAL before rendering (automatic)
+- [x] Sessions are replayable via renderer's `--replay <SESSION_ID>` CLI flag
+- **Files:** `src/ui-mode.ts` (mount args)
+- **Note:** This integrates the renderer's native persistence with kimiflare's config directory, so sessions survive terminal restarts and can be replayed deterministically.
 
-### P3.16 Better paste handling
-- [ ] Handle paste sanitization natively in renderer
+### P3.16 Better paste handling ✅
+- [x] Upgraded to `camouflage-tui@2.1.0-beta.1` which ships paste preview + multi-line paste support (PR #29)
+- [x] No host changes required — renderer handles bracketed paste and sanitization natively
+- **Files:** `package.json` (optionalDependency)
 
 ### P3.17 Mouse support
 - [ ] Click to expand tools, click to copy code blocks
+- **Status:** Blocked on renderer support. ratatui supports mouse events; Camouflage does not yet wire them to actions.
+- **Proposed implementation:**
+  1. Renderer: enable crossterm mouse capture mode on startup
+  2. Renderer: track click coordinates → map to row IDs in the transcript
+  3. Renderer: on click inside a tool-execution row, toggle expand/collapse
+  4. Renderer: on click inside a code block, copy contents to clipboard (via OSC 52 or external command)
+  5. Host: add `MouseClick` outbound event if the host needs to react (e.g. open a file at clicked line)
+- **Upstream issue:** sinameraji/camouflage#?? (file when ready)
+
+---
+
+## Bug Fixes & Clean-ups
+
+### Invalid `TranscriptCleared` event removed
+- `TranscriptCleared` was never part of the Camouflage protocol (not in `EventType` enum)
+- Removed all 5 occurrences in `src/ui-mode.ts` (checkpoint restore, `/clear`, `/compact`, mode switch, `/resume`)
+- Added comments explaining that Camouflage is append-only; the visible scrollback is not cleared, but the internal `messages` array is correctly reset
+
+### Agent todo list now uses `TodoListUpdate`
+- `onTasks` callback sends `TodoListUpdate` (v2.1.0+) instead of individual `BackgroundTaskUpdate` events
+- Maps directly to the renderer's vertical checklist panel (☐ pending / ◐ in_progress / ☑ completed)
+- `BackgroundTaskUpdate` is still used for ephemeral background jobs (skills selection, memory recall, etc.)
 
 ---
 

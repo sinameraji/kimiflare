@@ -21,10 +21,10 @@
  */
 
 import { execSync, spawn } from "node:child_process";
-import { appendFileSync, openSync } from "node:fs";
+import { appendFileSync, mkdirSync, openSync } from "node:fs";
 import { readdir, unlink } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { platform } from "node:os";
+import { homedir, platform } from "node:os";
 import { randomUUID } from "node:crypto";
 import { getAppVersion } from "./util/version.js";
 /** File logger gated by KIMIFLARE_EVENT_LOG. One JSON object per line. */
@@ -178,11 +178,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   await loadCamouflage();
   // Spawn the renderer as a child. renderToTerminal=true means: TUI
   // draws to the user's terminal; outbound NDJSON arrives on fd 3.
+  // Point the renderer's SQLite session store into kimiflare's config
+  // directory so sessions are persisted across restarts and replayable.
+  const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+  const camoDbDir = join(xdgConfig, "kimiflare");
+  try { mkdirSync(camoDbDir, { recursive: true }); } catch { /* exists */ }
+  const camoDbPath = join(camoDbDir, "camouflage-sessions.db");
   let cam: CamouflageHandle;
   try {
     cam = await mount({
       bin: opts.camouflageBin,
       renderToTerminal: true,
+      args: ["--db", camoDbPath],
     });
   } catch (err) {
     console.error(`kimiflare: failed to launch Camouflage renderer.\n${err instanceof Error ? err.message : err}`);
@@ -1042,10 +1049,16 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             setTokens(usage.prompt_tokens, cached, completion);
           },
           onTasks: (tasks) => {
-            for (const t of tasks) {
-              const state = t.status === "completed" ? "done" : "running";
-              cam.send("BackgroundTaskUpdate", { task_id: t.id, label: t.title, state });
-            }
+            // Send the full todo list to Camouflage's vertical checklist panel
+            // (TodoListUpdate, v2.1.0+). Falls back to BackgroundTaskUpdate for
+            // older renderer versions that don't recognise the new event type.
+            cam.send("TodoListUpdate", {
+              todos: tasks.map((t) => ({
+                id: t.id,
+                title: t.title,
+                status: t.status,
+              })),
+            });
           },
           onPlanOptions: (options) => {
             planOptionsRef.current = options;
@@ -1259,7 +1272,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             cachedTokens = 0;
             completionTokens = 0;
             sessionPlan = null;
-            cam.send("TranscriptCleared", {});
+            // Camouflage is append-only; there is no "clear transcript" event.
             cam.send("StatusUpdate", {
               segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
             });
@@ -1309,7 +1322,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           promptTokens = 0;
           cachedTokens = 0;
           completionTokens = 0;
-          cam.send("TranscriptCleared", {});
+          // Camouflage is append-only; there is no "clear transcript" event.
           cam.send("StatusUpdate", {
             segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
           });
@@ -1818,13 +1831,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       if (choice.value === "__start__") {
         messages.length = 0;
         messages.push(...file.messages);
-        cam.send("TranscriptCleared", {});
+        // Camouflage is append-only; there is no "clear transcript" event.
+        // The restored state is live for the next turn even though the
+        // visible scrollback still shows the old conversation.
         cam.send("ShowToast", { text: `restored to beginning (${file.messages.length} msgs)`, kind: "success", ttl_ms: 2500 });
       } else {
         const { file: restored, checkpoint } = await loadSessionFromCheckpoint(currentSessionFilePath, choice.value);
         messages.length = 0;
         messages.push(...restored.messages);
-        cam.send("TranscriptCleared", {});
         cam.send("ShowToast", {
           text: `restored to "${checkpoint.label}" (turn ${checkpoint.turnIndex})`,
           kind: "success", ttl_ms: 3000,
@@ -1956,7 +1970,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cachedTokens = 0;
         completionTokens = 0;
         sessionPlan = null;
-        cam.send("TranscriptCleared", {});
+        // Camouflage is append-only; there is no "clear transcript" event.
         cam.send("StatusUpdate", {
           segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
         });
@@ -2021,7 +2035,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           messages.length = 0;
           messages.push(...file.messages);
           currentSessionFilePath = choice.value;
-          cam.send("TranscriptCleared", {});
+          // Camouflage is append-only; there is no "clear transcript" event.
           cam.send("ShowToast", {
             text: `resumed: ${file.title ?? file.id} (${file.messages.length} msgs restored)`,
             kind: "success", ttl_ms: 3500,
@@ -3080,7 +3094,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cachedTokens = 0;
           completionTokens = 0;
           sessionPlan = null;
-          cam.send("TranscriptCleared", {});
+          // Camouflage is append-only; there is no "clear transcript" event.
           cam.send("StatusUpdate", {
             segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
           });
