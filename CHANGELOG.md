@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.86.0](https://github.com/sinameraji/kimiflare/compare/v0.85.0...v0.86.0) (2026-06-12)
+
+
+### Features
+
+* **agent:** parallelize read-only tools within a turn ([#576](https://github.com/sinameraji/kimiflare/issues/576)) ([2327e48](https://github.com/sinameraji/kimiflare/commit/2327e4890709919a694578ebab6f0bef6ac87735))
+* **camouflage:** P0.3 diff rendering + P0.4 fuzzy file picker ([#573](https://github.com/sinameraji/kimiflare/issues/573)) ([465422b](https://github.com/sinameraji/kimiflare/commit/465422ba1dcb42c7278a2d3da16bd8f8276ab721))
+* **camouflage:** P1 parity — plan complete picker, skills wizard, theme persistence ([#574](https://github.com/sinameraji/kimiflare/issues/574)) ([6b889af](https://github.com/sinameraji/kimiflare/commit/6b889af7d81d1e231cd054aaff93d66939127569))
+* **camouflage:** P2 parity — cost breakdown, workers, hooks dashboard, QR codes, changelog picker ([#575](https://github.com/sinameraji/kimiflare/issues/575)) ([c4b69e2](https://github.com/sinameraji/kimiflare/commit/c4b69e28595edf5af828cf78bea62ca7436ef7dc))
+* **camouflage:** P3 enhancements — persistence, todo list, paste handling, bug fixes ([#577](https://github.com/sinameraji/kimiflare/issues/577)) ([b319a40](https://github.com/sinameraji/kimiflare/commit/b319a40cb87fcbb991422eeadeae861e24381ce4))
+* **camouflage:** P3.17 mouse support — host-side event handling ([#578](https://github.com/sinameraji/kimiflare/issues/578)) ([3e68873](https://github.com/sinameraji/kimiflare/commit/3e68873035fc3abd61001a38acdf93d96fab5498))
+* **camouflage:** wire MemoryManager, MCP, LSP, and Hooks managers ([#571](https://github.com/sinameraji/kimiflare/issues/571)) ([54b49e2](https://github.com/sinameraji/kimiflare/commit/54b49e25edb83936ea981622148bc3544672cd1f))
+
 ## [0.85.0](https://github.com/sinameraji/kimiflare/compare/v0.84.1...v0.85.0) (2026-06-11)
 
 
