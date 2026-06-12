@@ -1,17 +1,13 @@
 import { Command } from "commander";
 import { loadConfig, DEFAULT_MODEL } from "./config.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
-import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
-import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
-import type { AiGatewayOptions } from "./agent/client.js";
-import { buildSystemPrompt } from "./agent/system-prompt.js";
-import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
-import type { ChatMessage } from "./agent/messages.js";
 import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { getAppVersion } from "./util/version.js";
 import { createRemoteCommand } from "./remote/cli.js";
 import { renderLogo } from "./ui/logo.js";
+import { runPrintMode } from "./print-mode.js";
+import type { PrintFormat } from "./print-mode.js";
 
 const program = new Command();
 program
@@ -22,13 +18,21 @@ program
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
+  .option("--thinking", "alias for --reasoning")
   .option("--continue-on-limit", "reset tool-call counter and continue when the 200-call limit is hit (print mode only)")
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
   .option("--ui <name>", "render UI with the given engine: `ink` (default, stable) or `camouflage` (experimental Rust TUI). Can also be set via the KIMIFLARE_UI environment variable.")
   .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
-  .option("--mode <mode>", "run mode: interactive (default), print, rpc");
+  .option("--mode <mode>", "run mode: interactive (default), print, rpc")
+  .option("-c, --continue", "continue the most recent session in the current working directory (print mode only)")
+  .option("-S, --session <id>", "resume a specific session by id (print mode only)")
+  .option("-f, --file <path>", "attach file(s) to the prompt; repeatable, supports globs (print mode only)", (v, prev: string[] | undefined) => (prev ?? []).concat(v))
+  .option("--format <mode>", "output format for print mode: text (default), json, stream-json")
+  .option("--dir <path>", "run in the specified directory instead of the current one (print mode only)")
+  .option("--title <title>", "override the auto-generated session title (print mode only)")
+  .option("--attach <url>", "attach to a running kimiflare serve instance (print mode only)");
 
 program
   .command("cost")
@@ -128,6 +132,25 @@ program
   )
   ;
 
+program
+  .command("serve")
+  .description("Start a headless HTTP server for API access and CI integration")
+  .option("--port <n>", "port to listen on", (v) => parseInt(v, 10), 4096)
+  .option("--hostname <host>", "hostname to listen on", "127.0.0.1")
+  .action(async (cmdOpts) => {
+    const cfg = await loadConfig();
+    if (!cfg) {
+      console.error("kimiflare serve: missing credentials.");
+      process.exit(2);
+    }
+    const { startServer } = await import("./server/index.js");
+    await startServer({
+      port: cmdOpts.port,
+      hostname: cmdOpts.hostname,
+      config: cfg,
+    });
+  });
+
 program.action(async () => {
   await main();
 });
@@ -138,6 +161,7 @@ const opts = program.opts<{
   model?: string;
   dangerouslyAllowAll?: boolean;
   reasoning?: boolean;
+  thinking?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   emitEvents?: boolean;
@@ -145,6 +169,13 @@ const opts = program.opts<{
   ui?: string;
   camouflageBin?: string;
   mode?: string;
+  continue?: boolean;
+  session?: string;
+  file?: string[];
+  format?: string;
+  dir?: string;
+  title?: string;
+  attach?: string;
 }>();
 
 async function main() {
@@ -225,16 +256,44 @@ async function main() {
       process.exit(2);
     }
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const format = (opts.format ?? "text") as PrintFormat;
+    if (format !== "text" && format !== "json" && format !== "stream-json") {
+      console.error(`kimiflare: invalid --format "${format}". Use: text, json, stream-json`);
+      process.exit(2);
+    }
+
+    // Attach mode: connect to a running server
+    if (opts.attach) {
+      const { runAttachMode } = await import("./attach-mode.js");
+      await runAttachMode({
+        attachUrl: opts.attach,
+        prompt: opts.print,
+        model,
+        files: opts.file,
+        format,
+        allowAll: !!opts.dangerouslyAllowAll,
+        sessionId: opts.session,
+      });
+      return;
+    }
+
     await runPrintMode({
       ...cfg,
       model,
       prompt: opts.print,
       allowAll: !!opts.dangerouslyAllowAll,
-      showReasoning: !!opts.reasoning,
+      showReasoning: !!(opts.reasoning || opts.thinking),
       codeMode: cfg.codeMode,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
       updateResult,
+      continueSession: !!opts.continue,
+      sessionId: opts.session,
+      files: opts.file,
+      format,
+      dir: opts.dir,
+      title: opts.title,
+      permissions: cfg.permissions,
     });
     return;
   }
@@ -325,140 +384,6 @@ async function main() {
   }
 }
 
-interface PrintOpts {
-  accountId: string;
-  apiToken: string;
-  model: string;
-  prompt: string;
-  allowAll: boolean;
-  showReasoning: boolean;
-  coauthor?: boolean;
-  coauthorName?: string;
-  coauthorEmail?: string;
-  aiGatewayId?: string;
-  aiGatewayCacheTtl?: number;
-  aiGatewaySkipCache?: boolean;
-  aiGatewayCollectLogPayload?: boolean;
-  aiGatewayMetadata?: Record<string, string | number | boolean>;
-  updateResult: UpdateCheckResult;
-  codeMode?: boolean;
-  continueOnLimit?: boolean;
-  maxInputTokens?: number;
-}
 
-function gatewayFromPrintOpts(opts: PrintOpts): AiGatewayOptions | undefined {
-  if (!opts.aiGatewayId) return undefined;
-  return {
-    id: opts.aiGatewayId,
-    cacheTtl: opts.aiGatewayCacheTtl,
-    skipCache: opts.aiGatewaySkipCache,
-    collectLogPayload: opts.aiGatewayCollectLogPayload,
-    metadata: opts.aiGatewayMetadata,
-  };
-}
-
-async function runPrintMode(opts: PrintOpts): Promise<void> {
-  if (opts.updateResult.hasUpdate) {
-    process.stderr.write(
-      `\x1b[33mkimiflare update available: ${opts.updateResult.localVersion} → ${opts.updateResult.latestVersion}\x1b[0m\n` +
-        `\x1b[33m  npm update -g kimiflare  then restart\x1b[0m\n\n`,
-    );
-  }
-
-  const cwd = process.cwd();
-  // M6.1: print mode loads the same hooks as the TUI. Audit / guard /
-  // notification hooks fire in CI runs too — that's the case where
-  // they matter most.
-  const { HooksManager } = await import("./hooks/manager.js");
-  const hooks = new HooksManager(cwd);
-  const executor = new ToolExecutor(ALL_TOOLS, { hooks });
-  const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
-    { role: "user", content: opts.prompt },
-  ];
-
-  const controller = new AbortController();
-  process.on("SIGINT", () => controller.abort());
-
-  let printedReasoningHeader = false;
-  let printedAnswerHeader = false;
-
-  try {
-    await runAgentTurn({
-      accountId: opts.accountId,
-      apiToken: opts.apiToken,
-      model: opts.model,
-      gateway: gatewayFromPrintOpts(opts),
-      messages,
-      tools: ALL_TOOLS,
-      executor,
-      hooks, // M6.1: Stop fires at end of print-mode turn too.
-      cwd,
-      signal: controller.signal,
-      codeMode: opts.codeMode,
-      continueOnLimit: opts.continueOnLimit,
-      maxInputTokens: opts.maxInputTokens,
-      coauthor:
-        opts.coauthor !== false
-          ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }
-          : undefined,
-      callbacks: {
-        onReasoningDelta: opts.showReasoning
-          ? (delta) => {
-              if (!printedReasoningHeader) {
-                process.stderr.write("\x1b[2m--- reasoning ---\n");
-                printedReasoningHeader = true;
-              }
-              process.stderr.write(delta);
-            }
-          : undefined,
-        onTextDelta: (delta) => {
-          if (opts.showReasoning && printedReasoningHeader && !printedAnswerHeader) {
-            process.stderr.write("\n--- answer ---\x1b[0m\n");
-            printedAnswerHeader = true;
-          }
-          process.stdout.write(delta);
-        },
-        onToolCallFinalized: (call) => {
-          process.stderr.write(`\x1b[2m[tool ${call.function.name}(${call.function.arguments})]\x1b[0m\n`);
-        },
-        onToolResult: (result) => {
-          const snippet =
-            result.content.length > 400 ? result.content.slice(0, 400) + "..." : result.content;
-          process.stderr.write(`\x1b[2m[result: ${snippet.replace(/\n/g, " ⏎ ")}]\x1b[0m\n`);
-        },
-        onWarning: (msg) => {
-          process.stderr.write(`\x1b[33mkimiflare: ${msg}\x1b[0m\n`);
-        },
-        askPermission: async ({ tool, args }) => {
-          if (opts.allowAll) return "allow";
-          process.stderr.write(
-            `\x1b[31m[permission denied: ${tool.name}(${JSON.stringify(args)}) — pass --dangerously-allow-all to approve in print mode]\x1b[0m\n`,
-          );
-          return "deny";
-        },
-      },
-    });
-  } catch (err) {
-    if (err instanceof BudgetExhaustedError) {
-      process.stderr.write("\n\x1b[33m[Budget exhausted — exiting with code 42]\x1b[0m\n");
-      process.exitCode = 42;
-      return;
-    }
-    if (err instanceof AgentLoopError) {
-      process.stderr.write("\n\x1b[33m[Agent loop detected — exiting with code 43]\x1b[0m\n");
-      process.exitCode = 43;
-      return;
-    }
-    if (err instanceof KimiApiError) {
-      process.stderr.write(`\n\x1b[31mError: ${humanizeCloudflareError(err)}\x1b[0m\n`);
-      process.exitCode = 1;
-      return;
-    }
-    throw err;
-  }
-
-  process.stdout.write("\n");
-}
 
 

@@ -27,6 +27,12 @@ export interface LspServerConfig {
   maxRestartAttempts?: number;
 }
 
+/** Permission rule: allow, deny, or ask (default). */
+export type PermissionRule = "allow" | "deny" | "ask";
+
+/** Per-tool permission rules keyed by glob pattern. */
+export type PermissionRules = Record<string, PermissionRule>;
+
 export interface KimiConfig {
   accountId: string;
   apiToken: string;
@@ -174,6 +180,10 @@ export interface KimiConfig {
   /** Max characters of pre-read content to inject per worker batch.
    *  Default: 50_000. */
   workerPreReadMaxChars?: number;
+  /** Permission rules for headless/CI mode. Keys are tool names (e.g. "bash", "write").
+   *  Values are glob-pattern → rule mappings. Patterns are matched against the
+   *  target path (for file tools) or command string (for bash). */
+  permissions?: Record<string, PermissionRules>;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";

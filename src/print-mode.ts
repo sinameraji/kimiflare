@@ -1,0 +1,421 @@
+/**
+ * Enhanced print (headless) mode for KimiFlare.
+ *
+ * Supports one-shot prompts with optional session continuation,
+ * file attachments, structured output formats, and cwd override.
+ */
+
+import { readFile } from "node:fs/promises";
+import { resolve, basename } from "node:path";
+import { runAgentTurn, BudgetExhaustedError, AgentLoopError } from "./agent/loop.js";
+import type { AgentCallbacks } from "./agent/loop.js";
+import type { AiGatewayOptions } from "./agent/client.js";
+import { buildSystemPrompt } from "./agent/system-prompt.js";
+import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
+import type { ChatMessage, ContentPart } from "./agent/messages.js";
+import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { saveSession, loadSession, listSessions, sessionsDir, type SessionFile } from "./sessions.js";
+import { encodeImageFile, isImagePath } from "./util/image.js";
+import type { UpdateCheckResult } from "./util/update-check.js";
+import { glob } from "./util/glob.js";
+import { evaluatePermissionRules } from "./permissions-evaluator.js";
+import type { PermissionRules } from "./config.js";
+
+export type PrintFormat = "text" | "json" | "stream-json";
+
+export interface PrintModeOpts {
+  accountId: string;
+  apiToken: string;
+  model: string;
+  prompt: string;
+  allowAll: boolean;
+  showReasoning: boolean;
+  coauthor?: boolean;
+  coauthorName?: string;
+  coauthorEmail?: string;
+  aiGatewayId?: string;
+  aiGatewayCacheTtl?: number;
+  aiGatewaySkipCache?: boolean;
+  aiGatewayCollectLogPayload?: boolean;
+  aiGatewayMetadata?: Record<string, string | number | boolean>;
+  updateResult: UpdateCheckResult;
+  codeMode?: boolean;
+  continueOnLimit?: boolean;
+  maxInputTokens?: number;
+  /** Session continuation */
+  continueSession?: boolean;
+  sessionId?: string;
+  /** File attachments (paths or globs) */
+  files?: string[];
+  /** Output format */
+  format?: PrintFormat;
+  /** Working directory override */
+  dir?: string;
+  /** Session title override */
+  title?: string;
+  /** Config-based permission rules */
+  permissions?: Record<string, PermissionRules>;
+}
+
+interface JsonToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+interface JsonToolResult {
+  toolCallId: string;
+  name: string;
+  content: string;
+  ok: boolean;
+}
+
+interface JsonOutput {
+  text: string;
+  toolCalls: JsonToolCall[];
+  toolResults: JsonToolResult[];
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  durationMs: number;
+  sessionId: string;
+}
+
+function gatewayFromPrintOpts(opts: PrintModeOpts): AiGatewayOptions | undefined {
+  if (!opts.aiGatewayId) return undefined;
+  return {
+    id: opts.aiGatewayId,
+    cacheTtl: opts.aiGatewayCacheTtl,
+    skipCache: opts.aiGatewaySkipCache,
+    collectLogPayload: opts.aiGatewayCollectLogPayload,
+    metadata: opts.aiGatewayMetadata,
+  };
+}
+
+async function resolveSession(opts: PrintModeOpts): Promise<{ sessionFile: SessionFile; isNew: boolean }> {
+  if (opts.sessionId) {
+    const filePath = resolve(sessionsDir(), `${opts.sessionId}.json`);
+    try {
+      const file = await loadSession(filePath);
+      return { sessionFile: file, isNew: false };
+    } catch {
+      // Fall through to create new
+    }
+  }
+
+  if (opts.continueSession) {
+    const cwd = opts.dir ? resolve(opts.dir) : process.cwd();
+    const sessions = await listSessions(1, cwd);
+    if (sessions.length > 0) {
+      const filePath = sessions[0]!.filePath;
+      const file = await loadSession(filePath);
+      return { sessionFile: file, isNew: false };
+    }
+  }
+
+  // Create new session
+  const { makeSessionId } = await import("./sessions.js");
+  const id = makeSessionId(opts.prompt);
+  return {
+    sessionFile: {
+      id,
+      cwd: opts.dir ? resolve(opts.dir) : process.cwd(),
+      model: opts.model,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: [],
+      title: opts.title,
+    },
+    isNew: true,
+  };
+}
+
+async function resolveFiles(filePatterns: string[], cwd: string): Promise<string[]> {
+  const resolved = new Set<string>();
+  for (const pattern of filePatterns) {
+    // If it's a literal existing file, use it directly
+    try {
+      const stat = await import("node:fs/promises").then((m) => m.stat(resolve(cwd, pattern)));
+      if (stat.isFile()) {
+        resolved.add(resolve(cwd, pattern));
+        continue;
+      }
+    } catch {
+      // Not a literal file, try glob
+    }
+    // Try glob
+    const matches = await glob(pattern, { cwd, absolute: true });
+    for (const m of matches) {
+      resolved.add(m);
+    }
+  }
+  return [...resolved];
+}
+
+async function buildUserMessage(prompt: string, files: string[], cwd: string): Promise<{ content: string | ContentPart[]; display: string }> {
+  let text = prompt;
+  const imageParts: ContentPart[] = [];
+  const fileContents: string[] = [];
+
+  for (const filePath of files) {
+    if (isImagePath(filePath)) {
+      try {
+        const img = await encodeImageFile(filePath);
+        imageParts.push({ type: "image_url", image_url: { url: img.dataUrl } });
+      } catch (e) {
+        fileContents.push(`\n<!-- failed to attach image ${basename(filePath)}: ${(e as Error).message} -->\n`);
+      }
+    } else {
+      try {
+        const content = await readFile(filePath, "utf8");
+        const relPath = filePath.startsWith(cwd) ? filePath.slice(cwd.length + 1) : filePath;
+        fileContents.push(`\n--- ${relPath} ---\n${content}\n--- end ${relPath} ---\n`);
+      } catch (e) {
+        fileContents.push(`\n<!-- failed to read ${basename(filePath)}: ${(e as Error).message} -->\n`);
+      }
+    }
+  }
+
+  if (fileContents.length > 0) {
+    text += "\n\n" + fileContents.join("\n");
+  }
+
+  const display = prompt; // Original prompt without file contents for display
+
+  if (imageParts.length > 0) {
+    const parts: ContentPart[] = [{ type: "text", text }];
+    parts.push(...imageParts);
+    return { content: parts, display };
+  }
+
+  return { content: text, display };
+}
+
+export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
+  const startMs = Date.now();
+
+  if (opts.updateResult.hasUpdate) {
+    process.stderr.write(
+      `\x1b[33mkimiflare update available: ${opts.updateResult.localVersion} → ${opts.updateResult.latestVersion}\x1b[0m\n` +
+        `\x1b[33m  npm update -g kimiflare  then restart\x1b[0m\n\n`,
+    );
+  }
+
+  const cwd = opts.dir ? resolve(opts.dir) : process.cwd();
+
+  // M6.1: print mode loads the same hooks as the TUI.
+  const { HooksManager } = await import("./hooks/manager.js");
+  const hooks = new HooksManager(cwd);
+  const executor = new ToolExecutor(ALL_TOOLS, { hooks });
+
+  // Resolve session
+  const { sessionFile, isNew } = await resolveSession(opts);
+  if (opts.title && isNew) {
+    sessionFile.title = opts.title;
+  }
+
+  // Build messages
+  const messages: ChatMessage[] = [];
+  if (isNew || sessionFile.messages.length === 0) {
+    messages.push({ role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) });
+  } else {
+    // Continue: load existing messages, filter out old system prompts, keep context
+    const nonSystem = sessionFile.messages.filter((m) => m.role !== "system");
+    messages.push({ role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) });
+    messages.push(...nonSystem);
+  }
+
+  // Build user message with file attachments
+  const files = opts.files ? await resolveFiles(opts.files, cwd) : [];
+  const { content: userContent } = await buildUserMessage(opts.prompt, files, cwd);
+  messages.push({ role: "user", content: userContent });
+
+  const controller = new AbortController();
+  process.on("SIGINT", () => controller.abort());
+
+  // Output state
+  const format = opts.format ?? "text";
+  let printedReasoningHeader = false;
+  let printedAnswerHeader = false;
+  const jsonOutput: JsonOutput = {
+    text: "",
+    toolCalls: [],
+    toolResults: [],
+    durationMs: 0,
+    sessionId: sessionFile.id,
+  };
+
+  function emitStreamJson(eventType: string, payload: Record<string, unknown>): void {
+    if (format === "stream-json") {
+      process.stdout.write(JSON.stringify({ event: eventType, ...payload }) + "\n");
+    }
+  }
+
+  const callbacks: AgentCallbacks = {
+    onReasoningDelta: opts.showReasoning
+      ? (delta) => {
+          if (format === "text") {
+            if (!printedReasoningHeader) {
+              process.stderr.write("\x1b[2m--- reasoning ---\n");
+              printedReasoningHeader = true;
+            }
+            process.stderr.write(delta);
+          }
+        }
+      : undefined,
+    onTextDelta: (delta) => {
+      if (format === "text") {
+        if (opts.showReasoning && printedReasoningHeader && !printedAnswerHeader) {
+          process.stderr.write("\n--- answer ---\x1b[0m\n");
+          printedAnswerHeader = true;
+        }
+        process.stdout.write(delta);
+      } else if (format === "json") {
+        jsonOutput.text += delta;
+      } else if (format === "stream-json") {
+        emitStreamJson("text_delta", { delta });
+      }
+    },
+    onToolCallFinalized: (call) => {
+      if (format === "text") {
+        process.stderr.write(`\x1b[2m[tool ${call.function.name}(${call.function.arguments})]\x1b[0m\n`);
+      } else if (format === "json") {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(call.function.arguments);
+        } catch {
+          /* ignore */
+        }
+        jsonOutput.toolCalls.push({ id: call.id, name: call.function.name, arguments: args });
+      } else if (format === "stream-json") {
+        emitStreamJson("tool_call", { id: call.id, name: call.function.name, arguments: call.function.arguments });
+      }
+    },
+    onToolResult: (result) => {
+      if (format === "text") {
+        const snippet = result.content.length > 400 ? result.content.slice(0, 400) + "..." : result.content;
+        process.stderr.write(`\x1b[2m[result: ${snippet.replace(/\n/g, " ⏎ ")}]\x1b[0m\n`);
+      } else if (format === "json") {
+        jsonOutput.toolResults.push({
+          toolCallId: result.tool_call_id,
+          name: result.name,
+          content: result.content,
+          ok: result.ok,
+        });
+      } else if (format === "stream-json") {
+        emitStreamJson("tool_result", {
+          toolCallId: result.tool_call_id,
+          name: result.name,
+          content: result.content,
+          ok: result.ok,
+        });
+      }
+    },
+    onUsage: (usage) => {
+      if (format === "json") {
+        jsonOutput.usage = {
+          promptTokens: usage.prompt_tokens ?? 0,
+          completionTokens: usage.completion_tokens ?? 0,
+          totalTokens: usage.total_tokens ?? 0,
+        };
+      } else if (format === "stream-json") {
+        emitStreamJson("usage", {
+          promptTokens: usage.prompt_tokens ?? 0,
+          completionTokens: usage.completion_tokens ?? 0,
+          totalTokens: usage.total_tokens ?? 0,
+        });
+      }
+    },
+    onWarning: (msg) => {
+      if (format === "text") {
+        process.stderr.write(`\x1b[33mkimiflare: ${msg}\x1b[0m\n`);
+      } else if (format === "stream-json") {
+        emitStreamJson("warning", { message: msg });
+      }
+    },
+    askPermission: async ({ tool, args }) => {
+      if (opts.allowAll) return "allow";
+
+      // Evaluate config-based permission rules
+      if (opts.permissions) {
+        const rule = evaluatePermissionRules({ tool: tool.name, args, cwd }, opts.permissions);
+        if (rule === "allow") return "allow";
+        if (rule === "deny") {
+          const msg = `[permission denied by config rule: ${tool.name}(${JSON.stringify(args)})]`;
+          if (format === "text") process.stderr.write(`\x1b[31m${msg}\x1b[0m\n`);
+          else if (format === "stream-json") emitStreamJson("permission_denied", { tool: tool.name, args, reason: "config_rule" });
+          return "deny";
+        }
+        // "ask" falls through to default deny in headless mode
+      }
+
+      const msg = `[permission denied: ${tool.name}(${JSON.stringify(args)}) — pass --dangerously-allow-all to approve in print mode, or configure permissions in config.json]`;
+      if (format === "text") {
+        process.stderr.write(`\x1b[31m${msg}\x1b[0m\n`);
+      } else if (format === "stream-json") {
+        emitStreamJson("permission_denied", { tool: tool.name, args });
+      }
+      return "deny";
+    },
+  };
+
+  try {
+    await runAgentTurn({
+      accountId: opts.accountId,
+      apiToken: opts.apiToken,
+      model: opts.model,
+      gateway: gatewayFromPrintOpts(opts),
+      messages,
+      tools: ALL_TOOLS,
+      executor,
+      hooks,
+      cwd,
+      signal: controller.signal,
+      codeMode: opts.codeMode,
+      continueOnLimit: opts.continueOnLimit,
+      maxInputTokens: opts.maxInputTokens,
+      coauthor:
+        opts.coauthor !== false
+          ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }
+          : undefined,
+      callbacks,
+    });
+  } catch (err) {
+    if (err instanceof BudgetExhaustedError) {
+      const msg = "[Budget exhausted — exiting with code 42]";
+      if (format === "text") process.stderr.write(`\n\x1b[33m${msg}\x1b[0m\n`);
+      else if (format === "stream-json") emitStreamJson("error", { message: msg, code: 42 });
+      process.exitCode = 42;
+      return;
+    }
+    if (err instanceof AgentLoopError) {
+      const msg = "[Agent loop detected — exiting with code 43]";
+      if (format === "text") process.stderr.write(`\n\x1b[33m${msg}\x1b[0m\n`);
+      else if (format === "stream-json") emitStreamJson("error", { message: msg, code: 43 });
+      process.exitCode = 43;
+      return;
+    }
+    if (err instanceof KimiApiError) {
+      const msg = `Error: ${humanizeCloudflareError(err)}`;
+      if (format === "text") process.stderr.write(`\n\x1b[31m${msg}\x1b[0m\n`);
+      else if (format === "stream-json") emitStreamJson("error", { message: msg, code: 1 });
+      process.exitCode = 1;
+      return;
+    }
+    throw err;
+  }
+
+  // Save session
+  sessionFile.messages = messages;
+  sessionFile.updatedAt = new Date().toISOString();
+  await saveSession(sessionFile);
+
+  // Final output
+  jsonOutput.durationMs = Date.now() - startMs;
+
+  if (format === "text") {
+    process.stdout.write("\n");
+  } else if (format === "json") {
+    process.stdout.write(JSON.stringify(jsonOutput, null, 2) + "\n");
+  } else if (format === "stream-json") {
+    emitStreamJson("done", { sessionId: sessionFile.id, durationMs: jsonOutput.durationMs });
+  }
+}
