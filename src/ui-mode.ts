@@ -102,7 +102,8 @@ import { calculateCost } from "./pricing.js";
 import { loadConfig, saveConfig, configPath, DEFAULT_MODEL } from "./config.js";
 import type { KimiConfig } from "./config.js";
 import { listGateways, createGateway, AiGatewayError } from "./cloud/ai-gateway-api.js";
-import { listAllSkills, setSkillEnabled, deleteSkill } from "./skills/manager.js";
+import { listAllSkills, setSkillEnabled, deleteSkill, createSkill, findSkillFile } from "./skills/manager.js";
+import { readFile } from "node:fs/promises";
 import { loadCustomCommands } from "./commands/loader.js";
 import { saveCustomCommand, deleteCustomCommand } from "./commands/save.js";
 import { listRemoteSessions } from "./remote/session-store.js";
@@ -229,6 +230,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   // loaded config, since loadConfig() ignores the env var when a persisted
   // config file exists.
   const startupCfg = await loadConfig().catch(() => null);
+  if (startupCfg?.theme) currentThemeName = startupCfg.theme;
   let multiAgentEnabled =
     (startupCfg?.multiAgentEnabled ?? false) ||
     /^(1|true|yes|on)$/i.test(process.env.KIMIFLARE_MULTI_AGENT_ENABLED ?? "");
@@ -1267,6 +1269,56 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           }
         }
       }
+
+      // Plan mode complete — prompt user to choose next step (auto, edit, or continue).
+      // Only show this when there were no inline plan options to pick from above.
+      if (currentMode === "plan" && sessionPlan && !currentController?.signal.aborted) {
+        const plan = sessionPlan;
+        sessionPlan = null; // consume it so we don't prompt again
+        const pick = await selectList(cam, {
+          id: `plan-complete-${Date.now()}`,
+          prompt: "Plan complete — what next?",
+          options: [
+            { value: "auto", label: "▸ Execute this plan and accept changes (auto mode)" },
+            { value: "edit", label: "▸ Start building and ask for permission (edit mode)" },
+            { value: "continue", label: "▸ Continue planning / ask a question" },
+          ],
+          allow_cancel: true,
+        });
+        if (!pick.cancelled && pick.value && pick.value !== "continue") {
+          const targetMode = pick.value as "auto" | "edit";
+          // Reset session (same as /clear)
+          const systemMessages = messages.filter((m) => m.role === "system");
+          messages.length = 0;
+          messages.push(...systemMessages);
+          sessionCostUsd = 0;
+          promptTokens = 0;
+          cachedTokens = 0;
+          completionTokens = 0;
+          cam.send("TranscriptCleared", {});
+          cam.send("StatusUpdate", {
+            segments: { tokens: "in 0", cost: "$0.00", elapsed: "" },
+          });
+          // Switch mode and rebuild system prompt
+          currentMode = targetMode;
+          cam.send("StatusUpdate", { segments: { mode: currentMode } });
+          rebuildSystemPromptForMode(
+            messages,
+            false, // Camouflage UI always uses single system message
+            opts.model,
+            currentMode,
+            ALL_TOOLS,
+          );
+          // Seed with plan
+          messages.push({ role: "user", content: plan });
+          cam.send("UserMessageCreated", { text: plan });
+          cam.send("ShowToast", {
+            text: `Starting fresh session in ${targetMode} mode with plan`,
+            kind: "success",
+            ttl_ms: 3000,
+          });
+        }
+      }
     }
   }
 
@@ -2065,7 +2117,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         }
         const choice = await selectList(cam, {
           id: `theme-${Date.now()}`,
-          prompt: "Pick a theme (note: applied to Ink only; Camouflage TUI ignores)",
+          prompt: "Pick a theme (applies on next Ink session)",
           options: themes.map((t) => ({
             value: t.name,
             label: t.name,
@@ -2078,7 +2130,14 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         if (!choice.cancelled && choice.value) {
           currentThemeName = choice.value;
           resolveTheme(choice.value); // validate; throws if missing
-          cam.send("ShowToast", { text: `theme: ${choice.value} (restart to apply globally)`, kind: "info", ttl_ms: 2500 });
+          const cfg2 = (await loadConfig()) ?? { accountId: opts.accountId, apiToken: opts.apiToken, model: opts.model };
+          cfg2.theme = choice.value;
+          try {
+            await saveConfig(cfg2);
+            cam.send("ShowToast", { text: `theme: ${choice.value} — saved to config, applies on next Ink session`, kind: "success", ttl_ms: 2500 });
+          } catch (err) {
+            cam.send("ShowToast", { text: `theme saved locally only: ${err instanceof Error ? err.message : String(err)}`, kind: "warn", ttl_ms: 3000 });
+          }
         }
         return true;
       }
@@ -2551,11 +2610,124 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             cam.send("ShowToast", { text: `deleted ${tail} (${r.filepath})`, kind: "success", ttl_ms: 3000 });
             return true;
           }
-          if (sub === "add" || sub === "edit") {
-            cam.send("ShowToast", {
-              text: `/skills ${sub} needs an inline editor — Ink only for now. Create the file under skills/ manually.`,
-              kind: "warn", ttl_ms: 4000,
+          if (sub === "add") {
+            // Multi-step wizard: name → description + content → scope → create
+            let name = tail;
+            if (!name) {
+              const f = await form(cam, {
+                id: `skills-add-${Date.now()}`,
+                title: "/skills add",
+                fields: [
+                  { name: "name", label: "Skill name", required: true, placeholder: "my-skill" },
+                  { name: "description", label: "Description", placeholder: "What this skill does" },
+                  { name: "content", label: "Instructions", placeholder: "Skill instructions (markdown)" },
+                ],
+                allow_cancel: true,
+              });
+              if (f.cancelled || !f.values) return true;
+              name = (f.values.name ?? "").trim();
+              if (!name) {
+                cam.send("ShowToast", { text: "skill name is required", kind: "warn", ttl_ms: 2500 });
+                return true;
+              }
+              const description = (f.values.description ?? "").trim();
+              const content = (f.values.content ?? "").trim();
+              const scopePick = await selectList(cam, {
+                id: `skills-add-scope-${Date.now()}`,
+                prompt: `Save "${name}" where?`,
+                options: [
+                  { value: "project", label: "Project  (.kimiflare/skills/)" },
+                  { value: "global", label: "Global  (~/.config/kimiflare/skills/)" },
+                ],
+                allow_cancel: true,
+              });
+              if (scopePick.cancelled || !scopePick.value) return true;
+              const scope = scopePick.value as "project" | "global";
+              try {
+                const result = await createSkill({ name, description: description || undefined, scope, cwd: process.cwd() });
+                // If user provided custom content, overwrite the template body
+                if (content) {
+                  const { writeFile } = await import("node:fs/promises");
+                  const yamlLines = [
+                    `name: ${name}`,
+                    "enabled: true",
+                    "priority: 0",
+                  ];
+                  if (description) yamlLines.push(`description: ${description}`);
+                  const fileContent = `---\n${yamlLines.join("\n")}\n---\n\n# ${name}\n\n${content}\n`;
+                  await writeFile(result.filepath, fileContent, "utf8");
+                }
+                cam.send("ShowToast", { text: `created skill '${name}' → ${result.filepath}`, kind: "success", ttl_ms: 3000 });
+              } catch (err) {
+                cam.send("ShowToast", { text: `failed to create skill: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+              }
+              return true;
+            }
+            // Name provided as arg — create immediately with defaults
+            try {
+              const result = await createSkill({ name, scope: "project", cwd: process.cwd() });
+              cam.send("ShowToast", { text: `created skill '${name}' → ${result.filepath}`, kind: "success", ttl_ms: 3000 });
+            } catch (err) {
+              cam.send("ShowToast", { text: `failed to create skill: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+            }
+            return true;
+          }
+
+          if (sub === "edit") {
+            // Find the skill to edit
+            let name = tail;
+            let filepath: string | null = null;
+            if (!name) {
+              const result = await listAllSkills(process.cwd());
+              const all = [...(result.project ?? []), ...(result.global ?? [])];
+              if (all.length === 0) {
+                cam.send("ShowToast", { text: "no skills found", kind: "info", ttl_ms: 2500 });
+                return true;
+              }
+              const pick = await selectList(cam, {
+                id: `skills-edit-pick-${Date.now()}`,
+                prompt: "Select a skill to edit",
+                options: all.map((s) => ({ value: s.name, label: `${s.enabled === false ? "○" : "●"} ${s.name}` })),
+                allow_filter: true,
+                allow_cancel: true,
+              });
+              if (pick.cancelled || !pick.value) return true;
+              name = pick.value;
+            }
+            filepath = await findSkillFile(name, process.cwd());
+            if (!filepath) {
+              cam.send("ShowToast", { text: `skill '${name}' not found`, kind: "error", ttl_ms: 2500 });
+              return true;
+            }
+            // Read current content and present in a form
+            let currentContent: string;
+            try {
+              currentContent = await readFile(filepath, "utf-8");
+            } catch (err) {
+              cam.send("ShowToast", { text: `failed to read skill: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+              return true;
+            }
+            const f = await form(cam, {
+              id: `skills-edit-${Date.now()}`,
+              title: `Edit skill: ${name}`,
+              fields: [
+                { name: "content", label: "Content", default: currentContent, placeholder: "Skill markdown content" },
+              ],
+              allow_cancel: true,
             });
+            if (f.cancelled || !f.values) return true;
+            const newContent = (f.values.content ?? "").trim();
+            if (newContent === currentContent.trim()) {
+              cam.send("ShowToast", { text: "no changes made", kind: "info", ttl_ms: 2000 });
+              return true;
+            }
+            try {
+              const { writeFile } = await import("node:fs/promises");
+              await writeFile(filepath, newContent, "utf8");
+              cam.send("ShowToast", { text: `updated skill '${name}' → ${filepath}`, kind: "success", ttl_ms: 3000 });
+            } catch (err) {
+              cam.send("ShowToast", { text: `failed to save skill: ${err instanceof Error ? err.message : String(err)}`, kind: "error", ttl_ms: 3000 });
+            }
             return true;
           }
           const result = await listAllSkills(process.cwd());

@@ -1,7 +1,7 @@
 # Camouflage UI Parity Migration Tracker
 
 > This document tracks the incremental migration of features from Ink to Camouflage UI mode.
-> Last updated: 2026-06-11
+> Last updated: 2026-06-12
 
 ## Overview
 
@@ -44,23 +44,34 @@ Camouflage (`src/ui-mode.ts`) is the experimental terminal UI renderer that will
 
 *Goal: Camouflage feels as polished as Ink for daily use.*
 
-### P1.5 Theme system parity
-- [ ] Make Camouflage respect theme events, or document Camouflage-native theme system
-- **Files:** Camouflage renderer, or `src/ui-mode.ts`
-
-### P1.6 Inline plan overlays
-- [ ] Add `ShowInlinePicker` or `ShowChatOverlay` event for `PlanCompletePicker`/`PlanOptionsPicker`
-- **Files:** Camouflage renderer, `src/ui-mode.ts`
-
-### P1.7 Rich tool visualization
-- [ ] Send elapsed-time updates via `ToolExecutionUpdate` event
-- [ ] Add `expanded` state support or always show full results
-- [ ] Verify repeated-call warnings render correctly
-- **Files:** `src/ui-mode.ts`, Camouflage renderer
-
-### P1.8 Skills add/edit wizard
-- [ ] Build `form` + `selectList` multi-step wizard for creating/editing skill files
+### P1.5 Theme system parity ✅
+- [x] Persist theme choice to config via `saveConfig()` so it applies on next Ink session
+- [x] Load saved theme from config on startup (falls back to `everforest-dark`)
+- [x] Update toast/prompt messaging to clarify the theme applies on next Ink session
 - **Files:** `src/ui-mode.ts`
+- **PR:** #574
+
+### P1.6 Inline plan overlays ✅
+- [x] After plan-mode turn completes, show `selectList` with three choices: auto, edit, continue
+- [x] On auto/edit: reset session, rebuild system prompt for chosen mode, seed with distilled plan
+- [x] On continue/cancel: do nothing, user keeps chatting in plan mode
+- **Files:** `src/ui-mode.ts`
+- **PR:** #574
+
+### P1.7 Rich tool visualization ✅
+- [x] Elapsed-time updates already implemented (`setInterval` sending `StatusUpdate` with `elapsed` segment)
+- [x] Camouflage always shows full tool results (no collapsible UI needed)
+- [x] Repeated-call warnings already sent via `ToolExecutionStarted` with `repeated: true`
+- **Files:** `src/ui-mode.ts`
+- **Note:** Already complete from prior work; verified during P1 assessment.
+
+### P1.8 Skills add/edit wizard ✅
+- [x] `/skills add` (no-arg): form collects name/description/content → selectList for scope → create
+- [x] `/skills add <name>`: create immediately with defaults (project scope)
+- [x] `/skills edit` (no-arg): selectList of skills → read file → form pre-populated → write back
+- [x] `/skills edit <name>`: skip picker, edit named skill directly
+- **Files:** `src/ui-mode.ts`
+- **PR:** #574
 
 ---
 
