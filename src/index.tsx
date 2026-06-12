@@ -12,10 +12,10 @@ import type { PrintFormat } from "./print-mode.js";
 const program = new Command();
 program
   .name("kimiflare")
-  .description("Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI.")
+  .description("Terminal coding agent powered by Kimi-K2.7 on Cloudflare Workers AI.")
   .version(getAppVersion())
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
-  .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
+  .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.7-code)")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--thinking", "alias for --reasoning")
@@ -251,7 +251,7 @@ async function main() {
         "kimiflare: missing credentials.\n" +
           "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
           "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
-          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }",
+          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.7-code\" }",
       );
       process.exit(2);
     }

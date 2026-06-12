@@ -208,7 +208,7 @@ function formatDuration(ms: number): string {
 }
 
 /** Shorten a model id for the status bar: drop the provider prefix and keep
- *  the recognizable tail. "@cf/moonshotai/kimi-k2.6" → "kimi-k2.6",
+ *  the recognizable tail. "@cf/moonshotai/kimi-k2.7-code" → "kimi-k2.7-code",
  *  "anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6". */
 export function shortenModelId(id: string): string {
   if (id.startsWith("@")) {

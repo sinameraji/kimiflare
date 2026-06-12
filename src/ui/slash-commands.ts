@@ -266,7 +266,7 @@ export function executeFreshStart(ctx: SlashContext, planText: string, overrideM
   rebuildSystemPromptForMode(
     ctx.messagesRef.current,
     ctx.cacheStableRef.current,
-    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.6",
+    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.7-code",
     overrideMode ?? ctx.mode,
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
   );

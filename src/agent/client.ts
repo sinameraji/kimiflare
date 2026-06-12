@@ -92,7 +92,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
   // Universal Endpoint routes by the `model` body field. For Workers AI we
   // prefix with "workers-ai/" so /compat dispatches to the Workers AI provider
-  // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.6"). The direct Workers AI path
+  // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.7-code"). The direct Workers AI path
   // (api.cloudflare.com) ignores the body model field because the model is
   // already in the URL.
   const isDirectWorkersAi = url.startsWith("https://api.cloudflare.com/client/v4/accounts/");
@@ -193,7 +193,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
             `Your stored ${modelProvider} key is likely invalid or expired. Fix:`,
             `  /keys set ${modelProvider} <new-key>   replace the stored key`,
             `  /keys clear ${modelProvider}           remove it and reopen the picker to paste fresh`,
-            `  /model @cf/moonshotai/kimi-k2.6        switch back to Workers AI (no key needed)`,
+            `  /model @cf/moonshotai/kimi-k2.7-code  switch back to Workers AI (no key needed)`,
           ].join("\n")
         : msg;
       const apiErr = new KimiApiError(`kimiflare: ${wrappedMsg}`, err?.code, res.status);
@@ -258,7 +258,7 @@ function missingKeyMessage(model: string, provider: string, unifiedAvailable: bo
   if (unifiedAvailable) {
     lines.push(`  2. Enable Cloudflare Unified Billing for this gateway in the CF dashboard, then run:  /keys unified on`);
   }
-  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`);
+  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.7-code`);
   return lines.join("\n");
 }
 
