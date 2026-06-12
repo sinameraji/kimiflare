@@ -22,6 +22,7 @@ export function makeExpandArtifactTool(store: ToolArtifactStore): ToolSpec<Args>
       additionalProperties: false,
     },
     needsPermission: false,
+    isReadOnly: true,
     render: (args) => ({ title: `expand ${args.artifact_id ?? ""}` }),
     run: async (args): Promise<string> => {
       const raw = store.retrieve(args.artifact_id);
