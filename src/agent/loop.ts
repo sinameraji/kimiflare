@@ -384,6 +384,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   }
 
   const preTurnMs = Math.round(performance.now() - preTurnStart);
+  if (preTurnMs > 500) {
+    opts.callbacks.onInfo?.(`loaded context · ${preTurnMs}ms`);
+  }
 
   opts.callbacks.onMetaBanner?.({
     intentTier: opts.intentClassification?.tier ?? "medium",
@@ -604,6 +607,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           },
         }
       : undefined;
+    const apiStart = performance.now();
     const events = runKimi({
       accountId: opts.accountId,
       apiToken: opts.apiToken,
@@ -627,7 +631,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     for await (const ev of events) {
       if (!gotFirstChunk) {
         gotFirstChunk = true;
-        logger.debug("turn:api_first_chunk", { sessionId: opts.sessionId });
+        const apiLatency = Math.round(performance.now() - apiStart);
+        if (apiLatency > 500) {
+          opts.callbacks.onInfo?.(`thinking · ${apiLatency}ms`);
+        }
+        logger.debug("turn:api_first_chunk", { sessionId: opts.sessionId, apiLatency });
       }
       switch (ev.type) {
         case "gateway_meta":
