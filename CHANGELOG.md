@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.87.0](https://github.com/sinameraji/kimiflare/compare/v0.86.0...v0.87.0) (2026-06-12)
+
+
+### Features
+
+* **headless:** full headless/CI parity with OpenCode ([#581](https://github.com/sinameraji/kimiflare/issues/581)) ([4a3f41f](https://github.com/sinameraji/kimiflare/commit/4a3f41f5fd2e91efc17843993947524a3b8e3ffb))
+* **ui:** reduce startup noise ([#579](https://github.com/sinameraji/kimiflare/issues/579)) ([1fe3a84](https://github.com/sinameraji/kimiflare/commit/1fe3a84f6bad1374234fa8a3dcda2229ef1f5a8a))
+
 ## [0.86.0](https://github.com/sinameraji/kimiflare/compare/v0.85.0...v0.86.0) (2026-06-12)
 
 
