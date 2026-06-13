@@ -45,10 +45,10 @@
       {
         "@type": "FAQPage",
         "mainEntity": [
-          { "@type": "Question", "name": "What is kimiflare?", "acceptedAnswer": { "@type": "Answer", "text": "kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code — that runs on your own Cloudflare account. It is powered by the Kimi K2.6 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost." } },
-          { "@type": "Question", "name": "Is kimiflare a Claude Code alternative?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. kimiflare is an open-source Claude Code alternative. It offers the same terminal-first agentic workflow — reading and editing files, running commands, web research, and image understanding — but runs on Cloudflare Workers AI using Kimi K2.6 on your own account, and is MIT-licensed." } },
+          { "@type": "Question", "name": "What is kimiflare?", "acceptedAnswer": { "@type": "Answer", "text": "kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code — that runs on your own Cloudflare account. It is powered by the Kimi K2.7 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost." } },
+          { "@type": "Question", "name": "Is kimiflare a Claude Code alternative?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. kimiflare is an open-source Claude Code alternative. It offers the same terminal-first agentic workflow — reading and editing files, running commands, web research, and image understanding — but runs on Cloudflare Workers AI using Kimi K2.7 on your own account, and is MIT-licensed." } },
           { "@type": "Question", "name": "How do I run an AI coding agent on my own Cloudflare account?", "acceptedAnswer": { "@type": "Answer", "text": "Install kimiflare with npm install -g kimiflare (or run npx kimiflare), then run kimiflare. The onboarding flow connects your Cloudflare account and AI Gateway. All inference runs on Cloudflare Workers AI under your credentials — no third-party API keys are required." } },
-          { "@type": "Question", "name": "What model does kimiflare use?", "acceptedAnswer": { "@type": "Answer", "text": "kimiflare uses Kimi K2.6 (@cf/moonshotai/kimi-k2.6) on Cloudflare Workers AI, with a 262K-token context window. You can override the model with the --model flag." } },
+          { "@type": "Question", "name": "What model does kimiflare use?", "acceptedAnswer": { "@type": "Answer", "text": "kimiflare uses Kimi K2.7 (@cf/moonshotai/kimi-k2.7-code) on Cloudflare Workers AI, with a 262K-token context window. You can override the model with the --model flag." } },
           { "@type": "Question", "name": "What is an AI coding harness?", "acceptedAnswer": { "@type": "Answer", "text": "An AI coding harness is the program that wraps a large language model with tools, permissions, context management, and a user interface so it can act as an autonomous coding agent — reading and editing files, running commands, and researching the web. kimiflare is a Cloudflare-native, open-source coding harness for the terminal." } },
           { "@type": "Question", "name": "How much does kimiflare cost?", "acceptedAnswer": { "@type": "Answer", "text": "kimiflare itself is free and open source (MIT). You pay only Cloudflare's usage for Workers AI inference on your own account. Because every request flows through your Cloudflare AI Gateway, kimiflare shows authoritative per-turn cost from the gateway logs in the /cost command." } },
           { "@type": "Question", "name": "Does kimiflare work on Windows, macOS, and Linux?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. kimiflare runs on macOS, Linux, and Windows. It is distributed as the kimiflare npm package and requires Node.js 20 or newer." } },
@@ -84,11 +84,11 @@
     <div class="faq-list">
       <details class="faq-item" open>
         <summary>What is kimiflare?</summary>
-        <div class="faq-answer"><p>kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code — that runs on your own Cloudflare account. It is powered by the Kimi K2.6 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost.</p></div>
+        <div class="faq-answer"><p>kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code — that runs on your own Cloudflare account. It is powered by the Kimi K2.7 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost.</p></div>
       </details>
       <details class="faq-item">
         <summary>Is kimiflare a Claude Code alternative?</summary>
-        <div class="faq-answer"><p>Yes. kimiflare is an open-source Claude Code alternative. It offers the same terminal-first agentic workflow — reading and editing files, running commands, web research, and image understanding — but runs on Cloudflare Workers AI using Kimi K2.6 on your own account, and is MIT-licensed. See the full <a href="/claude-code-alternative">Claude Code alternative</a> breakdown.</p></div>
+        <div class="faq-answer"><p>Yes. kimiflare is an open-source Claude Code alternative. It offers the same terminal-first agentic workflow — reading and editing files, running commands, web research, and image understanding — but runs on Cloudflare Workers AI using Kimi K2.7 on your own account, and is MIT-licensed. See the full <a href="/claude-code-alternative">Claude Code alternative</a> breakdown.</p></div>
       </details>
       <details class="faq-item">
         <summary>How do I run an AI coding agent on my own Cloudflare account?</summary>
@@ -96,7 +96,7 @@
       </details>
       <details class="faq-item">
         <summary>What model does kimiflare use?</summary>
-        <div class="faq-answer"><p>kimiflare uses Kimi K2.6 (<code>@cf/moonshotai/kimi-k2.6</code>) on Cloudflare Workers AI, with a 262K-token context window. You can override the model with the <code>--model</code> flag.</p></div>
+        <div class="faq-answer"><p>kimiflare uses Kimi K2.7 (<code>@cf/moonshotai/kimi-k2.7-code</code>) on Cloudflare Workers AI, with a 262K-token context window. You can override the model with the <code>--model</code> flag.</p></div>
       </details>
       <details class="faq-item">
         <summary>What is an AI coding harness?</summary>

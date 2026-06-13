@@ -1,11 +1,11 @@
 # kimiflare
 
-> kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code, Aider, Gemini CLI, and Codex CLI — that runs on your own Cloudflare account. It is powered by the Kimi K2.6 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost. It ships as the `kimiflare` npm package (`npm install -g kimiflare`), needs no API keys beyond your Cloudflare credentials, and is MIT-licensed.
+> kimiflare is an open-source, terminal-based AI coding agent — a self-hosted alternative to Claude Code, Aider, Gemini CLI, and Codex CLI — that runs on your own Cloudflare account. It is powered by the Kimi K2.7 model on Cloudflare Workers AI, with every request routed through your own Cloudflare AI Gateway for per-request logs, response caching, and authoritative cost. It ships as the `kimiflare` npm package (`npm install -g kimiflare`), needs no API keys beyond your Cloudflare credentials, and is MIT-licensed.
 
 ## What kimiflare is
 
 - **Category:** AI coding agent / agentic coding harness / terminal coding assistant (CLI).
-- **Model:** Kimi K2.6 (`@cf/moonshotai/kimi-k2.6`) on Cloudflare Workers AI, 262K-token context window.
+- **Model:** Kimi K2.7 (`@cf/moonshotai/kimi-k2.7-code`) on Cloudflare Workers AI, 262K-token context window.
 - **Runs on:** your own Cloudflare account (bring-your-own-cloud / BYOK). All inference and logs stay in your account.
 - **Closest comparisons:** Anthropic Claude Code, Aider, Google Gemini CLI, OpenAI Codex CLI, Cursor. kimiflare's differentiator is being Cloudflare-native, open source, and self-hosted with authoritative cost from AI Gateway logs.
 - **Install:** `npm install -g kimiflare` then run `kimiflare`, or `npx kimiflare`. Requires Node.js >= 20.
