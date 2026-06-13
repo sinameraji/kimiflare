@@ -94,6 +94,8 @@ export interface KimiConfig {
   githubTokenExpiry?: number;
   /** Default GitHub repo for remote sessions (owner/repo). */
   githubRepo?: string;
+  /** Enable cloud mode: use api.kimiflare.com instead of direct Workers AI. */
+  cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
   /**
@@ -320,6 +322,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
+  const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
   const envShell = process.env.KIMIFLARE_SHELL;
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
@@ -328,6 +331,51 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     ? process.env.KIMIFLARE_WORKER_PRE_READ_FILES.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
   const envWorkerPreReadMaxChars = readNumberEnv("KIMIFLARE_WORKER_PRE_READ_MAX_CHARS");
+
+  if (envCloudMode) {
+    return {
+      accountId: "",
+      apiToken: "",
+      model: envModel,
+      cloudMode: true,
+      reasoningEffort: envEffort,
+      coauthor: envCoauthor?.enabled ?? true,
+      coauthorName: envCoauthor?.name,
+      coauthorEmail: envCoauthor?.email,
+      cacheStablePrompts,
+      compiledContext,
+      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? undefined : imageHistoryTurns,
+      memoryEnabled: envMemoryEnabled ?? false,
+      memoryDbPath: envMemoryDbPath,
+      memoryMaxAgeDays: envMemoryMaxAgeDays,
+      memoryMaxEntries: envMemoryMaxEntries,
+      memoryEmbeddingModel: envMemoryEmbeddingModel,
+      plumbingModel: envPlumbingModel,
+      memoryExtractionModel: envMemoryExtractionModel,
+      codeMode: envCodeMode,
+      costAttribution: envCostAttribution ?? false,
+      filePicker: envFilePicker ?? true,
+      shell: envShell,
+      uiEngine: persisted?.uiEngine,
+      theme: persisted?.theme,
+      providerKeys: envProviderKeys ?? persisted?.providerKeys,
+      providerKeyAliases: persisted?.providerKeyAliases,
+      secretsStoreId: persisted?.secretsStoreId,
+      unifiedBilling: envUnifiedBilling,
+      workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT,
+      workerBudgetUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_USD"),
+      workerBudgetMaxUsd: readNumberEnv("KIMIFLARE_WORKER_BUDGET_MAX_USD"),
+      workerMaxParallel: readNumberEnv("KIMIFLARE_WORKER_MAX_PARALLEL"),
+      workerTimeoutMs: readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS"),
+      multiAgentEnabled: envMultiAgentEnabled,
+      workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY,
+      autoExecute: readBooleanEnv("KIMIFLARE_AUTO_EXECUTE"),
+      workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? true,
+      workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? true,
+      workerPreReadFiles: envWorkerPreReadFiles ?? persisted?.workerPreReadFiles,
+      workerPreReadMaxChars: envWorkerPreReadMaxChars ?? persisted?.workerPreReadMaxChars,
+    };
+  }
 
   if (envAccount && envToken) {
     return {
@@ -356,6 +404,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode ?? true,
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
+      cloudMode: envCloudMode ?? persisted?.cloudMode,
       shell: envShell,
       // Settings-only fields: env vars don't carry these, so we read
       // them from the persisted file (when present) so the user's TUI
@@ -383,6 +432,51 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
   if (persisted) {
     const parsed = persisted;
+    if (parsed.cloudMode) {
+      return {
+        accountId: envAccount ?? parsed.accountId ?? "",
+        apiToken: envToken ?? parsed.apiToken ?? "",
+        model: envModel ?? parsed.model ?? DEFAULT_MODEL,
+        cloudMode: true,
+        reasoningEffort: envEffort ?? parsed.reasoningEffort,
+        coauthor: envCoauthor?.enabled ?? parsed.coauthor ?? true,
+        coauthorName: envCoauthor?.name ?? parsed.coauthorName,
+        coauthorEmail: envCoauthor?.email ?? parsed.coauthorEmail,
+        mcpServers: parsed.mcpServers,
+        cacheStablePrompts: parsed.cacheStablePrompts ?? cacheStablePrompts,
+        compiledContext: parsed.compiledContext ?? compiledContext,
+        imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? parsed.imageHistoryTurns : imageHistoryTurns,
+        memoryEnabled: envMemoryEnabled ?? parsed.memoryEnabled ?? false,
+        memoryDbPath: envMemoryDbPath ?? parsed.memoryDbPath,
+        memoryMaxAgeDays: envMemoryMaxAgeDays ?? parsed.memoryMaxAgeDays,
+        memoryMaxEntries: envMemoryMaxEntries ?? parsed.memoryMaxEntries,
+        memoryEmbeddingModel: envMemoryEmbeddingModel ?? parsed.memoryEmbeddingModel,
+        plumbingModel: envPlumbingModel ?? parsed.plumbingModel,
+        memoryExtractionModel: envMemoryExtractionModel ?? parsed.memoryExtractionModel,
+        codeMode: envCodeMode ?? parsed.codeMode,
+        costAttribution: envCostAttribution ?? parsed.costAttribution ?? false,
+        filePicker: envFilePicker ?? parsed.filePicker ?? true,
+        theme: parsed.theme,
+        shell: envShell ?? parsed.shell,
+        uiEngine: parsed.uiEngine,
+        providerKeys: envProviderKeys ?? parsed.providerKeys,
+        providerKeyAliases: parsed.providerKeyAliases,
+        secretsStoreId: parsed.secretsStoreId,
+        unifiedBilling: envUnifiedBilling ?? parsed.unifiedBilling,
+        workerEndpoint: process.env.KIMIFLARE_WORKER_ENDPOINT ?? parsed.workerEndpoint,
+        workerBudgetUsd: parsed.workerBudgetUsd,
+        workerBudgetMaxUsd: parsed.workerBudgetMaxUsd,
+        workerMaxParallel: parsed.workerMaxParallel,
+        workerTimeoutMs: parsed.workerTimeoutMs,
+        multiAgentEnabled: envMultiAgentEnabled ?? parsed.multiAgentEnabled,
+        workerApiKey: process.env.KIMIFLARE_WORKER_API_KEY ?? parsed.workerApiKey,
+        autoExecute: parsed.autoExecute,
+        workerShallowClone: readBooleanEnv("KIMIFLARE_WORKER_SHALLOW_CLONE") ?? parsed.workerShallowClone ?? true,
+        workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? parsed.workerRepoCache ?? true,
+        workerPreReadFiles: envWorkerPreReadFiles ?? parsed.workerPreReadFiles,
+        workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
+      };
+    }
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
       return {
@@ -413,6 +507,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
+        cloudMode: envCloudMode ?? parsed.cloudMode,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         uiEngine: parsed.uiEngine,

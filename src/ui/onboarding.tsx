@@ -33,6 +33,7 @@ type Step =
   | "gatewayProbing"
   | "model"
   | "billingChoice"
+  | "cloudAuth"
   | "unifiedProbe"
   | "keyEntry"
   | "confirm";
@@ -68,6 +69,9 @@ export function Onboarding({ onDone, onCancel }: Props) {
     NonNullable<KimiConfig["providerKeys"]>
   >({});
   const [secretsStoreId, setSecretsStoreId] = useState<string | undefined>(undefined);
+  const [cloudMode, setCloudMode] = useState(false);
+  const [cloudAuthStatus, setCloudAuthStatus] = useState<{ url: string; userCode: string; polling: boolean } | null>(null);
+  const [cloudAuthError, setCloudAuthError] = useState<string | null>(null);
 
   useInput(
     useCallback(
@@ -215,13 +219,11 @@ export function Onboarding({ onDone, onCancel }: Props) {
     }
     setModel(picked.id);
     setPickedEntry(picked);
-    // Same routing logic as the runtime `/model` flow:
-    //   workers-ai           → no setup, go to confirm
-    //   unified-eligible     → ask billing mode
+    // Same routing logic as the runtime `/model` flow, with cloud mode first:
+    //   workers-ai           → ask billing mode (cloud / unified / byok)
+    //   unified-eligible     → ask billing mode (unified / byok)
     //   BYOK-only            → straight to key entry
-    if (picked.provider === "workers-ai") {
-      setStep("confirm");
-    } else if (isUnifiedEligible(picked)) {
+    if (picked.provider === "workers-ai" || isUnifiedEligible(picked)) {
       setStep("billingChoice");
     } else {
       setStep("keyEntry");
@@ -232,6 +234,25 @@ export function Onboarding({ onDone, onCancel }: Props) {
     // Esc / cancel from the chooser → fall back to BYOK (safest default).
     if (!choice) {
       setStep("keyEntry");
+      return;
+    }
+    if (choice === "cloud") {
+      setStep("cloudAuth");
+      setCloudAuthError(null);
+      void import("../cloud/auth.js").then(({ authenticateDevice }) => {
+        authenticateDevice((status) => {
+          setCloudAuthStatus(status);
+        })
+          .then(() => {
+            setCloudMode(true);
+            setAccountId("");
+            setApiToken("");
+            setStep("confirm");
+          })
+          .catch((err) => {
+            setCloudAuthError(err instanceof Error ? err.message : String(err));
+          });
+      });
       return;
     }
     setStep(choice === "unified" ? "unifiedProbe" : "keyEntry");
@@ -279,6 +300,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
       apiToken,
       model,
       aiGatewayId: aiGatewayId || undefined,
+      ...(cloudMode ? { cloudMode: true } : {}),
       ...(unifiedBilling ? { unifiedBilling: true } : {}),
       ...(Object.keys(providerKeyAliases).length > 0 ? { providerKeyAliases } : {}),
       ...(Object.keys(providerKeys).length > 0 ? { providerKeys } : {}),
@@ -485,6 +507,46 @@ export function Onboarding({ onDone, onCancel }: Props) {
           </Box>
         )}
 
+        {step === "cloudAuth" && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold color={theme.accent}>
+              Kimiflare Cloud Authentication
+            </Text>
+            {cloudAuthStatus ? (
+              <>
+                <Text color={theme.info.color}>
+                  1. Open this URL in your browser:
+                </Text>
+                <Text color={theme.info.color}>{cloudAuthStatus.url}</Text>
+                <Box marginTop={1}>
+                  <Text color={theme.info.color}>
+                    2. Sign in with GitHub or Email
+                  </Text>
+                </Box>
+                <Box marginTop={1}>
+                  <Text color={theme.info.color}>
+                    User code: <Text bold>{cloudAuthStatus.userCode}</Text>
+                  </Text>
+                </Box>
+                {cloudAuthStatus.polling && (
+                  <Text color={theme.muted?.color ?? theme.info.color} dimColor>
+                    Waiting for approval…
+                  </Text>
+                )}
+              </>
+            ) : (
+              <Text color={theme.info.color}>Starting device authentication…</Text>
+            )}
+            {cloudAuthError && (
+              <Box marginTop={1}>
+                <Text color={theme.error}>
+                  {cloudAuthError}
+                </Text>
+              </Box>
+            )}
+          </Box>
+        )}
+
         {step === "unifiedProbe" && pickedEntry && (
           <Box marginTop={1}>
             <UnifiedBillingStatus
@@ -528,6 +590,11 @@ export function Onboarding({ onDone, onCancel }: Props) {
                 <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
               ) : (
                 <Text color={theme.info.color}>Routing: Workers AI (direct)</Text>
+              )}
+              {cloudMode && (
+                <Text color={theme.info.color}>
+                  Billing: Kimiflare Cloud (free 5M tokens)
+                </Text>
               )}
               {unifiedBilling && (
                 <Text color={theme.info.color}>

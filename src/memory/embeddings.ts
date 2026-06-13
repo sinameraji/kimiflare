@@ -7,6 +7,9 @@ export interface EmbedOpts {
   model?: string;
   texts: string[];
   gateway?: AiGatewayOptions;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 const DEFAULT_MODEL = "@cf/baai/bge-base-en-v1.5";
@@ -58,7 +61,11 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
     "User-Agent": getUserAgent(),
   };
 
-  if (opts.gateway) {
+  if (opts.cloudMode) {
+    url = "https://api.kimiflare.com/v1/embeddings";
+    if (opts.cloudToken) headers.Authorization = `Bearer ${opts.cloudToken}`;
+    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
+  } else if (opts.gateway) {
     // Gateway path: embeddings go through the AI Gateway for observability.
     url = `https://gateway.ai.cloudflare.com/v1/${opts.accountId}/${opts.gateway.id}/workers-ai/${model}`;
     headers.Authorization = `Bearer ${opts.apiToken}`;

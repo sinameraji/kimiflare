@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { loadConfig, DEFAULT_MODEL } from "./config.js";
+import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
+import { isKillSwitchError } from "./util/errors.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
 import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
@@ -16,6 +17,7 @@ program
   .version(getAppVersion())
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
   .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.7-code)")
+  .option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--thinking", "alias for --reasoning")
@@ -59,6 +61,28 @@ program
 
     const { runCostCommand } = await import("./cost-attribution/cli.js");
     await runCostCommand({ ...cmdOpts, config: cfg });
+  });
+
+program
+  .command("usage")
+  .description("Show Kimiflare Cloud token usage (requires cloud authentication)")
+  .action(async () => {
+    const { loadCloudCredentials } = await import("./cloud/auth.js");
+    const creds = await loadCloudCredentials();
+    if (!creds) {
+      console.error("Not authenticated with Kimiflare Cloud. Run: kimiflare auth cloud");
+      process.exit(1);
+    }
+    const { fetchCloudUsage } = await import("./cloud/auth.js");
+    const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
+    if (!usage) {
+      console.error("Failed to fetch usage: invalid response from server");
+      process.exit(1);
+    }
+    console.log(`Token budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
+    console.log(`Used: ${usage.input_tokens_used.toLocaleString()}`);
+    console.log(`Grant expires: ${usage.expires_at}`);
+    console.log("Or when the global pool of free tokens runs out.");
   });
 
 program.addCommand(createRemoteCommand());
@@ -130,6 +154,57 @@ program
         }
       }),
   )
+  .addCommand(
+    new Command("cloud")
+      .description("Authenticate with Kimiflare Cloud")
+      .action(async () => {
+        const { authenticateDevice } = await import("./cloud/auth.js");
+        try {
+          const creds = await authenticateDevice(({ url, userCode, polling }) => {
+            if (!polling) {
+              console.log(`\nKimiflare Cloud Authentication`);
+              console.log(`\n1. Open this URL in your browser:`);
+              console.log(`   ${url}`);
+              console.log(`\n2. Sign in with GitHub or Email\n`);
+            }
+          });
+          console.log(`Authenticated! Token expires at ${new Date(creds.expiresAt * 1000).toISOString()}`);
+
+          // Also enable cloud mode in config so the user doesn't need --cloud on every run
+          const existing = await loadConfig();
+          await saveConfig({
+            accountId: "",
+            apiToken: "",
+            model: existing?.model ?? DEFAULT_MODEL,
+            cloudMode: true,
+          });
+          console.log("Cloud mode enabled. Run `kimiflare` to start using it.");
+
+          // Fetch usage info
+          const { fetchCloudUsage } = await import("./cloud/auth.js");
+          const usage = await fetchCloudUsage(creds.accessToken, creds.deviceId);
+          if (usage) {
+            console.log(`\nToken budget: ${usage.remaining.toLocaleString()} / ${usage.input_token_limit.toLocaleString()} remaining`);
+            console.log(`Grant expires: ${usage.expires_at}`);
+            console.log("Or when the global pool of free tokens runs out.");
+          }
+        } catch (err) {
+          if (isKillSwitchError(err)) {
+            console.error(
+              "\nKimiFlare Cloud has reached its maximum budget across all users.\n" +
+                "The free credits period has ended.\n\n" +
+                "To continue using KimiFlare, switch to BYOK mode:\n" +
+                "  • kimiflare config set-key <your-cloudflare-api-key>\n" +
+                "  • kimiflare config set-account <your-account-id>\n" +
+                "  • Or re-run kimiflare and select BYOK\n",
+            );
+            process.exit(0);
+          }
+          console.error("Authentication failed:", err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      }),
+  )
   ;
 
 program
@@ -159,6 +234,7 @@ program.parse();
 const opts = program.opts<{
   print?: string;
   model?: string;
+  cloud?: boolean;
   dangerouslyAllowAll?: boolean;
   reasoning?: boolean;
   thinking?: boolean;
@@ -206,6 +282,45 @@ async function main() {
     lspProjectPath = resolved.projectPath;
   }
 
+  // Handle cloud mode
+  const cloudMode = opts.cloud ?? cfg?.cloudMode ?? false;
+  let cloudToken: string | undefined;
+  let cloudDeviceId: string | undefined;
+  if (cloudMode) {
+    const { loadCloudCredentials, authenticateDevice } = await import("./cloud/auth.js");
+    let cloudCreds = await loadCloudCredentials();
+    if (!cloudCreds) {
+      console.error("kimiflare: cloud mode requires authentication.\nRun: kimiflare auth cloud\n");
+      process.exit(2);
+    }
+    cloudToken = cloudCreds.accessToken;
+    cloudDeviceId = cloudCreds.deviceId;
+
+    // Proactive health check: detect kill switch early before the first prompt
+    try {
+      const { fetchCloudUsage } = await import("./cloud/auth.js");
+      await fetchCloudUsage(cloudToken, cloudDeviceId);
+    } catch (err) {
+      if (isKillSwitchError(err)) {
+        console.error(
+          "\nKimiFlare Cloud has reached its maximum budget across all users.\n" +
+            "The free credits period has ended.\n\n" +
+            "To continue using KimiFlare, switch to BYOK mode:\n" +
+            "  • kimiflare config set-key <your-cloudflare-api-key>\n" +
+            "  • kimiflare config set-account <your-account-id>\n" +
+            "  • Or re-run kimiflare and select BYOK\n",
+        );
+        process.exit(0);
+      }
+      // Other errors (network, etc.) — don't block, let it retry on first request
+    }
+
+    cfg = {
+      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL, memoryEnabled: false }),
+      cloudMode: true,
+    };
+  }
+
   if (opts.mode === "rpc") {
     const { startRpcServer } = await import("./sdk/rpc.js");
     await startRpcServer();
@@ -241,6 +356,9 @@ async function main() {
       codeMode: cfg.codeMode,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
+      cloudMode,
+      cloudToken,
+      cloudDeviceId,
     });
     return;
   }
@@ -251,7 +369,8 @@ async function main() {
         "kimiflare: missing credentials.\n" +
           "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
           "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
-          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.7-code\" }",
+          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.7-code\" }\n" +
+          "Or use cloud mode: kimiflare --cloud -p \"...\"",
       );
       process.exit(2);
     }
@@ -286,6 +405,9 @@ async function main() {
       codeMode: cfg.codeMode,
       continueOnLimit: !!opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
+      cloudMode,
+      cloudToken,
+      cloudDeviceId,
       updateResult,
       continueSession: !!opts.continue,
       sessionId: opts.session,
@@ -378,9 +500,9 @@ async function main() {
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath);
+    await renderApp({ ...cfg, model }, updateResult, lspScope, lspProjectPath, cloudToken, cloudDeviceId);
   } else {
-    await renderApp(null, updateResult, lspScope, lspProjectPath);
+    await renderApp(null, updateResult, lspScope, lspProjectPath, cloudToken, cloudDeviceId);
   }
 }
 

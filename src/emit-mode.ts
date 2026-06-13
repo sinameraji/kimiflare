@@ -29,7 +29,7 @@ import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage } from "./agent/messages.js";
-import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { classifyIntent } from "./intent/classify.js";
 import { TurnSupervisor } from "./agent/supervisor.js";
 import { loadConfig } from "./config.js";
@@ -47,6 +47,9 @@ export interface EmitModeOpts {
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   aiGatewayId?: string;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 function gatewayFromOpts(opts: EmitModeOpts): AiGatewayOptions | undefined {
@@ -291,6 +294,9 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
+        cloudMode: opts.cloudMode,
+        cloudToken: opts.cloudToken,
+        cloudDeviceId: opts.cloudDeviceId,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;
@@ -428,6 +434,15 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
           severity: "error",
         });
         exitCode = 43;
+        aborted = true;
+      } else if (isKillSwitchError(err)) {
+        emit("RuntimeError", {
+          message: "KimiFlare Cloud has reached its maximum budget across all users. The free credits period has ended. Switch to BYOK mode to continue.",
+          source: "cloudflare",
+          kind: "api_error",
+          severity: "error",
+        });
+        exitCode = 0;
         aborted = true;
       } else if (err instanceof KimiApiError) {
         emit("RuntimeError", {

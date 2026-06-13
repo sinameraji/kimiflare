@@ -50,7 +50,7 @@ import { rebuildSystemPromptForMode, gatewayFromConfig, buildFilePickerIgnoreLis
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import { glob } from "./util/glob.js";
 import type { ChatMessage } from "./agent/messages.js";
-import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { BUILTIN_COMMANDS } from "./commands/builtins.js";
 import { MemoryManager } from "./memory/manager.js";
 import { getMemoryDb, openMemoryDb } from "./memory/db.js";
@@ -133,6 +133,9 @@ export interface UiModeOpts {
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   aiGatewayId?: string;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
   /** Model for internal plumbing tasks (memory verification, hypothetical queries, continuation summaries). Default: @cf/moonshotai/kimi-k2.5. */
   plumbingModel?: string;
   /** Optional path to the camouflage-tui binary. Defaults to PATH lookup. */
@@ -995,6 +998,9 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
+        cloudMode: opts.cloudMode,
+        cloudToken: opts.cloudToken,
+        cloudDeviceId: opts.cloudDeviceId,
         memoryManager,
         hooks: hooksManager,
         callbacks: {
@@ -1255,6 +1261,9 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       } else if (err instanceof AgentLoopError) {
         cam.send("RuntimeError", { message: "agent loop detected (repeated tool calls)", kind: "generic", severity: "error" });
         exitCode = 43; aborted = true;
+      } else if (isKillSwitchError(err)) {
+        cam.send("RuntimeError", { message: "KimiFlare Cloud has reached its maximum budget across all users. The free credits period has ended. Switch to BYOK mode to continue.", source: "cloudflare", kind: "api_error", severity: "error" });
+        exitCode = 0; aborted = true;
       } else if (err instanceof KimiApiError) {
         cam.send("RuntimeError", { message: humanizeCloudflareError(err), source: "cloudflare", kind: "api_error", severity: "error" });
       } else {
