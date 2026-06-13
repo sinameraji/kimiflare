@@ -92,7 +92,7 @@ export async function* authGitHubForTui(): AsyncGenerator<AuthStep, void, void> 
       const cfg = (await loadConfig()) ?? {
         accountId: "",
         apiToken: "",
-        model: "@cf/moonshotai/kimi-k2.6",
+        model: "@cf/moonshotai/kimi-k2.7-code",
       };
 
       await saveConfig({

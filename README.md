@@ -8,11 +8,11 @@
   <a href="https://github.com/sinameraji/kimiflare/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sinameraji/kimiflare?style=flat-square&color=2ea44f" alt="license"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js >= 20">
   <img src="https://img.shields.io/badge/typescript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
-  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2"><img src="https://img.shields.io/badge/powered%20by-Kimi%20K2.6-f59e0b?style=flat-square" alt="Powered by Kimi K2.6"></a>
+  <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2"><img src="https://img.shields.io/badge/powered%20by-Kimi%20K2.7-f59e0b?style=flat-square" alt="Powered by Kimi K2.7"></a>
 </p>
 
 <p align="center">
-  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2">Kimi K2.6</a> on <a href="https://developers.cloudflare.com/workers-ai/">Cloudflare Workers AI</a> — with optional routing through your own <a href="https://developers.cloudflare.com/ai-gateway/">AI Gateway</a> for first-class observability, caching, and authoritative cost.</strong><br>
+  <strong>A terminal coding agent powered by <a href="https://developers.cloudflare.com/workers-ai/models/kimi-k2">Kimi K2.7</a> on <a href="https://developers.cloudflare.com/workers-ai/">Cloudflare Workers AI</a> — with optional routing through your own <a href="https://developers.cloudflare.com/ai-gateway/">AI Gateway</a> for first-class observability, caching, and authoritative cost.</strong><br>
   All on your Cloudflare account.
 </p>
 
@@ -93,11 +93,11 @@ Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, pe
 
 ### Model
 
-KimiFlare runs on **Kimi K2.6** via Cloudflare Workers AI — no API key needed beyond your Cloudflare token:
+KimiFlare runs on **Kimi K2.7** via Cloudflare Workers AI — no API key needed beyond your Cloudflare token:
 
-- `@cf/moonshotai/kimi-k2.6` — 262k context, reasoning, tools
+- `@cf/moonshotai/kimi-k2.7-code` — 262k context, reasoning, tools, vision
 
-`@cf/moonshotai/kimi-k2.5` is also available for older sessions.
+`@cf/moonshotai/kimi-k2.6` and `@cf/moonshotai/kimi-k2.5` are also available.
 
 ### One-shot mode
 
@@ -120,7 +120,7 @@ const { session } = await createAgentSession({
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
     apiToken: process.env.CLOUDFLARE_API_TOKEN,
     aiGatewayId: process.env.CLOUDFLARE_AI_GATEWAY_ID,
-    model: "@cf/moonshotai/kimi-k2.6",
+    model: "@cf/moonshotai/kimi-k2.7-code",
   },
 });
 

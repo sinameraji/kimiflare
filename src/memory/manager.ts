@@ -161,7 +161,7 @@ export class MemoryManager {
     return {
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.model ?? "@cf/moonshotai/kimi-k2.6",
+      model: this.opts.model ?? "@cf/moonshotai/kimi-k2.7-code",
       gateway: this.opts.gateway,
     };
   }

@@ -42,6 +42,8 @@ export interface ModelCapabilities {
   tools: boolean;
   reasoning: boolean;
   streaming: boolean;
+  /** Does this model support image/vision inputs? */
+  vision?: boolean;
   /**
    * Does this model accept the `temperature` field in the request body?
    * Reasoning models from OpenAI (gpt-5 family) and Anthropic (opus-4-7)
@@ -51,7 +53,7 @@ export interface ModelCapabilities {
 }
 
 export interface ModelEntry {
-  /** Canonical model id, e.g. "@cf/moonshotai/kimi-k2.6". */
+  /** Canonical model id, e.g. "@cf/moonshotai/kimi-k2.7-code". */
   id: string;
   provider: ModelProvider;
   contextWindow: number;
@@ -93,6 +95,15 @@ export function isUnifiedEligible(entry: ModelEntry): boolean {
 
 const SEED: ModelEntry[] = [
   // ── Kimi models (Cloudflare Workers AI, native to kimiflare) ──────────────
+  {
+    id: "@cf/moonshotai/kimi-k2.7-code",
+    provider: "workers-ai",
+    contextWindow: 262_144,
+    maxOutputTokens: 16_384,
+    pricing: { inputPerMtok: 0.95, cachedInputPerMtok: 0.19, outputPerMtok: 4.0 },
+    supports: { tools: true, reasoning: true, streaming: true, vision: true },
+    billingMode: "unified",
+  },
   {
     id: "@cf/moonshotai/kimi-k2.6",
     provider: "workers-ai",
