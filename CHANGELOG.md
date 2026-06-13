@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.0](https://github.com/sinameraji/kimiflare/compare/v0.87.0...v0.88.0) (2026-06-13)
+
+
+### Features
+
+* **models:** add Kimi K2.7 Code as default model ([#582](https://github.com/sinameraji/kimiflare/issues/582)) ([ce1f51d](https://github.com/sinameraji/kimiflare/commit/ce1f51df078dbc4edaaf748b4258368d5b8937b3))
+
 ## [0.87.0](https://github.com/sinameraji/kimiflare/compare/v0.86.0...v0.87.0) (2026-06-12)
 
 
