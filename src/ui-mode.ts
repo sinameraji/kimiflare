@@ -2147,7 +2147,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
               {
                 value: "camouflage",
                 label: "Camouflage",
-                description: "experimental Rust TUI — bail with `kimiflare --ui ink`",
+                description: "experimental — opt in with `kimiflare --ui camouflage`",
               },
             ],
             default: current,
@@ -2164,6 +2164,18 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             text: `unknown UI engine "${args}" — choose "ink" or "camouflage"`,
             kind: "warn",
             ttl_ms: 3000,
+          });
+          return true;
+        }
+        if (nextUi === "camouflage") {
+          // Camouflage is strictly opt-in via CLI flag or env var; we do not
+          // persist it so it can never become the silent default for users.
+          cam.send("ShowToast", {
+            text:
+              "Camouflage is experimental and must be opted into explicitly. " +
+              "Launch with `kimiflare --ui camouflage` or set `KIMIFLARE_UI=camouflage`.",
+            kind: "error",
+            ttl_ms: 12000,
           });
           return true;
         }
@@ -2185,9 +2197,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         cam.send("ShowToast", {
           text:
             `UI engine set to "${nextUi}". RESTART kimiflare for it to take effect.` +
-            (nextUi === "ink"
-              ? "  (or `unset KIMIFLARE_UI` if you previously exported it)"
-              : "  (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` to bail.)"),
+            "  (or `unset KIMIFLARE_UI` if you previously exported it)",
           kind: "error",
           ttl_ms: 12000,
         });

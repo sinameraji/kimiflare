@@ -26,7 +26,7 @@ export function UiPicker({ current, onPick }: Props) {
     {
       label: "Camouflage",
       value: "camouflage",
-      description: "experimental Rust TUI — bail with `kimiflare --ui ink`",
+      description: "experimental — opt in with `kimiflare --ui camouflage`",
     },
     { label: "< Back", value: "__back__", description: "" },
   ];

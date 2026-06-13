@@ -7,7 +7,7 @@
 
 ## 1. Project
 
-**KimiFlare** is a terminal coding agent powered by multiple models (Kimi-K2.6, Claude, GPT-5, Gemini, Llama, Groq), routed through your own Cloudflare AI Gateway. It provides an interactive TUI (Terminal User Interface) for AI-assisted coding, file editing, shell command execution, and project exploration with a 262k-token context window.
+**KimiFlare** is a terminal coding agent powered by multiple models (Kimi-K2.7, Claude, GPT-5, Gemini, Llama, Groq), routed through your own Cloudflare AI Gateway. It provides an interactive TUI (Terminal User Interface) for AI-assisted coding, file editing, shell command execution, and project exploration with a 262k-token context window.
 
 - **Primary language:** TypeScript 5.7
 - **Runtime:** Node.js ≥ 20 (ESM only)
@@ -215,7 +215,7 @@ node --inspect-brk bin/kimiflare.mjs
 
 ### External Integrations
 - **Cloudflare AI Gateway** — the spine. All traffic is routed through the user's own Gateway by default: this gives us per-request logs, caching, and authoritative cost attribution via `cf-aig-metadata` tagging (`feature`, `sessionId`, `turnIdx`). Gateway logs are the source of truth for `/cost`; local heuristics are demoted to a brief fallback used only until logs catch up. Supports Universal Endpoint for multi-provider routing (Anthropic, OpenAI, Google, etc.). Emergency opt-out: `KIMIFLARE_DISABLE_AI_GATEWAY=1`.
-- **Cloudflare Workers AI** — primary LLM backend (Kimi-K2.6). Reached via the Gateway in normal operation; direct path remains in code as fallback.
+- **Cloudflare Workers AI** — primary LLM backend (Kimi-K2.7). Reached via the Gateway in normal operation; direct path remains in code as fallback.
 - **MCP Servers** — external tools via Model Context Protocol.
 - **LSP Servers** — language servers for code intelligence.
 - **GitHub API** — PR/issue/code reading via `src/tools/github.ts`.

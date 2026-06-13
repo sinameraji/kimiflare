@@ -11,7 +11,7 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "mode", argHint: "edit|plan|auto|multi-agent-experimental", description: "Switch agent mode", source: "builtin" },
   { name: "multi-agent", argHint: "[enable|disable|status|setup]", description: "Configure multi-agent (endpoint, auto-implement, set up)", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
-  { name: "ui", argHint: "ink|camouflage", description: "Switch UI engine (takes effect on next launch)", source: "builtin" },
+  { name: "ui", argHint: "ink", description: "Switch UI engine to React Ink (takes effect on next launch). Camouflage is opt-in via --ui camouflage.", source: "builtin" },
   { name: "plan", description: "Switch to plan mode", source: "builtin" },
   { name: "auto", description: "Switch to auto mode", source: "builtin" },
   { name: "edit", description: "Switch to edit mode", source: "builtin" },

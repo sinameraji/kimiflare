@@ -312,14 +312,14 @@ async function main() {
   // alt-screen and flash for a fraction of a second.
   const logoText = renderLogo(getAppVersion());
 
-  // UI engine resolution: `--ui` flag wins, then `KIMIFLARE_UI` env var,
-  // then the persisted `uiEngine` field in ~/.config/kimiflare/config.json
-  // (set from inside either TUI via the `/ui` slash command), then the safe
-  // default (`ink`). Camouflage is opt-in experimental until it covers every
-  // surface (queue, hooks, mode switching, MCP UI, etc.) and gets enough
-  // burn-in via dogfooding.
+  // UI engine resolution: React Ink is the default for all users.
+  // Camouflage is strictly opt-in via `--ui camouflage` or the `KIMIFLARE_UI`
+  // env var. We deliberately do NOT let a persisted `uiEngine: "camouflage"`
+  // field in ~/.config/kimiflare/config.json silently switch users to the
+  // experimental engine on the next launch.
+  const explicitUi = opts.ui ?? process.env.KIMIFLARE_UI;
   const uiEngine = (
-    opts.ui ?? process.env.KIMIFLARE_UI ?? cfg?.uiEngine ?? "ink"
+    explicitUi ?? (cfg?.uiEngine === "ink" ? "ink" : undefined) ?? "ink"
   ).toLowerCase();
   if (uiEngine !== "camouflage") {
     console.log(logoText);

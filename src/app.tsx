@@ -1228,6 +1228,21 @@ function App({
     (picked: "ink" | "camouflage" | null) => {
       setShowUiPicker(false);
       if (!picked) return;
+      if (picked === "camouflage") {
+        // Camouflage is strictly opt-in via CLI flag or env var; we do not
+        // persist it to config so it can never become the silent default.
+        setEvents((e) => [
+          ...e,
+          {
+            kind: "error",
+            key: mkKey(),
+            text:
+              "Camouflage is experimental and must be opted into explicitly. " +
+              "Launch with `kimiflare --ui camouflage` or set `KIMIFLARE_UI=camouflage`.",
+          },
+        ]);
+        return;
+      }
       setCfg((c) => {
         if (!c) return c;
         const updated = { ...c, uiEngine: picked };
@@ -1239,11 +1254,7 @@ function App({
         {
           kind: "error",
           key: mkKey(),
-          text:
-            `UI engine set to "${picked}". RESTART kimiflare for it to take effect.` +
-            (picked === "camouflage"
-              ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
-              : ""),
+          text: `UI engine set to "${picked}". RESTART kimiflare for it to take effect.`,
         },
       ]);
     },

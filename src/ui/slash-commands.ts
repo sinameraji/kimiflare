@@ -811,6 +811,21 @@ const handleUi: Handler = (ctx, _rest, arg) => {
     return true;
   }
   const next = arg as "ink" | "camouflage";
+  if (next === "camouflage") {
+    // Camouflage is strictly opt-in via CLI flag or env var; we do not persist
+    // it so it can never become the silent default for users.
+    setEvents((e) => [
+      ...e,
+      {
+        kind: "error",
+        key: mkKey(),
+        text:
+          "Camouflage is experimental and must be opted into explicitly. " +
+          "Launch with `kimiflare --ui camouflage` or set `KIMIFLARE_UI=camouflage`.",
+      },
+    ]);
+    return true;
+  }
   ctx.setCfg((prev) => {
     if (!prev) return prev;
     const updated = { ...prev, uiEngine: next } as Cfg;
@@ -818,18 +833,13 @@ const handleUi: Handler = (ctx, _rest, arg) => {
     return updated;
   });
   // Loud red "error"-kind event so the user can't miss that they need to
-  // restart. Also reminds them of the env-var escape hatch in case the
-  // new engine is broken on their machine.
+  // restart.
   setEvents((e) => [
     ...e,
     {
       kind: "error",
       key: mkKey(),
-      text:
-        `UI engine set to "${next}". RESTART kimiflare for it to take effect.` +
-        (next === "camouflage"
-          ? " (Camouflage is EXPERIMENTAL — `kimiflare --ui ink` or `unset KIMIFLARE_UI` to bail.)"
-          : ""),
+      text: `UI engine set to "${next}". RESTART kimiflare for it to take effect.`,
     },
   ]);
   return true;
