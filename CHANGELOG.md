@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.1](https://github.com/sinameraji/kimiflare/compare/v0.88.0...v0.88.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* **ui:** default to React Ink, update K2.6 to K2.7 branding, bump v0.88.1 ([#584](https://github.com/sinameraji/kimiflare/issues/584)) ([17c144e](https://github.com/sinameraji/kimiflare/commit/17c144e24ad9782ec1b294d18a9e7cca0e9126de))
+
 ## [0.88.0](https://github.com/sinameraji/kimiflare/compare/v0.87.0...v0.88.0) (2026-06-13)
 
 
