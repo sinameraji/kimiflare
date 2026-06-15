@@ -95,6 +95,7 @@ async function loadCamouflage() {
 import { listSessions, loadSession, addCheckpoint, loadSessionFromCheckpoint } from "./sessions.js";
 import { summarizeMessagesViaLlm } from "./agent/llm-summarize.js";
 import { distillSessionPlan } from "./agent/distill.js";
+import { resolvePlanForFresh } from "./agent/plan-resolver.js";
 import { generateContinuationSummary } from "./agent/continuation-summary.js";
 import { buildWelcome } from "./ui/greetings.js";
 import { themeList, resolveTheme } from "./ui/theme.js";
@@ -1287,6 +1288,13 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         const plan = distillSessionPlan(messages);
         if (plan) {
           sessionPlan = plan;
+          // Durable backup: store the plan under a deterministic topic key
+          // so it survives /clear or ref resets.
+          if (startupCfg?.memoryEnabled && memoryManager) {
+            void memoryManager.rememberPlan(plan, process.cwd(), randomUUID()).catch(() => {
+              // Non-fatal: the in-session variable is the primary fast path.
+            });
+          }
         }
       }
 
@@ -3128,17 +3136,28 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
           cam.send("ShowToast", { text: "can't /fresh while model is running — press Esc to interrupt first", kind: "warn", ttl_ms: 2500 });
           return true;
         }
-        // Mode-aware summary: plan mode uses the distilled plan;
-        // auto/edit/multi-agent produce a handoff document via LLM.
+        // Mode-aware summary: plan mode uses the captured plan (in-session
+        // variable or durable memory topic key); auto/edit/multi-agent produce a
+        // handoff document via LLM.
         void (async () => {
-          const summary = await generateContinuationSummary({
-            messages,
-            mode: currentMode,
-            accountId: opts.accountId,
-            apiToken: opts.apiToken,
-            model: opts.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
-            gateway: gatewayFromOpts(opts),
-          });
+          const summary =
+            currentMode === "plan"
+              ? resolvePlanForFresh({
+                  mode: currentMode,
+                  messages,
+                  sessionPlan,
+                  memoryManager,
+                  memoryEnabled: startupCfg?.memoryEnabled,
+                  repoPath: process.cwd(),
+                })
+              : await generateContinuationSummary({
+                  messages,
+                  mode: currentMode,
+                  accountId: opts.accountId,
+                  apiToken: opts.apiToken,
+                  model: opts.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+                  gateway: gatewayFromOpts(opts),
+                });
           if (!summary) {
             cam.send("ShowToast", { text: "No plan or summary found to start fresh with.", kind: "error", ttl_ms: 2500 });
             return;

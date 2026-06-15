@@ -80,7 +80,7 @@ import { startRemoteSession, streamRemoteProgress } from "../remote/worker-clien
 import { saveRemoteSession, type RemoteSession } from "../remote/session-store.js";
 import { deployForTui } from "../remote/deploy.js";
 import { authGitHubForTui } from "../remote/tui-auth.js";
-import { distillSessionPlan } from "../agent/distill.js";
+import { resolvePlanForFresh } from "../agent/plan-resolver.js";
 import { generateContinuationSummary } from "../agent/continuation-summary.js";
 import { writeToClipboard } from "../util/clipboard.js";
 import type { Task } from "../tools/registry.js";
@@ -296,26 +296,37 @@ const handleFresh: Handler = async (ctx) => {
     return true;
   }
 
-  // Mode-aware summary: plan mode uses the distilled plan;
-  // auto/edit/multi-agent produce a handoff document via LLM.
-  const summary = await generateContinuationSummary({
-    messages: ctx.messagesRef.current,
-    mode: ctx.mode,
-    accountId: cfg?.accountId ?? "",
-    apiToken: cfg?.apiToken ?? "",
-    model: cfg?.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
-    gateway: cfg?.aiGatewayId
-      ? {
-          id: cfg.aiGatewayId,
-          cacheTtl: cfg.aiGatewayCacheTtl,
-          skipCache: cfg.aiGatewaySkipCache,
-          collectLogPayload: cfg.aiGatewayCollectLogPayload,
-          metadata: cfg.aiGatewayMetadata,
-        }
-      : undefined,
-    memoryManager: ctx.memoryManagerRef.current,
-    memoryEnabled: cfg?.memoryEnabled,
-  });
+  // Mode-aware summary: plan mode uses the captured plan (in-session ref or
+  // durable memory topic key); auto/edit/multi-agent produce a handoff document
+  // via LLM.
+  const summary =
+    ctx.mode === "plan"
+      ? resolvePlanForFresh({
+          mode: ctx.mode,
+          messages: ctx.messagesRef.current,
+          sessionPlan: ctx.sessionPlanRef.current,
+          memoryManager: ctx.memoryManagerRef.current,
+          memoryEnabled: cfg?.memoryEnabled,
+          repoPath: process.cwd(),
+        })
+      : await generateContinuationSummary({
+          messages: ctx.messagesRef.current,
+          mode: ctx.mode,
+          accountId: cfg?.accountId ?? "",
+          apiToken: cfg?.apiToken ?? "",
+          model: cfg?.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+          gateway: cfg?.aiGatewayId
+            ? {
+                id: cfg.aiGatewayId,
+                cacheTtl: cfg.aiGatewayCacheTtl,
+                skipCache: cfg.aiGatewaySkipCache,
+                collectLogPayload: cfg.aiGatewayCollectLogPayload,
+                metadata: cfg.aiGatewayMetadata,
+              }
+            : undefined,
+          memoryManager: ctx.memoryManagerRef.current,
+          memoryEnabled: cfg?.memoryEnabled,
+        });
 
   if (!summary) {
     setEvents((e) => [
