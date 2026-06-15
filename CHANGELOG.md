@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.3](https://github.com/sinameraji/kimiflare/compare/v0.88.2...v0.88.3) (2026-06-15)
+
+
+### Bug Fixes
+
+* **agent:** preserve original plan across /fresh in plan mode ([#589](https://github.com/sinameraji/kimiflare/issues/589)) ([ed14cc6](https://github.com/sinameraji/kimiflare/commit/ed14cc612f60a7bca0a591922ccadacce386ed32))
+
 ## [0.88.2](https://github.com/sinameraji/kimiflare/compare/v0.88.1...v0.88.2) (2026-06-15)
 
 
