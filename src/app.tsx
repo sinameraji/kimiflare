@@ -114,6 +114,7 @@ import { runStartupTasks } from "./ui/run-startup-tasks.js";
 import { initLsp as initLspImpl, initMcp as initMcpImpl } from "./ui/manager-init.js";
 import { runCompact as runCompactImpl } from "./agent/run-compact.js";
 import { distillSessionPlan } from "./agent/distill.js";
+import { resolvePlanForFresh } from "./agent/plan-resolver.js";
 import { writeToClipboard } from "./util/clipboard.js";
 import {
   handleCommandDelete as handleCommandDeleteImpl,
@@ -1510,7 +1511,14 @@ function App({
 
       // Use the plan captured when the picker was first shown so follow-up
       // discussion doesn't bury the original plan in message history.
-      const plan = sessionPlanRef.current ?? distillSessionPlan(messagesRef.current);
+      const plan = resolvePlanForFresh({
+        mode: "plan",
+        messages: messagesRef.current,
+        sessionPlan: sessionPlanRef.current,
+        memoryManager: memoryManagerRef.current,
+        memoryEnabled: cfg?.memoryEnabled,
+        repoPath: process.cwd(),
+      });
       if (!plan) {
         setEvents((e) => [
           ...e,
@@ -2353,6 +2361,13 @@ function App({
               const plan = distillSessionPlan(messagesRef.current);
               if (plan) {
                 sessionPlanRef.current = plan;
+                // Durable backup: store the plan under a deterministic topic key
+                // so it survives /clear, executeFreshStart, or ref resets.
+                if (cfg?.memoryEnabled && memoryManagerRef.current && sessionIdRef.current) {
+                  void memoryManagerRef.current.rememberPlan(plan, process.cwd(), sessionIdRef.current).catch(() => {
+                    // Non-fatal: the in-session ref is the primary fast path.
+                  });
+                }
                 setShowPlanCompletePicker(true);
               }
             }

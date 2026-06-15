@@ -1,6 +1,9 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { deterministicTopicKey, pickTopicKey } from "./manager.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { deterministicTopicKey, pickTopicKey, MemoryManager } from "./manager.js";
 
 describe("deterministicTopicKey", () => {
   it("lowercases and snake_cases a simple phrase", () => {
@@ -57,5 +60,68 @@ describe("pickTopicKey", () => {
   it("picks the first matching existing key", () => {
     const result = pickTopicKey("project uses tsup", ["project", "project_uses_tsup"]);
     assert.strictEqual(result, "project");
+  });
+});
+
+describe("MemoryManager plan storage", () => {
+  let tmpDir: string;
+  let manager: MemoryManager;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "kimiflare-memory-test-"));
+    manager = new MemoryManager({
+      dbPath: join(tmpDir, "memory.db"),
+      accountId: "test-account",
+      apiToken: "test-token",
+      model: "@cf/moonshotai/kimi-k2.7-code",
+      plumbingModel: "@cf/moonshotai/kimi-k2.5",
+      embeddingModel: "@cf/baai/bge-base-en-v1.5",
+    });
+    manager.open();
+  });
+
+  afterEach(async () => {
+    manager.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("rememberPlan stores a plan under the default topic key", async () => {
+    const result = await manager.rememberPlan("Build a login page", "/repo", "session-1");
+    assert.ok(result.id);
+
+    const stored = manager.getByTopicKey("/repo", "current_dev_plan");
+    assert.strictEqual(stored?.content, "Build a login page");
+    assert.strictEqual(stored?.topicKey, "current_dev_plan");
+    assert.strictEqual(stored?.category, "task");
+  });
+
+  it("rememberPlan supersedes the previous plan under the same key", async () => {
+    await manager.rememberPlan("Old plan", "/repo", "session-1");
+    const result = await manager.rememberPlan("New plan", "/repo", "session-2");
+
+    const stored = manager.getByTopicKey("/repo", "current_dev_plan");
+    assert.strictEqual(stored?.content, "New plan");
+    assert.ok(result.superseded);
+    assert.strictEqual(result.superseded?.length, 1);
+  });
+
+  it("rememberPlan supports a custom topic key", async () => {
+    await manager.rememberPlan("Custom plan", "/repo", "session-1", "my_topic");
+    const stored = manager.getByTopicKey("/repo", "my_topic");
+    assert.strictEqual(stored?.content, "Custom plan");
+  });
+
+  it("getByTopicKey returns null when no memory exists", () => {
+    const stored = manager.getByTopicKey("/repo", "current_dev_plan");
+    assert.strictEqual(stored, null);
+  });
+
+  it("getByTopicKey returns the latest memory for the key", async () => {
+    await manager.rememberPlan("First", "/repo", "session-1");
+    await manager.rememberPlan("Second", "/repo", "session-2");
+    await manager.rememberPlan("Third", "/repo", "session-3");
+
+    const stored = manager.getByTopicKey("/repo", "current_dev_plan");
+    assert.strictEqual(stored?.content, "Third");
   });
 });

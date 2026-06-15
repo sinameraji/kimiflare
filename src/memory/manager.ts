@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import type { AiGatewayOptions } from "../agent/client.js";
 import { runKimi } from "../agent/client.js";
 import type { ChatMessage } from "../agent/messages.js";
-import type { MemoryInput, MemoryQuery, HybridResult, MemoryStats, MemoryCategory } from "./schema.js";
+import type { Memory, MemoryInput, MemoryQuery, HybridResult, MemoryStats, MemoryCategory } from "./schema.js";
 import { DEFAULT_EMBEDDING_DIM } from "./schema.js";
 import {
   openMemoryDb,
@@ -270,6 +270,66 @@ export class MemoryManager {
     }
 
     return { id: memory.id, superseded: supersededIds.length > 0 ? supersededIds : undefined };
+  }
+
+  /**
+   * Store a plan directly under a deterministic topic key.
+   * Skips embedding, verification, and hypothetical queries so it is fast and
+   * deterministic. Supersedes any previous plan stored under the same key.
+   */
+  async rememberPlan(
+    plan: string,
+    repoPath: string,
+    sessionId: string,
+    topicKey = "current_dev_plan",
+  ): Promise<{ id: string; superseded?: string[] }> {
+    if (!this.db) throw new Error("Memory DB not open");
+
+    const safeContent = this.shouldRedact() ? redactSecrets(plan) : plan;
+    if (!safeContent.trim()) {
+      throw new Error("Plan content is empty after redaction");
+    }
+
+    const normalizedKey = topicKey.trim();
+    if (!normalizedKey) {
+      throw new Error("Plan topic key cannot be empty");
+    }
+
+    // Supersede any previous plan under the same key.
+    const supersededIds: string[] = [];
+    const existing = findMemoriesByTopicKey(this.db, repoPath, normalizedKey);
+    for (const old of existing) {
+      supersedeMemory(this.db, old.id, "pending");
+      supersededIds.push(old.id);
+    }
+
+    // Zero embedding: this memory is only ever recalled by exact topic key.
+    const zeroEmbedding = new Float32Array(DEFAULT_EMBEDDING_DIM);
+
+    const memory = insertMemory(this.db, {
+      content: safeContent,
+      category: "task",
+      sourceSessionId: sessionId,
+      repoPath,
+      importance: 4,
+      topicKey: normalizedKey,
+    }, zeroEmbedding);
+
+    for (const oldId of supersededIds) {
+      supersedeMemory(this.db, oldId, memory.id);
+    }
+
+    return { id: memory.id, superseded: supersededIds.length > 0 ? supersededIds : undefined };
+  }
+
+  /**
+   * Recall the latest memory for an exact topic key.
+   * Does not use embeddings; returns null if no matching memory exists.
+   */
+  getByTopicKey(repoPath: string, topicKey: string): Memory | null {
+    if (!this.db) return null;
+    const rows = findMemoriesByTopicKey(this.db, repoPath, topicKey);
+    return rows[0] ?? null;
   }
 
   /**
