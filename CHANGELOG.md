@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.2](https://github.com/sinameraji/kimiflare/compare/v0.88.1...v0.88.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* **memory:** route embeddings through AI Gateway /compat/embeddings ([#587](https://github.com/sinameraji/kimiflare/issues/587)) ([4648b9b](https://github.com/sinameraji/kimiflare/commit/4648b9b4def647299647878dae5cdbe5d5d4afbd))
+
 ## [0.88.1](https://github.com/sinameraji/kimiflare/compare/v0.88.0...v0.88.1) (2026-06-13)
 
 
