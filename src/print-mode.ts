@@ -13,7 +13,7 @@ import type { AiGatewayOptions } from "./agent/client.js";
 import { buildSystemPrompt } from "./agent/system-prompt.js";
 import { ToolExecutor, ALL_TOOLS } from "./tools/executor.js";
 import type { ChatMessage, ContentPart } from "./agent/messages.js";
-import { KimiApiError, humanizeCloudflareError } from "./util/errors.js";
+import { KimiApiError, isKillSwitchError, humanizeCloudflareError } from "./util/errors.js";
 import { saveSession, loadSession, listSessions, sessionsDir, type SessionFile } from "./sessions.js";
 import { encodeImageFile, isImagePath } from "./util/image.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
@@ -42,6 +42,9 @@ export interface PrintModeOpts {
   codeMode?: boolean;
   continueOnLimit?: boolean;
   maxInputTokens?: number;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
   /** Session continuation */
   continueSession?: boolean;
   sessionId?: string;
@@ -190,6 +193,9 @@ async function buildUserMessage(prompt: string, files: string[], cwd: string): P
 }
 
 export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
+  if (opts.cloudMode) {
+    process.stderr.write("[cloud mode: api.kimiflare.com]\n");
+  }
   const startMs = Date.now();
 
   if (opts.updateResult.hasUpdate) {
@@ -372,6 +378,9 @@ export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
       codeMode: opts.codeMode,
       continueOnLimit: opts.continueOnLimit,
       maxInputTokens: opts.maxInputTokens,
+      cloudMode: opts.cloudMode,
+      cloudToken: opts.cloudToken,
+      cloudDeviceId: opts.cloudDeviceId,
       coauthor:
         opts.coauthor !== false
           ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }
@@ -391,6 +400,23 @@ export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
       if (format === "text") process.stderr.write(`\n\x1b[33m${msg}\x1b[0m\n`);
       else if (format === "stream-json") emitStreamJson("error", { message: msg, code: 43 });
       process.exitCode = 43;
+      return;
+    }
+    if (isKillSwitchError(err)) {
+      process.stderr.write(
+        "\n\x1b[31m" +
+          "╔══════════════════════════════════════════════════════════════╗\n" +
+          "║  KimiFlare Cloud has reached its maximum budget across       ║\n" +
+          "║  all users. The free credits period has ended.               ║\n" +
+          "║                                                              ║\n" +
+          "║  To continue using KimiFlare, switch to BYOK mode:           ║\n" +
+          "║  • kimiflare config set-key <your-cloudflare-api-key>        ║\n" +
+          "║  • kimiflare config set-account <your-account-id>            ║\n" +
+          "║  • Or re-run kimiflare and select BYOK                       ║\n" +
+          "╚══════════════════════════════════════════════════════════════╝\n" +
+          "\x1b[0m\n",
+      );
+      process.exitCode = 0;
       return;
     }
     if (err instanceof KimiApiError) {

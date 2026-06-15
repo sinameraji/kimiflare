@@ -6,7 +6,9 @@ import { MD } from "./markdown.js";
 import { useTheme } from "./theme-context.js";
 import type { Theme } from "./theme.js";
 import { humanizeInfo, humanizeMemory, humanizeMeta, type IntentTier } from "./narrator.js";
+import { CloudQuotaMessage } from "./cloud-quota-message.js";
 import { ApiErrorMessage } from "./api-error-message.js";
+import { ServiceEndedMessage } from "./service-ended-message.js";
 
 export type ChatEvent =
   | { kind: "user"; key: string; text: string; images?: string[]; queued?: boolean }
@@ -37,10 +39,22 @@ export type ChatEvent =
       message: string;
     }
   | {
+      kind: "cloud_quota_exhausted";
+      key: string;
+      used: number;
+      limit: number;
+      expiresAt: string;
+    }
+  | {
       kind: "qrcode";
       key: string;
       lines: string[];
       caption: string;
+    }
+  | {
+      kind: "service_ended";
+      key: string;
+      endedAt?: string;
     };
 
 interface Props {
@@ -219,6 +233,15 @@ const EventView = React.memo(function EventView({
       </Text>
     );
   }
+  if (evt.kind === "cloud_quota_exhausted") {
+    return (
+      <CloudQuotaMessage
+        used={evt.used}
+        limit={evt.limit}
+        expiresAt={evt.expiresAt}
+      />
+    );
+  }
   if (evt.kind === "api_error") {
     return (
       <ApiErrorMessage
@@ -227,6 +250,9 @@ const EventView = React.memo(function EventView({
         message={evt.message}
       />
     );
+  }
+  if (evt.kind === "service_ended") {
+    return <ServiceEndedMessage endedAt={evt.endedAt} />;
   }
   if (evt.kind === "qrcode") {
     return (
