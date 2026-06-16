@@ -2005,15 +2005,25 @@ function App({
         onInfo: (text: string) => {
           setEvents((e) => [...e, { kind: "info", key: mkKey(), text }]);
         },
-        onAssistantFinal: () => {
+        onAssistantFinal: (msg?: import("./agent/messages.js").ChatMessage) => {
           const id = activeAsstIdRef.current;
           if (id !== null) updateAssistant(id, () => ({ streaming: false }));
           setTurnPhase("waiting");
 
-          // If no tool calls were finalized, the turn is effectively done.
-          // Reset busy immediately so the UI returns to idle without waiting
-          // for the supervisor's onDone hook.
-          if (pendingToolCallsRef.current.size === 0) {
+          // The assistant message is the authoritative source of truth for
+          // whether the turn is complete. If it contains no tool_calls, the
+          // model is done for this iteration and the UI should return to idle
+          // immediately — even if pendingToolCallsRef has stale entries from a
+          // callback mismatch or parallel-tool race.
+          const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
+          if (!hasToolCalls) {
+            if (pendingToolCallsRef.current.size > 0) {
+              logger.warn("ui:stale_pending_tool_calls_at_turn_end", {
+                count: pendingToolCallsRef.current.size,
+                toolCallIds: [...pendingToolCallsRef.current.keys()],
+              });
+              pendingToolCallsRef.current.clear();
+            }
             endTurn();
           }
         },
