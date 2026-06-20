@@ -4,6 +4,14 @@ import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
 import { logger } from "../util/logger.js";
+import { getLogSessionId, getLogTurnId } from "../util/log-sink.js";
+import {
+  isLlmDumpEnabled,
+  writeLlmDump,
+  computeBreakdown,
+  type LlmDumpRecord,
+  type LlmDumpResponse,
+} from "../util/llm-dump.js";
 import { getModelOrInfer, type ModelProvider } from "../models/registry.js";
 
 export type KimiEvent =
@@ -120,6 +128,42 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     body.reasoning_effort = opts.reasoningEffort;
   }
 
+  // Debug-only payload dump (KIMIFLARE_DUMP_LLM=1). Pure post-assembly
+  // observer: reads the already-finalized body immediately before fetch — it
+  // cannot alter what is sent. See src/util/llm-dump.ts.
+  let dumpRecord: LlmDumpRecord | null = null;
+  if (isLlmDumpEnabled()) {
+    const dumpMessages = body.messages as ChatMessage[];
+    const dumpTools = (body.tools as ToolDef[] | undefined) ?? [];
+    const { messages: _m, tools: _t, ...params } = body;
+    const dumpResponse: LlmDumpResponse = {
+      text: "",
+      reasoning: "",
+      toolCalls: [],
+      finishReason: null,
+      usage: null,
+    };
+    dumpRecord = {
+      meta: {
+        requestId,
+        sessionId: opts.sessionId ?? getLogSessionId(),
+        turnId: getLogTurnId(),
+        model: opts.model,
+        url,
+        ts: new Date().toISOString(),
+      },
+      request: {
+        system: dumpMessages.filter((m) => m.role === "system"),
+        messages: dumpMessages,
+        tools: dumpTools,
+        params,
+        rawSerialized: stableStringify(body, jsonReplacer),
+      },
+      breakdown: computeBreakdown(dumpMessages, dumpTools),
+      response: dumpResponse,
+    };
+  }
+
   logger.debug("runKimi:request", { requestId, attempt: 0, model: opts.model });
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let res: Response;
@@ -214,12 +258,45 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     if (meta) yield { type: "gateway_meta", meta };
 
     logger.debug("runKimi:stream_start", { requestId });
-    for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs, opts.postFirstByteIdleTimeoutMs)) {
-      yield ev;
+    try {
+      for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs, opts.postFirstByteIdleTimeoutMs)) {
+        if (dumpRecord) accumulateDumpResponse(dumpRecord.response, ev);
+        yield ev;
+      }
+    } finally {
+      // Write even on abort/error so partial turns are still captured.
+      if (dumpRecord) {
+        dumpRecord.meta.attempt = attempt;
+        writeLlmDump(dumpRecord);
+      }
     }
     logger.debug("runKimi:stream_end", { requestId });
 
     return;
+  }
+}
+
+/** Fold a streamed event into the debug dump's response accumulator.
+ *  Read-only side-effect on the dump record — never affects the yielded
+ *  stream. Only invoked when KIMIFLARE_DUMP_LLM is enabled. */
+function accumulateDumpResponse(resp: LlmDumpResponse, ev: KimiEvent): void {
+  switch (ev.type) {
+    case "text":
+      resp.text += ev.delta;
+      break;
+    case "reasoning":
+      resp.reasoning += ev.delta;
+      break;
+    case "tool_call_complete":
+      resp.toolCalls.push({ name: ev.name, arguments: ev.arguments });
+      break;
+    case "usage":
+      resp.usage = ev.usage;
+      break;
+    case "done":
+      resp.finishReason = ev.finishReason;
+      if (ev.usage) resp.usage = ev.usage;
+      break;
   }
 }
 
