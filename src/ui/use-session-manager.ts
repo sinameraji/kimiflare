@@ -18,6 +18,7 @@ import {
 import type { ChatMessage, Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
 import type { MemoryManager } from "../memory/manager.js";
+import { injectRecalledMemoryOnce } from "../memory/recall-inject.js";
 import { getCostReport } from "../usage-tracker.js";
 import type { DailyUsage } from "../usage-tracker.js";
 import type { ChatEvent } from "./chat.js";
@@ -177,9 +178,7 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
             const results = await manager.recall({ text: cwd, repoPath: cwd, limit: 5 });
             if (results.length > 0) {
               const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = d.messagesRef.current.findLastIndex((m) => m.role === "system");
-              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : d.messagesRef.current.length;
-              d.messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
+              injectRecalledMemoryOnce(d.messagesRef.current, text);
             }
           } catch {
             // Non-fatal
