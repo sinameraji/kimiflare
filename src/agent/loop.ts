@@ -7,6 +7,7 @@ import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task, PlanOption } from "../tools/registry.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { HybridResult } from "../memory/schema.js";
+import { hasRecalledMemory, injectRecalledMemoryOnce } from "../memory/recall-inject.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
@@ -296,8 +297,13 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     opts.intentClassification?.tier === "light" &&
     lastUserPrompt.length < 40;
 
+  // Session-start recall is a ONE-SHOT: the supervisor reuses the same recall
+  // promise across every runAgentTurn invocation, so without this guard we
+  // re-synthesize (a byte-different paraphrase) and re-splice a recall block on
+  // every turn, stacking duplicates at the front of the array and busting the
+  // prompt-prefix cache. Skip entirely once a block is already present.
   const recallPromise: Promise<{ text: string; count: number } | null> =
-    opts.sessionStartRecall && opts.memoryManager
+    opts.sessionStartRecall && opts.memoryManager && !hasRecalledMemory(opts.messages)
       ? (async () => {
           const results = await opts.sessionStartRecall!;
           if (results.length === 0 || !opts.memoryManager) return null;
@@ -342,11 +348,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
   if (recallSettled.status === "fulfilled" && recallSettled.value) {
     const { text, count } = recallSettled.value;
-    const lastSystemIdx = opts.messages.findLastIndex((m) => m.role === "system");
-    const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : opts.messages.length;
-    opts.messages.splice(insertIdx, 0, { role: "system", content: text });
-    memoryRecalledCount = count;
-    opts.callbacks.onMemoryRecalled?.(count);
+    if (injectRecalledMemoryOnce(opts.messages, text)) {
+      memoryRecalledCount = count;
+      opts.callbacks.onMemoryRecalled?.(count);
+    }
   }
 
   if (skillsSettled.status === "fulfilled" && skillsSettled.value) {
