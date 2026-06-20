@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.4](https://github.com/sinameraji/kimiflare/compare/v0.88.3...v0.88.4) (2026-06-20)
+
+
+### Performance Improvements
+
+* **tokens:** cache-safe recall + Code Mode enforcement (+ dump tooling) ([#592](https://github.com/sinameraji/kimiflare/issues/592)) ([f05207f](https://github.com/sinameraji/kimiflare/commit/f05207fceef079954424f29958c39705f95a4256))
+
 ## [0.88.3](https://github.com/sinameraji/kimiflare/compare/v0.88.2...v0.88.3) (2026-06-15)
 
 
