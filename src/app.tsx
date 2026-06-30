@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { Box, Text, useApp, useInput, render } from "ink";
+import { Box, Text, useApp, useInput, useWindowSize, render } from "ink";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
 import type { GatewayMeta } from "./agent/client.js";
@@ -219,6 +219,7 @@ function App({
   initialLspProjectPath: string | null;
 }) {
   const { exit } = useApp();
+  const { columns } = useWindowSize();
   const [cfg, setCfg] = useState<Cfg | null>(initialCfg);
   const modelContextLimit = useMemo(
     () => (cfg ? getModelOrInfer(cfg.model).contextWindow : CONTEXT_LIMIT),
@@ -2813,6 +2814,7 @@ function App({
               onChange={setInput}
               onSubmit={submit}
               enablePaste
+              width={columns && columns > 2 ? columns - 2 : undefined}
               cursorOffset={cursorOffset}
               onCursorChange={setCursorOffset}
               pickerActive={picker.isActive}

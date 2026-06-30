@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Text, useInput, usePaste } from "ink";
+import { Box, Text, useInput, usePaste } from "ink";
 import chalk from "chalk";
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
   onPickerSelect?: () => void;
   onPickerCancel?: () => void;
   onCancel?: () => void;
+  width?: number;
 }
 
 const PASTE_CHAR_THRESHOLD = 200;
@@ -89,6 +90,7 @@ export function CustomTextInput({
   onPickerSelect,
   onPickerCancel,
   onCancel,
+  width,
 }: Props) {
   const [internalCursor, setInternalCursor] = useState(value.length);
   const cursorOffset = controlledCursor ?? internalCursor;
@@ -332,6 +334,14 @@ export function CustomTextInput({
     renderedValue = chalk.inverse(" ");
   } else if (cursorOffset === displayValue.length) {
     renderedValue += chalk.inverse(" ");
+  }
+
+  if (width !== undefined) {
+    return (
+      <Box width={width}>
+        <Text wrap="wrap">{renderedValue}</Text>
+      </Box>
+    );
   }
 
   return <Text>{renderedValue}</Text>;
