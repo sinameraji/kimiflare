@@ -618,10 +618,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     }
 
     logger.debug("turn:api_request", { sessionId: opts.sessionId, messageCount: apiMessages.length });
-    // Cloudflare AI Gateway caps cf-aig-metadata at 5 keys. Keep the most
-    // queryable signals: feature + sessionId for tracing, tier/cm/skl for
-    // routing analysis from the dashboard. turnIdx is dropped here (still
-    // available in cost-debug.jsonl).
+    // Cloudflare AI Gateway caps cf-aig-metadata at 5 keys. Only send
+    // stable, cache-key-safe values. Per-turn variables (tier, skl) are
+    // intentionally omitted — they change every turn and bust the Gateway
+    // HTTP cache, collapsing prefix-cache hit rates. They remain available
+    // in cost-debug.jsonl for local analysis.
     const turnGateway = opts.gateway
       ? {
           ...opts.gateway,
@@ -629,9 +630,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             ...(opts.gateway.metadata ?? {}),
             feature: "chat",
             ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-            tier: opts.intentClassification?.tier ?? "medium",
             cm: codeMode ? "1" : "0",
-            skl: String(skillResult?.sectionCount ?? 0),
           },
         }
       : undefined;
