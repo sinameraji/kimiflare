@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.89.1](https://github.com/sinameraji/kimiflare/compare/v0.89.0...v0.89.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **agent:** remove per-turn tier/skl from gateway metadata to restore cache hits ([#600](https://github.com/sinameraji/kimiflare/issues/600)) ([ad1bb84](https://github.com/sinameraji/kimiflare/commit/ad1bb84391254d7744dacfa4fddea938c1facb6a))
+* **ui:** prevent ghost text when input wraps across multiple lines ([#598](https://github.com/sinameraji/kimiflare/issues/598)) ([cde20ac](https://github.com/sinameraji/kimiflare/commit/cde20acc6d8a346501a12eec719cdd74db1d0b60))
+
 ## [0.89.0](https://github.com/sinameraji/kimiflare/compare/v0.88.4...v0.89.0) (2026-06-30)
 
 
