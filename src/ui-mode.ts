@@ -1384,9 +1384,12 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             currentMode,
             ALL_TOOLS,
           );
-          // Seed with plan
-          messages.push({ role: "user", content: plan });
+          // Seed with plan. In Camouflage we queue it as a follow-up so the
+          // main loop immediately starts the next turn in the new mode; just
+          // pushing to `messages` would leave the renderer idle waiting for
+          // the user to type another prompt.
           cam.send("UserMessageCreated", { text: plan });
+          followUpQueue.push(plan);
           cam.send("ShowToast", {
             text: `Starting fresh session in ${targetMode} mode with plan`,
             kind: "success",

@@ -229,7 +229,12 @@ const handleClear: Handler = (ctx) => {
   return true;
 };
 
-export function executeFreshStart(ctx: SlashContext, planText: string, overrideMode?: Mode): { success: boolean } {
+export function executeFreshStart(
+  ctx: SlashContext,
+  planText: string,
+  overrideMode?: Mode,
+  opts: { seedMessages?: boolean } = {},
+): { success: boolean } {
   // Capture old session ID before reset so we can carry its cost forward
   const oldSessionId = ctx.sessionIdRef.current;
 
@@ -271,8 +276,11 @@ export function executeFreshStart(ctx: SlashContext, planText: string, overrideM
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
   );
 
-  // Seed with plan
-  ctx.messagesRef.current.push({ role: "user", content: planText });
+  // Seed with plan unless the caller will submit it separately (e.g. the
+  // Ink plan-complete picker already calls submitRef.current(plan)).
+  if (opts.seedMessages !== false) {
+    ctx.messagesRef.current.push({ role: "user", content: planText });
+  }
 
   // Force creation of the new session ID and carry over the old cost baseline
   const newSessionId = ctx.ensureSessionId() as string;

@@ -1528,7 +1528,7 @@ function App({
         return;
       }
 
-      const clipResult = executeFreshStart(buildSlashContext(), plan, picked);
+      const clipResult = executeFreshStart(buildSlashContext(), plan, picked, { seedMessages: false });
 
       setEvents((e) => [
         ...e,
