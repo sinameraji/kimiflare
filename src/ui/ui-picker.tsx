@@ -2,7 +2,7 @@ import { Box, Text } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 
-export type UiEngineChoice = "ink" | "camouflage";
+export type UiEngineChoice = "ink";
 
 interface Props {
   current: UiEngineChoice;
@@ -22,11 +22,6 @@ export function UiPicker({ current, onPick }: Props) {
       label: "React Ink",
       value: "ink",
       description: "stable — current default",
-    },
-    {
-      label: "Camouflage",
-      value: "camouflage",
-      description: "experimental — opt in with `kimiflare --ui camouflage`",
     },
     { label: "< Back", value: "__back__", description: "" },
   ];

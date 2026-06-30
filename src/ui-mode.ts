@@ -1,13 +1,17 @@
 /**
  * Camouflage UI mode.
  *
+ * NOTE: This module is temporarily unused. Camouflage UI access is disabled
+ * and KimiFlare always launches in React Ink. The code is preserved so it can
+ * be re-enabled later.
+ *
  * Like `--emit-events --multi-turn` but instead of writing NDJSON to stdout
  * for some external consumer to pipe, this mode spawns the Camouflage
  * renderer as a child process via the `camouflage` Node SDK. The renderer
  * draws directly to the user's terminal — single command, single process
  * tree, no plumbing visible to the user.
  *
- * Invocation:
+ * Invocation (currently disabled):
  *     kimiflare --ui camouflage -p "do X"   (opt-in; default is --ui ink)
  *
  * Bidirectional out of the box: typing into the renderer's input box →

@@ -23,8 +23,7 @@ program
   .option("--max-input-tokens <n>", "cumulative prompt token budget; exits 42 when exhausted (print mode only)", (v) => parseInt(v, 10))
   .option("--emit-events", "emit Camouflage NDJSON events to stdout; requires -p (for initial prompt)")
   .option("--multi-turn", "with --emit-events: keep reading stdin for UserInputSubmitted follow-ups after the initial turn")
-  .option("--ui <name>", "render UI with the given engine: `ink` (default, stable) or `camouflage` (experimental Rust TUI). Can also be set via the KIMIFLARE_UI environment variable.")
-  .option("--camouflage-bin <path>", "with --ui camouflage: path to the camouflage-tui binary (defaults to PATH lookup)")
+  .option("--ui <name>", "render UI with React Ink (the only supported engine). This flag and KIMIFLARE_UI are currently ignored.")
   .option("--mode <mode>", "run mode: interactive (default), print, rpc")
   .option("-c, --continue", "continue the most recent session in the current working directory (print mode only)")
   .option("-S, --session <id>", "resume a specific session by id (print mode only)")
@@ -94,21 +93,10 @@ logsCmd
 
 program
   .command("resume")
-  .description("Pick a session to resume via Camouflage's SelectList primitive (CC-1 demo). Prints chosen session id on stdout, exits 1 on cancel.")
-  .option("--limit <n>", "max recent sessions to list", (v) => parseInt(v, 10), 20)
-  .option("--camouflage-bin <path>", "path to camouflage-tui (defaults to PATH lookup)")
-  .action(async (cmdOpts, command) => {
-    // `--camouflage-bin` is also declared at the top-level program (for
-    // `--ui camouflage` mode), so commander parses the flag against the
-    // parent and never stores it on the subcommand's cmdOpts. Fall back
-    // to the parent's value when the subcommand-level one is undefined.
-    const parentOpts = command?.parent?.opts() ?? {};
-    const bin = cmdOpts.camouflageBin ?? parentOpts.camouflageBin;
-    const { runCamouflageResume } = await import("./camouflage-resume.js");
-    await runCamouflageResume({
-      limit: cmdOpts.limit,
-      camouflageBin: bin,
-    });
+  .description("Resume is temporarily unavailable while Camouflage UI access is disabled.")
+  .action(async () => {
+    console.error("kimiflare resume: temporarily unavailable. Camouflage UI access is disabled.");
+    process.exit(2);
   });
 
 program
@@ -167,7 +155,6 @@ const opts = program.opts<{
   emitEvents?: boolean;
   multiTurn?: boolean;
   ui?: string;
-  camouflageBin?: string;
   mode?: string;
   continue?: boolean;
   session?: string;
@@ -312,69 +299,16 @@ async function main() {
   // alt-screen and flash for a fraction of a second.
   const logoText = renderLogo(getAppVersion());
 
-  // UI engine resolution: React Ink is the default for all users.
-  // Camouflage is strictly opt-in via `--ui camouflage` or the `KIMIFLARE_UI`
-  // env var. We deliberately do NOT let a persisted `uiEngine: "camouflage"`
-  // field in ~/.config/kimiflare/config.json silently switch users to the
-  // experimental engine on the next launch.
-  const explicitUi = opts.ui ?? process.env.KIMIFLARE_UI;
-  const uiEngine = (
-    explicitUi ?? (cfg?.uiEngine === "ink" ? "ink" : undefined) ?? "ink"
-  ).toLowerCase();
-  if (uiEngine !== "camouflage") {
-    console.log(logoText);
-  }
-  if (uiEngine === "camouflage") {
-    // Loud warning that this is experimental and how to bail. Printed
-    // before Camouflage takes the alt-screen so it lands in scrollback;
-    // also emitted as a persistent warn-toast inside the TUI itself
-    // (see ui-mode.ts) so the user sees it even if scrollback was
-    // cleared.
-    process.stderr.write(
-      "\n\x1b[1;33m⚠  Camouflage UI is experimental.\x1b[0m\n" +
-        "   If anything looks broken, switch back any time with:\n" +
-        "     \x1b[1mkimiflare --ui ink\x1b[0m\n" +
-        "   or unset KIMIFLARE_UI if you've exported it.\n" +
-        "   Report issues at https://github.com/sinameraji/camouflage/issues\n\n",
-    );
-    // Brief pause so the warning isn't wiped off the alt-screen
-    // before the user reads it.
-    await new Promise((r) => setTimeout(r, 1200));
-    if (!cfg) {
-      // Run Camouflage-native onboarding (ports the Ink Onboarding flow).
-      // On cancel/exit, the user falls back to the env-var path or
-      // `--ui ink` for the legacy onboarding.
-      const { runCamouflageOnboarding } = await import("./ui-mode.js");
-      const saved = await runCamouflageOnboarding({ camouflageBin: opts.camouflageBin });
-      if (!saved) {
-        console.error(
-          "kimiflare: onboarding cancelled.\n" +
-            "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or run again to retry.\n" +
-            "Default Ink onboarding: `kimiflare` (no flag).",
-        );
-        process.exit(2);
-      }
-      cfg = saved;
-    }
-    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
-    const { runUiMode } = await import("./ui-mode.js");
-    await runUiMode({
-      accountId: cfg.accountId,
-      apiToken: cfg.apiToken,
-      model,
-      // Optional: -p seeds an initial prompt; otherwise the user types into
-      // the renderer's input box.
-      prompt: opts.print,
-      allowAll: !!opts.dangerouslyAllowAll,
-      codeMode: cfg.codeMode,
-      continueOnLimit: !!opts.continueOnLimit,
-      maxInputTokens: opts.maxInputTokens,
-      camouflageBin: opts.camouflageBin,
-      splash: logoText,
-    });
-    return;
-  }
-  // Legacy Ink UI fallback (`--ui ink`).
+  // UI engine resolution: React Ink is always used. Camouflage UI access is
+  // temporarily disabled, so `--ui`, `KIMIFLARE_UI`, and any persisted
+  // `uiEngine: "camouflage"` config value are ignored.
+  const uiEngine = "ink";
+  console.log(logoText);
+  // Camouflage UI branch is temporarily disabled.
+  // if (uiEngine === "camouflage") {
+  //   ...
+  // }
+  // React Ink UI.
   const { renderApp } = await import("./app.js");
   if (cfg) {
     const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;

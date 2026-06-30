@@ -97,11 +97,9 @@ export interface KimiConfig {
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
   /**
-   * Preferred interactive UI engine. `"ink"` is the default (stable React/Ink
-   * UI); `"camouflage"` is the experimental Rust TUI. The runtime resolution
-   * chain is: `--ui` flag → `KIMIFLARE_UI` env var → this field → `"ink"`.
-   * Settable from inside either TUI via `/ui ink` or `/ui camouflage`;
-   * takes effect on the next launch (the choice is baked at process start).
+   * Deprecated/ignored. React Ink is always used. Camouflage UI access is
+   * temporarily disabled, so `--ui`, `KIMIFLARE_UI`, and this field have no
+   * effect. Kept in the type so existing configs do not break on load.
    */
   uiEngine?: "ink" | "camouflage";
   /** Per-provider API keys forwarded to AI Gateway as cf-aig-authorization for BYOK. */

@@ -44,7 +44,7 @@ import { join } from "node:path";
 import QRCode from "qrcode";
 import type { ToolRender } from "./tools/registry.js";
 import { CustomTextInput } from "./ui/text-input.js";
-import { checkForUpdate, checkOptionalDependency } from "./util/update-check.js";
+import { checkForUpdate } from "./util/update-check.js";
 import type { UpdateCheckResult } from "./util/update-check.js";
 import { Onboarding } from "./ui/onboarding.js";
 import { Welcome } from "./ui/welcome.js";
@@ -688,26 +688,8 @@ function App({
         ]);
       }
     });
-    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
-      if (dep.hasUpdate && dep.latestVersion) {
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
-          },
-        ]);
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "info",
-            key: mkKey(),
-            text: "run:  npm update camouflage-tui",
-          },
-        ]);
-      }
-    });
+    // Camouflage UI access is temporarily disabled; skip camouflage-tui update checks.
+    // void checkOptionalDependency("camouflage-tui", "beta").then((dep) => { ... });
   }, [cfg, initialUpdateResult]);
 
   useEffect(() => {
@@ -770,26 +752,8 @@ function App({
           }
         }
       });
-      void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
-        if (dep.hasUpdate && dep.latestVersion) {
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}`,
-            },
-          ]);
-          setEvents((e) => [
-            ...e,
-            {
-              kind: "info",
-              key: mkKey(),
-              text: "run:  npm update camouflage-tui",
-            },
-          ]);
-        }
-      });
+      // Camouflage UI access is temporarily disabled; skip camouflage-tui update checks.
+      // void checkOptionalDependency("camouflage-tui", "beta").then((dep) => { ... });
     }, 30 * 60 * 1000); // 30 minutes
     return () => clearInterval(id);
   }, [cfg]);
@@ -1226,24 +1190,9 @@ function App({
   );
 
   const handleUiPick = useCallback(
-    (picked: "ink" | "camouflage" | null) => {
+    (picked: "ink" | null) => {
       setShowUiPicker(false);
       if (!picked) return;
-      if (picked === "camouflage") {
-        // Camouflage is strictly opt-in via CLI flag or env var; we do not
-        // persist it to config so it can never become the silent default.
-        setEvents((e) => [
-          ...e,
-          {
-            kind: "error",
-            key: mkKey(),
-            text:
-              "Camouflage is experimental and must be opted into explicitly. " +
-              "Launch with `kimiflare --ui camouflage` or set `KIMIFLARE_UI=camouflage`.",
-          },
-        ]);
-        return;
-      }
       setCfg((c) => {
         if (!c) return c;
         const updated = { ...c, uiEngine: picked };
@@ -1253,9 +1202,9 @@ function App({
       setEvents((e) => [
         ...e,
         {
-          kind: "error",
+          kind: "info",
           key: mkKey(),
-          text: `UI engine set to "${picked}". RESTART kimiflare for it to take effect.`,
+          text: `UI engine set to "${picked}". React Ink is the only available engine.`,
         },
       ]);
     },
@@ -1429,7 +1378,6 @@ function App({
     setHasUpdate,
     setLatestVersion,
     setShowThemePicker,
-    setShowUiPicker,
     setShowModelPicker,
     setShowModePicker,
     setKeyEntryFor,
@@ -2574,7 +2522,7 @@ function App({
         onLspSave={handleLspSave}
         themes={themeList()}
         onPickTheme={handleThemePick}
-        currentUiEngine={cfg?.uiEngine ?? "ink"}
+        currentUiEngine={cfg?.uiEngine === "ink" ? "ink" : "ink"}
         onPickUi={handleUiPick}
         currentModel={cfg?.model ?? ""}
         onPickModel={handleModelPick}

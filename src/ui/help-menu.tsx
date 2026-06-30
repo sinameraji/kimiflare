@@ -136,7 +136,6 @@ const CATEGORIES: Category[] = [
       { command: "/cost", description: "show cost report" },
       { command: "/model", description: "show current model" },
       { command: "/update", description: "check for updates" },
-      { command: "/update camouflage", description: "check for camouflage-tui updates" },
       { command: "/hello", description: "send a voice note to the creator" },
     ],
   },
