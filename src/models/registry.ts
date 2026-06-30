@@ -122,6 +122,16 @@ const SEED: ModelEntry[] = [
     supports: { tools: true, reasoning: true, streaming: true },
     billingMode: "unified",
   },
+  // ── GLM (Zhipu AI on Cloudflare Workers AI) ───────────────────────────────
+  {
+    id: "@cf/zai-org/glm-5.2",
+    provider: "workers-ai",
+    contextWindow: 262_144,
+    maxOutputTokens: 16_384,
+    pricing: { inputPerMtok: 1.4, cachedInputPerMtok: 0.26, outputPerMtok: 4.4 },
+    supports: { tools: true, reasoning: true, streaming: true },
+    billingMode: "unified",
+  },
 ];
 
 const seedIndex = new Map<string, ModelEntry>(SEED.map((m) => [m.id, m]));
