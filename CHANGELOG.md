@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.89.0](https://github.com/sinameraji/kimiflare/compare/v0.88.4...v0.89.0) (2026-06-30)
+
+
+### Features
+
+* **models:** add GLM 5.2 (Zhipu AI on Workers AI) to registry ([#594](https://github.com/sinameraji/kimiflare/issues/594)) ([e02f3bc](https://github.com/sinameraji/kimiflare/commit/e02f3bc0784eb458fa5fa7c75ac359e41766ae35))
+
+
+### Bug Fixes
+
+* **ui:** auto-start execution after plan-complete picker chooses auto/edit ([#595](https://github.com/sinameraji/kimiflare/issues/595)) ([5f81874](https://github.com/sinameraji/kimiflare/commit/5f81874776ade0440f778846d599542270c4c04d))
+
+## [0.88.4](https://github.com/sinameraji/kimiflare/compare/v0.88.3...v0.88.4) (2026-06-20)
+
+
+### Performance Improvements
+
+* **tokens:** cache-safe recall + Code Mode enforcement (+ dump tooling) ([#592](https://github.com/sinameraji/kimiflare/issues/592)) ([f05207f](https://github.com/sinameraji/kimiflare/commit/f05207fceef079954424f29958c39705f95a4256))
+
 ## [0.88.3](https://github.com/sinameraji/kimiflare/compare/v0.88.2...v0.88.3) (2026-06-15)
 
 

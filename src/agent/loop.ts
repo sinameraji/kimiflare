@@ -7,6 +7,7 @@ import type { ChatMessage, ToolCall, Usage } from "./messages.js";
 import type { Task, PlanOption } from "../tools/registry.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { HybridResult } from "../memory/schema.js";
+import { hasRecalledMemory, injectRecalledMemoryOnce } from "../memory/recall-inject.js";
 import { logTurnDebug, analyzePrompt } from "../cost-debug.js";
 import { EXTRACTORS } from "../memory/extractors.js";
 import { stripHistoricalReasoning } from "./strip-reasoning.js";
@@ -236,6 +237,26 @@ const BUDGET_SAFETY_MARGIN_TOKENS = 8_192;
  *  ~10k chars ≈ 2,500 tokens — generous but prevents runaway growth. */
 const MAX_TOOL_CONTENT_CHARS = 10_000;
 
+/** When Code Mode is on, these context-heavy IO tools must be called via
+ *  api.<tool>() inside execute_code (so only console.log output returns to
+ *  context) rather than as direct tools (whose full output floods the prompt).
+ *  web_fetch is intentionally excluded so its session anti-abuse budget still
+ *  applies on the direct path. */
+const CODE_MODE_REDIRECT_TOOLS = new Set(["read", "bash", "grep", "glob"]);
+
+/** Per-turn cap on redirect nudges. After this many, direct calls execute
+ *  normally — a safety valve so a stubborn model or an unrunnable sandbox
+ *  degrades to plain tool calling instead of looping or bricking. */
+const MAX_CODE_MODE_REDIRECTS = 4;
+
+function codeModeRedirectMessage(tool: string): string {
+  return (
+    `Code Mode is on: \`${tool}\` is not available as a direct tool because its full output would flood your context. ` +
+    `Call \`api.${tool}({ ... })\` INSIDE an \`execute_code\` block instead — only what you \`console.log\` is returned to you. ` +
+    `You can batch several reads/greps/commands in a single execute_code call.`
+  );
+}
+
 function extractLastUserText(messages: ChatMessage[]): string {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return "";
@@ -302,8 +323,13 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
     opts.intentClassification?.tier === "light" &&
     lastUserPrompt.length < 40;
 
+  // Session-start recall is a ONE-SHOT: the supervisor reuses the same recall
+  // promise across every runAgentTurn invocation, so without this guard we
+  // re-synthesize (a byte-different paraphrase) and re-splice a recall block on
+  // every turn, stacking duplicates at the front of the array and busting the
+  // prompt-prefix cache. Skip entirely once a block is already present.
   const recallPromise: Promise<{ text: string; count: number } | null> =
-    opts.sessionStartRecall && opts.memoryManager
+    opts.sessionStartRecall && opts.memoryManager && !hasRecalledMemory(opts.messages)
       ? (async () => {
           const results = await opts.sessionStartRecall!;
           if (results.length === 0 || !opts.memoryManager) return null;
@@ -351,11 +377,10 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
 
   if (recallSettled.status === "fulfilled" && recallSettled.value) {
     const { text, count } = recallSettled.value;
-    const lastSystemIdx = opts.messages.findLastIndex((m) => m.role === "system");
-    const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : opts.messages.length;
-    opts.messages.splice(insertIdx, 0, { role: "system", content: text });
-    memoryRecalledCount = count;
-    opts.callbacks.onMemoryRecalled?.(count);
+    if (injectRecalledMemoryOnce(opts.messages, text)) {
+      memoryRecalledCount = count;
+      opts.callbacks.onMemoryRecalled?.(count);
+    }
   }
 
   if (skillsSettled.status === "fulfilled" && skillsSettled.value) {
@@ -420,7 +445,11 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
           description:
             `Write and execute TypeScript code to accomplish your task.\n\n` +
             `Available APIs:\n${codeModeApiString}\n\n` +
-            `Use console.log() to return results. Only console.log output will be sent back to you.`,
+            `Use console.log() to return results. Only console.log output is sent back to you.\n\n` +
+            `IMPORTANT — explore through code, not direct tools: to read files, run shell commands, grep, or glob, ` +
+            `call api.read(...), api.bash(...), api.grep(...), api.glob(...) INSIDE this code block and console.log only what you need. ` +
+            `Do NOT call read/bash/grep/glob as separate tools — their full output floods your context, while here only what you log returns. ` +
+            `Batch multiple reads/greps/commands into a single execute_code call.`,
           parameters: {
             type: "object",
             properties: {
@@ -456,6 +485,8 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
   // (RF-3 / OP-6.) The per-turn ceiling stays in place for hot-path bursts.
   const webFetchHistory = getSessionWebFetchHistory(opts.sessionId);
   let webFetchesThisTurn = 0;
+  // Per-turn counter of Code Mode redirect nudges (capped by MAX_CODE_MODE_REDIRECTS).
+  let codeModeRedirects = 0;
   const MAX_WEB_FETCH_PER_TURN = 5;
   const WEB_FETCH_DOMAIN_THRESHOLD = 2; // 3rd fetch to same domain triggers warning
 
@@ -787,6 +818,16 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
               content: `Loop detected: you have called ${tc.function.name} with the same arguments multiple times in a row. Consider a different approach.`,
               ok: false,
             },
+          });
+          continue;
+        }
+        if (codeMode && CODE_MODE_REDIRECT_TOOLS.has(tc.function.name) && codeModeRedirects < MAX_CODE_MODE_REDIRECTS) {
+          codeModeRedirects++;
+          items.push({
+            kind: "blocked",
+            tc,
+            loopSignature,
+            result: { tool_call_id: tc.id, name: tc.function.name, content: codeModeRedirectMessage(tc.function.name), ok: false },
           });
           continue;
         }
@@ -1180,6 +1221,14 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
         opts.callbacks.onToolResult?.(result);
         recentToolCalls.push(loopSignature);
         if (recentToolCalls.length > LOOP_WINDOW) recentToolCalls.shift();
+      } else if (codeMode && CODE_MODE_REDIRECT_TOOLS.has(tc.function.name) && codeModeRedirects < MAX_CODE_MODE_REDIRECTS) {
+        // Redirect a direct context-heavy IO call back into execute_code.
+        codeModeRedirects++;
+        const msg = codeModeRedirectMessage(tc.function.name);
+        const redirectResult: ToolResult = { tool_call_id: tc.id, name: tc.function.name, content: msg, ok: false };
+        toolResults.push(redirectResult);
+        opts.messages.push({ role: "tool", tool_call_id: tc.id, content: msg, name: tc.function.name });
+        opts.callbacks.onToolResult?.(redirectResult);
       } else {
         opts.callbacks.onToolWillExecute?.(tc.id, tc.function.name);
         logger.debug("turn:tool_start", { sessionId: opts.sessionId, tool: tc.function.name, toolCallId: tc.id });

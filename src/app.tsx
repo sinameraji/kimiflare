@@ -76,6 +76,7 @@ import { encodeImageFile, type EncodedImage } from "./util/image.js";
 import { recordUsage, getCostReport, formatCostReport, formatGatewaySection, formatFeatureBreakdown, getSessionGatewayLogs, usageEvents } from "./usage-tracker.js";
 import type { GatewayUsageLookup, DailyUsage } from "./usage-tracker.js";
 import { MemoryManager } from "./memory/manager.js";
+import { injectRecalledMemoryOnce } from "./memory/recall-inject.js";
 import { loadCustomCommands } from "./commands/loader.js";
 import { renderCommand } from "./commands/renderer.js";
 import type { CustomCommand, SlashItem } from "./commands/types.js";
@@ -927,18 +928,17 @@ function App({
             const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
             if (results.length > 0 && !signal.aborted) {
               const text = await manager.synthesizeRecalled(results);
-              const lastSystemIdx = result.newMessages.findLastIndex((m) => m.role === "system");
-              const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : result.newMessages.length;
-              result.newMessages.splice(insertIdx, 0, { role: "system", content: text });
-              setEvents((e) => [
-                ...e,
-                {
-                  kind: "memory",
-                  key: mkKey(),
-                  text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                },
-              ]);
-              await saveSessionSafe();
+              if (injectRecalledMemoryOnce(result.newMessages, text)) {
+                setEvents((e) => [
+                  ...e,
+                  {
+                    kind: "memory",
+                    key: mkKey(),
+                    text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                  },
+                ]);
+                await saveSessionSafe();
+              }
             }
           } catch {
             // Non-fatal
@@ -1573,7 +1573,7 @@ function App({
         return;
       }
 
-      const clipResult = executeFreshStart(buildSlashContext(), plan, picked);
+      const clipResult = executeFreshStart(buildSlashContext(), plan, picked, { seedMessages: false });
 
       setEvents((e) => [
         ...e,
@@ -2407,18 +2407,17 @@ function App({
                       const results = await manager.recall({ text: queryText, repoPath: cwd, limit: 5 });
                       if (results.length > 0) {
                         const text = await manager.synthesizeRecalled(results);
-                        const lastSystemIdx = messagesRef.current.findLastIndex((m) => m.role === "system");
-                        const insertIdx = lastSystemIdx >= 0 ? lastSystemIdx + 1 : messagesRef.current.length;
-                        messagesRef.current.splice(insertIdx, 0, { role: "system", content: text });
-                        setEvents((e) => [
-                          ...e,
-                          {
-                            kind: "memory",
-                            key: mkKey(),
-                            text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
-                          },
-                        ]);
-                        await saveSessionSafe();
+                        if (injectRecalledMemoryOnce(messagesRef.current, text)) {
+                          setEvents((e) => [
+                            ...e,
+                            {
+                              kind: "memory",
+                              key: mkKey(),
+                              text: `recalled ${results.length} memory${results.length === 1 ? "" : "ies"} after compaction`,
+                            },
+                          ]);
+                          await saveSessionSafe();
+                        }
                       }
                     } catch {
                       // Non-fatal

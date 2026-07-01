@@ -97,7 +97,8 @@ KimiFlare runs on **Kimi K2.7** via Cloudflare Workers AI — no API key needed 
 
 - `@cf/moonshotai/kimi-k2.7-code` — 262k context, reasoning, tools, vision
 
-`@cf/moonshotai/kimi-k2.6` and `@cf/moonshotai/kimi-k2.5` are also available.
+`@cf/moonshotai/kimi-k2.6`, `@cf/moonshotai/kimi-k2.5`, and `@cf/zai-org/glm-5.2`
+(Zhipu AI, 262k context, reasoning + tools) are also available.
 
 ### One-shot mode
 
