@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { extractFirstUserText } from "./use-session-manager.js";
+import { extractFirstUserText, buildLocalResumeSummary } from "./use-session-manager.js";
 import type { ChatMessage } from "../agent/messages.js";
+import type { SessionState } from "../agent/session-state.js";
+import { emptySessionState } from "../agent/session-state.js";
 
 describe("extractFirstUserText", () => {
   it("returns 'session' for empty messages", () => {
@@ -59,5 +61,52 @@ describe("extractFirstUserText", () => {
       { role: "user", content: "second" },
     ];
     assert.strictEqual(extractFirstUserText(msgs), "first");
+  });
+});
+
+describe("buildLocalResumeSummary", () => {
+  it("returns null for empty session state", () => {
+    assert.strictEqual(buildLocalResumeSummary(emptySessionState()), null);
+  });
+
+  it("includes task when set", () => {
+    const state = emptySessionState("Fix auth bug");
+    assert.strictEqual(buildLocalResumeSummary(state), "Task: Fix auth bug");
+  });
+
+  it("includes modified files", () => {
+    const state = emptySessionState();
+    state.files_modified = ["src/auth.ts", "src/auth.test.ts"];
+    assert.strictEqual(
+      buildLocalResumeSummary(state),
+      "Modified: src/auth.ts, src/auth.test.ts",
+    );
+  });
+
+  it("includes next actions (max 3)", () => {
+    const state = emptySessionState();
+    state.next_actions = ["run tests", "update docs", "commit", "deploy"];
+    const result = buildLocalResumeSummary(state);
+    assert.ok(result?.includes("Next: run tests; update docs; commit"));
+    assert.ok(!result?.includes("deploy"));
+  });
+
+  it("combines task, modified files, and next actions", () => {
+    const state = emptySessionState("Refactor API");
+    state.files_modified = ["src/api.ts"];
+    state.next_actions = ["add tests", "update README"];
+    assert.strictEqual(
+      buildLocalResumeSummary(state),
+      "Task: Refactor API | Modified: src/api.ts | Next: add tests; update README",
+    );
+  });
+
+  it("returns null when only empty arrays are present", () => {
+    const state: SessionState = {
+      ...emptySessionState(),
+      files_modified: [],
+      next_actions: [],
+    };
+    assert.strictEqual(buildLocalResumeSummary(state), null);
   });
 });

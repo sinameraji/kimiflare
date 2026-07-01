@@ -24,7 +24,8 @@ import type { DailyUsage } from "../usage-tracker.js";
 import type { ChatEvent } from "./chat.js";
 import { setLogSessionId } from "../util/log-sink.js";
 import type { Mode } from "../mode.js";
-import { DEFAULT_AUTO_FRESH_SUGGESTION_TURNS } from "./app-helpers.js";
+import { DEFAULT_AUTO_FRESH_SUGGESTION_TURNS, gatewayFromConfig } from "./app-helpers.js";
+import { generateContinuationSummary } from "../agent/continuation-summary.js";
 
 /**
  * Pull the first chunk of user text out of a message list — used to
@@ -45,9 +46,37 @@ export function extractFirstUserText(messages: ChatMessage[]): string {
   return "session";
 }
 
+/**
+ * Build a brief, zero-latency summary from session state for display on
+ * `/resume`. Returns `null` when there's nothing useful to show.
+ */
+export function buildLocalResumeSummary(state: SessionState): string | null {
+  const parts: string[] = [];
+  if (state.task) parts.push(`Task: ${state.task}`);
+  if (state.files_modified.length > 0) {
+    parts.push(`Modified: ${state.files_modified.join(", ")}`);
+  }
+  if (state.next_actions.length > 0) {
+    parts.push(`Next: ${state.next_actions.slice(0, 3).join("; ")}`);
+  }
+  return parts.length > 0 ? parts.join(" | ") : null;
+}
+
 export interface SessionManagerDeps {
-  /** Model name + other config needed at save time. Null while booting. */
-  cfg: { model: string; autoFreshSuggestionTurns?: number } | null;
+  /** Model name + other config needed at save/resume time. Null while booting. */
+  cfg: {
+    model: string;
+    autoFreshSuggestionTurns?: number;
+    accountId?: string;
+    apiToken?: string;
+    plumbingModel?: string;
+    aiGatewayId?: string;
+    aiGatewayCacheTtl?: number;
+    aiGatewaySkipCache?: boolean;
+    aiGatewayCollectLogPayload?: boolean;
+    aiGatewayMetadata?: Record<string, string | number | boolean>;
+    memoryEnabled?: boolean;
+  } | null;
   /** Current agent mode. */
   mode: Mode;
   // Refs the hook needs to read/write at save and resume time. These
@@ -190,6 +219,52 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           ? `resumed session ${file.id} from checkpoint`
           : `resumed session ${file.id} (${nonSystemCount} msgs)`;
         d.setEvents([{ kind: "info", key: d.mkKey(), text: msg }]);
+
+        // ── Instant local summary from session state ──────────────────────
+        // Gives the user immediate context with zero latency, before the
+        // async LLM summary arrives.
+        const localSummary = buildLocalResumeSummary(d.sessionStateRef.current);
+        if (localSummary) {
+          d.setEvents((es) => [
+            ...es,
+            { kind: "info", key: d.mkKey(), text: localSummary },
+          ]);
+        }
+
+        // ── Async LLM-generated continuation summary ──────────────────────
+        // Reuses the same generateContinuationSummary that /fresh uses.
+        // Injected as a system message so the model has a fresh context
+        // anchor for the next turn — no need to ask "where were we?".
+        if (d.cfg && d.cfg.accountId && d.cfg.apiToken) {
+          d.setEvents((es) => [
+            ...es,
+            { kind: "info", key: d.mkKey(), text: "generating session summary…" },
+          ]);
+          try {
+            const summary = await generateContinuationSummary({
+              messages: d.messagesRef.current,
+              mode: d.mode,
+              accountId: d.cfg.accountId,
+              apiToken: d.cfg.apiToken,
+              model: d.cfg.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+              gateway: gatewayFromConfig(d.cfg as Parameters<typeof gatewayFromConfig>[0]),
+              memoryManager: d.memoryManagerRef.current,
+              memoryEnabled: d.cfg.memoryEnabled,
+            });
+            if (summary) {
+              d.setEvents((es) => [
+                ...es,
+                { kind: "info", key: d.mkKey(), text: summary },
+              ]);
+              d.messagesRef.current.push({
+                role: "system",
+                content: `[session resume summary]\n${summary}`,
+              });
+            }
+          } catch {
+            // Non-fatal — local summary already shown
+          }
+        }
 
         // Suggest /fresh for long auto/edit sessions resumed without a checkpoint
         if (!checkpointId) {
