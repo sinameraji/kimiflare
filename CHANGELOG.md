@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.0](https://github.com/sinameraji/kimiflare/compare/v0.89.1...v0.90.0) (2026-07-01)
+
+
+### Features
+
+* **ui:** show session context summary on /resume ([#601](https://github.com/sinameraji/kimiflare/issues/601)) ([0c56f8e](https://github.com/sinameraji/kimiflare/commit/0c56f8e97e839fa1e334f9ecab9d8ae8db099e82))
+
 ## [0.89.1](https://github.com/sinameraji/kimiflare/compare/v0.89.0...v0.89.1) (2026-06-30)
 
 
