@@ -1403,6 +1403,38 @@ function App({
     [mkKey, setUnifiedProbeFor, setKeyEntryFor],
   );
 
+  const handleUpgrade = useCallback(async () => {
+    const token = cloudToken ?? initialCloudToken;
+    const did = cloudDeviceId ?? initialCloudDeviceId;
+    if (!token) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: "Cloud authentication required. Run `kimiflare auth cloud` first." },
+      ]);
+      return;
+    }
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Opening Stripe checkout…" }]);
+    try {
+      const { createCheckoutSession } = await import("./cloud/billing.js");
+      const session = await createCheckoutSession(token, did);
+      if (session?.url) {
+        const { openBrowser } = await import("./ui/app-helpers.js");
+        openBrowser(session.url);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Complete payment in your browser. Your session will activate automatically." },
+        ]);
+      } else {
+        setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Checkout unavailable. Please try again later." }]);
+      }
+    } catch (err) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: `Upgrade failed: ${err instanceof Error ? err.message : String(err)}` },
+      ]);
+    }
+  }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, mkKey, setEvents]);
+
   const handleSaveProviderKey = useCallback(
     (model: ModelEntry, result: KeyResult) => {
       setKeyEntryFor(null);
@@ -1507,6 +1539,7 @@ function App({
     initMcp,
     initLsp,
     ensureSessionId,
+    upgrade: handleUpgrade,
     lspManagerRef,
     mcpManagerRef,
     hooksManagerRef,
@@ -2895,7 +2928,7 @@ function App({
         {!hasConversation && events.length === 0 ? (
           <Welcome />
         ) : (
-          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} />
+          <ChatView events={events} showReasoning={showReasoning} verbose={verbose} intentTier={intentTier ?? undefined} onUpgrade={handleUpgrade} />
         )}
         {perm ? (
           <PermissionModal

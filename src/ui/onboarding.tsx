@@ -593,7 +593,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
               )}
               {cloudMode && (
                 <Text color={theme.info.color}>
-                  Billing: Kimiflare Cloud (free 5M tokens)
+                  Billing: KimiFlare Cloud (free 5M tokens, then $10/mo Pro)
                 </Text>
               )}
               {unifiedBilling && (

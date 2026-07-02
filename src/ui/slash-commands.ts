@@ -151,6 +151,7 @@ export interface SlashContext {
   initMcp: () => Promise<void> | void;
   initLsp: () => Promise<void> | void;
   ensureSessionId: () => unknown;
+  upgrade: () => Promise<void> | void;
 
   // Refs
   lspManagerRef: React.MutableRefObject<LspManager>;
@@ -1537,6 +1538,11 @@ const handleLogout: Handler = (ctx) => {
   return true;
 };
 
+const handleUpgrade: Handler = (ctx) => {
+  void ctx.upgrade();
+  return true;
+};
+
 const handleCommand: Handler = (ctx, rest) => {
   const { setEvents, mkKey } = ctx;
   const sub = rest[0]?.toLowerCase() ?? "";
@@ -1899,6 +1905,7 @@ const handlers: Record<string, Handler> = {
   "/inbox": handleInbox,
   "/report": handleReport,
   "/logout": handleLogout,
+  "/upgrade": handleUpgrade,
   "/command": handleCommand,
   "/remote": handleRemote,
   "/changelog-image": handleChangelogImage,

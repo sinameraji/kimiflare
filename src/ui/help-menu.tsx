@@ -157,6 +157,7 @@ const CATEGORIES: Category[] = [
     commands: [
       { command: "/init", description: "scan this repo and write a KIMI.md" },
       { command: "/logout", description: "clear credentials" },
+      { command: "/upgrade", description: "upgrade to KimiFlare Pro (cloud mode)" },
       { command: "/shell", description: "show current shell" },
       { command: "/shell auto", description: "auto-detect shell (default)" },
       { command: "/shell bash", description: "force bash" },

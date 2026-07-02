@@ -62,13 +62,14 @@ interface Props {
   showReasoning: boolean;
   verbose?: boolean;
   intentTier?: IntentTier;
+  onUpgrade?: () => void;
 }
 
 function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier }: Props) {
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier, onUpgrade }: Props) {
   const theme = useTheme();
 
   // Detect repetitive tool calls in this turn (≥3 identical signatures)
@@ -111,7 +112,7 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} isLastAssistant={i === lastAssistantIndex} />
+            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} isLastAssistant={i === lastAssistantIndex} onUpgrade={onUpgrade} />
           </Box>
         );
       })}
@@ -126,6 +127,7 @@ const EventView = React.memo(function EventView({
   repeatedSigs,
   intentTier,
   isLastAssistant,
+  onUpgrade,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
@@ -133,6 +135,7 @@ const EventView = React.memo(function EventView({
   repeatedSigs?: Set<string>;
   intentTier?: IntentTier;
   isLastAssistant?: boolean;
+  onUpgrade?: () => void;
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
@@ -239,6 +242,7 @@ const EventView = React.memo(function EventView({
         used={evt.used}
         limit={evt.limit}
         expiresAt={evt.expiresAt}
+        onUpgrade={onUpgrade}
       />
     );
   }

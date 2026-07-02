@@ -6,6 +6,7 @@ interface Props {
   used: number;
   limit: number;
   expiresAt: string;
+  onUpgrade?: () => void;
 }
 
 function formatTokens(n: number): string {
@@ -14,7 +15,7 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
+export function CloudQuotaMessage({ used, limit, expiresAt, onUpgrade }: Props) {
   const theme = useTheme();
 
   const expires = expiresAt ? new Date(expiresAt) : null;
@@ -43,6 +44,28 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
+        <Text bold>Upgrade to KimiFlare Pro:</Text>
+        <Box paddingLeft={2} flexDirection="column">
+          <Text color={theme.info.color}>
+            → $10/month founding-user price
+          </Text>
+          <Text color={theme.info.color}>
+            → Includes ~50M tokens/month (usage allowance)
+          </Text>
+          <Text color={theme.info.color}>
+            → No Cloudflare account needed
+          </Text>
+        </Box>
+        {onUpgrade ? (
+          <Box marginTop={1}>
+            <Text bold color={theme.accent}>
+              Press Enter or run /upgrade to subscribe
+            </Text>
+          </Box>
+        ) : null}
+      </Box>
+
+      <Box flexDirection="column" marginTop={1}>
         <Text bold>Keep going with your own Cloudflare API key:</Text>
         <Box paddingLeft={2} flexDirection="column">
           <Text color={theme.info.color}>
@@ -58,24 +81,6 @@ export function CloudQuotaMessage({ used, limit, expiresAt }: Props) {
             (~$0.95/M input tokens, ~$4.00/M output tokens)
           </Text>
         </Box>
-      </Box>
-
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={theme.info.color}>
-          Or wait for hosted plans — drop your email at
-        </Text>
-        <Text color={theme.info.color}>
-          kimiflare.com and I'll ping you when they're live.
-        </Text>
-      </Box>
-
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={theme.info.color}>
-          Want a bit more credit? DM me on X: x.com/sinasanm
-        </Text>
-        <Text color={theme.info.color}>
-          Chances are I might be able to hook you up.
-        </Text>
       </Box>
 
       <Box marginTop={1}>
