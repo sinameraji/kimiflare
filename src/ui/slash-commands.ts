@@ -66,7 +66,7 @@ import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
 import { buildReport, sendReport } from "../cloud/report.js";
-import { checkForUpdate, checkOptionalDependency } from "../util/update-check.js";
+import { checkForUpdate } from "../util/update-check.js";
 import { getAppVersion } from "../util/version.js";
 import {
   detectGitHubRepo,
@@ -112,7 +112,6 @@ export interface SlashContext {
 
   // Modal setters
   setShowThemePicker: (v: boolean) => void;
-  setShowUiPicker: (v: boolean) => void;
   setShowModelPicker: (v: boolean) => void;
   setShowModePicker: (v: boolean) => void;
   setKeyEntryFor: (v: ModelEntry | null) => void;
@@ -822,50 +821,38 @@ const handleTheme: Handler = (ctx, _rest, arg) => {
 
 const handleUi: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
-  // No-arg form opens the arrow-key picker (matches `/theme`, `/resume`).
-  // Direct-arg form is still supported for muscle-memory and scripts.
-  if (!arg) {
-    ctx.setShowUiPicker(true);
-    return true;
-  }
-  if (arg !== "ink" && arg !== "camouflage") {
+  // Camouflage UI access is temporarily disabled; only Ink is available.
+  if (!arg || arg === "ink") {
+    ctx.setCfg((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev, uiEngine: "ink" } as Cfg;
+      void saveConfig(updated).catch(() => {});
+      return updated;
+    });
     setEvents((e) => [
       ...e,
-      { kind: "info", key: mkKey(), text: `unknown UI engine "${arg}" — choose "ink" or "camouflage"` },
+      {
+        kind: "info",
+        key: mkKey(),
+        text: "UI engine set to \"ink\". React Ink is the only available engine.",
+      },
     ]);
     return true;
   }
-  const next = arg as "ink" | "camouflage";
-  if (next === "camouflage") {
-    // Camouflage is strictly opt-in via CLI flag or env var; we do not persist
-    // it so it can never become the silent default for users.
+  if (arg === "camouflage") {
     setEvents((e) => [
       ...e,
       {
         kind: "error",
         key: mkKey(),
-        text:
-          "Camouflage is experimental and must be opted into explicitly. " +
-          "Launch with `kimiflare --ui camouflage` or set `KIMIFLARE_UI=camouflage`.",
+        text: "Camouflage UI is temporarily unavailable.",
       },
     ]);
     return true;
   }
-  ctx.setCfg((prev) => {
-    if (!prev) return prev;
-    const updated = { ...prev, uiEngine: next } as Cfg;
-    void saveConfig(updated).catch(() => {});
-    return updated;
-  });
-  // Loud red "error"-kind event so the user can't miss that they need to
-  // restart.
   setEvents((e) => [
     ...e,
-    {
-      kind: "error",
-      key: mkKey(),
-      text: `UI engine set to "${next}". RESTART kimiflare for it to take effect.`,
-    },
+    { kind: "info", key: mkKey(), text: `unknown UI engine "${arg}" — only "ink" is available` },
   ]);
   return true;
 };
@@ -1186,22 +1173,10 @@ const handleInit: Handler = (ctx) => {
 const handleUpdate: Handler = (ctx, _rest, arg) => {
   const { setEvents, mkKey } = ctx;
   if (arg === "camouflage") {
-    void checkOptionalDependency("camouflage-tui", "beta").then((dep) => {
-      if (dep.hasUpdate && dep.latestVersion) {
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: `camouflage-tui update available: ${dep.localVersion} → ${dep.latestVersion}` },
-        ]);
-        setEvents((e) => [
-          ...e,
-          { kind: "info", key: mkKey(), text: "run:  npm update camouflage-tui" },
-        ]);
-      } else if (dep.localVersion) {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `camouflage-tui up to date (${dep.localVersion})` }]);
-      } else {
-        setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "camouflage-tui is not installed" }]);
-      }
-    });
+    setEvents((e) => [
+      ...e,
+      { kind: "error", key: mkKey(), text: "Camouflage UI is temporarily unavailable; no update checks for camouflage-tui." },
+    ]);
     return true;
   }
   void checkForUpdate(true).then((result) => {
