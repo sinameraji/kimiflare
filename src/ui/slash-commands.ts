@@ -273,6 +273,7 @@ export function executeFreshStart(
     ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.7-code",
     overrideMode ?? ctx.mode,
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
+    ctx.cfg?.preferPullRequests,
   );
 
   // Seed with plan unless the caller will submit it separately (e.g. the

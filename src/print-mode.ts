@@ -55,6 +55,10 @@ export interface PrintModeOpts {
   title?: string;
   /** Config-based permission rules */
   permissions?: Record<string, PermissionRules>;
+  /** When false (default), the bash tool blocks `git push` to the default branch. */
+  allowDirectPush?: boolean;
+  /** When true (default), the system prompt instructs the model to prefer PRs over direct pushes. */
+  preferPullRequests?: boolean;
 }
 
 interface JsonToolCall {
@@ -215,11 +219,17 @@ export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
   // Build messages
   const messages: ChatMessage[] = [];
   if (isNew || sessionFile.messages.length === 0) {
-    messages.push({ role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) });
+    messages.push({
+      role: "system",
+      content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model, preferPullRequests: opts.preferPullRequests }),
+    });
   } else {
     // Continue: load existing messages, filter out old system prompts, keep context
     const nonSystem = sessionFile.messages.filter((m) => m.role !== "system");
-    messages.push({ role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) });
+    messages.push({
+      role: "system",
+      content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model, preferPullRequests: opts.preferPullRequests }),
+    });
     messages.push(...nonSystem);
   }
 
@@ -376,6 +386,8 @@ export async function runPrintMode(opts: PrintModeOpts): Promise<void> {
         opts.coauthor !== false
           ? { name: opts.coauthorName || "kimiflare", email: opts.coauthorEmail || "kimiflare@proton.me" }
           : undefined,
+      allowDirectPush: opts.allowDirectPush,
+      preferPullRequests: opts.preferPullRequests,
       callbacks,
     });
   } catch (err) {

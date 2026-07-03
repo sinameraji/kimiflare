@@ -32,6 +32,9 @@ export interface ToolContext {
   model?: string;
   /** AI Gateway options for tools that need to call an LLM. */
   gateway?: import("../agent/client.js").AiGatewayOptions;
+  /** When false (default), the bash tool blocks `git push` to the repository's
+   *  default branch and directs the model to open a PR instead. */
+  allowDirectPush?: boolean;
 }
 
 export interface ToolRender {

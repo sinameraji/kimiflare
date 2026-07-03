@@ -182,6 +182,13 @@ export interface KimiConfig {
    *  Values are glob-pattern → rule mappings. Patterns are matched against the
    *  target path (for file tools) or command string (for bash). */
   permissions?: Record<string, PermissionRules>;
+  /** Prefer creating pull requests over pushing directly to the default branch.
+   *  Injected into the system prompt. Default: true. */
+  preferPullRequests?: boolean;
+  /** Allow the bash tool to run `git push` directly to the repository's default
+   *  branch. When false (default), such pushes are blocked and the model is
+   *  directed to open a PR instead. */
+  allowDirectPush?: boolean;
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.7-code";
@@ -326,6 +333,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     ? process.env.KIMIFLARE_WORKER_PRE_READ_FILES.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
   const envWorkerPreReadMaxChars = readNumberEnv("KIMIFLARE_WORKER_PRE_READ_MAX_CHARS");
+  const envPreferPullRequests = readBooleanEnv("KIMIFLARE_PREFER_PULL_REQUESTS");
+  const envAllowDirectPush = readBooleanEnv("KIMIFLARE_ALLOW_DIRECT_PUSH");
 
   if (envAccount && envToken) {
     return {
@@ -376,6 +385,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? true,
       workerPreReadFiles: envWorkerPreReadFiles ?? persisted?.workerPreReadFiles,
       workerPreReadMaxChars: envWorkerPreReadMaxChars ?? persisted?.workerPreReadMaxChars,
+      preferPullRequests: envPreferPullRequests ?? persisted?.preferPullRequests ?? true,
+      allowDirectPush: envAllowDirectPush ?? persisted?.allowDirectPush ?? false,
     };
   }
 
@@ -430,6 +441,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         workerRepoCache: readBooleanEnv("KIMIFLARE_WORKER_REPO_CACHE") ?? parsed.workerRepoCache ?? true,
         workerPreReadFiles: envWorkerPreReadFiles ?? parsed.workerPreReadFiles,
         workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
+        preferPullRequests: envPreferPullRequests ?? parsed.preferPullRequests ?? true,
+        allowDirectPush: envAllowDirectPush ?? parsed.allowDirectPush ?? false,
       };
     }
   }

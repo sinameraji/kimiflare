@@ -146,6 +146,10 @@ export interface UiModeOpts {
    *  transcript until the user submits their first prompt. Sent as a
    *  `Splash` event right after the renderer mounts. */
   splash?: string;
+  /** When false (default), the bash tool blocks `git push` to the default branch. */
+  allowDirectPush?: boolean;
+  /** When true (default), the system prompt instructs the model to prefer PRs over direct pushes. */
+  preferPullRequests?: boolean;
 }
 
 /** Slash commands registered with the Camouflage renderer's slash picker.
@@ -801,7 +805,10 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
   executor.setHooks(hooksManager);
 
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
+    {
+      role: "system",
+      content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model, preferPullRequests: opts.preferPullRequests }),
+    },
   ];
 
   // ── MCP / LSP init helpers (mirrors Ink's manager-init.ts) ──────────────
@@ -835,7 +842,12 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
     if (totalTools > 0) {
       messages[0] = {
         role: "system",
-        content: buildSystemPrompt({ cwd, tools: [...ALL_TOOLS, ...mcpTools, ...lspTools], model: opts.model }),
+        content: buildSystemPrompt({
+          cwd,
+          tools: [...ALL_TOOLS, ...mcpTools, ...lspTools],
+          model: opts.model,
+          preferPullRequests: opts.preferPullRequests,
+        }),
       };
       cam.send("ShowToast", { text: `MCP connected — ${totalTools} external tool${totalTools === 1 ? "" : "s"} available`, kind: "success", ttl_ms: 2500 });
     }
@@ -863,7 +875,12 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       lspTools.push(...tools);
       messages[0] = {
         role: "system",
-        content: buildSystemPrompt({ cwd, tools: [...ALL_TOOLS, ...mcpTools, ...lspTools], model: opts.model }),
+        content: buildSystemPrompt({
+          cwd,
+          tools: [...ALL_TOOLS, ...mcpTools, ...lspTools],
+          model: opts.model,
+          preferPullRequests: opts.preferPullRequests,
+        }),
       };
       cam.send("ShowToast", { text: `LSP ready — ${totalServers} server${totalServers === 1 ? "" : "s"} active`, kind: "success", ttl_ms: 2500 });
     }
@@ -1002,6 +1019,8 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
         maxInputTokens: opts.maxInputTokens,
         memoryManager,
         hooks: hooksManager,
+        allowDirectPush: opts.allowDirectPush,
+        preferPullRequests: opts.preferPullRequests,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;
@@ -1336,6 +1355,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
               opts.model,
               currentMode,
               ALL_TOOLS,
+              opts.preferPullRequests,
             );
             // Seed with plan
             messages.push({ role: "user", content: selected.plan });
@@ -3182,6 +3202,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
             opts.model,
             currentMode,
             ALL_TOOLS,
+            opts.preferPullRequests,
           );
           // Seed with summary
           messages.push({ role: "user", content: summary });

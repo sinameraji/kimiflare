@@ -104,7 +104,12 @@ export async function createAgentSession(
 
   // Build initial system prompt
   const allTools = [...tools, ...lspTools];
-  const systemPrompt = buildSystemPrompt({ cwd, tools: allTools, model: config.model });
+  const systemPrompt = buildSystemPrompt({
+    cwd,
+    tools: allTools,
+    model: config.model,
+    preferPullRequests: config.preferPullRequests,
+  });
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...sessionFile.messages.filter((m) => m.role !== "system"),
@@ -518,6 +523,8 @@ class InternalSession implements KimiFlareSession {
       sessionId: this.sessionId,
       memoryManager: this.memoryManager,
       gateway: this.gateway,
+      allowDirectPush: this.config.allowDirectPush,
+      preferPullRequests: this.config.preferPullRequests,
       onIterationEnd: async (messages, _signal) => {
         // Inject steer queue messages
         for (const steerText of this.steerQueue) {
@@ -550,6 +557,7 @@ class InternalSession implements KimiFlareSession {
           tools: this.allTools,
           model: this.model,
           mode: this.currentMode,
+          preferPullRequests: this.config.preferPullRequests,
         }),
       };
     }

@@ -292,14 +292,15 @@ export function makePrefixMessages(
   model: string,
   mode: Mode,
   tools: ToolSpec[],
+  preferPullRequests?: boolean,
 ): ChatMessage[] {
   if (cacheStable) {
-    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
+    return buildSystemMessages({ cwd: process.cwd(), tools, model, mode, preferPullRequests });
   }
   return [
     {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode, preferPullRequests }),
     },
   ];
 }
@@ -316,9 +317,10 @@ export function rebuildSystemPromptForMode(
   model: string,
   mode: Mode,
   tools: ToolSpec[],
+  preferPullRequests?: boolean,
 ): void {
   if (cacheStable) {
-    const rebuilt = buildSystemMessages({ cwd: process.cwd(), tools, model, mode });
+    const rebuilt = buildSystemMessages({ cwd: process.cwd(), tools, model, mode, preferPullRequests });
     messages[0] = rebuilt[0]!;
     if (rebuilt[1]) {
       messages[1] = rebuilt[1];
@@ -326,7 +328,7 @@ export function rebuildSystemPromptForMode(
   } else {
     messages[0] = {
       role: "system",
-      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode }),
+      content: buildSystemPrompt({ cwd: process.cwd(), tools, model, mode, preferPullRequests }),
     };
   }
 }

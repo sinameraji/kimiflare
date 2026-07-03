@@ -9,7 +9,7 @@ import { globTool } from "./glob.js";
 import { grepTool } from "./grep.js";
 import { webFetchTool } from "./web-fetch.js";
 import { searchWebTool } from "./web-search.js";
-import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool, githubListMergedPrsTool, githubListReleasesTool } from "./github.js";
+import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool, githubListMergedPrsTool, githubListReleasesTool, githubCreatePrTool } from "./github.js";
 import { changelogImageTool } from "./changelog-image.js";
 import { browserFetchTool } from "./browser.js";
 import { tasksSetTool } from "./tasks.js";
@@ -34,6 +34,7 @@ export const ALL_TOOLS: ToolSpec[] = [
   { ...githubReadCodeTool, isReadOnly: true },
   { ...githubListMergedPrsTool, isReadOnly: true },
   { ...githubListReleasesTool, isReadOnly: true },
+  githubCreatePrTool,
   { ...changelogImageTool, isReadOnly: true },
   { ...browserFetchTool, isReadOnly: true },
   tasksSetTool,

@@ -47,6 +47,10 @@ export interface EmitModeOpts {
   continueOnLimit?: boolean;
   maxInputTokens?: number;
   aiGatewayId?: string;
+  /** When false (default), the bash tool blocks `git push` to the default branch. */
+  allowDirectPush?: boolean;
+  /** When true (default), the system prompt instructs the model to prefer PRs over direct pushes. */
+  preferPullRequests?: boolean;
 }
 
 function gatewayFromOpts(opts: EmitModeOpts): AiGatewayOptions | undefined {
@@ -184,7 +188,10 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
   const cwd = process.cwd();
   const executor = new ToolExecutor(ALL_TOOLS);
   const messages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model }) },
+    {
+      role: "system",
+      content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model: opts.model, preferPullRequests: opts.preferPullRequests }),
+    },
   ];
 
   let streamCounter = 0;
@@ -291,6 +298,8 @@ export async function runEmitMode(opts: EmitModeOpts): Promise<void> {
         codeMode: opts.codeMode,
         continueOnLimit: opts.continueOnLimit,
         maxInputTokens: opts.maxInputTokens,
+        allowDirectPush: opts.allowDirectPush,
+        preferPullRequests: opts.preferPullRequests,
         callbacks: {
           onAssistantStart: () => {
             streamCounter += 1;

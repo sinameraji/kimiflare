@@ -164,6 +164,8 @@ export async function runInit(deps: RunInitDeps): Promise<void> {
       providerKeyAliases: cfg.providerKeyAliases,
       unifiedBilling: cfg.unifiedBilling,
       shell: cfg.shell,
+      allowDirectPush: cfg.allowDirectPush,
+      preferPullRequests: cfg.preferPullRequests,
       onIterationEnd,
       onFileChange: (path, content) => {
         if (content) {

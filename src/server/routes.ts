@@ -224,7 +224,10 @@ export function setupRoutes(config: KimiConfig) {
 
         const executor = new ToolExecutor(ALL_TOOLS);
         const messages: ChatMessage[] = [
-          { role: "system", content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model }) },
+          {
+            role: "system",
+            content: buildSystemPrompt({ cwd, tools: ALL_TOOLS, model, preferPullRequests: config.preferPullRequests }),
+          },
         ];
 
         const resolvedFiles = await resolveFiles(files, cwd);
@@ -379,6 +382,8 @@ async function runAgentTurnForSession(active: ActiveSession, config: KimiConfig,
       cwd: sessionFile.cwd,
       signal: controller.signal,
       codeMode: config.codeMode,
+      allowDirectPush: config.allowDirectPush,
+      preferPullRequests: config.preferPullRequests,
       callbacks,
     });
 
