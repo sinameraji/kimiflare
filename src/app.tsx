@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Box, Text, useApp, useInput, useWindowSize, render } from "ink";
+import Spinner from "ink-spinner";
 
 import { runAgentTurn, AgentLoopError } from "./agent/loop.js";
 import type { GatewayMeta } from "./agent/client.js";
@@ -502,6 +503,7 @@ function App({
     resumeSessions, setResumeSessions,
     checkpointSession, setCheckpointSession,
     checkpointList,
+    resuming, resumingMessage,
     ensureSessionId,
     saveSessionSafe,
     openResumePicker,
@@ -545,6 +547,7 @@ function App({
     showLspWizard ||
     resumeSessions !== null ||
     checkpointSession !== null ||
+    resuming ||
     perm !== null ||
     limitModal !== null ||
     loopModal !== null ||
@@ -2503,6 +2506,19 @@ function App({
       <ThemeProvider theme={theme}>
         <Box flexDirection="column">
           <ResumePicker sessions={resumeSessions} onPick={handleResumePick} />
+        </Box>
+      </ThemeProvider>
+    );
+  }
+
+  if (resuming) {
+    return (
+      <ThemeProvider theme={theme}>
+        <Box flexDirection="column" padding={1}>
+          <Text color={theme.accent} bold>
+            <Spinner type="dots" /> {resumingMessage}
+          </Text>
+          <Text color={theme.info.color}>Hang tight — summarizing the session so you can pick up where you left off.</Text>
         </Box>
       </ThemeProvider>
     );

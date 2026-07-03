@@ -114,6 +114,10 @@ export interface SessionManager {
   setCheckpointList: (c: Checkpoint[]) => void;
   hasPickerOpen: boolean;
 
+  // Resume loading state.
+  resuming: boolean;
+  resumingMessage: string;
+
   // Operations.
   ensureSessionId: () => string;
   saveSessionSafe: () => Promise<void>;
@@ -133,6 +137,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
   const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
   const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
+  const [resuming, setResuming] = useState(false);
+  const [resumingMessage, setResumingMessage] = useState("Pulling context…");
 
   // Stash deps in a ref so the public callbacks keep stable identities.
   // Same pattern as M4.1's PermissionController and M4.2's PickerController.
@@ -325,11 +331,23 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
             ...es,
             { kind: "error", key: depsRef.current.mkKey(), text: `failed to load checkpoints: ${(e as Error).message}` },
           ]);
-          await doResumeSession(picked.filePath);
+          setResuming(true);
+          setResumingMessage("Pulling context…");
+          try {
+            await doResumeSession(picked.filePath);
+          } finally {
+            setResuming(false);
+          }
         }
         return;
       }
-      await doResumeSession(picked.filePath);
+      setResuming(true);
+      setResumingMessage("Pulling context…");
+      try {
+        await doResumeSession(picked.filePath);
+      } finally {
+        setResuming(false);
+      }
     },
     [doResumeSession],
   );
@@ -346,11 +364,17 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
         }
         return;
       }
-      if (checkpointId === "__start__") {
-        await doResumeSession(session.filePath);
-        return;
+      setResuming(true);
+      setResumingMessage("Pulling context…");
+      try {
+        if (checkpointId === "__start__") {
+          await doResumeSession(session.filePath);
+          return;
+        }
+        await doResumeSession(session.filePath, checkpointId);
+      } finally {
+        setResuming(false);
       }
-      await doResumeSession(session.filePath, checkpointId);
     },
     [checkpointSession, doResumeSession],
   );
@@ -373,6 +397,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
     checkpointSession, setCheckpointSession,
     checkpointList, setCheckpointList,
     hasPickerOpen: resumeSessions !== null || checkpointSession !== null,
+    resuming,
+    resumingMessage,
     ensureSessionId,
     saveSessionSafe,
     openResumePicker,
