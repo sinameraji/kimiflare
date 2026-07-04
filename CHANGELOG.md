@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.1](https://github.com/sinameraji/kimiflare/compare/v0.90.0...v0.90.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **ui:** show loading state while resuming session and auto-display summary ([#604](https://github.com/sinameraji/kimiflare/issues/604)) ([87bda6b](https://github.com/sinameraji/kimiflare/commit/87bda6b636a64096ef21cc975e69621a4d2f9a8f))
+
 ## [0.90.0](https://github.com/sinameraji/kimiflare/compare/v0.89.1...v0.90.0) (2026-07-01)
 
 
