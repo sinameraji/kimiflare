@@ -1,7 +1,7 @@
 # KimiFlare — Project Context
 
 > Auto-generated context for AI agents working in this repository.
-> Last updated: 2026-05-22
+> Last updated: 2026-07-08
 
 ---
 
@@ -27,13 +27,12 @@
 | `npm run typecheck` | Type-check without emit | `tsc --noEmit` |
 | `npm test` | Run all tests | `tsx --test src/**/*.test.ts src/**/*.test.tsx` |
 | `npm start` | Run built CLI | `node bin/kimiflare.mjs` |
-| `npm run build:remote` | Build remote worker + agent | Separate sub-projects in `remote/` |
-| `npm run build:worker` | Type-check remote worker only | `cd remote/worker && tsc --noEmit` |
-| `npm run build:remote-agent` | Build containerized agent only | `cd remote/agent && npx tsup` |
+| `npm run build:remote` | Build remote agent | Alias for `build:remote-agent` |
+| `npm run build:remote-agent` | Build containerized agent | `cd remote/agent && npx tsup` |
 | `npm run prepublishOnly` | Pre-publish hook | Runs `npm run build` |
 
 **Slow / special commands:**
-- `npm run build:remote` requires sub-project dependencies to be installed.
+- `npm run build:remote-agent` requires sub-project dependencies to be installed.
 - Tests use the Node.js native test runner; no Jest/Vitest setup.
 
 ---
@@ -60,6 +59,7 @@
 | `src/hooks/` | User-configured lifecycle hooks (pre/post tool-call, turn start/end). |
 | `src/models/` | Model registry: capabilities, pricing, and routing decisions per provider. |
 | `src/intent/` | Intent classification for routing user input. |
+| `src/server/` | HTTP server for SDK RPC mode and OpenAPI endpoints. |
 | `src/util/` | Shared utilities: errors, SSE parsing, fuzzy search, abort scopes, logger, update check. |
 | `src/init/` | Context generation (this `KIMI.md` file). |
 | `src/remote/` | Remote deployment CLI commands and TUI auth (source code for remote features). |
@@ -70,8 +70,6 @@
 | `feedback-worker/` | Cloudflare Pages function for collecting user feedback. |
 | `functions/` | Cloudflare Pages functions (deployed alongside `docs/`). |
 | `docs/` | README assets (screenshots, logos) and static site source. |
-| `scripts/` | Build and utility scripts. |
-| `.github/workflows/` | CI: `release-please` for versioning, `publish` for npm publish on main push, `pages` for Cloudflare Pages deploy. |
 
 ---
 
@@ -127,13 +125,14 @@ npm install -D <pkg>     # dev
 **Bundling policy:**
 - `tsup` bundles the app but keeps these **external** (must be in `node_modules` at runtime):
   - `ink`, `ink-text-input`, `ink-spinner`, `ink-select-input`
-  - `react`, `commander`, `turndown`
+  - `react`, `commander`, `turndown`, `camouflage-tui`
 - Do **not** add heavy native deps to the main CLI bundle without updating `tsup.config.ts` `external` array.
 
 **Version pinning:** Use `package-lock.json` for reproducibility. Avoid caret ranges for critical runtime deps.
 
 **Optional dependencies:**
 - `isolated-vm` — used for sandboxing generated TypeScript tool code. Falls back gracefully if not installed.
+- `camouflage-tui` — experimental Rust-based TUI renderer. Falls back to Ink if not installed.
 
 ---
 
