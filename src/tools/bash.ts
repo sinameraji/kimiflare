@@ -3,6 +3,7 @@ import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import { logger } from "../util/logger.js";
+import { getUserAgent } from "../util/version.js";
 
 interface Args {
   command: string;
@@ -120,10 +121,12 @@ export async function guardGitPush(command: string, ctx: ToolContext): Promise<T
 
   // --all / --mirror are treated conservatively: they may push the default branch.
   if (target.kind === "all" || target.kind === "mirror") {
+    const hint = await getBranchProtectionHint(ctx.cwd, defaultBranch, ctx);
     const msg =
       `Blocked: \`${trimmed}\` may push the default branch (${defaultBranch}). ` +
       `Create a feature branch, push it, and open a PR with \`github_create_pr\`. ` +
-      `To allow direct pushes, set \`allowDirectPush: true\` in config or run with \`KIMIFLARE_ALLOW_DIRECT_PUSH=1\`.`;
+      `To allow direct pushes, set \`allowDirectPush: true\` in config or run with \`KIMIFLARE_ALLOW_DIRECT_PUSH=1\`.` +
+      (hint ? `\n${hint}` : "");
     return makeErrorOutput(msg);
   }
 
@@ -131,10 +134,12 @@ export async function guardGitPush(command: string, ctx: ToolContext): Promise<T
   if (!targetBranch) return undefined;
 
   if (targetBranch === defaultBranch) {
+    const hint = await getBranchProtectionHint(ctx.cwd, defaultBranch, ctx);
     const msg =
       `Blocked: \`${trimmed}\` would push directly to the default branch (${defaultBranch}). ` +
       `Create a feature branch, push it, and open a PR with \`github_create_pr\`. ` +
-      `To allow direct pushes, set \`allowDirectPush: true\` in config or run with \`KIMIFLARE_ALLOW_DIRECT_PUSH=1\`.`;
+      `To allow direct pushes, set \`allowDirectPush: true\` in config or run with \`KIMIFLARE_ALLOW_DIRECT_PUSH=1\`.` +
+      (hint ? `\n${hint}` : "");
     return makeErrorOutput(msg);
   }
 
@@ -169,6 +174,85 @@ async function getDefaultBranch(cwd: string): Promise<string | undefined> {
 
 async function getCurrentBranch(cwd: string): Promise<string | undefined> {
   return execOnce("git rev-parse --abbrev-ref HEAD 2>/dev/null || true", cwd);
+}
+
+interface GitHubRepo {
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Parse the origin remote URL into owner/repo when it points to GitHub.
+ * Handles HTTPS and SSH formats.
+ */
+async function getGitHubRemote(cwd: string): Promise<GitHubRepo | undefined> {
+  const url = await execOnce("git remote get-url origin 2>/dev/null || true", cwd);
+  if (!url) return undefined;
+
+  const httpsMatch = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    return { owner: httpsMatch[1]!, repo: httpsMatch[2]! };
+  }
+
+  const sshMatch = url.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (sshMatch) {
+    return { owner: sshMatch[1]!, repo: sshMatch[2]! };
+  }
+
+  return undefined;
+}
+
+function getGitHubToken(ctx: ToolContext): string | undefined {
+  return ctx.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+}
+
+/**
+ * Check whether the given branch on a GitHub repo has protection rules.
+ * Returns true if protected, false if unprotected, and undefined if we
+ * can't tell (no token, network error, not GitHub, etc.).
+ */
+async function isBranchProtected(owner: string, repo: string, branch: string, token?: string): Promise<boolean | undefined> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": getUserAgent(),
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/branches/${branch}/protection`, {
+      signal: controller.signal,
+      headers,
+    });
+
+    if (res.status === 404) return false; // no protection rules
+    if (res.ok) return true;
+    return undefined; // other error — don't nag
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Return a gentle hint when the default branch appears unprotected on GitHub.
+ * Returns undefined when protected, not a GitHub repo, or when we can't tell.
+ */
+async function getBranchProtectionHint(cwd: string, branch: string, ctx: ToolContext): Promise<string | undefined> {
+  const gh = await getGitHubRemote(cwd);
+  if (!gh) return undefined;
+
+  const token = getGitHubToken(ctx);
+  const protected_ = await isBranchProtected(gh.owner, gh.repo, branch, token);
+  if (protected_ === false) {
+    return `Tip: \`${branch}\` doesn't have branch protection rules on GitHub yet. ` +
+      `You may want to enable them to prevent accidental direct pushes. ` +
+      `Want guidance on setting them up? Just ask.`;
+  }
+  return undefined;
 }
 
 export type PushTarget = { kind: "current" } | { kind: "ref"; ref: string } | { kind: "all" } | { kind: "mirror" };
