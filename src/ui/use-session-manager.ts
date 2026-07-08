@@ -117,6 +117,8 @@ export interface SessionManager {
   // Resume loading state.
   resuming: boolean;
   resumingMessage: string;
+  resumeProgress: number;
+  resumeStage: string;
 
   // Operations.
   ensureSessionId: () => string;
@@ -139,6 +141,40 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
   const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
   const [resuming, setResuming] = useState(false);
   const [resumingMessage, setResumingMessage] = useState("Pulling context…");
+  const [resumeProgress, setResumeProgress] = useState(0);
+  const [resumeStage, setResumeStage] = useState("");
+
+  // Ref for the smooth-progress interval so we can cancel / replace it.
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopSmoothProgress = useCallback(() => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }, []);
+  const startSmoothProgress = useCallback(
+    (from: number, to: number, durationMs: number) => {
+      stopSmoothProgress();
+      const startTime = Date.now();
+      const startVal = from;
+      progressTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const t = Math.min(1, elapsed / durationMs);
+        // ease-out cubic — fast start, gentle landing
+        const ease = 1 - Math.pow(1 - t, 3);
+        setResumeProgress(startVal + (to - startVal) * ease);
+        if (t >= 1) stopSmoothProgress();
+      }, 50);
+    },
+    [stopSmoothProgress],
+  );
+
+  // Clean up the smooth-progress timer on unmount.
+  React.useEffect(() => {
+    return () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    };
+  }, []);
 
   // Stash deps in a ref so the public callbacks keep stable identities.
   // Same pattern as M4.1's PermissionController and M4.2's PickerController.
@@ -190,9 +226,16 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
     async (filePath: string, checkpointId?: string) => {
       const d = depsRef.current;
       try {
+        setResumeProgress(0);
+        setResumeStage("Loading session file…");
+        startSmoothProgress(0, 10, 400);
         const file = checkpointId
           ? (await loadSessionFromCheckpoint(filePath, checkpointId)).file
           : await loadSession(filePath);
+
+        setResumeProgress(10);
+        setResumeStage("Restoring artifact store…");
+        startSmoothProgress(10, 20, 400);
         d.messagesRef.current = file.messages;
         sessionIdRef.current = file.id;
         setLogSessionId(file.id);
@@ -205,7 +248,10 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
         } else {
           d.artifactStoreRef.current = new ArtifactStore();
         }
-        // Recall memories for the resumed session so the model has context.
+
+        setResumeProgress(20);
+        setResumeStage("Recalling memories…");
+        startSmoothProgress(20, 35, 3000);
         const manager = d.memoryManagerRef.current;
         if (manager) {
           try {
@@ -220,15 +266,15 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           }
         }
 
+        setResumeProgress(35);
+        setResumeStage("Building local summary…");
+        startSmoothProgress(35, 40, 600);
         const nonSystemCount = file.messages.filter((m) => m.role !== "system").length;
         const msg = checkpointId
           ? `resumed session ${file.id} from checkpoint`
           : `resumed session ${file.id} (${nonSystemCount} msgs)`;
         d.setEvents([{ kind: "info", key: d.mkKey(), text: msg }]);
 
-        // ── Instant local summary from session state ──────────────────────
-        // Gives the user immediate context with zero latency, before the
-        // async LLM summary arrives.
         const localSummary = buildLocalResumeSummary(d.sessionStateRef.current);
         if (localSummary) {
           d.setEvents((es) => [
@@ -237,15 +283,12 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           ]);
         }
 
-        // ── Async LLM-generated continuation summary ──────────────────────
-        // Reuses the same generateContinuationSummary that /fresh uses.
-        // Injected as a system message so the model has a fresh context
-        // anchor for the next turn — no need to ask "where were we?".
         if (d.cfg && d.cfg.accountId && d.cfg.apiToken) {
-          d.setEvents((es) => [
-            ...es,
-            { kind: "info", key: d.mkKey(), text: "generating session summary…" },
-          ]);
+          setResumeProgress(40);
+          setResumeStage("Generating continuation summary…");
+          // Smooth crawl from 40 % → 80 % over 12 s.  If tokens stream fast
+          // the onProgress boosts will pull it ahead of the timer.
+          startSmoothProgress(40, 80, 12000);
           try {
             const summary = await generateContinuationSummary({
               messages: d.messagesRef.current,
@@ -256,6 +299,12 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
               gateway: gatewayFromConfig(d.cfg as Parameters<typeof gatewayFromConfig>[0]),
               memoryManager: d.memoryManagerRef.current,
               memoryEnabled: d.cfg.memoryEnabled,
+              onProgress: (charDelta) => {
+                // Each token (~4 chars) boosts ~1 %.  This is visible even
+                // for single-token deltas and keeps the bar ahead of the
+                // fallback timer when the model is fast.
+                setResumeProgress((prev) => Math.min(90, prev + charDelta * 0.008));
+              },
             });
             if (summary) {
               d.setEvents((es) => [
@@ -271,6 +320,11 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
             // Non-fatal — local summary already shown
           }
         }
+
+        stopSmoothProgress();
+        setResumeProgress(95);
+        setResumeStage("Finalizing…");
+        startSmoothProgress(95, 100, 400);
 
         // Suggest /fresh for long auto/edit sessions resumed without a checkpoint
         if (!checkpointId) {
@@ -291,6 +345,7 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           }
         }
 
+        setResumeProgress(100);
         const userMsgs = file.messages
           .filter((m) => m.role === "user" && m.content)
           .map((m) => {
@@ -307,13 +362,14 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
         d.setGatewayMeta(null);
         void getCostReport(file.id).then((report) => d.setSessionUsage(report.session));
       } catch (e) {
+        stopSmoothProgress();
         d.setEvents((es) => [
           ...es,
           { kind: "error", key: d.mkKey(), text: `failed to load session: ${(e as Error).message}` },
         ]);
       }
     },
-    [],
+    [startSmoothProgress, stopSmoothProgress],
   );
 
   const handleResumePick = useCallback(
@@ -333,6 +389,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           ]);
           setResuming(true);
           setResumingMessage("Pulling context…");
+          setResumeProgress(0);
+          setResumeStage("");
           try {
             await doResumeSession(picked.filePath);
           } finally {
@@ -343,6 +401,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
       }
       setResuming(true);
       setResumingMessage("Pulling context…");
+      setResumeProgress(0);
+      setResumeStage("");
       try {
         await doResumeSession(picked.filePath);
       } finally {
@@ -366,6 +426,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
       }
       setResuming(true);
       setResumingMessage("Pulling context…");
+      setResumeProgress(0);
+      setResumeStage("");
       try {
         if (checkpointId === "__start__") {
           await doResumeSession(session.filePath);
@@ -399,6 +461,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
     hasPickerOpen: resumeSessions !== null || checkpointSession !== null,
     resuming,
     resumingMessage,
+    resumeProgress,
+    resumeStage,
     ensureSessionId,
     saveSessionSafe,
     openResumePicker,

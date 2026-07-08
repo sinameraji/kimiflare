@@ -16,6 +16,8 @@ export interface ContinuationSummaryOpts {
   memoryManager?: MemoryManager | null;
   memoryEnabled?: boolean;
   signal?: AbortSignal;
+  /** Called with a progress delta (0–1) as the LLM streams its summary. */
+  onProgress?: (delta: number) => void;
 }
 
 const HANDOFF_SYSTEM = `You are a session-continuation engine. Given evidence from a coding session, produce a dense handoff document so a new agent can pick up exactly where this one left off.
@@ -127,6 +129,7 @@ async function runKimiText(opts: {
   gateway?: AiGatewayOptions;
   messages: ChatMessage[];
   signal?: AbortSignal;
+  onProgress?: (delta: number) => void;
 }): Promise<string> {
   const events = runKimi({
     accountId: opts.accountId,
@@ -140,7 +143,10 @@ async function runKimiText(opts: {
   });
   let text = "";
   for await (const ev of events) {
-    if (ev.type === "text") text += ev.delta;
+    if (ev.type === "text") {
+      text += ev.delta;
+      opts.onProgress?.(Math.max(0, ev.delta.length));
+    }
   }
   return text.trim();
 }
@@ -187,6 +193,7 @@ export async function generateContinuationSummary(
     model: opts.model,
     gateway: opts.gateway,
     signal: opts.signal,
+    onProgress: opts.onProgress,
     messages: [
       { role: "system", content: HANDOFF_SYSTEM },
       { role: "user", content: userPrompt },
