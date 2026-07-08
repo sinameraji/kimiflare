@@ -63,13 +63,21 @@ interface Props {
   verbose?: boolean;
   intentTier?: IntentTier;
   onUpgrade?: () => void;
+  onRetry?: (eventKey: string) => void;
 }
 
 function toolSignature(name: string, args: string): string {
   return `${name}:${args}`;
 }
 
-export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier, onUpgrade }: Props) {
+function isRetryableApiError(evt: ChatEvent): boolean {
+  return (
+    evt.kind === "api_error" &&
+    (evt.httpStatus === 429 || evt.code === 3040 || (evt.httpStatus !== undefined && evt.httpStatus >= 500))
+  );
+}
+
+export const ChatView = React.memo(function ChatView({ events, showReasoning, verbose, intentTier, onUpgrade, onRetry }: Props) {
   const theme = useTheme();
 
   // Detect repetitive tool calls in this turn (≥3 identical signatures)
@@ -94,6 +102,16 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
     }
   }
 
+  // Only the latest retryable api_error gets the retry button.
+  let latestRetryableErrorKey: string | undefined;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (isRetryableApiError(e)) {
+      latestRetryableErrorKey = e.key;
+      break;
+    }
+  }
+
   return (
     <Box flexDirection="column">
       {events.map((e, i) => {
@@ -112,7 +130,16 @@ export const ChatView = React.memo(function ChatView({ events, showReasoning, ve
                 </Text>
               </Box>
             )}
-            <EventView evt={e} showReasoning={showReasoning} verbose={verbose} repeatedSigs={repeatedSigs} intentTier={intentTier} isLastAssistant={i === lastAssistantIndex} onUpgrade={onUpgrade} />
+            <EventView
+              evt={e}
+              showReasoning={showReasoning}
+              verbose={verbose}
+              repeatedSigs={repeatedSigs}
+              intentTier={intentTier}
+              isLastAssistant={i === lastAssistantIndex}
+              onUpgrade={onUpgrade}
+              onRetry={e.key === latestRetryableErrorKey ? onRetry : undefined}
+            />
           </Box>
         );
       })}
@@ -128,6 +155,7 @@ const EventView = React.memo(function EventView({
   intentTier,
   isLastAssistant,
   onUpgrade,
+  onRetry,
 }: {
   evt: ChatEvent;
   showReasoning: boolean;
@@ -136,6 +164,7 @@ const EventView = React.memo(function EventView({
   intentTier?: IntentTier;
   isLastAssistant?: boolean;
   onUpgrade?: () => void;
+  onRetry?: (eventKey: string) => void;
 }) {
   const theme = useTheme();
   if (evt.kind === "user") {
@@ -252,6 +281,7 @@ const EventView = React.memo(function EventView({
         httpStatus={evt.httpStatus}
         code={evt.code}
         message={evt.message}
+        onRetry={onRetry ? () => onRetry(evt.key) : undefined}
       />
     );
   }
