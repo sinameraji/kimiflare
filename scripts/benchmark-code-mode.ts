@@ -21,7 +21,7 @@ if (!accountId || !apiToken) {
   process.exit(1);
 }
 
-const model = process.env.KIMI_MODEL ?? "@cf/moonshotai/kimi-k2.7-code";
+const model = process.env.KIMI_MODEL ?? "@cf/moonshotai/kimi-k2.6";
 const cwd = process.cwd();
 
 const TASK =

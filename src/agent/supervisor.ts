@@ -399,7 +399,7 @@ export class TurnSupervisor {
               budget: { maxCostUsd },
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),
-              model: w.model ?? "@cf/moonshotai/kimi-k2.7-code",
+              model: w.model ?? "@cf/moonshotai/kimi-k2.6",
               // Sandbox-driven worker needs the repo to clone:
               githubToken: repo.token,
               owner: repo.owner,

@@ -199,7 +199,7 @@ export function setupRoutes(config: KimiConfig) {
       if (pathname === "/prompt" && method === "POST") {
         const body = (await readBody(req)) as Record<string, unknown>;
         const prompt = typeof body.prompt === "string" ? body.prompt : "";
-        const model = typeof body.model === "string" ? body.model : (config.model ?? "@cf/moonshotai/kimi-k2.7-code");
+        const model = typeof body.model === "string" ? body.model : (config.model ?? "@cf/moonshotai/kimi-k2.6");
         const cwd = typeof body.cwd === "string" ? body.cwd : process.cwd();
         const title = typeof body.title === "string" ? body.title : undefined;
         const files = Array.isArray(body.files) ? body.files.filter((f): f is string => typeof f === "string") : [];

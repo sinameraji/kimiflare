@@ -193,7 +193,7 @@ export interface KimiConfig {
   allowDirectPush?: boolean;
 }
 
-export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.7-code";
+export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 
 export function configPath(): string {

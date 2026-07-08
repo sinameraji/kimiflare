@@ -119,7 +119,7 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
       },
       model: {
         type: "string",
-        description: "Model to use for the worker. Defaults to @cf/moonshotai/kimi-k2.7-code.",
+        description: "Model to use for the worker. Defaults to @cf/moonshotai/kimi-k2.6.",
       },
       branchName: {
         type: "string",
@@ -166,7 +166,7 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
       budget: { maxCostUsd: budgetUsd },
       outputFormat: args.outputFormat ?? "structured",
       tools: args.tools ?? (args.mode === "plan" ? "read-only" : "all"),
-      model: args.model ?? "@cf/moonshotai/kimi-k2.7-code",
+      model: args.model ?? "@cf/moonshotai/kimi-k2.6",
       ...(args.mode === "execute"
         ? {
             branchName: args.branchName,

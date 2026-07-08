@@ -272,7 +272,7 @@ export function executeFreshStart(
   rebuildSystemPromptForMode(
     ctx.messagesRef.current,
     ctx.cacheStableRef.current,
-    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.7-code",
+    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.6",
     overrideMode ?? ctx.mode,
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
     ctx.cfg?.preferPullRequests,

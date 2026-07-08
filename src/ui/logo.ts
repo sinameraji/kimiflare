@@ -43,7 +43,7 @@ function buildTextLines(version: string): string[] {
     `  ${bold}${accent}Kimiflare${reset}`,
     "",
     `  ${dim}Terminal coding agent${reset}`,
-    `  ${dim}powered by Kimi-K2.7${reset}`,
+    `  ${dim}powered by Kimi-K2.6${reset}`,
     "",
     `  ${dim}v${version}${reset}`,
     "",

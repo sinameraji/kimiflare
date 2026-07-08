@@ -246,7 +246,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
             `Your stored ${modelProvider} key is likely invalid or expired. Fix:`,
             `  /keys set ${modelProvider} <new-key>   replace the stored key`,
             `  /keys clear ${modelProvider}           remove it and reopen the picker to paste fresh`,
-            `  /model @cf/moonshotai/kimi-k2.7-code  switch back to Workers AI (no key needed)`,
+            `  /model @cf/moonshotai/kimi-k2.6  switch back to Workers AI (no key needed)`,
           ].join("\n")
         : msg;
       const apiErr = new KimiApiError(`kimiflare: ${wrappedMsg}`, err?.code, res.status);
@@ -368,7 +368,7 @@ function missingKeyMessage(model: string, provider: string, unifiedAvailable: bo
   if (unifiedAvailable) {
     lines.push(`  2. Enable Cloudflare Unified Billing for this gateway in the CF dashboard, then run:  /keys unified on`);
   }
-  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.7-code`);
+  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`);
   return lines.join("\n");
 }
 

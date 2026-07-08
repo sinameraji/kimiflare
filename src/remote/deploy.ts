@@ -130,7 +130,7 @@ export async function* deployForTui(): AsyncGenerator<DeployStep, { workerUrl: s
   }
 
   const nextCfg = {
-    ...(cfg ?? { accountId: "", apiToken: "", model: "@cf/moonshotai/kimi-k2.7-code" }),
+    ...(cfg ?? { accountId: "", apiToken: "", model: "@cf/moonshotai/kimi-k2.6" }),
     remoteWorkerUrl: workerUrl,
     remoteAuthSecret: authSecret,
   };
