@@ -103,6 +103,7 @@ import { ModalHost, ModalOverlay } from "./ui/modal-host.js";
 import { PlanCompletePicker } from "./ui/plan-complete-picker.js";
 import type { PlanCompleteChoice } from "./ui/plan-complete-picker.js";
 import { useSessionManager } from "./ui/use-session-manager.js";
+import { ResumeProgress } from "./ui/resume-progress.js";
 import { useTurnController } from "./ui/use-turn-controller.js";
 import {
   interruptTurn as runInterruptTurn,
@@ -539,7 +540,7 @@ function App({
     resumeSessions, setResumeSessions,
     checkpointSession, setCheckpointSession,
     checkpointList,
-    resuming, resumingMessage,
+    resuming, resumingMessage, resumeProgress, resumeStage,
     ensureSessionId,
     saveSessionSafe,
     openResumePicker,
@@ -2657,12 +2658,7 @@ function App({
   if (resuming) {
     return (
       <ThemeProvider theme={theme}>
-        <Box flexDirection="column" padding={1}>
-          <Text color={theme.accent} bold>
-            <Spinner type="dots" /> {resumingMessage}
-          </Text>
-          <Text color={theme.info.color}>Hang tight — summarizing the session so you can pick up where you left off.</Text>
-        </Box>
+        <ResumeProgress progress={resumeProgress} stage={resumeStage} theme={theme} />
       </ThemeProvider>
     );
   }
