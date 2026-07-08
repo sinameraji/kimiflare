@@ -8,7 +8,7 @@ import type { SlashItem } from "./types.js";
 export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "help", description: "Show keybindings and command list", source: "builtin" },
   { name: "model", argHint: "[list|<id>]", description: "Pick model (no args opens picker)", source: "builtin" },
-  { name: "mode", argHint: "edit|plan|auto|multi-agent-experimental", description: "Switch agent mode", source: "builtin" },
+  { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
   { name: "multi-agent", argHint: "[enable|disable|status|setup]", description: "Configure multi-agent (endpoint, auto-implement, set up)", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
   { name: "ui", argHint: "ink", description: "Switch UI engine to React Ink (takes effect on next launch). Camouflage is temporarily unavailable.", source: "builtin" },

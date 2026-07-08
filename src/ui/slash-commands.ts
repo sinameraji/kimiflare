@@ -702,7 +702,7 @@ const handleMode: Handler = (ctx, _rest, arg) => {
     ctx.setShowModePicker(true);
     return true;
   }
-  if (arg === "edit" || arg === "plan" || arg === "auto" || arg === "multi-agent-experimental") {
+  if (arg === "edit" || arg === "plan" || arg === "auto") {
     const prevMode = mode;
     ctx.setMode(arg);
     setEvents((e) => [...e, { kind: "info", key: mkKey(), text: `mode: ${arg}` }]);
@@ -718,7 +718,7 @@ const handleMode: Handler = (ctx, _rest, arg) => {
     }
     return true;
   }
-  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto|multi-agent-experimental" }]);
+  setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "usage: /mode edit|plan|auto" }]);
   return true;
 };
 
@@ -751,7 +751,6 @@ const handleMultiAgent: Handler = (ctx, rest, _arg) => {
   }
   if (sub === "disable") {
     persist({ multiAgentEnabled: false }, "multi-agent disabled");
-    if (mode === "multi-agent-experimental") setMode("edit");
     return true;
   }
   if (sub === "execute") {

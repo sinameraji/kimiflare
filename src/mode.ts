@@ -1,6 +1,6 @@
 export type Mode = "edit" | "plan" | "auto" | "multi-agent-experimental";
 
-export const MODES: Mode[] = ["edit", "plan", "auto", "multi-agent-experimental"];
+export const MODES: Mode[] = ["edit", "plan", "auto"];
 
 export function nextMode(m: Mode): Mode {
   const i = MODES.indexOf(m);

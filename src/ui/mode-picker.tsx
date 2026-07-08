@@ -7,12 +7,11 @@ import { useTheme } from "./theme-context.js";
 interface Props {
   current: Mode;
   onPick: (mode: Mode | null) => void;
-  multiAgentEnabled?: boolean;
 }
 
-export function ModePicker({ current, onPick, multiAgentEnabled }: Props) {
+export function ModePicker({ current, onPick }: Props) {
   const theme = useTheme();
-  const availableModes = multiAgentEnabled ? MODES : MODES.filter((m) => m !== "multi-agent-experimental");
+  const availableModes = MODES;
   const items = availableModes.map((m) => ({
     label: `${m === current ? "● " : "  "}${modeDescription(m)}`,
     value: m,

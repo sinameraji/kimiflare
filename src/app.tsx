@@ -1018,13 +1018,7 @@ function App({
       return;
     }
     if (key.shift && key.tab) {
-      setMode((m) => {
-        const next = nextMode(m);
-        if (next === "multi-agent-experimental" && !cfg?.multiAgentEnabled) {
-          return nextMode(next);
-        }
-        return next;
-      });
+      setMode((m) => nextMode(m));
       return;
     }
     if (key.ctrl && inputChar === "o") {
@@ -2693,7 +2687,6 @@ function App({
         currentModel={cfg?.model ?? ""}
         onPickModel={handleModelPick}
         currentMode={mode}
-        multiAgentEnabled={cfg?.multiAgentEnabled}
         onPickMode={(m) => {
           if (m) {
             setMode(m);
