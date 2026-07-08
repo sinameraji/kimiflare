@@ -1,9 +1,8 @@
 import type { SlashItem } from "./types.js";
 
 /**
- * Built-in slash commands shown in the `/`-trigger picker. Each entry's
- * `name` must match a branch in `handleSlash` (src/app.tsx) — keep this
- * list in sync when adding/removing handled commands.
+ * Built-in slash commands shown in the `/`-trigger picker. Handlers may
+ * still exist for commands not listed here (users can type them manually).
  */
 export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "help", description: "Show keybindings and command list", source: "builtin" },
@@ -11,11 +10,8 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   { name: "mode", argHint: "edit|plan|auto", description: "Switch agent mode", source: "builtin" },
   { name: "multi-agent", argHint: "[enable|disable|status|setup]", description: "Configure multi-agent (endpoint, auto-implement, set up)", source: "builtin" },
   { name: "theme", argHint: "[<name>]", description: "Switch color theme", source: "builtin" },
-  { name: "ui", argHint: "ink", description: "Switch UI engine to React Ink (takes effect on next launch). Camouflage is temporarily unavailable.", source: "builtin" },
-  { name: "plan", description: "Switch to plan mode", source: "builtin" },
-  { name: "auto", description: "Switch to auto mode", source: "builtin" },
-  { name: "edit", description: "Switch to edit mode", source: "builtin" },
-  { name: "reasoning", description: "Toggle reasoning visibility", source: "builtin" },
+  // Ink is the only UI engine; handler remains for manual use.
+  // { name: "ui", argHint: "ink", description: "Switch UI engine to React Ink (takes effect on next launch). Camouflage is temporarily unavailable.", source: "builtin" },
   { name: "memory", argHint: "[on|off|clear|search ...]", description: "Manage memory", source: "builtin" },
   { name: "cost", argHint: "[on|off]", description: "Show cost report or toggle attribution", source: "builtin" },
   { name: "gateway", argHint: "[status|off|<id>|cache-ttl|skip-cache|...]", description: "Manage AI Gateway", source: "builtin" },
