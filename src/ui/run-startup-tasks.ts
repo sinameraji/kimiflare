@@ -36,6 +36,8 @@ export interface RunStartupTasksDeps {
   setKimiMdStale: (v: boolean) => void;
   customCommandsRef: React.MutableRefObject<CustomCommand[]>;
   setCustomCommandsVersion: React.Dispatch<React.SetStateAction<number>>;
+  cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 export function runStartupTasks(deps: RunStartupTasksDeps): void {
@@ -43,6 +45,7 @@ export function runStartupTasks(deps: RunStartupTasksDeps): void {
     cfg, setEvents, mkKey,
     memoryManagerRef, sessionStartRecallRef, setKimiMdStale,
     customCommandsRef, setCustomCommandsVersion,
+    cloudToken, cloudDeviceId,
   } = deps;
 
   // Prune old sessions on startup (silent)
@@ -126,6 +129,9 @@ export function runStartupTasks(deps: RunStartupTasksDeps): void {
     apiToken: cfg.apiToken,
     gateway: gatewayFromConfig(cfg),
     embeddingModel: cfg.memoryEmbeddingModel,
+    cloudMode: cfg.cloudMode,
+    cloudToken,
+    cloudDeviceId,
   }).then((result) => {
     if (result.indexed > 0) {
       setEvents((e) => [

@@ -24,7 +24,8 @@ import type { DailyUsage } from "../usage-tracker.js";
 import type { ChatEvent } from "./chat.js";
 import { setLogSessionId } from "../util/log-sink.js";
 import type { Mode } from "../mode.js";
-import { DEFAULT_AUTO_FRESH_SUGGESTION_TURNS } from "./app-helpers.js";
+import { DEFAULT_AUTO_FRESH_SUGGESTION_TURNS, gatewayFromConfig } from "./app-helpers.js";
+import { generateContinuationSummary } from "../agent/continuation-summary.js";
 
 /**
  * Pull the first chunk of user text out of a message list — used to
@@ -45,9 +46,37 @@ export function extractFirstUserText(messages: ChatMessage[]): string {
   return "session";
 }
 
+/**
+ * Build a brief, zero-latency summary from session state for display on
+ * `/resume`. Returns `null` when there's nothing useful to show.
+ */
+export function buildLocalResumeSummary(state: SessionState): string | null {
+  const parts: string[] = [];
+  if (state.task) parts.push(`Task: ${state.task}`);
+  if (state.files_modified.length > 0) {
+    parts.push(`Modified: ${state.files_modified.join(", ")}`);
+  }
+  if (state.next_actions.length > 0) {
+    parts.push(`Next: ${state.next_actions.slice(0, 3).join("; ")}`);
+  }
+  return parts.length > 0 ? parts.join(" | ") : null;
+}
+
 export interface SessionManagerDeps {
-  /** Model name + other config needed at save time. Null while booting. */
-  cfg: { model: string; autoFreshSuggestionTurns?: number } | null;
+  /** Model name + other config needed at save/resume time. Null while booting. */
+  cfg: {
+    model: string;
+    autoFreshSuggestionTurns?: number;
+    accountId?: string;
+    apiToken?: string;
+    plumbingModel?: string;
+    aiGatewayId?: string;
+    aiGatewayCacheTtl?: number;
+    aiGatewaySkipCache?: boolean;
+    aiGatewayCollectLogPayload?: boolean;
+    aiGatewayMetadata?: Record<string, string | number | boolean>;
+    memoryEnabled?: boolean;
+  } | null;
   /** Current agent mode. */
   mode: Mode;
   // Refs the hook needs to read/write at save and resume time. These
@@ -85,6 +114,10 @@ export interface SessionManager {
   setCheckpointList: (c: Checkpoint[]) => void;
   hasPickerOpen: boolean;
 
+  // Resume loading state.
+  resuming: boolean;
+  resumingMessage: string;
+
   // Operations.
   ensureSessionId: () => string;
   saveSessionSafe: () => Promise<void>;
@@ -104,6 +137,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
   const [resumeSessions, setResumeSessions] = useState<SessionSummary[] | null>(null);
   const [checkpointSession, setCheckpointSession] = useState<SessionSummary | null>(null);
   const [checkpointList, setCheckpointList] = useState<Checkpoint[]>([]);
+  const [resuming, setResuming] = useState(false);
+  const [resumingMessage, setResumingMessage] = useState("Pulling context…");
 
   // Stash deps in a ref so the public callbacks keep stable identities.
   // Same pattern as M4.1's PermissionController and M4.2's PickerController.
@@ -191,6 +226,52 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
           : `resumed session ${file.id} (${nonSystemCount} msgs)`;
         d.setEvents([{ kind: "info", key: d.mkKey(), text: msg }]);
 
+        // ── Instant local summary from session state ──────────────────────
+        // Gives the user immediate context with zero latency, before the
+        // async LLM summary arrives.
+        const localSummary = buildLocalResumeSummary(d.sessionStateRef.current);
+        if (localSummary) {
+          d.setEvents((es) => [
+            ...es,
+            { kind: "info", key: d.mkKey(), text: localSummary },
+          ]);
+        }
+
+        // ── Async LLM-generated continuation summary ──────────────────────
+        // Reuses the same generateContinuationSummary that /fresh uses.
+        // Injected as a system message so the model has a fresh context
+        // anchor for the next turn — no need to ask "where were we?".
+        if (d.cfg && d.cfg.accountId && d.cfg.apiToken) {
+          d.setEvents((es) => [
+            ...es,
+            { kind: "info", key: d.mkKey(), text: "generating session summary…" },
+          ]);
+          try {
+            const summary = await generateContinuationSummary({
+              messages: d.messagesRef.current,
+              mode: d.mode,
+              accountId: d.cfg.accountId,
+              apiToken: d.cfg.apiToken,
+              model: d.cfg.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+              gateway: gatewayFromConfig(d.cfg as Parameters<typeof gatewayFromConfig>[0]),
+              memoryManager: d.memoryManagerRef.current,
+              memoryEnabled: d.cfg.memoryEnabled,
+            });
+            if (summary) {
+              d.setEvents((es) => [
+                ...es,
+                { kind: "info", key: d.mkKey(), text: summary },
+              ]);
+              d.messagesRef.current.push({
+                role: "system",
+                content: `[session resume summary]\n${summary}`,
+              });
+            }
+          } catch {
+            // Non-fatal — local summary already shown
+          }
+        }
+
         // Suggest /fresh for long auto/edit sessions resumed without a checkpoint
         if (!checkpointId) {
           const threshold = d.cfg?.autoFreshSuggestionTurns ?? DEFAULT_AUTO_FRESH_SUGGESTION_TURNS;
@@ -250,11 +331,23 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
             ...es,
             { kind: "error", key: depsRef.current.mkKey(), text: `failed to load checkpoints: ${(e as Error).message}` },
           ]);
-          await doResumeSession(picked.filePath);
+          setResuming(true);
+          setResumingMessage("Pulling context…");
+          try {
+            await doResumeSession(picked.filePath);
+          } finally {
+            setResuming(false);
+          }
         }
         return;
       }
-      await doResumeSession(picked.filePath);
+      setResuming(true);
+      setResumingMessage("Pulling context…");
+      try {
+        await doResumeSession(picked.filePath);
+      } finally {
+        setResuming(false);
+      }
     },
     [doResumeSession],
   );
@@ -271,11 +364,17 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
         }
         return;
       }
-      if (checkpointId === "__start__") {
-        await doResumeSession(session.filePath);
-        return;
+      setResuming(true);
+      setResumingMessage("Pulling context…");
+      try {
+        if (checkpointId === "__start__") {
+          await doResumeSession(session.filePath);
+          return;
+        }
+        await doResumeSession(session.filePath, checkpointId);
+      } finally {
+        setResuming(false);
       }
-      await doResumeSession(session.filePath, checkpointId);
     },
     [checkpointSession, doResumeSession],
   );
@@ -298,6 +397,8 @@ export function useSessionManager(deps: SessionManagerDeps): SessionManager {
     checkpointSession, setCheckpointSession,
     checkpointList, setCheckpointList,
     hasPickerOpen: resumeSessions !== null || checkpointSession !== null,
+    resuming,
+    resumingMessage,
     ensureSessionId,
     saveSessionSafe,
     openResumePicker,
