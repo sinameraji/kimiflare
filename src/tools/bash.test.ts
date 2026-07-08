@@ -1,6 +1,11 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { getShellCommand } from "./bash.js";
+import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getShellCommand, guardGitPush, parsePushTarget } from "./bash.js";
+import type { ToolContext } from "./registry.js";
 
 describe("getShellCommand", () => {
   it("returns bash for explicit 'bash'", () => {
@@ -74,5 +79,82 @@ describe("getShellCommand", () => {
 
     const ps = getShellCommand("PowerShell");
     assert.strictEqual(ps.shell, "powershell");
+  });
+});
+
+describe("parsePushTarget", () => {
+  it("detects current branch push", () => {
+    assert.deepStrictEqual(parsePushTarget("git push"), { kind: "current" });
+    assert.deepStrictEqual(parsePushTarget("git push origin"), { kind: "current" });
+  });
+
+  it("detects explicit branch push", () => {
+    assert.deepStrictEqual(parsePushTarget("git push origin feat"), { kind: "ref", ref: "feat" });
+  });
+
+  it("detects --all", () => {
+    assert.deepStrictEqual(parsePushTarget("git push --all origin"), { kind: "all" });
+  });
+
+  it("detects --mirror", () => {
+    assert.deepStrictEqual(parsePushTarget("git push --mirror"), { kind: "mirror" });
+  });
+
+  it("parses refspec with dst", () => {
+    assert.deepStrictEqual(parsePushTarget("git push origin feat:main"), { kind: "ref", ref: "main" });
+  });
+
+  it("ignores non-push commands", () => {
+    assert.strictEqual(parsePushTarget("git status"), undefined);
+  });
+});
+
+describe("guardGitPush", () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), "bash-guard-"));
+    execSync("git init -b main", { cwd: repo });
+    execSync("git config user.email test@example.com", { cwd: repo });
+    execSync("git config user.name Test", { cwd: repo });
+    writeFileSync(join(repo, "a.txt"), "a");
+    execSync("git add . && git commit -m init", { cwd: repo });
+    const remote = join(repo, "remote.git");
+    execSync(`git init --bare ${remote}`);
+    execSync(`git remote add origin ${remote}`, { cwd: repo });
+    execSync("git push origin main", { cwd: repo });
+    execSync("git remote set-head origin main", { cwd: repo });
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it("allows push when allowDirectPush is true", async () => {
+    const ctx = { cwd: repo, allowDirectPush: true } as ToolContext;
+    const result = await guardGitPush("git push origin main", ctx);
+    assert.strictEqual(result, undefined);
+  });
+
+  it("blocks push to default branch", async () => {
+    const ctx = { cwd: repo, allowDirectPush: false } as ToolContext;
+    const result = await guardGitPush("git push origin main", ctx);
+    assert.ok(result);
+    assert.ok(result!.content.includes("Blocked"));
+    assert.ok(result!.content.includes("github_create_pr"));
+  });
+
+  it("allows push to non-default branch", async () => {
+    execSync("git checkout -b feat", { cwd: repo });
+    const ctx = { cwd: repo, allowDirectPush: false } as ToolContext;
+    const result = await guardGitPush("git push origin feat", ctx);
+    assert.strictEqual(result, undefined);
+  });
+
+  it("blocks --all pushes", async () => {
+    const ctx = { cwd: repo, allowDirectPush: false } as ToolContext;
+    const result = await guardGitPush("git push --all origin", ctx);
+    assert.ok(result);
+    assert.ok(result!.content.includes("Blocked"));
   });
 });

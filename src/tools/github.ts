@@ -66,6 +66,11 @@ function getToken(ctx: ToolContext): string | undefined {
   return ctx.githubToken || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 }
 
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 // ─── github_list_merged_prs ──────────────────────────────────────────────────
 
 interface ListMergedPrsArgs {
@@ -391,6 +396,7 @@ interface CreatePrArgs {
   body?: string;
   head: string;
   base?: string;
+  draft?: boolean;
 }
 
 export const githubCreatePrTool: ToolSpec<CreatePrArgs> = {
@@ -407,6 +413,7 @@ export const githubCreatePrTool: ToolSpec<CreatePrArgs> = {
       body: { type: "string", description: "Pull request description (markdown supported)." },
       head: { type: "string", description: "Branch containing the changes." },
       base: { type: "string", description: "Branch to merge into. Defaults to the repository's default branch." },
+      draft: { type: "boolean", description: "Create as a draft pull request." },
     },
     required: ["owner", "repo", "title", "head"],
     additionalProperties: false,
@@ -417,33 +424,46 @@ export const githubCreatePrTool: ToolSpec<CreatePrArgs> = {
     const token = getToken(ctx);
     let base = args.base;
     if (!base) {
-      const repoInfo = await githubFetch(`/repos/${args.owner}/${args.repo}`, token) as { default_branch: string };
-      base = repoInfo.default_branch;
+      try {
+        const repoInfo = await githubFetch(`/repos/${args.owner}/${args.repo}`, token) as { default_branch: string };
+        base = repoInfo.default_branch;
+      } catch (err) {
+        return makeOutput(`Failed to determine default branch for ${args.owner}/${args.repo}: ${formatError(err)}`);
+      }
     }
 
-    const pr = await githubPost(
-      `/repos/${args.owner}/${args.repo}/pulls`,
-      {
-        title: args.title,
-        body: args.body ?? "",
-        head: args.head,
-        base,
-      },
-      token,
-    ) as {
+    let pr: {
       number: number;
       title: string;
       html_url: string;
       state: string;
-      head: { ref: string };
-      base: { ref: string };
+      head?: { ref?: string };
+      base?: { ref?: string };
     };
+    try {
+      pr = await githubPost(
+        `/repos/${args.owner}/${args.repo}/pulls`,
+        {
+          title: args.title,
+          body: args.body ?? "",
+          head: args.head,
+          base,
+          draft: args.draft ?? false,
+        },
+        token,
+      ) as typeof pr;
+    } catch (err) {
+      return makeOutput(`Failed to create PR: ${formatError(err)}`);
+    }
 
+    const branchLine = pr.head?.ref && pr.base?.ref
+      ? `Branch: ${pr.head.ref} → ${pr.base.ref}`
+      : undefined;
     const content = [
       `Created PR #${pr.number}: ${pr.title}`,
       `URL: ${pr.html_url}`,
       `State: ${pr.state}`,
-      `Branch: ${pr.head.ref} → ${pr.base.ref}`,
+      ...(branchLine ? [branchLine] : []),
     ].join("\n");
 
     return makeOutput(content);

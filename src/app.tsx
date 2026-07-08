@@ -206,6 +206,8 @@ export interface Cfg {
   autoExecute?: boolean;
   autoFreshSuggestionTurns?: number;
   autoFreshEnabled?: boolean;
+  preferPullRequests?: boolean;
+  allowDirectPush?: boolean;
 }
 function App({
   initialCfg,

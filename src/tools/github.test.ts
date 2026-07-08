@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool } from "./github.js";
+import { githubReadPrTool, githubReadIssueTool, githubReadCodeTool, githubCreatePrTool } from "./github.js";
 import type { ToolOutput } from "./registry.js";
 
 describe("github_read_pr", () => {
@@ -135,6 +135,64 @@ describe("github_read_code", () => {
       const result = (await githubReadCodeTool.run({ owner: "owner", repo: "repo", path: "src" }, { cwd: "/tmp" })) as ToolOutput;
       assert.ok(result.content.includes("index.ts"));
       assert.ok(result.content.includes("utils"));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe("github_create_pr", () => {
+  it("creates a PR and returns the URL", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const url = input.toString();
+      assert.ok(url.includes("/repos/owner/repo/pulls"));
+      const body = JSON.parse((init as RequestInit).body as string);
+      assert.strictEqual(body.title, "Add feature");
+      assert.strictEqual(body.head, "feat");
+      assert.strictEqual(body.base, "main");
+      assert.strictEqual(body.draft, true);
+
+      return new Response(
+        JSON.stringify({
+          number: 42,
+          title: "Add feature",
+          html_url: "https://github.com/owner/repo/pull/42",
+          state: "open",
+          draft: true,
+        }),
+        { status: 201 },
+      );
+    };
+
+    try {
+      const result = (await githubCreatePrTool.run(
+        { owner: "owner", repo: "repo", title: "Add feature", head: "feat", base: "main", draft: true },
+        { cwd: "/tmp" },
+      )) as ToolOutput;
+      assert.ok(result.content.includes("#42"));
+      assert.ok(result.content.includes("https://github.com/owner/repo/pull/42"));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("returns a friendly error when creation fails", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      return new Response(
+        JSON.stringify({ message: "Validation failed", errors: [{ message: "No commits between main and feat" }] }),
+        { status: 422 },
+      );
+    };
+
+    try {
+      const result = (await githubCreatePrTool.run(
+        { owner: "owner", repo: "repo", title: "Add feature", head: "feat", base: "main" },
+        { cwd: "/tmp" },
+      )) as ToolOutput;
+      assert.ok(result.content.includes("Failed to create PR"));
+      assert.ok(result.content.includes("No commits between main and feat"));
     } finally {
       globalThis.fetch = originalFetch;
     }

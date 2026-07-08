@@ -105,7 +105,7 @@ function formatBashTitle(raw: string): string {
  * and block them unless direct pushes are explicitly allowed. Returns a blocked
  * ToolOutput when the push should not proceed; returns undefined otherwise.
  */
-async function guardGitPush(command: string, ctx: ToolContext): Promise<ToolOutput | undefined> {
+export async function guardGitPush(command: string, ctx: ToolContext): Promise<ToolOutput | undefined> {
   const trimmed = command.trim();
   if (!/\bgit\s+push\b/.test(trimmed)) return undefined;
 
@@ -171,9 +171,9 @@ async function getCurrentBranch(cwd: string): Promise<string | undefined> {
   return execOnce("git rev-parse --abbrev-ref HEAD 2>/dev/null || true", cwd);
 }
 
-type PushTarget = { kind: "current" } | { kind: "ref"; ref: string } | { kind: "all" } | { kind: "mirror" };
+export type PushTarget = { kind: "current" } | { kind: "ref"; ref: string } | { kind: "all" } | { kind: "mirror" };
 
-function parsePushTarget(command: string): PushTarget | undefined {
+export function parsePushTarget(command: string): PushTarget | undefined {
   // Strip common shell wrappers so we can look at the git push tokens.
   const stripped = command.replace(/^\s*(?:\(.*\)\s*&&\s*)?/, "").trim();
   const tokens = stripped.split(/\s+/);
