@@ -108,6 +108,9 @@ export interface AgentTurnOpts {
   /** Called after each tool-iteration cycle to allow external compaction or state management.
    *  Return the (possibly mutated) messages array. */
   onIterationEnd?: (messages: ChatMessage[], signal: AbortSignal) => Promise<ChatMessage[]>;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
   /** Per-provider API keys (BYOK) forwarded to AI Gateway. */
   providerKeys?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "openai-compatible", string>>;
   /** Per-provider alias names referencing CF Secrets Store entries (fire-and-forget BYOK). */
@@ -126,6 +129,9 @@ export interface AgentTurnOpts {
     apiToken: string;
     embeddingModel?: string;
     gateway?: AiGatewayOptions;
+    cloudMode?: boolean;
+    cloudToken?: string;
+    cloudDeviceId?: string;
     maxSkillTokens?: number;
   };
   /** Current mode for system prompt. */
@@ -346,6 +352,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
             apiToken: opts.skillRoutingConfig.apiToken,
             embeddingModel: opts.skillRoutingConfig.embeddingModel,
             gateway: opts.skillRoutingConfig.gateway,
+            cloudMode: opts.skillRoutingConfig.cloudMode,
+            cloudToken: opts.skillRoutingConfig.cloudToken,
+            cloudDeviceId: opts.skillRoutingConfig.cloudDeviceId,
           },
         )
       : Promise.resolve(undefined);
@@ -646,6 +655,9 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       reasoningEffort: opts.reasoningEffort,
       sessionId: opts.sessionId,
       gateway: turnGateway,
+      cloudMode: opts.cloudMode,
+      cloudToken: opts.cloudToken,
+      cloudDeviceId: opts.cloudDeviceId,
       providerKeys: opts.providerKeys,
       providerKeyAliases: opts.providerKeyAliases,
       unifiedBilling: opts.unifiedBilling,

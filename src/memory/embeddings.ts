@@ -7,6 +7,9 @@ export interface EmbedOpts {
   model?: string;
   texts: string[];
   gateway?: AiGatewayOptions;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
 }
 
 const DEFAULT_MODEL = "@cf/baai/bge-base-en-v1.5";
@@ -146,7 +149,14 @@ export async function fetchEmbeddings(opts: EmbedOpts): Promise<Float32Array[]> 
   let body: string;
   let parseResponse: (json: unknown) => Float32Array[];
 
-  if (opts.gateway) {
+  if (opts.cloudMode) {
+    url = "https://api.kimiflare.com/v1/embeddings";
+    if (opts.cloudToken) headers.Authorization = `Bearer ${opts.cloudToken}`;
+    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
+
+    body = JSON.stringify({ text: texts });
+    parseResponse = parseWorkersAiEmbeddingResponse;
+  } else if (opts.gateway) {
     // Gateway path: AI Gateway's OpenAI-compatible /compat/embeddings endpoint.
     // The native /workers-ai/{model} path returns HTTP 401 for embedding models,
     // so we route through the Universal Endpoint with a workers-ai/ model prefix.

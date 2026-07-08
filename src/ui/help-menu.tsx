@@ -12,6 +12,7 @@ interface CustomCommandSummary {
 interface Props {
   customCommands?: CustomCommandSummary[];
   costAttributionEnabled?: boolean;
+  cloudMode?: boolean;
   onDone: () => void;
   onCommand: (command: string) => void;
 }
@@ -155,6 +156,7 @@ const CATEGORIES: Category[] = [
     commands: [
       { command: "/init", description: "scan this repo and write a KIMI.md" },
       { command: "/logout", description: "clear credentials" },
+      { command: "/upgrade", description: "upgrade to KimiFlare Pro (cloud mode)" },
       { command: "/shell", description: "show current shell" },
       { command: "/shell auto", description: "auto-detect shell (default)" },
       { command: "/shell bash", description: "force bash" },
@@ -171,7 +173,7 @@ const SINGLE_COMMANDS: CommandItem[] = [
   { command: "/exit", description: "exit kimiflare" },
 ];
 
-export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCommand }: Props) {
+export function HelpMenu({ customCommands, costAttributionEnabled, cloudMode, onDone, onCommand }: Props) {
   const theme = useTheme();
   const [page, setPage] = useState<Page>("main");
   const customs = customCommands ?? [];
@@ -191,7 +193,7 @@ export function HelpMenu({ customCommands, costAttributionEnabled, onDone, onCom
     onDone();
   };
 
-  const categories = CATEGORIES;
+  const categories = cloudMode ? CATEGORIES.filter((c) => c.key !== "gateway") : CATEGORIES;
 
   if (page === "main") {
     const items: { label: string; value: string; key: string }[] = categories.map((cat) => ({

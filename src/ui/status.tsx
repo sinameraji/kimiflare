@@ -23,6 +23,8 @@ interface Props {
   model?: string;
   gatewayMeta?: GatewayMeta | null;
   codeMode?: boolean;
+  cloudMode?: boolean;
+  cloudBudget?: { remaining: number; limit: number } | null;
   /** Number of skills active this turn */
   skillsActive?: number;
   /** Whether memory was recalled this turn */
@@ -35,7 +37,7 @@ interface Props {
   intentTier?: IntentTier;
 }
 
-export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, model, gatewayMeta, codeMode, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
+export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, contextLimit, model, gatewayMeta, codeMode, cloudMode, cloudBudget, skillsActive, memoryRecalled, phase, currentTool, lastActivityAt, kimiMdStale, gitBranch, intentTier }: Props) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now());
   const modeColor =
@@ -53,6 +55,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
   if (model) idleParts.push(shortenModelId(model));
+  if (cloudMode) idleParts.push("CLOUD");
   if (codeMode) idleParts.push("CODE");
 
   const metaParts: string[] = [];
@@ -125,7 +128,7 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
       {usage && (
         <Box>
           <Text color={theme.info.color} >
-            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, model).join("  ·  ")}
+            {buildRightParts(usage, contextLimit, sessionUsage, gatewayMeta, cloudMode, cloudBudget, model).join("  ·  ")}
           </Text>
           {sessionUsage?.reconcilePending ? (
             <Text color={theme.muted?.color ?? theme.info.color} dimColor={theme.muted?.dim ?? true}>
@@ -161,6 +164,8 @@ export function buildRightParts(
   contextLimit: number,
   sessionUsage?: DailyUsage | null,
   gatewayMeta?: GatewayMeta | null,
+  cloudMode?: boolean,
+  cloudBudget?: { remaining: number; limit: number } | null,
   model?: string,
 ): string[] {
   const pct = Math.round((usage.prompt_tokens / contextLimit) * 100);
@@ -172,7 +177,11 @@ export function buildRightParts(
     // ≈ prefix signals the cost is still the local estimate; once Gateway
     // reconciles the turn, the prefix and accompanying spinner go away.
     const prefix = sessionUsage.reconcilePending ? "≈$" : "$";
-    parts.push(`${prefix}${sessionUsage.cost.toFixed(2)}`);
+    if (cloudMode) {
+      parts.push(`\x1b[9m${prefix}${sessionUsage.cost.toFixed(2)}\x1b[29m`);
+    } else {
+      parts.push(`${prefix}${sessionUsage.cost.toFixed(2)}`);
+    }
     if (typeof sessionUsage.lastTurnMs === "number") {
       parts.push(formatDuration(sessionUsage.lastTurnMs));
     }
@@ -184,11 +193,25 @@ export function buildRightParts(
     const cost = calculateCost(usage.prompt_tokens, usage.completion_tokens, cached, model);
     parts.push(`in ${usage.prompt_tokens}${cached ? ` (${cached} cached)` : ""}`);
     parts.push(`ctx ${pct}%`);
-    parts.push(`$${cost.total.toFixed(2)}`);
+    if (cloudMode) {
+      parts.push(`\x1b[9m${cost.total.toFixed(2)}\x1b[29m`);
+    } else {
+      parts.push(`${cost.total.toFixed(2)}`);
+    }
+  }
+  if (cloudMode && cloudBudget) {
+    parts.push(`${formatTokens(cloudBudget.remaining)}/${formatTokens(cloudBudget.limit)} tokens`);
   }
   const gatewayCache = formatGatewayCacheStatus(gatewayMeta);
   if (gatewayCache) parts.push(gatewayCache);
   return parts;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 export function formatGatewayCacheStatus(gatewayMeta?: GatewayMeta | null): string | null {

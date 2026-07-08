@@ -1,5 +1,5 @@
 import { readSSE } from "../util/sse.js";
-import { KimiApiError } from "../util/errors.js";
+import { KimiApiError, KillSwitchError, detectKillSwitch } from "../util/errors.js";
 import { getUserAgent } from "../util/version.js";
 import { jsonReplacer, sanitizeString, stableStringify } from "./messages.js";
 import type { ChatMessage, ToolDef, Usage } from "./messages.js";
@@ -36,6 +36,9 @@ export interface RunKimiOpts {
   reasoningEffort?: "low" | "medium" | "high";
   sessionId?: string;
   gateway?: AiGatewayOptions;
+  cloudMode?: boolean;
+  cloudToken?: string;
+  cloudDeviceId?: string;
   requestId?: string;
   /** Per-provider API keys (BYOK) forwarded to AI Gateway as cf-aig-authorization headers. */
   providerKeys?: Partial<Record<ModelProvider, string>>;
@@ -88,8 +91,12 @@ function isRetryable(err: KimiApiError, attempt: number): boolean {
 }
 
 export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, void, void> {
+  if (opts.cloudMode && !opts.cloudToken) {
+    throw new KimiApiError("kimiflare: cloud mode requires a cloud token. Run `kimiflare auth cloud` to authenticate.", undefined, 401);
+  }
   const requestId = opts.requestId ?? crypto.randomUUID();
   const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
+  const isCloudEndpoint = url.startsWith("https://api.kimiflare.com");
   // Per-model capability gates. Some providers reject params they don't
   // support — gpt-5/gpt-5-mini and claude-opus-4-7 reject any non-default
   // `temperature`; Groq's llama-3.3 rejects `reasoning_effort`. We look up the
@@ -100,9 +107,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
   // Universal Endpoint routes by the `model` body field. For Workers AI we
   // prefix with "workers-ai/" so /compat dispatches to the Workers AI provider
-  // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.7-code"). The direct Workers AI path
-  // (api.cloudflare.com) ignores the body model field because the model is
-  // already in the URL.
+  // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.7-code"). Cloud mode uses its own
+  // shape and ignores this field. The direct Workers AI path (api.cloudflare.com)
+  // also ignores the body model field because the model is already in the URL.
   const isDirectWorkersAi = url.startsWith("https://api.cloudflare.com/client/v4/accounts/");
   const compatModel = entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
 
@@ -114,15 +121,15 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     stream: true,
     ...(supportsTemperature ? { temperature: opts.temperature ?? 0.2 } : {}),
     max_completion_tokens: opts.maxCompletionTokens ?? 16384,
-    ...(isDirectWorkersAi ? {} : { model: compatModel }),
+    ...(isCloudEndpoint || isDirectWorkersAi ? {} : { model: compatModel }),
     // OpenAI's streaming API omits `usage` by default — you have to explicitly
     // opt in via stream_options. Without this, the status bar's token /
     // context-% / cost columns stay blank. CF docs don't mention
     // stream_options but accept it transparently and forward it upstream;
     // providers that don't recognize the field ignore it.
-    // Only relevant for the AI Gateway /compat path; direct Workers AI uses
-    // its own response shape.
-    ...(isDirectWorkersAi ? {} : { stream_options: { include_usage: true } }),
+    // Only relevant for the AI Gateway /compat path; direct Workers AI and
+    // cloud mode use their own response shapes.
+    ...(isCloudEndpoint || isDirectWorkersAi ? {} : { stream_options: { include_usage: true } }),
   };
   if (opts.reasoningEffort && supportsReasoning) {
     body.reasoning_effort = opts.reasoningEffort;
@@ -169,7 +176,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     let res: Response;
     try {
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${opts.apiToken}`,
+        Authorization: `Bearer ${opts.cloudMode && opts.cloudToken ? opts.cloudToken : opts.apiToken}`,
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
         ...gatewayHeaders,
@@ -185,7 +192,9 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
         body: stableStringify(body, jsonReplacer),
         signal: opts.signal,
       });
+      await detectKillSwitch(res);
     } catch (fetchErr) {
+      if (fetchErr instanceof KillSwitchError) throw fetchErr;
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       logger.warn("runKimi:fetch_error", { requestId, attempt, error: msg });
       if (attempt < MAX_ATTEMPTS - 1) {
@@ -257,10 +266,12 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
     const meta = readGatewayMeta(res.headers);
     if (meta) yield { type: "gateway_meta", meta };
 
+    let lastUsage: Usage | null = null;
     logger.debug("runKimi:stream_start", { requestId });
     try {
       for await (const ev of parseStream(res.body, opts.signal, opts.idleTimeoutMs, opts.postFirstByteIdleTimeoutMs)) {
         if (dumpRecord) accumulateDumpResponse(dumpRecord.response, ev);
+        if (ev.type === "usage") lastUsage = ev.usage;
         yield ev;
       }
     } finally {
@@ -271,6 +282,28 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
       }
     }
     logger.debug("runKimi:stream_end", { requestId });
+
+    // Client-side fallback: report usage to cloud worker for reconciliation.
+    // Only applies to Workers AI models (api.kimiflare.com handles those bills).
+    if (opts.cloudMode && lastUsage && opts.cloudToken && getModelOrInfer(opts.model).provider === "workers-ai") {
+      const reportUrl = "https://api.kimiflare.com/v1/usage/report";
+      const reportHeaders: Record<string, string> = {
+        Authorization: `Bearer ${opts.cloudToken}`,
+        "Content-Type": "application/json",
+      };
+      if (opts.cloudDeviceId) reportHeaders["X-Device-ID"] = opts.cloudDeviceId;
+      if (opts.sessionId) reportHeaders["X-Session-ID"] = opts.sessionId;
+      fetch(reportUrl, {
+        method: "POST",
+        headers: reportHeaders,
+        body: JSON.stringify({
+          request_id: requestId,
+          prompt_tokens: lastUsage.prompt_tokens,
+          completion_tokens: lastUsage.completion_tokens,
+          cached_tokens: lastUsage.prompt_tokens_details?.cached_tokens ?? 0,
+        }),
+      }).catch(() => {}); // Best-effort fire-and-forget
+    }
 
     return;
   }
@@ -360,6 +393,12 @@ function gatewayHeadersFor(opts: RunKimiOpts): Record<string, string> {
 
 function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
   validateModelId(opts.model);
+
+  if (opts.cloudMode) {
+    const headers: Record<string, string> = opts.cloudToken ? { Authorization: `Bearer ${opts.cloudToken}` } : {};
+    if (opts.cloudDeviceId) headers["X-Device-ID"] = opts.cloudDeviceId;
+    return { url: "https://api.kimiflare.com/v1/chat", headers };
+  }
 
   const entry = getModelOrInfer(opts.model);
 
