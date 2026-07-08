@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.0](https://github.com/sinameraji/kimiflare/compare/v0.90.1...v0.91.0) (2026-07-08)
+
+
+### Features
+
+* **cloud:** restore KimiFlare Cloud adapter with K2.7 free tokens ([#586](https://github.com/sinameraji/kimiflare/issues/586)) ([634406d](https://github.com/sinameraji/kimiflare/commit/634406deac5347baff1cfb49405a9053b1327b7f))
+
 ## [0.90.1](https://github.com/sinameraji/kimiflare/compare/v0.90.0...v0.90.1) (2026-07-04)
 
 
