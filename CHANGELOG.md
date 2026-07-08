@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.92.0](https://github.com/sinameraji/kimiflare/compare/v0.91.0...v0.92.0) (2026-07-08)
+
+
+### Features
+
+* **commands:** clean up slash command picker ([#612](https://github.com/sinameraji/kimiflare/issues/612)) ([cd15099](https://github.com/sinameraji/kimiflare/commit/cd150991fdee378617c5c0ca70f2f441bb21a708))
+* make @cf/moonshotai/kimi-k2.6 the default model ([#610](https://github.com/sinameraji/kimiflare/issues/610)) ([a77e5c6](https://github.com/sinameraji/kimiflare/commit/a77e5c6a4521934e7b2fa3d5808c54ef97452bd1))
+* remove multi-agent-experimental from mode cycle ([#609](https://github.com/sinameraji/kimiflare/issues/609)) ([e54ed48](https://github.com/sinameraji/kimiflare/commit/e54ed48c4728ea849c3e4c9754b4fb9cf516259e))
+* **tools:** layered PR-preferred workflow for git pushes ([#603](https://github.com/sinameraji/kimiflare/issues/603)) ([3a5af2b](https://github.com/sinameraji/kimiflare/commit/3a5af2b1464d54e9dab15eed92d8bde758b2e71f))
+* **ui:** add moving progress bar during session resume ([#607](https://github.com/sinameraji/kimiflare/issues/607)) ([1026b7e](https://github.com/sinameraji/kimiflare/commit/1026b7ef033a2b7e1a42eb5debedada048f00f4c))
+* **ui:** add Try again button to retryable API errors ([#611](https://github.com/sinameraji/kimiflare/issues/611)) ([f85a9d1](https://github.com/sinameraji/kimiflare/commit/f85a9d1aa360e6be98d20167bd6f8709ca17bdff))
+
 ## [0.91.0](https://github.com/sinameraji/kimiflare/compare/v0.90.1...v0.91.0) (2026-07-08)
 
 
