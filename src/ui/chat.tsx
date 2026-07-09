@@ -43,7 +43,7 @@ export type ChatEvent =
       key: string;
       used: number;
       limit: number;
-      expiresAt: string;
+      expiresAt?: string;
     }
   | {
       kind: "qrcode";
