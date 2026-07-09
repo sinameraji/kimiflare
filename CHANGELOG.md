@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.93.1](https://github.com/sinameraji/kimiflare/compare/v0.93.0...v0.93.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* slash-command crash + restore self-hosted onboarding + Cloud /upgrade UX ([#616](https://github.com/sinameraji/kimiflare/issues/616)) ([a51d7e9](https://github.com/sinameraji/kimiflare/commit/a51d7e9182a16132fd883174c7a09f5258d350f8))
+
 ## [0.93.0](https://github.com/sinameraji/kimiflare/compare/v0.92.0...v0.93.0) (2026-07-09)
 
 
