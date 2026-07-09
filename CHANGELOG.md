@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.95.0](https://github.com/sinameraji/kimiflare/compare/v0.94.0...v0.95.0) (2026-07-09)
+
+
+### Features
+
+* **cloud:** hide model name and picker in cloud mode ([#621](https://github.com/sinameraji/kimiflare/issues/621)) ([4a62580](https://github.com/sinameraji/kimiflare/commit/4a62580f8dbc6e2c264e182a36198c9739b30960))
+* **onboarding:** press Enter to open the Cloud sign-in URL ([#620](https://github.com/sinameraji/kimiflare/issues/620)) ([da231c5](https://github.com/sinameraji/kimiflare/commit/da231c5eca3d8d3cddc3c0bd07fb71399284d2ab))
+
 ## [0.94.0](https://github.com/sinameraji/kimiflare/compare/v0.93.1...v0.94.0) (2026-07-09)
 
 
