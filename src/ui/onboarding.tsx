@@ -7,6 +7,7 @@ import { UnifiedBillingStatus } from "./unified-billing-status.js";
 import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
 import { isUnifiedEligible, type ModelEntry } from "../models/registry.js";
 import { saveConfig, DEFAULT_MODEL, type KimiConfig } from "../config.js";
+import { openBrowser } from "./app-helpers.js";
 import { useTheme } from "./theme-context.js";
 import {
   listGateways,
@@ -84,6 +85,16 @@ export function Onboarding({ onDone, onCancel }: Props) {
       },
       [onCancel],
     ),
+  );
+
+  // On the Cloud auth screen, Enter opens the sign-in URL in the browser.
+  useInput(
+    (_input, key) => {
+      if (step !== "cloudAuth") return;
+      if (key.return && cloudAuthStatus?.url) {
+        openBrowser(cloudAuthStatus.url);
+      }
+    },
   );
 
   // Arrow-key navigation on the top-level mode picker (Cloud vs Self-hosted).
@@ -568,7 +579,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
             {cloudAuthStatus ? (
               <>
                 <Text color={theme.info.color}>
-                  1. Open this URL in your browser:
+                  1. Press <Text bold color={theme.accent}>Enter</Text> to open this URL in your browser:
                 </Text>
                 <Text color={theme.info.color}>{cloudAuthStatus.url}</Text>
                 <Box marginTop={1}>
