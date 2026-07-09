@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.0](https://github.com/sinameraji/kimiflare/compare/v0.93.1...v0.94.0) (2026-07-09)
+
+
+### Features
+
+* **cloud:** /topup and /manage membership commands ([#618](https://github.com/sinameraji/kimiflare/issues/618)) ([59b4fab](https://github.com/sinameraji/kimiflare/commit/59b4fab39763bf17e8d4da4c7940548e414f400b))
+
 ## [0.93.1](https://github.com/sinameraji/kimiflare/compare/v0.93.0...v0.93.1) (2026-07-09)
 
 
