@@ -443,9 +443,17 @@ function App({
     if (!cfg?.cloudMode || !initialCloudToken) return;
     let cancelled = false;
     const fetchBudget = async () => {
+      const did = cloudDeviceId ?? initialCloudDeviceId;
+      // If the user is a paying subscriber, provision/refresh their Pro grant
+      // server-side first so the budget below reflects the lifted cap (works
+      // even if the Stripe webhook never reached the worker).
+      try {
+        const { fetchBillingStatus } = await import("./cloud/billing.js");
+        await fetchBillingStatus(initialCloudToken, did);
+      } catch { /* non-fatal — free-tier users have no subscription */ }
       try {
         const { fetchCloudUsage } = await import("./cloud/auth.js");
-        const usage = await fetchCloudUsage(initialCloudToken, cloudDeviceId ?? initialCloudDeviceId);
+        const usage = await fetchCloudUsage(initialCloudToken, did);
         if (usage && !cancelled) {
           setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
         }
@@ -573,8 +581,13 @@ function App({
         description: c.description ?? "",
         source: c.source,
       }));
-    return [...BUILTIN_COMMANDS, ...customs];
-  }, [customCommandsVersion]);
+    // /upgrade only makes sense on KimiFlare Cloud — surface it in the picker
+    // only when the user is in cloud mode (the handler stays available either way).
+    const cloudCommands: SlashItem[] = cfg?.cloudMode
+      ? [{ name: "upgrade", description: "Upgrade to KimiFlare Pro", source: "builtin" }]
+      : [];
+    return [...BUILTIN_COMMANDS, ...cloudCommands, ...customs];
+  }, [customCommandsVersion, cfg?.cloudMode]);
 
   // Preserves the pre-refactor asymmetry: the picker close-on-modal check
   // includes showInboxModal but EXCLUDES showRemoteDashboard and
@@ -1379,6 +1392,32 @@ function App({
           ...e,
           { kind: "info", key: mkKey(), text: "Complete payment in your browser. Your session will activate automatically." },
         ]);
+        // Poll billing status until the subscription activates, then refresh the
+        // budget in place so the user is recognized as Pro without restarting.
+        void (async () => {
+          const { fetchBillingStatus } = await import("./cloud/billing.js");
+          const { fetchCloudUsage } = await import("./cloud/auth.js");
+          for (let i = 0; i < 40; i++) {
+            await new Promise((r) => setTimeout(r, 5000));
+            let status;
+            try {
+              status = await fetchBillingStatus(token, did);
+            } catch {
+              continue;
+            }
+            if (status && (status.status === "active" || status.status === "past_due")) {
+              try {
+                const usage = await fetchCloudUsage(token, did);
+                if (usage) setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+              } catch { /* ignore */ }
+              setEvents((e) => [
+                ...e,
+                { kind: "info", key: mkKey(), text: "✓ KimiFlare Pro is active — your token limit has been upgraded. Thank you!" },
+              ]);
+              return;
+            }
+          }
+        })();
       } else {
         setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Checkout unavailable. Please try again later." }]);
       }
@@ -1388,7 +1427,7 @@ function App({
         { kind: "error", key: mkKey(), text: `Upgrade failed: ${err instanceof Error ? err.message : String(err)}` },
       ]);
     }
-  }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, mkKey, setEvents]);
+  }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, mkKey, setEvents, setCloudBudget]);
 
   const handleSaveProviderKey = useCallback(
     (model: ModelEntry, result: KeyResult) => {

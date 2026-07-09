@@ -22,6 +22,7 @@ interface Props {
 }
 
 type Step =
+  | "mode"
   | "accountId"
   | "apiToken"
   | "routingMode"
@@ -40,7 +41,8 @@ type Step =
 
 export function Onboarding({ onDone, onCancel }: Props) {
   const theme = useTheme();
-  const [step, setStep] = useState<Step>("accountId");
+  const [step, setStep] = useState<Step>("mode");
+  const [modePickIdx, setModePickIdx] = useState(0);
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -82,6 +84,25 @@ export function Onboarding({ onDone, onCancel }: Props) {
       },
       [onCancel],
     ),
+  );
+
+  // Arrow-key navigation on the top-level mode picker (Cloud vs Self-hosted).
+  useInput(
+    (_input, key) => {
+      if (step !== "mode") return;
+      const total = 2;
+      if (key.upArrow) {
+        setModePickIdx((i) => (i - 1 + total) % total);
+      } else if (key.downArrow) {
+        setModePickIdx((i) => (i + 1) % total);
+      } else if (key.return) {
+        if (modePickIdx === 0) {
+          startCloudAuth();
+        } else {
+          setStep("accountId");
+        }
+      }
+    },
   );
 
   // Arrow-key navigation on the routing-mode picker.
@@ -210,6 +231,27 @@ export function Onboarding({ onDone, onCancel }: Props) {
     void runProbe(trimmed);
   };
 
+  // KimiFlare Cloud device-auth flow (picked at the top-level mode step).
+  // On success we clear any locally-entered Cloudflare creds and mark cloudMode.
+  const startCloudAuth = () => {
+    setStep("cloudAuth");
+    setCloudAuthError(null);
+    void import("../cloud/auth.js").then(({ authenticateDevice }) => {
+      authenticateDevice((status) => {
+        setCloudAuthStatus(status);
+      })
+        .then(() => {
+          setCloudMode(true);
+          setAccountId("");
+          setApiToken("");
+          setStep("confirm");
+        })
+        .catch((err) => {
+          setCloudAuthError(err instanceof Error ? err.message : String(err));
+        });
+    });
+  };
+
   const handleModelPick = (picked: ModelEntry | null) => {
     // Esc / cancel in the picker → keep the current default (a Workers AI
     // model that needs no setup) and skip straight to confirm.
@@ -219,11 +261,13 @@ export function Onboarding({ onDone, onCancel }: Props) {
     }
     setModel(picked.id);
     setPickedEntry(picked);
-    // Same routing logic as the runtime `/model` flow, with cloud mode first:
-    //   workers-ai           → ask billing mode (cloud / unified / byok)
-    //   unified-eligible     → ask billing mode (unified / byok)
-    //   BYOK-only            → straight to key entry
-    if (picked.provider === "workers-ai" || isUnifiedEligible(picked)) {
+    // Self-hosted routing (Cloud is chosen up front at the mode step):
+    //   workers-ai       → nothing more to set up → confirm
+    //   unified-eligible → ask billing mode (Cloudflare credits / BYOK)
+    //   BYOK-only        → straight to key entry
+    if (picked.provider === "workers-ai") {
+      setStep("confirm");
+    } else if (isUnifiedEligible(picked)) {
       setStep("billingChoice");
     } else {
       setStep("keyEntry");
@@ -231,30 +275,13 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   const handleBillingChoice = (choice: BillingChoice | null) => {
-    // Esc / cancel from the chooser → fall back to BYOK (safest default).
+    // Esc / cancel from the chooser → back to the model picker.
     if (!choice) {
-      setStep("keyEntry");
+      setStep("model");
       return;
     }
-    if (choice === "cloud") {
-      setStep("cloudAuth");
-      setCloudAuthError(null);
-      void import("../cloud/auth.js").then(({ authenticateDevice }) => {
-        authenticateDevice((status) => {
-          setCloudAuthStatus(status);
-        })
-          .then(() => {
-            setCloudMode(true);
-            setAccountId("");
-            setApiToken("");
-            setStep("confirm");
-          })
-          .catch((err) => {
-            setCloudAuthError(err instanceof Error ? err.message : String(err));
-          });
-      });
-      return;
-    }
+    // Cloud is chosen up front now; the chooser only offers Cloudflare credits
+    // (unified) or BYOK for non-Workers-AI models on the AI Gateway path.
     setStep(choice === "unified" ? "unifiedProbe" : "keyEntry");
   };
 
@@ -316,7 +343,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   // Step numbering: keep simple linear count for visible steps.
-  const visibleSteps: Step[] = ["accountId", "apiToken", "routingMode", "model", "confirm"];
+  const visibleSteps: Step[] = ["mode", "accountId", "apiToken", "routingMode", "model", "confirm"];
   const stepIndex = Math.max(1, visibleSteps.indexOf(step) === -1 ? 3 : visibleSteps.indexOf(step) + 1);
   const totalSteps = visibleSteps.length;
 
@@ -334,6 +361,32 @@ export function Onboarding({ onDone, onCancel }: Props) {
       </Text>
 
       <Box marginTop={1} flexDirection="column">
+        {step === "mode" && (
+          <>
+            <Text>How do you want to run kimiflare?</Text>
+            <Text color={theme.info.color}>
+              Use ↑/↓ to navigate, Enter to select.
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={modePickIdx === 0 ? theme.palette.primary : undefined}>
+                {modePickIdx === 0 ? "› " : "  "}
+                KimiFlare Cloud — 5,000,000 tokens free
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Sign in with GitHub or email. No Cloudflare account needed. Upgrade to Pro when you run out.
+              </Text>
+              <Text> </Text>
+              <Text color={modePickIdx === 1 ? theme.palette.primary : undefined}>
+                {modePickIdx === 1 ? "› " : "  "}
+                Self-hosted — bring your own Cloudflare account
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Use your Cloudflare Account ID + API token, then pick Workers AI (direct) or AI Gateway.
+              </Text>
+            </Box>
+          </>
+        )}
+
         {step === "accountId" && (
           <>
             <Text>Enter your Cloudflare Account ID</Text>
@@ -583,14 +636,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
               borderColor={theme.info.color}
               paddingX={1}
             >
-              <Text color={theme.info.color}>Account ID: {accountId}</Text>
-              <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
-              <Text color={theme.info.color}>Model: {model}</Text>
-              {aiGatewayId ? (
-                <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
-              ) : (
-                <Text color={theme.info.color}>Routing: Workers AI (direct)</Text>
+              {!cloudMode && (
+                <>
+                  <Text color={theme.info.color}>Account ID: {accountId}</Text>
+                  <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
+                </>
               )}
+              <Text color={theme.info.color}>Model: {model}</Text>
+              {!cloudMode &&
+                (aiGatewayId ? (
+                  <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
+                ) : (
+                  <Text color={theme.info.color}>Routing: Workers AI (direct)</Text>
+                ))}
               {cloudMode && (
                 <Text color={theme.info.color}>
                   Billing: KimiFlare Cloud (free 5M tokens, then $10/mo Pro)
