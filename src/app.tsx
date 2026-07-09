@@ -590,7 +590,12 @@ function App({
           { name: "manage", description: "Manage membership, billing & invoices", source: "builtin" },
         ]
       : [];
-    return [...BUILTIN_COMMANDS, ...cloudCommands, ...customs];
+    // In cloud mode the model is managed by KimiFlare Cloud — hide /model so the
+    // user has no visibility into or control over which model is used.
+    const builtins = cfg?.cloudMode
+      ? BUILTIN_COMMANDS.filter((c) => c.name !== "model")
+      : BUILTIN_COMMANDS;
+    return [...builtins, ...cloudCommands, ...customs];
   }, [customCommandsVersion, cfg?.cloudMode]);
 
   // Preserves the pre-refactor asymmetry: the picker close-on-modal check

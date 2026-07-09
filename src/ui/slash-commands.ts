@@ -484,6 +484,16 @@ const handleShell: Handler = (ctx, _rest, arg) => {
 
 const handleModel: Handler = (ctx, rest, arg) => {
   const { cfg, setCfg, setEvents, mkKey } = ctx;
+
+  // On KimiFlare Cloud the model is managed for the user — no visibility or control.
+  if (cfg?.cloudMode) {
+    setEvents((e) => [
+      ...e,
+      { kind: "info", key: mkKey(), text: "Model selection isn't available on KimiFlare Cloud — the model is managed for you." },
+    ]);
+    return true;
+  }
+
   const sub = rest[0]?.toLowerCase() ?? "";
 
   // `/model` with no args → open the picker

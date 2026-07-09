@@ -54,7 +54,8 @@ export function StatusBar({ usage, sessionUsage, thinking, turnStartedAt, mode, 
 
   const idleParts: string[] = [];
   if (gitBranch) idleParts.push(gitBranch);
-  if (model) idleParts.push(shortenModelId(model));
+  // In cloud mode the model is managed by KimiFlare Cloud and hidden from the user.
+  if (model && !cloudMode) idleParts.push(shortenModelId(model));
   if (cloudMode) idleParts.push("CLOUD");
   if (codeMode) idleParts.push("CODE");
 

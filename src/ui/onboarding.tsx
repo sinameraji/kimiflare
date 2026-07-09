@@ -642,7 +642,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
                   <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
                 </>
               )}
-              <Text color={theme.info.color}>Model: {model}</Text>
+              {!cloudMode && <Text color={theme.info.color}>Model: {model}</Text>}
               {!cloudMode &&
                 (aiGatewayId ? (
                   <Text color={theme.info.color}>AI Gateway: {aiGatewayId}</Text>
