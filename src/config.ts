@@ -138,6 +138,10 @@ export interface KimiConfig {
   autoFreshSuggestionTurns?: number;
   /** If true, automatically execute /fresh when the threshold is hit instead of just suggesting it. Default: false. */
   autoFreshEnabled?: boolean;
+  /** Estimated in-memory token threshold to trigger aggressive auto-compaction between turns. Default: 500_000. */
+  autoCompactTokenThreshold?: number;
+  /** Estimated in-memory token threshold to trigger auto-fresh when compaction cannot reduce below this. Default: 2_000_000. */
+  autoFreshTokenThreshold?: number;
   /** Bearer/secret for the worker endpoint (sent as X-Worker-Api-Key). */
   workerApiKey?: string;
   /** Name of the deployed multi-agent Worker. Used for tear-down. */

@@ -10,6 +10,7 @@ import {
   compactMessagesViaArtifacts,
   shouldCompact,
   recallArtifacts,
+  estimatePromptTokens,
 } from "./agent/artifact-compaction.js";
 import {
   emptySessionState,
@@ -210,6 +211,8 @@ export interface Cfg {
   autoExecute?: boolean;
   autoFreshSuggestionTurns?: number;
   autoFreshEnabled?: boolean;
+  autoCompactTokenThreshold?: number;
+  autoFreshTokenThreshold?: number;
   preferPullRequests?: boolean;
   allowDirectPush?: boolean;
 }
@@ -2417,6 +2420,125 @@ function App({
                   }
                 }
               }
+
+              // Token-based hybrid compaction + fresh start (Option C).
+              // When the in-memory message array grows very large (e.g. massive
+              // file reads or long sessions), the standard 80k/12-turn
+              // compaction may not be enough. We run an aggressive compaction
+              // at a higher token threshold, and if that still leaves us above
+              // the fresh-start threshold we nuke the session with /fresh.
+              const autoCompactTokenThreshold = cfg?.autoCompactTokenThreshold ?? 500_000;
+              const autoFreshTokenThreshold = cfg?.autoFreshTokenThreshold ?? 2_000_000;
+              const estimatedTokens = estimatePromptTokens(messagesRef.current);
+              if (estimatedTokens > autoCompactTokenThreshold) {
+                let didAggressiveCompact = false;
+                if (compiledContextRef.current) {
+                  const store = artifactStoreRef.current;
+                  const result = compactMessagesViaArtifacts({
+                    messages: messagesRef.current,
+                    state: sessionStateRef.current,
+                    store,
+                    keepLastTurns: 1,
+                  });
+                  if (result.metrics.rawTurnsRemoved > 0) {
+                    messagesRef.current = result.newMessages;
+                    sessionStateRef.current = result.newState;
+                    setEvents((e) => [
+                      ...e,
+                      {
+                        kind: "info",
+                        key: mkKey(),
+                        text: `auto-compacted (aggressive): ${result.metrics.estimatedTokensBefore.toLocaleString()} → ${result.metrics.estimatedTokensAfter.toLocaleString()} tokens (${result.metrics.archivedArtifacts} artifacts)`,
+                      },
+                    ]);
+                    await saveSessionSafe();
+                    didAggressiveCompact = true;
+                  }
+                } else {
+                  try {
+                    const result = await summarizeMessagesViaLlm({
+                      accountId: cfg.accountId,
+                      apiToken: cfg.apiToken,
+                      model: cfg.model,
+                      messages: messagesRef.current,
+                      keepLastTurns: 1,
+                      signal: turnScope.signal,
+                      gateway: gatewayFromConfig(cfg),
+                    });
+                    if (result.replacedCount > 0) {
+                      messagesRef.current = result.newMessages;
+                      setEvents((e) => [
+                        ...e,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `auto-compacted (aggressive): ${result.replacedCount} messages summarized`,
+                        },
+                      ]);
+                      await saveSessionSafe();
+                      didAggressiveCompact = true;
+                    }
+                  } catch (compactErr) {
+                    if ((compactErr as Error).name !== "AbortError") {
+                      setEvents((es) => [
+                        ...es,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `aggressive auto-compact failed: ${(compactErr as Error).message ?? String(compactErr)}`,
+                        },
+                      ]);
+                    }
+                  }
+                }
+
+                const tokensAfterCompact = estimatePromptTokens(messagesRef.current);
+                if (tokensAfterCompact > autoFreshTokenThreshold) {
+                  try {
+                    const turnIndex = messagesRef.current.length;
+                    if (turnIndex > 0) {
+                      const cp: Checkpoint = {
+                        id: `cp_prefresh_${Date.now()}`,
+                        label: "pre-fresh auto-save",
+                        turnIndex,
+                        timestamp: new Date().toISOString(),
+                        sessionState: compiledContextRef.current ? sessionStateRef.current : undefined,
+                        artifactStore: serializeArtifactStore(artifactStoreRef.current),
+                      };
+                      ensureSessionId();
+                      const { sessionsDir } = await import("./sessions.js");
+                      const filePath = join(sessionsDir(), `${sessionIdRef.current}.json`);
+                      await addCheckpoint(filePath, cp);
+                    }
+                    const summary = await generateContinuationSummary({
+                      messages: messagesRef.current,
+                      mode: modeRef.current,
+                      accountId: cfg.accountId,
+                      apiToken: cfg.apiToken,
+                      model: cfg.plumbingModel ?? "@cf/moonshotai/kimi-k2.5",
+                      gateway: gatewayFromConfig(cfg),
+                      memoryManager: memoryManagerRef.current,
+                      memoryEnabled: cfg.memoryEnabled,
+                    });
+                    if (summary) {
+                      executeFreshStart(buildSlashContext(), summary);
+                      setEvents((e) => [
+                        ...e,
+                        {
+                          kind: "info",
+                          key: mkKey(),
+                          text: `Auto-fresh triggered at ~${tokensAfterCompact.toLocaleString()} tokens: starting new session with continuation context…`,
+                        },
+                      ]);
+                    }
+                  } catch (e) {
+                    setEvents((es) => [
+                      ...es,
+                      { kind: "error", key: mkKey(), text: `Auto-fresh failed: ${(e as Error).message}` },
+                    ]);
+                  }
+                }
+              }
             })();
 
             cleanupTurn();
@@ -2469,7 +2591,6 @@ function App({
               const did = cloudDeviceId ?? initialCloudDeviceId;
               let used = 0;
               let limit = 0;
-              let expiresAt = "";
               if (token) {
                 try {
                   const { fetchCloudUsage } = await import("./cloud/auth.js");
@@ -2477,7 +2598,6 @@ function App({
                   if (usage) {
                     used = usage.input_tokens_used;
                     limit = usage.input_token_limit;
-                    expiresAt = usage.expires_at;
                   }
                 } catch { /* ignore */ }
               }
@@ -2490,7 +2610,7 @@ function App({
               }
               setEvents((es) => [
                 ...es,
-                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit, expiresAt },
+                { kind: "cloud_quota_exhausted", key: mkKey(), used, limit },
               ]);
             } else if (
               e instanceof KimiApiError &&
