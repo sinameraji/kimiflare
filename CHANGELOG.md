@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.93.0](https://github.com/sinameraji/kimiflare/compare/v0.92.0...v0.93.0) (2026-07-09)
+
+
+### Features
+
+* **session:** hybrid auto-compact + auto-fresh based on in-memory token thresholds ([#614](https://github.com/sinameraji/kimiflare/issues/614)) ([f1f97aa](https://github.com/sinameraji/kimiflare/commit/f1f97aac1401701291702f195f498f970749775a))
+
 ## [0.92.0](https://github.com/sinameraji/kimiflare/compare/v0.91.0...v0.92.0) (2026-07-08)
 
 
