@@ -584,7 +584,11 @@ function App({
     // /upgrade only makes sense on KimiFlare Cloud — surface it in the picker
     // only when the user is in cloud mode (the handler stays available either way).
     const cloudCommands: SlashItem[] = cfg?.cloudMode
-      ? [{ name: "upgrade", description: "Upgrade to KimiFlare Pro", source: "builtin" }]
+      ? [
+          { name: "upgrade", description: "Upgrade to KimiFlare Pro", source: "builtin" },
+          { name: "topup", description: "Buy a one-time token top-up (+50M)", source: "builtin" },
+          { name: "manage", description: "Manage membership, billing & invoices", source: "builtin" },
+        ]
       : [];
     return [...BUILTIN_COMMANDS, ...cloudCommands, ...customs];
   }, [customCommandsVersion, cfg?.cloudMode]);
@@ -1429,6 +1433,101 @@ function App({
     }
   }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, mkKey, setEvents, setCloudBudget]);
 
+  const handleTopup = useCallback(async () => {
+    const token = cloudToken ?? initialCloudToken;
+    const did = cloudDeviceId ?? initialCloudDeviceId;
+    if (!token) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: "Cloud authentication required to buy a top-up." },
+      ]);
+      return;
+    }
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Opening top-up checkout…" }]);
+    try {
+      const { createTopupSession } = await import("./cloud/billing.js");
+      const session = await createTopupSession(token, did);
+      if (session?.url) {
+        const { openBrowser } = await import("./ui/app-helpers.js");
+        openBrowser(session.url);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Complete the one-time payment in your browser — your tokens are added automatically." },
+        ]);
+        // Poll usage until the top-up lands (the limit jumps), then refresh in place.
+        const { fetchCloudUsage } = await import("./cloud/auth.js");
+        const baseline = cloudBudget?.limit ?? 0;
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          let usage;
+          try {
+            usage = await fetchCloudUsage(token, did);
+          } catch {
+            continue;
+          }
+          if (usage && usage.input_token_limit > baseline) {
+            setCloudBudget({ remaining: usage.remaining, limit: usage.input_token_limit });
+            setEvents((e) => [
+              ...e,
+              { kind: "info", key: mkKey(), text: "✓ Top-up applied — your token balance has been increased. Thank you!" },
+            ]);
+            return;
+          }
+        }
+      } else {
+        setEvents((e) => [...e, { kind: "error", key: mkKey(), text: "Top-up unavailable. Please try again later." }]);
+      }
+    } catch (err) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: `Top-up failed: ${err instanceof Error ? err.message : String(err)}` },
+      ]);
+    }
+  }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, cloudBudget, mkKey, setEvents, setCloudBudget]);
+
+  const handleManageMembership = useCallback(async () => {
+    const token = cloudToken ?? initialCloudToken;
+    const did = cloudDeviceId ?? initialCloudDeviceId;
+    if (!token) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: "Cloud authentication required to manage your membership." },
+      ]);
+      return;
+    }
+    if (cloudBudget) {
+      const used = cloudBudget.limit - cloudBudget.remaining;
+      const fmt = (n: number) => `${(n / 1_000_000).toFixed(1)}M`;
+      setEvents((e) => [
+        ...e,
+        { kind: "info", key: mkKey(), text: `Tokens this period: ${fmt(used)} used · ${fmt(cloudBudget.remaining)} left of ${fmt(cloudBudget.limit)}.` },
+      ]);
+    }
+    setEvents((e) => [...e, { kind: "info", key: mkKey(), text: "Opening your billing portal…" }]);
+    try {
+      const { createCustomerPortalSession } = await import("./cloud/billing.js");
+      const session = await createCustomerPortalSession(token, did);
+      if (session?.url) {
+        const { openBrowser } = await import("./ui/app-helpers.js");
+        openBrowser(session.url);
+        setEvents((e) => [
+          ...e,
+          { kind: "info", key: mkKey(), text: "Manage your card, invoices, or cancel anytime in the browser tab that just opened." },
+        ]);
+      } else {
+        setEvents((e) => [
+          ...e,
+          { kind: "error", key: mkKey(), text: "Billing portal unavailable. You may not have an active subscription — run /upgrade to start one." },
+        ]);
+      }
+    } catch (err) {
+      setEvents((e) => [
+        ...e,
+        { kind: "error", key: mkKey(), text: `Couldn't open billing portal: ${err instanceof Error ? err.message : String(err)}` },
+      ]);
+    }
+  }, [cloudToken, cloudDeviceId, initialCloudToken, initialCloudDeviceId, cloudBudget, mkKey, setEvents]);
+
   const handleSaveProviderKey = useCallback(
     (model: ModelEntry, result: KeyResult) => {
       setKeyEntryFor(null);
@@ -1533,6 +1632,8 @@ function App({
     initLsp,
     ensureSessionId,
     upgrade: handleUpgrade,
+    topup: handleTopup,
+    manageMembership: handleManageMembership,
     lspManagerRef,
     mcpManagerRef,
     hooksManagerRef,

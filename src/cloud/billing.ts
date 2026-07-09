@@ -71,6 +71,25 @@ export async function createCheckoutSession(
   return { url: data.url };
 }
 
+export async function createTopupSession(
+  token: string,
+  deviceId?: string,
+): Promise<CheckoutSession | null> {
+  const res = await fetch(`${CLOUD_API_URL}/v1/billing/topup`, {
+    method: "POST",
+    headers: authHeaders(token, deviceId),
+    body: JSON.stringify({}),
+  });
+  await detectKillSwitch(res);
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(err.error || `Top-up failed: ${res.statusText}`);
+  }
+  const data = (await res.json()) as Record<string, unknown>;
+  if (typeof data.url !== "string") return null;
+  return { url: data.url };
+}
+
 export async function createCustomerPortalSession(token: string, deviceId?: string): Promise<PortalSession | null> {
   const res = await fetch(`${CLOUD_API_URL}/v1/billing/portal`, {
     method: "POST",
