@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.96.0](https://github.com/sinameraji/kimiflare/compare/v0.95.0...v0.96.0) (2026-07-11)
+
+
+### Features
+
+* **cloud:** default to Kimi-K2.7 in cloud mode ([#623](https://github.com/sinameraji/kimiflare/issues/623)) ([4a1b7ed](https://github.com/sinameraji/kimiflare/commit/4a1b7edb032afccda9e1b1fea87be5cdb3e0274f))
+
 ## [0.95.0](https://github.com/sinameraji/kimiflare/compare/v0.94.0...v0.95.0) (2026-07-09)
 
 
