@@ -529,6 +529,11 @@ function App({
   const kimiMdStaleNudgedRef = useRef(false);
   /** Stores the plan distilled from a plan-mode session so it survives follow-up discussion. */
   const sessionPlanRef = useRef<string | null>(null);
+  /**
+   * Plan text bound to the plan-complete picker when it is armed, so a
+   * session reset between arming and picking can't invalidate the pick.
+   */
+  const planCompletePlanRef = useRef<string | null>(null);
 
   const sessionMgr = useSessionManager({
     cfg,
@@ -1684,11 +1689,13 @@ function App({
   const handlePlanCompletePick = useCallback(
     (picked: PlanCompleteChoice | null) => {
       setShowPlanCompletePicker(false);
+      const boundPlan = planCompletePlanRef.current;
+      planCompletePlanRef.current = null;
       if (!picked || picked === "continue") return;
 
-      // Use the plan captured when the picker was first shown so follow-up
-      // discussion doesn't bury the original plan in message history.
-      const plan = resolvePlanForFresh({
+      // Prefer the plan bound to the picker when it was armed (immune to
+      // session resets in between); fall back to resolving from session state.
+      const plan = boundPlan ?? resolvePlanForFresh({
         mode: "plan",
         messages: messagesRef.current,
         sessionPlan: sessionPlanRef.current,
@@ -2695,7 +2702,12 @@ function App({
                     // Non-fatal: the in-session ref is the primary fast path.
                   });
                 }
-                setShowPlanCompletePicker(true);
+                // When the model presented explicit plan options, the option
+                // pick chains into this picker with the chosen plan instead.
+                if (!planOptionsRef.current) {
+                  planCompletePlanRef.current = plan;
+                  setShowPlanCompletePicker(true);
+                }
               }
             }
 
@@ -2870,24 +2882,25 @@ function App({
               setPlanOptions(null);
               planOptionsRef.current = null;
               if (option) {
-                const ctx = buildSlashContext();
-                const clipResult = executeFreshStart(ctx, option.plan);
+                // Defer the fresh start to the plan-complete picker so the
+                // user picks an execution mode first and the session is only
+                // reset once, right before the plan is submitted.
+                sessionPlanRef.current = option.plan;
+                if (cfg?.memoryEnabled && memoryManagerRef.current && sessionIdRef.current) {
+                  void memoryManagerRef.current.rememberPlan(option.plan, process.cwd(), sessionIdRef.current).catch(() => {
+                    // Non-fatal: the in-session ref is the primary fast path.
+                  });
+                }
+                planCompletePlanRef.current = option.plan;
+                setShowPlanCompletePicker(true);
                 setEvents((e) => [
                   ...e,
                   {
                     kind: "info",
                     key: mkKey(),
-                    text: clipResult.success
-                      ? `Plan "${option.label}" copied to clipboard. Starting fresh session with plan only…`
-                      : `Starting fresh session with plan "${option.label}"…`,
+                    text: `Selected plan "${option.label}" — choose how to execute.`,
                   },
                 ]);
-                if (!clipResult.success) {
-                  setEvents((e) => [
-                    ...e,
-                    { kind: "info", key: mkKey(), text: "--- Plan ---\n" + option.plan },
-                  ]);
-                }
               }
             }}
           />
