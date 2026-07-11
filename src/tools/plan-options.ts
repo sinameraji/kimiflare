@@ -23,7 +23,8 @@ export const presentPlanOptionsTool: ToolSpec<PresentPlanOptionsArgs> = {
     "Present a list of plan options to the user and let them pick one.",
     "Use this when you have multiple viable approaches and want the user to choose",
     "which plan to pursue. Each option needs a short label and the full plan text.",
-    "After the user selects an option, the session resets and starts fresh with the chosen plan.",
+    "After the user selects an option, they choose an execution mode and the",
+    "session starts fresh seeded with the chosen plan.",
   ].join(" "),
   parameters: {
     type: "object",
