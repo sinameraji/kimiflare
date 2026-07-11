@@ -19,7 +19,7 @@ export const CLOUD_API_URL = "https://api.kimiflare.com";
 export const POLL_INTERVAL_MS = 5000;
 export const POLL_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (RFC 8628 standard)
 
-// Campaign limits for the Kimi-K2.6 launch. These are enforced server-side;
+// Campaign limits for the Kimi-K2.7 launch. These are enforced server-side;
 // the client keeps them here for UI copy and diagnostics.
 export const CLOUD_FREE_TOKENS_PER_USER = 5_000_000;
 export const CLOUD_MAX_USERS = 100;

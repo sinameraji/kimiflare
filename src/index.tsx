@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
-import { loadConfig, saveConfig, DEFAULT_MODEL } from "./config.js";
+import { loadConfig, saveConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL, configPath } from "./config.js";
 import { isKillSwitchError } from "./util/errors.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
 import { checkForUpdate } from "./util/update-check.js";
@@ -10,13 +11,29 @@ import { renderLogo } from "./ui/logo.js";
 import { runPrintMode } from "./print-mode.js";
 import type { PrintFormat } from "./print-mode.js";
 
+/** Best-effort synchronous check for whether cloud mode is the default.
+ *  Used only for static --help copy; runtime resolution uses loadConfig(). */
+function isCloudModeConfigured(): boolean {
+  if (process.env.KIMIFLARE_CLOUD === "1" || process.env.KIMIFLARE_CLOUD === "true") return true;
+  try {
+    const raw = readFileSync(configPath(), "utf8");
+    const parsed = JSON.parse(raw) as { cloudMode?: boolean };
+    return parsed.cloudMode === true;
+  } catch {
+    return false;
+  }
+}
+
+const helpDefaultModel = isCloudModeConfigured() ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
+const helpModelName = helpDefaultModel === DEFAULT_CLOUD_MODEL ? "Kimi-K2.7" : "Kimi-K2.6";
+
 const program = new Command();
 program
   .name("kimiflare")
-  .description("Terminal coding agent powered by Kimi-K2.6 on Cloudflare Workers AI.")
+  .description(`Terminal coding agent powered by ${helpModelName} on Cloudflare Workers AI.`)
   .version(getAppVersion())
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
-  .option("-m, --model <id>", "model id (defaults to @cf/moonshotai/kimi-k2.6)")
+  .option("-m, --model <id>", `model id (defaults to ${helpDefaultModel})`)
   .option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
@@ -303,7 +320,7 @@ async function main() {
     }
 
     cfg = {
-      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_MODEL, memoryEnabled: false }),
+      ...(cfg ?? { accountId: "", apiToken: "", model: DEFAULT_CLOUD_MODEL, memoryEnabled: false }),
       cloudMode: true,
     };
   }
@@ -331,7 +348,7 @@ async function main() {
       console.error("kimiflare: --emit-events requires credentials.");
       process.exit(2);
     }
-    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const model = opts.model ?? cfg.model ?? (cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL);
     const { runEmitMode } = await import("./emit-mode.js");
     await runEmitMode({
       accountId: cfg.accountId,
@@ -351,17 +368,18 @@ async function main() {
   }
 
   if (opts.print !== undefined) {
+    const exampleModel = cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
     if (!cfg) {
       console.error(
         "kimiflare: missing credentials.\n" +
           "Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN, or write them to\n" +
           "  ~/.config/kimiflare/config.json  (chmod 600)\n" +
-          "  { \"accountId\": \"...\", \"apiToken\": \"...\", \"model\": \"@cf/moonshotai/kimi-k2.6\" }\n" +
+          `  { "accountId": "...", "apiToken": "...", "model": "${exampleModel}" }\n` +
           "Or use cloud mode: kimiflare --cloud -p \"...\"",
       );
       process.exit(2);
     }
-    const model = opts.model ?? cfg.model ?? DEFAULT_MODEL;
+    const model = opts.model ?? cfg.model ?? (cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL);
     const format = (opts.format ?? "text") as PrintFormat;
     if (format !== "text" && format !== "json" && format !== "stream-json") {
       console.error(`kimiflare: invalid --format "${format}". Use: text, json, stream-json`);
@@ -419,7 +437,7 @@ async function main() {
   // renderer as a Splash event so it stays visible until the user's
   // first prompt — console.log here would get swallowed by Camouflage's
   // alt-screen and flash for a fraction of a second.
-  const logoText = renderLogo(getAppVersion());
+  const logoText = renderLogo(getAppVersion(), cloudMode);
 
   // UI engine resolution: React Ink is always used. Camouflage UI access is
   // temporarily disabled, so `--ui`, `KIMIFLARE_UI`, and any persisted

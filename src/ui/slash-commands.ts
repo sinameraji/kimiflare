@@ -13,7 +13,7 @@ import { unlink } from "node:fs/promises";
 import QRCode from "qrcode";
 
 import type { Cfg } from "../app.js";
-import { configPath, loadConfig, saveConfig } from "../config.js";
+import { configPath, loadConfig, saveConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 import type { ChatEvent } from "./chat.js";
 import type { ChatMessage, Usage } from "../agent/messages.js";
 import type { GatewayMeta } from "../agent/client.js";
@@ -274,7 +274,7 @@ export function executeFreshStart(
   rebuildSystemPromptForMode(
     ctx.messagesRef.current,
     ctx.cacheStableRef.current,
-    ctx.cfg?.model ?? "@cf/moonshotai/kimi-k2.6",
+    ctx.cfg?.model ?? (ctx.cfg?.cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL),
     overrideMode ?? ctx.mode,
     [...ALL_TOOLS, ...ctx.mcpToolsRef.current, ...ctx.lspToolsRef.current],
     ctx.cfg?.preferPullRequests,

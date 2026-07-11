@@ -1,7 +1,7 @@
 import type { ToolSpec, ToolContext, ToolOutput } from "./registry.js";
 import type { WorkerResultMessage } from "../agent/messages.js";
 import { logger } from "../util/logger.js";
-import { loadConfig, resolveWorkerBudgetUsd } from "../config.js";
+import { loadConfig, resolveWorkerBudgetUsd, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 
 interface SpawnWorkerArgs {
   mode: "plan" | "execute";
@@ -119,7 +119,7 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
       },
       model: {
         type: "string",
-        description: "Model to use for the worker. Defaults to @cf/moonshotai/kimi-k2.6.",
+        description: `Model to use for the worker. Defaults to ${DEFAULT_MODEL} (or ${DEFAULT_CLOUD_MODEL} in cloud mode).`,
       },
       branchName: {
         type: "string",
@@ -158,6 +158,7 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
     const timeoutMs = readNumberEnv("KIMIFLARE_WORKER_TIMEOUT_MS") ?? DEFAULT_WORKER_TIMEOUT_MS;
     const cfg = await loadConfig().catch(() => null);
     const budgetUsd = resolveWorkerBudgetUsd(cfg);
+    const defaultModel = cfg?.cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
 
     const payload = {
       mode: args.mode,
@@ -166,7 +167,7 @@ export const spawnWorkerTool: ToolSpec<SpawnWorkerArgs> = {
       budget: { maxCostUsd: budgetUsd },
       outputFormat: args.outputFormat ?? "structured",
       tools: args.tools ?? (args.mode === "plan" ? "read-only" : "all"),
-      model: args.model ?? "@cf/moonshotai/kimi-k2.6",
+      model: args.model ?? defaultModel,
       ...(args.mode === "execute"
         ? {
             branchName: args.branchName,

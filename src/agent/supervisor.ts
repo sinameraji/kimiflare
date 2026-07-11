@@ -14,7 +14,7 @@ import * as client from "./client.js";
 import type { AiGatewayOptions } from "./client.js";
 import type { WorkerResultMessage, ChatMessage } from "./messages.js";
 import { detectRepoInfo, type RepoInfo } from "../util/repo-info.js";
-import { loadConfig, resolveWorkerBudgetUsd, type KimiConfig } from "../config.js";
+import { loadConfig, resolveWorkerBudgetUsd, type KimiConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 import type { MemoryManager } from "../memory/manager.js";
 import type { LspManager } from "../lsp/manager.js";
 import type { McpManager } from "../mcp/manager.js";
@@ -390,6 +390,7 @@ export class TurnSupervisor {
                 logger.warn("supervisor:mcp_export_failed", { error: (err as Error).message });
               }
             }
+            const defaultWorkerModel = cfg?.cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
             const payload = {
               mode: w.mode,
               task: w.task,
@@ -399,7 +400,7 @@ export class TurnSupervisor {
               budget: { maxCostUsd },
               outputFormat: "structured" as const,
               tools: w.mode === "plan" ? ("read-only" as const) : ("all" as const),
-              model: w.model ?? "@cf/moonshotai/kimi-k2.6",
+              model: w.model ?? defaultWorkerModel,
               // Sandbox-driven worker needs the repo to clone:
               githubToken: repo.token,
               owner: repo.owner,
