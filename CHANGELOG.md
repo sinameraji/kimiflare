@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.96.1](https://github.com/sinameraji/kimiflare/compare/v0.96.0...v0.96.1) (2026-07-11)
+
+
+### Bug Fixes
+
+* **plan-mode:** defer fresh start until execution mode is picked ([#625](https://github.com/sinameraji/kimiflare/issues/625)) ([d6ec8c9](https://github.com/sinameraji/kimiflare/commit/d6ec8c9d411b17e2c3c0afa9fa2df4d52d9fc112))
+
 ## [0.96.0](https://github.com/sinameraji/kimiflare/compare/v0.95.0...v0.96.0) (2026-07-11)
 
 
