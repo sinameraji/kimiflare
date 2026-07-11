@@ -21,6 +21,7 @@ import {
   countHighSignalMemoriesSince,
 } from "./db.js";
 import { fetchEmbeddings } from "./embeddings.js";
+import { DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 import { retrieveMemories } from "./retrieval.js";
 import { runCleanup, shouldCleanup } from "./cleanup.js";
 
@@ -36,6 +37,7 @@ export interface MemoryManagerOpts {
   maxAgeDays?: number;
   maxEntries?: number;
   redactSecrets?: boolean;
+  cloudMode?: boolean;
 }
 
 interface LlmOpts {
@@ -161,7 +163,7 @@ export class MemoryManager {
     return {
       accountId: this.opts.accountId,
       apiToken: this.opts.apiToken,
-      model: this.opts.model ?? "@cf/moonshotai/kimi-k2.6",
+      model: this.opts.model ?? (this.opts.cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL),
       gateway: this.opts.gateway,
     };
   }

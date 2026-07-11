@@ -54,6 +54,7 @@ export async function createAgentSession(
       embeddingModel: config.memoryEmbeddingModel,
       maxAgeDays: config.memoryMaxAgeDays,
       maxEntries: config.memoryMaxEntries,
+      cloudMode: config.cloudMode,
     });
     memoryManager.open();
   }

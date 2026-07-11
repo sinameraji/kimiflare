@@ -13,6 +13,7 @@ import {
   type LlmDumpResponse,
 } from "../util/llm-dump.js";
 import { getModelOrInfer, type ModelProvider } from "../models/registry.js";
+import { DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 
 export type KimiEvent =
   | { type: "gateway_meta"; meta: GatewayMeta }
@@ -246,7 +247,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
             `Your stored ${modelProvider} key is likely invalid or expired. Fix:`,
             `  /keys set ${modelProvider} <new-key>   replace the stored key`,
             `  /keys clear ${modelProvider}           remove it and reopen the picker to paste fresh`,
-            `  /model @cf/moonshotai/kimi-k2.6  switch back to Workers AI (no key needed)`,
+            `  /model ${opts.cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL}  switch back to Workers AI (no key needed)`,
           ].join("\n")
         : msg;
       const apiErr = new KimiApiError(`kimiflare: ${wrappedMsg}`, err?.code, res.status);
@@ -357,7 +358,7 @@ const PROVIDER_DOC: Record<string, { name: string; where: string }> = {
   "openai-compatible": { name: "your provider", where: "your provider's dashboard" },
 };
 
-function missingKeyMessage(model: string, provider: string, unifiedAvailable: boolean): string {
+function missingKeyMessage(model: string, provider: string, unifiedAvailable: boolean, cloudMode?: boolean): string {
   const doc = PROVIDER_DOC[provider] ?? { name: "your provider", where: "your provider's dashboard" };
   const lines = [
     `kimiflare: ${model} needs a ${doc.name} API key.`,
@@ -368,7 +369,8 @@ function missingKeyMessage(model: string, provider: string, unifiedAvailable: bo
   if (unifiedAvailable) {
     lines.push(`  2. Enable Cloudflare Unified Billing for this gateway in the CF dashboard, then run:  /keys unified on`);
   }
-  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model @cf/moonshotai/kimi-k2.6`);
+  const fallbackModel = cloudMode ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
+  lines.push(`  ${unifiedAvailable ? "3" : "2"}. Switch back to a Workers AI model:  /model ${fallbackModel}`);
   return lines.join("\n");
 }
 
@@ -450,7 +452,7 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
       headers["cf-aig-authorization"] = `Bearer ${providerKey}`;
     } else {
       throw new KimiApiError(
-        missingKeyMessage(opts.model, entry.provider, entry.billingMode === "unified"),
+        missingKeyMessage(opts.model, entry.provider, entry.billingMode === "unified", opts.cloudMode),
         undefined,
         401,
       );

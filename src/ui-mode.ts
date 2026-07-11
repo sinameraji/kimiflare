@@ -290,6 +290,7 @@ export async function runUiMode(opts: UiModeOpts): Promise<void> {
       gateway: gatewayFromConfig(startupCfg),
       maxAgeDays: startupCfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
       maxEntries: startupCfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
+      cloudMode: opts.cloudMode,
     });
     memoryManager.open();
     // Run cleanup and backfill in the background (fire-and-forget)

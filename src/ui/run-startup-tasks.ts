@@ -75,6 +75,7 @@ export function runStartupTasks(deps: RunStartupTasksDeps): void {
       gateway: gatewayFromConfig(cfg),
       maxAgeDays: cfg.memoryMaxAgeDays ?? RETENTION.memoryMaxAgeDays,
       maxEntries: cfg.memoryMaxEntries ?? RETENTION.memoryMaxEntries,
+      cloudMode: cfg.cloudMode,
     });
     manager.open();
     memoryManagerRef.current = manager;
