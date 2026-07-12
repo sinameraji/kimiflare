@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Simulates KimiFlare /cost command output
+
+clear
+echo -e "\033[90m› \033[0m\033[97m/cost\033[0m"
+sleep 0.5
+echo ""
+echo -e "\033[38;5;208mCost Report\033[0m"
+echo ""
+echo -e "\033[97mThis session\033[0m"
+echo -e "  Turns:        \033[97m12\033[0m"
+echo -e "  Input tokens: \033[97m24,847\033[0m  (\033[32m14,203 cached\033[0m)"
+echo -e "  Output tokens:\033[97m 3,412\033[0m"
+echo -e "  Cost:         \033[97m\$0.0421\033[0m"
+echo -e "  Cache hit:    \033[32m57.1%\033[0m"
+echo ""
+echo -e "\033[97mToday\033[0m"
+echo -e "  Cost:         \033[97m\$0.1873\033[0m"
+echo -e "  Requests:     \033[97m47\033[0m"
+echo ""
+echo -e "\033[97mThis month\033[0m"
+echo -e "  Cost:         \033[97m\$2.14\033[0m"
+echo -e "  Requests:     \033[97m512\033[0m"
+echo ""
+echo -e "\033[97mAll time\033[0m"
+echo -e "  Cost:         \033[97m\$8.67\033[0m"
+echo -e "  Requests:     \033[97m2,104\033[0m"
+echo ""
+echo -e "\033[90mCosts are gateway-confirmed from Cloudflare AI Gateway logs.\033[0m"
+sleep 2
+echo ""
+echo -e "\033[90m› \033[0m\033[97m/cost --breakdown\033[0m"
+sleep 0.5
+echo ""
+echo -e "\033[38;5;208mCost Breakdown by Feature\033[0m"
+echo ""
+echo -e "  \033[97mFeature          Cost      %     Cache hit\033[0m"
+echo -e "  ─────────────────────────────────────────"
+echo -e "  \033[97mchat            \033[0m\$1.84   85.9%   62.3%"
+echo -e "  \033[97mweb-search      \033[0m\$0.18    8.4%    0.0%"
+echo -e "  \033[97mgithub-read     \033[0m\$0.09    4.2%    0.0%"
+echo -e "  \033[97mbrowser-fetch   \033[0m\$0.03    1.4%    0.0%"
+echo ""
+echo -e "\033[90mTagged via cf-aig-metadata on every request.\033[0m"
+sleep 2

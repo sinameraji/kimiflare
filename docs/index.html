@@ -218,7 +218,11 @@
       </div>
     </div>
 
-    <div class="terminal-wrap fade-in delay-4">
+    <div class="hero-cta fade-in delay-3" style="margin-top:1rem;">
+      <a href="#demo" class="btn btn-secondary">▶ Watch demo</a>
+    </div>
+
+    <div class="terminal-wrap fade-in delay-4" id="demo">
       <div class="terminal">
         <div class="terminal-header">
           <div class="dot dot-r"></div>
@@ -227,84 +231,26 @@
           <span class="terminal-title">zsh</span>
         </div>
         <div class="terminal-body" id="terminal">
-          <div style="margin-bottom:0.4rem;">
-            <span style="color:#f48120;font-weight:600;">kimiflare</span>
-            <span class="term-dim">  Ready when you are.</span>
-          </div>
-          <div class="term-dim" style="margin-bottom:0.6rem;">
-            &nbsp;&nbsp;› Explain this codebase<br>
-            &nbsp;&nbsp;› Find and fix a bug<br>
-            &nbsp;&nbsp;› Refactor a file
-          </div>
-          <div class="term-dim" style="margin-bottom:0.8rem;font-size:0.75rem;">
-            Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
-          </div>
-
-          <div class="term-line">
-            <span class="term-prompt">› </span>
-            <span class="term-input">add a /health endpoint</span>
-          </div>
-
-          <div class="separator" style="margin:0.6rem 0;">────────────────────────────────────────</div>
-
-          <div style="padding-left:1rem;color:#9ca3af;margin-bottom:0.4rem;">
-            <span class="reasoning-text">thinking… I'll need to read the server file first, then add the endpoint.</span>
-          </div>
-
-          <div style="padding-left:1rem;margin-bottom:0.4rem;">
-            <span class="spinner">⠋</span> <span class="tool-title">read(src/server.ts)</span>
-          </div>
-          <div style="padding-left:1rem;margin-bottom:0.6rem;">
-            <span class="term-ok">✓</span> <span class="tool-title">read(src/server.ts)</span>
-          </div>
-
-          <div style="padding-left:1rem;margin-bottom:0.4rem;">
-            <span class="spinner">⠋</span> <span class="tool-title">edit src/server.ts</span>
-          </div>
-
-          <div class="perm-border" style="margin-left:1rem;margin-bottom:0.6rem;">
-            <div style="color:#f48120;font-weight:600;margin-bottom:0.3rem;">Permission requested</div>
-            <div>tool: <span style="color:#22d3ee;">edit</span></div>
-            <div>action: edit src/server.ts</div>
-            <div style="margin:0.4rem 0;color:#9ca3af;font-size:0.75rem;">
-              @@ -42,6 +42,10 @@<br>
-              &nbsp;&nbsp;app.get('/', …)<br>
-              <span style="color:#4ade80;">+&nbsp;&nbsp;app.get('/health', (_, res) =&gt; res.json({ ok: true }))</span><br>
-              &nbsp;&nbsp;…
+          <img src="demos/onboarding.gif" alt="KimiFlare terminal demo showing onboarding and first prompt" style="width:100%;border-radius:4px;display:block;" loading="lazy">
+          <!-- Fallback static terminal for no-JS or mobile -->
+          <noscript>
+            <div style="margin-bottom:0.4rem;">
+              <span style="color:#f48120;font-weight:600;">kimiflare</span>
+              <span class="term-dim">  Ready when you are.</span>
             </div>
-            <div><span style="color:#f48120;">›</span> Allow once&nbsp;&nbsp;&nbsp;Allow for this session&nbsp;&nbsp;&nbsp;Deny</div>
-          </div>
-
-          <div style="padding-left:1rem;margin-bottom:0.6rem;">
-            <span class="term-ok">✓</span> <span class="tool-title">edit src/server.ts</span>
-          </div>
-
-          <div style="padding-left:1rem;color:#f3f4f6;margin-bottom:0.8rem;">
-            Done — added <code>/health</code> that returns <code>{ ok: true }</code>.
-          </div>
-
-          <div class="separator" style="margin:0.6rem 0;">────────────────────────────────────────</div>
-
-          <div style="margin-bottom:0.4rem;">
-            <span class="task-active">■ Update landing page terminal</span>
-            <span class="term-dim" style="font-size:0.75rem;">  (12s · ↑ 2.3k tokens)</span>
-          </div>
-          <div class="term-dim" style="margin-bottom:0.2rem;padding-left:1rem;">  ✓ <span class="task-done">Read current UI components</span></div>
-          <div class="term-dim" style="margin-bottom:0.2rem;padding-left:1rem;">  ■ <span class="task-active">Update terminal simulation</span></div>
-          <div class="term-dim" style="margin-bottom:0.6rem;padding-left:1rem;">  ☐ <span class="task-pending">Create PR</span></div>
-
-          <div style="margin-bottom:0.4rem;">
-            <span class="mode-badge">[edit]</span>
-            <span class="term-dim">  k2.7  ·  medium  ·  thinking…</span>
-          </div>
-          <div class="term-dim" style="margin-bottom:0.6rem;font-size:0.75rem;">
-            in 2,847 (1,203 cached)  ·  out 412  ·  ctx 12%  ·  0.00321
-          </div>
-
-          <div class="term-line">
-            <span class="term-prompt">› </span>
-            <span class="term-input" id="typing"></span><span class="term-cursor"></span>
-          </div>
+            <div class="term-dim" style="margin-bottom:0.6rem;">
+              &nbsp;&nbsp;› Explain this codebase<br>
+              &nbsp;&nbsp;› Find and fix a bug<br>
+              &nbsp;&nbsp;› Refactor a file
+            </div>
+            <div class="term-dim" style="margin-bottom:0.8rem;font-size:0.75rem;">
+              Type a message or /help for commands · ctrl-c to exit · shift+tab to cycle modes
+            </div>
+            <div class="term-line">
+              <span class="term-prompt">› </span>
+              <span class="term-input">add a /health endpoint</span>
+            </div>
+          </noscript>
         </div>
       </div>
     </div>

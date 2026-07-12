@@ -17,7 +17,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="kimiflare TUI" width="900">
+  <img src="docs/demos/onboarding.gif" alt="kimiflare TUI demo" width="900">
+</p>
+<p align="center">
+  <a href="https://kimiflare.com">Watch full demos →</a>
 </p>
 
 ## How it works
