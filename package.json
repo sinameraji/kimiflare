@@ -57,6 +57,7 @@
     "dev": "tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts src/**/*.test.tsx",
+    "record-demos": "vhs demos/*.tape",
     "start": "node bin/kimiflare.mjs",
     "prepublishOnly": "npm run build"
   },
