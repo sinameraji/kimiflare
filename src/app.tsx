@@ -194,12 +194,14 @@ export interface Cfg {
     anthropic?: string;
     openai?: string;
     google?: string;
+    moonshotai?: string;
     "openai-compatible"?: string;
   };
   providerKeyAliases?: {
     anthropic?: string;
     openai?: string;
     google?: string;
+    moonshotai?: string;
     "openai-compatible"?: string;
   };
   secretsStoreId?: string;
@@ -1541,7 +1543,7 @@ function App({
   const handleSaveProviderKey = useCallback(
     (model: ModelEntry, result: KeyResult) => {
       setKeyEntryFor(null);
-      const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+      const provider = model.provider as "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible";
       setCfg((prev) => {
         if (!prev) return prev;
         const updated = { ...prev };

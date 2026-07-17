@@ -7,10 +7,13 @@ import { fuzzyFilter } from "../util/fuzzy.js";
 interface Props {
   current: string;
   onPick: (model: ModelEntry | null) => void;
+  /** Optional whitelist of models. When provided, only these models are shown. */
+  models?: ModelEntry[];
 }
 
 const PROVIDER_ORDER: ModelProvider[] = [
   "workers-ai",
+  "moonshotai",
   "anthropic",
   "openai",
   "google",
@@ -19,6 +22,7 @@ const PROVIDER_ORDER: ModelProvider[] = [
 
 const PROVIDER_LABEL: Record<ModelProvider, string> = {
   "workers-ai": "Cloudflare Workers AI",
+  moonshotai: "Moonshot AI",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",
@@ -139,13 +143,13 @@ function buildRowsFlat(opts: BuildOpts): Row[] {
   return rows;
 }
 
-export function ModelPicker({ current, onPick }: Props) {
+export function ModelPicker({ current, onPick, models }: Props) {
   const theme = useTheme();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const allModels = useMemo(() => listModels(), []);
+  const allModels = useMemo(() => models ?? listModels(), [models]);
   const filtered = useMemo(() => {
     if (!query.trim()) return allModels;
     return fuzzyFilter(allModels, query, (m) => `${m.id} ${m.provider}`);

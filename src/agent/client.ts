@@ -12,7 +12,7 @@ import {
   type LlmDumpRecord,
   type LlmDumpResponse,
 } from "../util/llm-dump.js";
-import { getModelOrInfer, type ModelProvider } from "../models/registry.js";
+import { getModelOrInfer, isUnifiedEligible, type ModelProvider } from "../models/registry.js";
 import { DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 
 export type KimiEvent =
@@ -355,6 +355,7 @@ const PROVIDER_DOC: Record<string, { name: string; where: string }> = {
   anthropic: { name: "Anthropic", where: "https://console.anthropic.com/settings/keys" },
   openai: { name: "OpenAI", where: "https://platform.openai.com/api-keys" },
   google: { name: "Google AI Studio", where: "https://aistudio.google.com/app/apikey" },
+  moonshotai: { name: "Moonshot AI", where: "https://platform.moonshot.cn/" },
   "openai-compatible": { name: "your provider", where: "your provider's dashboard" },
 };
 
@@ -441,7 +442,11 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
     //   2. Stored Keys      → cf-aig-byok-alias points at a CF Secrets Store secret;
     //                         CF resolves it server-side. We never read the secret.
     //   3. Local BYOK       → cf-aig-authorization carries the raw provider key.
-    const useUnified = !!opts.unifiedBilling;
+    // Only use Unified Billing when the model/provider explicitly supports it.
+    // Some providers (e.g. Moonshot AI) are BYOK-only on AI Gateway, so a
+    // global unifiedBilling=true must not silently send an unauthenticated
+    // request that fails with a generic upstream 503.
+    const useUnified = !!opts.unifiedBilling && isUnifiedEligible(entry);
     const alias = opts.providerKeyAliases?.[entry.provider];
     const providerKey = opts.providerKeys?.[entry.provider];
     if (useUnified) {

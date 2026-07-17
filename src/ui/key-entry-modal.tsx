@@ -26,6 +26,11 @@ const PROVIDER_INFO: Record<ModelProvider, { name: string; url: string; hint: st
     url: "https://dash.cloudflare.com/profile/api-tokens",
     hint: "Use a token with the Workers AI permission.",
   },
+  moonshotai: {
+    name: "Moonshot AI",
+    url: "https://platform.moonshot.cn/",
+    hint: "Create a key in the Moonshot console. Starts with `sk-`.",
+  },
   anthropic: {
     name: "Anthropic",
     url: "https://console.anthropic.com/settings/keys",
@@ -104,7 +109,7 @@ export function KeyEntryModal({
     }
 
     // 2. Push the secret. Provider type narrowed to keys we know about.
-    const provider = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+    const provider = model.provider as "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible";
     const baseName = aliasFor(provider);
     // Append a short random suffix so re-saves don't 409 on existing-name collision.
     const name = `${baseName}-${Math.random().toString(36).slice(2, 8)}`;

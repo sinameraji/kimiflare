@@ -158,6 +158,6 @@ export async function deleteProviderKey(
 }
 
 /** Build a deterministic alias name for a provider. */
-export function aliasFor(provider: "anthropic" | "openai" | "google" | "openai-compatible"): string {
+export function aliasFor(provider: "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible"): string {
   return `kimi-code-${provider}`;
 }

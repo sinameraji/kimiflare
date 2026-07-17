@@ -3,10 +3,10 @@
  * and routing decisions.
  *
  * KimiFlare is built around Kimi models served through Cloudflare Workers AI.
- * All seeded models are Workers AI models. AI Gateway is optional — when
- * configured it provides observability, caching, and unified billing for
- * multi-provider setups, but Workers AI models work fine without it via the
- * direct api.cloudflare.com path.
+ * Most seeded models are Workers AI models. AI Gateway is optional for those —
+ * they also work via the direct api.cloudflare.com path. Provider-native models
+ * (e.g. moonshotai/kimi-k3) require AI Gateway and are included so they work out
+ * of the box once a gateway is configured.
  *
  * Routing taxonomy:
  *   - Workers AI chat models go through EITHER:
@@ -25,6 +25,7 @@ export type ModelProvider =
   | "anthropic"
   | "openai"
   | "google"
+  | "moonshotai"
   | "openai-compatible";
 
 export type BillingMode = "unified" | "byok";
@@ -104,6 +105,19 @@ const SEED: ModelEntry[] = [
     supports: { tools: true, reasoning: true, streaming: true, vision: true },
     billingMode: "unified",
   },
+  // ── Kimi K3 (AI Gateway / Moonshot AI, provider-native routing) ──────────
+  {
+    id: "moonshotai/kimi-k3",
+    provider: "moonshotai",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 32_768,
+    // Placeholder pricing — verify against Cloudflare AI Gateway docs once rendered.
+    pricing: { inputPerMtok: 3.0, outputPerMtok: 15.0 },
+    supports: { tools: true, reasoning: true, streaming: true, vision: true },
+    // Cloudflare Unified Billing does not currently cover Moonshot AI.
+    // Use a Moonshot API key (BYOK) via cf-aig-authorization.
+    billingMode: "byok",
+  },
   {
     id: "@cf/moonshotai/kimi-k2.6",
     provider: "workers-ai",
@@ -170,6 +184,7 @@ export function inferProvider(id: string): ModelProvider {
   if (id.startsWith("anthropic/")) return "anthropic";
   if (id.startsWith("openai/")) return "openai";
   if (id.startsWith("google-ai-studio/") || id.startsWith("google/")) return "google";
+  if (id.startsWith("moonshotai/")) return "moonshotai";
   return "openai-compatible";
 }
 

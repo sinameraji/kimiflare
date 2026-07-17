@@ -221,6 +221,36 @@ describe("runKimi: provider auth-header routing (BYOK alias vs raw key vs unifie
     assert.strictEqual(lastRequest!.headers.get("cf-aig-authorization"), null);
     assert.strictEqual(lastRequest!.headers.get("cf-aig-byok-alias"), null);
   });
+
+  it("Moonshot K3: providerKeys.moonshotai sends cf-aig-authorization", async () => {
+    for await (const _ of runKimi({
+      ...baseOpts,
+      model: "moonshotai/kimi-k3",
+      providerKeys: { moonshotai: "sk-moonshot-test" },
+    })) {
+      /* drain */
+    }
+    assert.strictEqual(
+      lastRequest!.headers.get("cf-aig-authorization"),
+      "Bearer sk-moonshot-test",
+    );
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-byok-alias"), null);
+  });
+
+  it("Moonshot K3: unifiedBilling=true is ignored because provider is BYOK-only", async () => {
+    await assert.rejects(
+      async () => {
+        for await (const _ of runKimi({
+          ...baseOpts,
+          model: "moonshotai/kimi-k3",
+          unifiedBilling: true,
+        })) {
+          /* drain */
+        }
+      },
+      (err: Error) => err.message.includes("needs a Moonshot AI API key"),
+    );
+  });
 });
 
 describe("runKimi: Workers AI plumbing routes through gateway when configured", () => {
