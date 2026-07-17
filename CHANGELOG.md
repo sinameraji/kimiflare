@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.97.0](https://github.com/sinameraji/kimiflare/compare/v0.96.1...v0.97.0) (2026-07-17)
+
+
+### Features
+
+* **demos:** add VHS terminal recordings for marketing ([#627](https://github.com/sinameraji/kimiflare/issues/627)) ([cc2a76f](https://github.com/sinameraji/kimiflare/commit/cc2a76fdcf83c4fba459ada817a39aabde833134))
+* **models:** add Moonshot Kimi K3 support as AI Gateway BYOK provider ([#629](https://github.com/sinameraji/kimiflare/issues/629)) ([757bc7d](https://github.com/sinameraji/kimiflare/commit/757bc7d3565bb2b75fb9189f2ebad771764837d9))
+
 ## [0.96.1](https://github.com/sinameraji/kimiflare/compare/v0.96.0...v0.96.1) (2026-07-11)
 
 
