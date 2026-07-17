@@ -12,6 +12,7 @@ interface Props {
 
 const PROVIDER_NAME: Record<ModelProvider, string> = {
   "workers-ai": "Cloudflare Workers AI",
+  moonshotai: "Moonshot AI",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google AI Studio",

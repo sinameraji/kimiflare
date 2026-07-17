@@ -8,6 +8,7 @@ import { enableGatewayAuth } from "../cloud/ai-gateway-api.js";
 
 const PROVIDER_NAME: Record<ModelProvider, string> = {
   "workers-ai": "Cloudflare Workers AI",
+  moonshotai: "Moonshot AI",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google AI Studio",
@@ -142,8 +143,8 @@ export function UnifiedBillingStatus({
           <Box marginTop={1}>
             <Text color={theme.muted?.color ?? theme.info.color} dimColor>
               Credits are one account-wide pool. Confirmed providers: OpenAI &
-              Anthropic. Others (Google, Groq, xAI) may not be supported yet —
-              the retry will tell you.
+              Anthropic. Others (Google, Groq, xAI, Moonshot AI) may not be
+              supported yet — the retry will tell you.
             </Text>
           </Box>
           <Box marginTop={1} flexDirection="column">

@@ -25,7 +25,7 @@ function isCloudModeConfigured(): boolean {
 }
 
 const helpDefaultModel = isCloudModeConfigured() ? DEFAULT_CLOUD_MODEL : DEFAULT_MODEL;
-const helpModelName = helpDefaultModel === DEFAULT_CLOUD_MODEL ? "Kimi-K2.7" : "Kimi-K2.6";
+const helpModelName = helpDefaultModel === DEFAULT_CLOUD_MODEL ? "Kimi-K3" : "Kimi-K2.6";
 
 const program = new Command();
 program
@@ -180,7 +180,7 @@ program
           await saveConfig({
             accountId: "",
             apiToken: "",
-            model: existing?.model ?? DEFAULT_MODEL,
+            model: existing?.model ?? DEFAULT_CLOUD_MODEL,
             cloudMode: true,
           });
           console.log("Cloud mode enabled. Run `kimiflare` to start using it.");

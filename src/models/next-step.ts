@@ -21,7 +21,7 @@ export function decideNextStep(cfg: KimiConfig | null, model: ModelEntry): NextS
   if (!cfg) return { kind: "ready" };
   if (!cfg.aiGatewayId) return { kind: "needs-gateway" };
 
-  const providerKey = model.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+  const providerKey = model.provider as "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible";
   const hasKey = !!cfg.providerKeys?.[providerKey];
   const hasAlias = !!cfg.providerKeyAliases?.[providerKey];
   const usingUnified = !!cfg.unifiedBilling;

@@ -109,6 +109,7 @@ export interface KimiConfig {
     anthropic?: string;
     openai?: string;
     google?: string;
+    moonshotai?: string;
     "openai-compatible"?: string;
   };
   /** When true, models marked billingMode="unified" use Cloudflare's Unified Billing (no BYOK header). */
@@ -118,6 +119,7 @@ export interface KimiConfig {
     anthropic?: string;
     openai?: string;
     google?: string;
+    moonshotai?: string;
     "openai-compatible"?: string;
   };
   /** Id of the Cloudflare Secrets Store kimi-code uses for provider-key BYOK aliases. */
@@ -198,7 +200,7 @@ export interface KimiConfig {
 }
 
 export const DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6";
-export const DEFAULT_CLOUD_MODEL = "@cf/moonshotai/kimi-k2.7-code";
+export const DEFAULT_CLOUD_MODEL = "moonshotai/kimi-k3";
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 
 export function configPath(): string {
@@ -238,17 +240,19 @@ function readNumberEnv(name: string): number | undefined {
 }
 
 function readProviderKeysEnv():
-  | { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string }
+  | { anthropic?: string; openai?: string; google?: string; moonshotai?: string; "openai-compatible"?: string }
   | undefined {
   const anthropic = process.env.ANTHROPIC_API_KEY || process.env.KIMIFLARE_ANTHROPIC_KEY;
   const openai = process.env.OPENAI_API_KEY || process.env.KIMIFLARE_OPENAI_KEY;
   const google = process.env.GOOGLE_API_KEY || process.env.KIMIFLARE_GOOGLE_KEY;
+  const moonshotai = process.env.MOONSHOT_API_KEY || process.env.KIMIFLARE_MOONSHOT_KEY;
   const generic = process.env.KIMIFLARE_OPENAI_COMPAT_KEY;
-  if (!anthropic && !openai && !google && !generic) return undefined;
-  const out: { anthropic?: string; openai?: string; google?: string; "openai-compatible"?: string } = {};
+  if (!anthropic && !openai && !google && !moonshotai && !generic) return undefined;
+  const out: { anthropic?: string; openai?: string; google?: string; moonshotai?: string; "openai-compatible"?: string } = {};
   if (anthropic) out.anthropic = anthropic;
   if (openai) out.openai = openai;
   if (google) out.google = google;
+  if (moonshotai) out.moonshotai = moonshotai;
   if (generic) out["openai-compatible"] = generic;
   return out;
 }

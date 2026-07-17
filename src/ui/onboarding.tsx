@@ -5,8 +5,8 @@ import { ModelPicker } from "./model-picker.js";
 import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
 import { UnifiedBillingStatus } from "./unified-billing-status.js";
 import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
-import { isUnifiedEligible, type ModelEntry } from "../models/registry.js";
-import { saveConfig, DEFAULT_MODEL, type KimiConfig } from "../config.js";
+import { isUnifiedEligible, getModel, type ModelEntry } from "../models/registry.js";
+import { saveConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL, type KimiConfig } from "../config.js";
 import { openBrowser } from "./app-helpers.js";
 import { useTheme } from "./theme-context.js";
 import {
@@ -34,6 +34,7 @@ type Step =
   | "gatewayManual"
   | "gatewayProbing"
   | "model"
+  | "cloudModel"
   | "billingChoice"
   | "cloudAuth"
   | "unifiedProbe"
@@ -255,7 +256,8 @@ export function Onboarding({ onDone, onCancel }: Props) {
           setCloudMode(true);
           setAccountId("");
           setApiToken("");
-          setStep("confirm");
+          setModel(DEFAULT_CLOUD_MODEL);
+          setStep("cloudModel");
         })
         .catch((err) => {
           setCloudAuthError(err instanceof Error ? err.message : String(err));
@@ -264,15 +266,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
   };
 
   const handleModelPick = (picked: ModelEntry | null) => {
-    // Esc / cancel in the picker → keep the current default (a Workers AI
-    // model that needs no setup) and skip straight to confirm.
+    // Esc / cancel in the picker → keep the current default and skip straight to confirm.
     if (!picked) {
       setStep("confirm");
       return;
     }
     setModel(picked.id);
     setPickedEntry(picked);
-    // Self-hosted routing (Cloud is chosen up front at the mode step):
+    // Cloud model picker: the user already chose Cloud mode, so just confirm.
+    if (cloudMode) {
+      setStep("confirm");
+      return;
+    }
+    // Self-hosted routing:
     //   workers-ai       → nothing more to set up → confirm
     //   unified-eligible → ask billing mode (Cloudflare credits / BYOK)
     //   BYOK-only        → straight to key entry
@@ -310,7 +316,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
 
   const handleSaveProviderKey = (result: KeyResult) => {
     if (!pickedEntry) return;
-    const provider = pickedEntry.provider as "anthropic" | "openai" | "google" | "openai-compatible";
+    const provider = pickedEntry.provider as "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible";
     if (result.kind === "alias") {
       setProviderKeyAliases((prev) => ({ ...prev, [provider]: result.alias }));
       setSecretsStoreId(result.secretsStoreId);
@@ -352,6 +358,14 @@ export function Onboarding({ onDone, onCancel }: Props) {
       setSavedPath(`error: ${(e as Error).message}`);
     }
   };
+
+  const CLOUD_MODEL_IDS = [
+    "moonshotai/kimi-k3",
+    "@cf/moonshotai/kimi-k2.7-code",
+    "@cf/moonshotai/kimi-k2.6",
+    "@cf/moonshotai/kimi-k2.5",
+  ];
+  const cloudModels = CLOUD_MODEL_IDS.map((id) => getModel(id)).filter((m): m is ModelEntry => !!m);
 
   // Step numbering: keep simple linear count for visible steps.
   const visibleSteps: Step[] = ["mode", "accountId", "apiToken", "routingMode", "model", "confirm"];
@@ -565,6 +579,23 @@ export function Onboarding({ onDone, onCancel }: Props) {
           </>
         )}
 
+        {step === "cloudModel" && (
+          <>
+            <Text>Pick a Kimi model for KimiFlare Cloud</Text>
+            <Text color={theme.info.color} dimColor>
+              K3 runs through Cloudflare AI Gateway; K2.7/2.6/2.5 run on Workers AI.
+            </Text>
+            <Box marginTop={1}>
+              <ModelPicker current={model} onPick={handleModelPick} models={cloudModels} />
+            </Box>
+            <Box marginTop={1}>
+              <Text color={theme.info.color} dimColor>
+                Tip: Esc keeps the default ({DEFAULT_CLOUD_MODEL}) and continues.
+              </Text>
+            </Box>
+          </>
+        )}
+
         {step === "billingChoice" && pickedEntry && (
           <Box marginTop={1}>
             <BillingChooser model={pickedEntry} onPick={handleBillingChoice} />
@@ -660,6 +691,11 @@ export function Onboarding({ onDone, onCancel }: Props) {
                 ) : (
                   <Text color={theme.info.color}>Routing: Workers AI (direct)</Text>
                 ))}
+              {cloudMode && (
+                <Text color={theme.info.color}>
+                  Model: {model}
+                </Text>
+              )}
               {cloudMode && (
                 <Text color={theme.info.color}>
                   Billing: KimiFlare Cloud (free 5M tokens, then $10/mo Pro)

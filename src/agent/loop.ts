@@ -112,9 +112,9 @@ export interface AgentTurnOpts {
   cloudToken?: string;
   cloudDeviceId?: string;
   /** Per-provider API keys (BYOK) forwarded to AI Gateway. */
-  providerKeys?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "openai-compatible", string>>;
+  providerKeys?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible", string>>;
   /** Per-provider alias names referencing CF Secrets Store entries (fire-and-forget BYOK). */
-  providerKeyAliases?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "openai-compatible", string>>;
+  providerKeyAliases?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible", string>>;
   /** Whether to use Cloudflare Unified Billing for models that support it. */
   unifiedBilling?: boolean;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
