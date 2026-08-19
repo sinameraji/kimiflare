@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
-import { listGateways, createGateway, AiGatewayError } from "./ai-gateway-api.js";
+import { listGateways, createGateway, probeGateway, AiGatewayError } from "./ai-gateway-api.js";
 
 describe("ai-gateway-api", () => {
   let originalFetch: typeof globalThis.fetch;
@@ -61,5 +61,29 @@ describe("ai-gateway-api", () => {
     assert.strictEqual(body.id, "kimiflare");
     assert.strictEqual(body.cache_ttl, 0);
     assert.strictEqual(body.collect_logs, true);
+  });
+
+  it("probeGateway routes through the unified AI endpoint with cf-aig-gateway-id (works with OAuth tokens)", async () => {
+    nextResponse = { status: 200, body: { result: { data: [[0.1]] }, success: true } };
+    const r = await probeGateway("acct", "cfoat_token", "kimiflare");
+    assert.deepStrictEqual(r, { ok: true });
+    assert.strictEqual(
+      lastRequest!.url,
+      "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/baai/bge-base-en-v1.5",
+    );
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-gateway-id"), "kimiflare");
+    assert.strictEqual(lastRequest!.headers.get("Authorization"), "Bearer cfoat_token");
+  });
+
+  it("probeGateway reports a missing gateway (HTTP 400 code 2001) and auth failures", async () => {
+    nextResponse = { status: 400, body: { success: false, errors: [{ code: 2001, message: "Please configure AI Gateway in the Cloudflare dashboard" }] } };
+    const missing = await probeGateway("acct", "tok", "nope");
+    assert.strictEqual(missing.ok, false);
+    assert.match((missing as { message: string }).message, /"nope" was not found/);
+
+    nextResponse = { status: 401, body: { success: false, errors: [{ code: 10000, message: "Authentication error" }] } };
+    const denied = await probeGateway("acct", "tok", "kimiflare");
+    assert.strictEqual(denied.ok, false);
+    assert.match((denied as { message: string }).message, /Authentication error \(HTTP 401\)/);
   });
 });

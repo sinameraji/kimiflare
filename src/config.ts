@@ -340,7 +340,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
-  const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
+  // KIMI_MODEL is an override, not a default: leave it undefined when unset so
+  // the persisted `model` (set via /model) is honoured on the next launch.
+  const envModel = process.env.KIMI_MODEL || undefined;
   const envEffort = readReasoningEffortEnv();
   const envCoauthor = readCoauthorEnv();
   const envAiGatewayId = process.env.KIMIFLARE_AI_GATEWAY_ID;
@@ -391,7 +393,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     return {
       accountId: "",
       apiToken: "",
-      model: envModel,
+      model: envModel ?? DEFAULT_MODEL,
       cloudMode: true,
       reasoningEffort: envEffort,
       coauthor: envCoauthor?.enabled ?? true,
@@ -436,7 +438,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     return {
       accountId: envAccount,
       apiToken: envToken,
-      model: envModel,
+      model: envModel ?? DEFAULT_MODEL,
       aiGatewayId: envAiGatewayId,
       aiGatewayCacheTtl: envAiGatewayCacheTtl,
       aiGatewaySkipCache: envAiGatewaySkipCache,

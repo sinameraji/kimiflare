@@ -155,16 +155,23 @@ export async function enableGatewayAuth(
 
 /**
  * Validate that the gateway is reachable for a Workers AI request. We send a
- * minimal request to a known-cheap embeddings model and treat any 2xx/4xx
- * response from Cloudflare as proof that routing works; only network errors
- * and 5xx are surfaced as probe failures.
+ * minimal request to a known-cheap embeddings model through Cloudflare's
+ * unified AI REST endpoint with `cf-aig-gateway-id`, which is exactly how the
+ * app routes Workers AI + catalog models through the gateway. A 2xx proves the
+ * token can run Workers AI and the gateway id resolves; a non-existent gateway
+ * comes back as HTTP 400 code 2001 ("Please configure AI Gateway"), and a
+ * token without Workers AI permission as 401.
+ *
+ * (The provider-native gateway.ai.cloudflare.com/…/workers-ai/{model} path
+ * used previously rejects "Log in with Cloudflare" OAuth access tokens with a
+ * 401 even when they carry aig.run + ai.read, so it is not used here.)
  */
 export async function probeGateway(
   accountId: string,
   apiToken: string,
   gatewayId: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const url = `https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}/workers-ai/@cf/baai/bge-base-en-v1.5`;
+  const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/baai/bge-base-en-v1.5`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -172,14 +179,17 @@ export async function probeGateway(
         Authorization: `Bearer ${apiToken}`,
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
+        "cf-aig-gateway-id": gatewayId,
         "cf-aig-skip-cache": "true",
       },
       body: JSON.stringify({ text: ["kimiflare probe"] }),
     });
-    if (res.status >= 500) {
-      return { ok: false, message: `Gateway returned HTTP ${res.status}` };
+    if (res.ok) return { ok: true };
+    const err = await parseCloudflareError(res);
+    if (res.status === 400 && /configure AI Gateway/i.test(err.message)) {
+      return { ok: false, message: `Gateway "${gatewayId}" was not found in this account` };
     }
-    return { ok: true };
+    return { ok: false, message: `${err.message} (HTTP ${res.status})` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }

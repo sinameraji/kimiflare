@@ -127,3 +127,29 @@ describe("Log in with Cloudflare session handling", () => {
     assert.deepStrictEqual(onDisk, { accountId: "a", apiToken: "t2", model: "m", theme: "x" });
   });
 });
+
+describe("loadConfig honours the persisted model", () => {
+  it("keeps the model saved via /model instead of resetting to DEFAULT_MODEL", async () => {
+    const saved = { xdg: process.env.XDG_CONFIG_HOME, model: process.env.KIMI_MODEL, acct: process.env.CLOUDFLARE_ACCOUNT_ID, tok: process.env.CLOUDFLARE_API_TOKEN };
+    const dir = await mkdtemp(join(tmpdir(), "kimiflare-model-persist-"));
+    try {
+      process.env.XDG_CONFIG_HOME = dir;
+      delete process.env.KIMI_MODEL;
+      delete process.env.CLOUDFLARE_ACCOUNT_ID;
+      delete process.env.CLOUDFLARE_API_TOKEN;
+      await mkdir(join(dir, "kimiflare"), { recursive: true });
+      await writeFile(join(dir, "kimiflare", "config.json"), JSON.stringify({ accountId: "a", apiToken: "t", model: "moonshotai/kimi-k3" }));
+      const cfg = await loadConfig();
+      assert.strictEqual(cfg?.model, "moonshotai/kimi-k3");
+      // KIMI_MODEL still overrides.
+      process.env.KIMI_MODEL = "@cf/zai-org/glm-5.2";
+      assert.strictEqual((await loadConfig())?.model, "@cf/zai-org/glm-5.2");
+    } finally {
+      if (saved.xdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = saved.xdg;
+      if (saved.model === undefined) delete process.env.KIMI_MODEL; else process.env.KIMI_MODEL = saved.model;
+      if (saved.acct !== undefined) process.env.CLOUDFLARE_ACCOUNT_ID = saved.acct;
+      if (saved.tok !== undefined) process.env.CLOUDFLARE_API_TOKEN = saved.tok;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
