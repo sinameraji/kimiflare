@@ -40,12 +40,13 @@ export const CF_OAUTH_TOKEN_URL = `https://${AUTH_DOMAIN}/oauth2/token`;
 export const CF_OAUTH_REVOKE_URL = `https://${AUTH_DOMAIN}/oauth2/revoke`;
 
 /**
- * kimiflare's OAuth client id, registered with Cloudflare ("Log in with
- * Cloudflare"). Override with KIMIFLARE_CF_OAUTH_CLIENT_ID for staging /
- * self-registered clients.
+ * kimiflare's OAuth client id — a Cloudflare self-managed OAuth client
+ * ("kimiflare", public/PKCE, registered 2026-08-19 in the account that owns
+ * kimiflare.com; see docs/login-with-cloudflare.md). Override with
+ * KIMIFLARE_CF_OAUTH_CLIENT_ID for staging / self-registered clients.
  */
 export const CF_OAUTH_CLIENT_ID =
-  process.env.KIMIFLARE_CF_OAUTH_CLIENT_ID ?? "__KIMIFLARE_CF_OAUTH_CLIENT_ID__";
+  process.env.KIMIFLARE_CF_OAUTH_CLIENT_ID ?? "2300cf3ff5499cdc69cb52c6b66504b8";
 
 /** True once a real OAuth client id is baked in (or provided via env). */
 export function isCloudflareLoginConfigured(clientId: string = CF_OAUTH_CLIENT_ID): boolean {

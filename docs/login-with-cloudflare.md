@@ -90,13 +90,23 @@ CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… node scripts/register-cf-oaut
 
 It prints the client id and the exact settings it registered.
 
-### Bake the client id into the CLI
+### Current registration
 
-Set `CF_OAUTH_CLIENT_ID` in `src/cloud/cloudflare-oauth.ts` (replace the
-`__KIMIFLARE_CF_OAUTH_CLIENT_ID__` placeholder). Until that is done the
+The production client is registered (2026-08-19) in the Cloudflare account that
+owns `kimiflare.com`:
+
+- **Client ID:** `2300cf3ff5499cdc69cb52c6b66504b8` (baked into
+  `CF_OAUTH_CLIENT_ID` in `src/cloud/cloudflare-oauth.ts`)
+- Public/PKCE client, grants `authorization_code` + `refresh_token`, redirect
+  `http://localhost:8978/oauth/callback`, the 9 scopes above (+ `offline_access`)
+- Domain verification TXT record for `kimiflare.com`:
+  `cloudflare_oauth_client_publisher=88913d621ea51f8b2937995a166d4c05`
+  (verification status shows "In progress" until that record is published)
+
+To point a build at a different client (staging, a fork), export
+`KIMIFLARE_CF_OAUTH_CLIENT_ID=<client id>`; if the constant is ever cleared the
 onboarding pre-selects "Paste an API token" and labels the OAuth option
-"(not configured in this build)"; for local testing you can instead export
-`KIMIFLARE_CF_OAUTH_CLIENT_ID=<client id>`.
+"(not configured in this build)".
 
 Other overrides: `KIMIFLARE_CF_OAUTH_CALLBACK_PORT` (default `8978` — the
 registered redirect URL must match) and `KIMIFLARE_CF_AUTH_DOMAIN`
@@ -108,8 +118,9 @@ A freshly created client is **private**: only members of the account that owns
 it can authorize it. To let every Cloudflare user log in, promote it to
 **public** in the dashboard. Cloudflare requires a client name, logo, client
 URL, at least one non-identity scope, and **DNS TXT domain verification** on
-the client URL's domain (`cloudflare_oauth_client_publisher=…` on
-`kimiflare.com`; polled for up to two days). Promotion is permanent. Verified
+the client URL's domain (for our client: a TXT record on `kimiflare.com` with
+value `cloudflare_oauth_client_publisher=88913d621ea51f8b2937995a166d4c05`;
+polled for up to two days). Promotion is permanent. Verified
 publishers get a blue shield on the consent screen (unverified apps get amber),
 so it's worth completing.
 
