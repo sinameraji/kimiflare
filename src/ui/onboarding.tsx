@@ -5,8 +5,14 @@ import { ModelPicker } from "./model-picker.js";
 import { BillingChooser, type BillingChoice } from "./billing-chooser.js";
 import { UnifiedBillingStatus } from "./unified-billing-status.js";
 import { KeyEntryModal, type KeyResult } from "./key-entry-modal.js";
-import { isUnifiedEligible, getModel, type ModelEntry } from "../models/registry.js";
-import { saveConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL, type KimiConfig } from "../config.js";
+import { isUnifiedEligible, getModel, routeFor, type ModelEntry } from "../models/registry.js";
+import {
+  saveConfig,
+  DEFAULT_MODEL,
+  DEFAULT_CLOUD_MODEL,
+  type KimiConfig,
+  type CloudflareOAuthConfig,
+} from "../config.js";
 import { openBrowser } from "./app-helpers.js";
 import { useTheme } from "./theme-context.js";
 import {
@@ -16,14 +22,26 @@ import {
   AiGatewayError,
   type Gateway,
 } from "../cloud/ai-gateway-api.js";
+import { isCloudModeAvailable } from "../cloud/availability.js";
+import {
+  loginWithCloudflare,
+  listCloudflareAccounts,
+  whoAmI,
+  isCloudflareLoginConfigured,
+  CF_OAUTH_CLIENT_ID,
+  type CloudflareAccount,
+} from "../cloud/cloudflare-oauth.js";
 
 interface Props {
-  onDone: (cfg: { accountId: string; apiToken: string; model: string; aiGatewayId?: string }) => void;
+  onDone: (cfg: KimiConfig) => void;
   onCancel?: () => void;
 }
 
 type Step =
   | "mode"
+  | "auth"
+  | "oauth"
+  | "accountPick"
   | "accountId"
   | "apiToken"
   | "routingMode"
@@ -43,10 +61,26 @@ type Step =
 
 export function Onboarding({ onDone, onCancel }: Props) {
   const theme = useTheme();
-  const [step, setStep] = useState<Step>("mode");
+  // KimiFlare Cloud is temporarily hidden (src/cloud/availability.ts): while
+  // hidden the wizard starts directly at the BYOK "connect your Cloudflare
+  // account" step instead of the Cloud-vs-Self-hosted mode picker.
+  const [step, setStep] = useState<Step>(isCloudModeAvailable() ? "mode" : "auth");
   const [modePickIdx, setModePickIdx] = useState(0);
+  // Default to "Log in with Cloudflare" when this build carries an OAuth
+  // client id; otherwise pre-select the manual token path so nobody lands on
+  // a dead button.
+  const oauthConfigured = isCloudflareLoginConfigured();
+  const [authPickIdx, setAuthPickIdx] = useState(oauthConfigured ? 0 : 1);
   const [accountId, setAccountId] = useState("");
   const [apiToken, setApiToken] = useState("");
+  // "Log in with Cloudflare" (OAuth) state.
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [oauthPhase, setOauthPhase] = useState<"idle" | "waiting" | "accounts">("idle");
+  const [oauthState, setOauthState] = useState<CloudflareOAuthConfig | null>(null);
+  const [oauthAbort, setOauthAbort] = useState<AbortController | null>(null);
+  const [accounts, setAccounts] = useState<CloudflareAccount[]>([]);
+  const [accountPickIdx, setAccountPickIdx] = useState(0);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
@@ -80,11 +114,19 @@ export function Onboarding({ onDone, onCancel }: Props) {
   useInput(
     useCallback(
       (_input, key) => {
-        if (key.escape && onCancel) {
-          onCancel();
+        if (!key.escape) return;
+        // Esc while waiting on the browser: cancel the OAuth flow and drop
+        // back to the auth-method picker instead of quitting the wizard.
+        if (step === "oauth") {
+          oauthAbort?.abort();
+          setOauthAbort(null);
+          setOauthPhase("idle");
+          setStep("auth");
+          return;
         }
+        if (onCancel) onCancel();
       },
-      [onCancel],
+      [onCancel, step, oauthAbort],
     ),
   );
 
@@ -111,7 +153,68 @@ export function Onboarding({ onDone, onCancel }: Props) {
         if (modePickIdx === 0) {
           startCloudAuth();
         } else {
+          setStep("auth");
+        }
+      }
+    },
+  );
+
+  // Arrow-key navigation on the auth-method picker (Log in with Cloudflare vs API token).
+  useInput(
+    (input, key) => {
+      if (step !== "auth") return;
+      const total = 2;
+      if (key.upArrow) {
+        setAuthPickIdx((i) => (i - 1 + total) % total);
+      } else if (key.downArrow) {
+        setAuthPickIdx((i) => (i + 1) % total);
+      } else if (key.return) {
+        if (authPickIdx === 0) {
+          startCloudflareLogin();
+        } else {
           setStep("accountId");
+        }
+      } else if (input === "m" || input === "M") {
+        setStep("accountId");
+      }
+    },
+  );
+
+  // On the OAuth waiting screen: Enter re-opens the browser, "m" falls back to manual token entry.
+  useInput(
+    (input, key) => {
+      if (step !== "oauth") return;
+      if (key.return) {
+        if (oauthError) {
+          startCloudflareLogin();
+        } else if (oauthUrl) {
+          openBrowser(oauthUrl);
+        }
+      } else if (input === "m" || input === "M") {
+        oauthAbort?.abort();
+        setOauthAbort(null);
+        setOauthPhase("idle");
+        setStep("accountId");
+      }
+    },
+  );
+
+  // Arrow-key navigation on the account picker (only shown for multi-account users).
+  useInput(
+    (_input, key) => {
+      if (step !== "accountPick") return;
+      const total = accounts.length;
+      if (total === 0) return;
+      if (key.upArrow) {
+        setAccountPickIdx((i) => (i - 1 + total) % total);
+      } else if (key.downArrow) {
+        setAccountPickIdx((i) => (i + 1) % total);
+      } else if (key.return) {
+        const picked = accounts[accountPickIdx];
+        if (picked) {
+          setAccountId(picked.id);
+          setOauthState((prev) => (prev ? { ...prev, accountName: picked.name } : prev));
+          setStep("routingMode");
         }
       }
     },
@@ -210,6 +313,8 @@ export function Onboarding({ onDone, onCancel }: Props) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setAccountId(trimmed);
+    // Manual path: forget any half-finished OAuth session.
+    setOauthState(null);
     setStep("apiToken");
   };
 
@@ -241,6 +346,64 @@ export function Onboarding({ onDone, onCancel }: Props) {
     const trimmed = value.trim();
     if (!trimmed) return;
     void runProbe(trimmed);
+  };
+
+  // "Log in with Cloudflare": OAuth + PKCE via the browser. On success we hold
+  // the access token as apiToken (the rest of the app is none the wiser) and
+  // keep the refresh token in cloudflareOAuth so it can rotate silently.
+  const startCloudflareLogin = () => {
+    oauthAbort?.abort();
+    const ac = new AbortController();
+    setOauthAbort(ac);
+    setOauthError(null);
+    setOauthUrl(null);
+    setOauthPhase("waiting");
+    setStep("oauth");
+    void (async () => {
+      try {
+        const tokens = await loginWithCloudflare({
+          signal: ac.signal,
+          onAuthUrl: (url) => {
+            setOauthUrl(url);
+            openBrowser(url);
+          },
+        });
+        if (ac.signal.aborted) return;
+        setOauthPhase("accounts");
+        setApiToken(tokens.accessToken);
+        const [me, list] = await Promise.all([whoAmI(tokens.accessToken), listCloudflareAccounts(tokens.accessToken)]);
+        if (ac.signal.aborted) return;
+        const state: CloudflareOAuthConfig = {
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          scopes: tokens.scopes,
+          clientId: CF_OAUTH_CLIENT_ID,
+          email: me?.email,
+        };
+        if (list.length === 0) {
+          setOauthError(
+            "Signed in, but this Cloudflare user has no accounts kimiflare can use. Create one at dash.cloudflare.com and try again.",
+          );
+          setOauthPhase("idle");
+          return;
+        }
+        setAccounts(list);
+        if (list.length === 1) {
+          const only = list[0]!;
+          setAccountId(only.id);
+          setOauthState({ ...state, accountName: only.name });
+          setStep("routingMode");
+        } else {
+          setOauthState(state);
+          setAccountPickIdx(0);
+          setStep("accountPick");
+        }
+      } catch (err) {
+        if (ac.signal.aborted) return;
+        setOauthPhase("idle");
+        setOauthError(err instanceof Error ? err.message : String(err));
+      }
+    })();
   };
 
   // KimiFlare Cloud device-auth flow (picked at the top-level mode step).
@@ -280,9 +443,10 @@ export function Onboarding({ onDone, onCancel }: Props) {
     }
     // Self-hosted routing:
     //   workers-ai       → nothing more to set up → confirm
+    //   cf-catalog       → paid from AI Gateway credits, no key possible → confirm
     //   unified-eligible → ask billing mode (Cloudflare credits / BYOK)
     //   BYOK-only        → straight to key entry
-    if (picked.provider === "workers-ai") {
+    if (picked.provider === "workers-ai" || routeFor(picked) === "cf-catalog") {
       setStep("confirm");
     } else if (isUnifiedEligible(picked)) {
       setStep("billingChoice");
@@ -344,6 +508,7 @@ export function Onboarding({ onDone, onCancel }: Props) {
       apiToken,
       model,
       aiGatewayId: aiGatewayId || undefined,
+      ...(oauthState ? { cloudflareOAuth: oauthState } : {}),
       ...(cloudMode ? { cloudMode: true } : {}),
       ...(unifiedBilling ? { unifiedBilling: true } : {}),
       ...(Object.keys(providerKeyAliases).length > 0 ? { providerKeyAliases } : {}),
@@ -368,8 +533,28 @@ export function Onboarding({ onDone, onCancel }: Props) {
   const cloudModels = CLOUD_MODEL_IDS.map((id) => getModel(id)).filter((m): m is ModelEntry => !!m);
 
   // Step numbering: keep simple linear count for visible steps.
-  const visibleSteps: Step[] = ["mode", "accountId", "apiToken", "routingMode", "model", "confirm"];
-  const stepIndex = Math.max(1, visibleSteps.indexOf(step) === -1 ? 3 : visibleSteps.indexOf(step) + 1);
+  const visibleSteps: Step[] = isCloudModeAvailable()
+    ? ["mode", "auth", "routingMode", "model", "confirm"]
+    : ["auth", "routingMode", "model", "confirm"];
+  const stepAlias: Partial<Record<Step, Step>> = {
+    oauth: "auth",
+    accountPick: "auth",
+    accountId: "auth",
+    apiToken: "auth",
+    gatewayLoading: "routingMode",
+    gatewayPick: "routingMode",
+    gatewayCreate: "routingMode",
+    gatewayScopeError: "routingMode",
+    gatewayManual: "routingMode",
+    gatewayProbing: "routingMode",
+    cloudModel: "model",
+    billingChoice: "model",
+    unifiedProbe: "model",
+    keyEntry: "model",
+    cloudAuth: "mode",
+  };
+  const stepForCount = stepAlias[step] ?? step;
+  const stepIndex = Math.max(1, visibleSteps.indexOf(stepForCount) + 1);
   const totalSteps = visibleSteps.length;
 
   return (
@@ -412,9 +597,108 @@ export function Onboarding({ onDone, onCancel }: Props) {
           </>
         )}
 
+        {step === "auth" && (
+          <>
+            <Text>Connect your Cloudflare account</Text>
+            <Text color={theme.info.color}>
+              Use ↑/↓ to navigate, Enter to select.
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={authPickIdx === 0 ? theme.palette.primary : undefined}>
+                {authPickIdx === 0 ? "› " : "  "}
+                Log in with Cloudflare  {oauthConfigured ? "(recommended)" : "(not configured in this build)"}
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Opens your browser. Cloudflare asks you to approve kimiflare once — no API token to create, no Account ID to copy.
+              </Text>
+              <Text> </Text>
+              <Text color={authPickIdx === 1 ? theme.palette.primary : undefined}>
+                {authPickIdx === 1 ? "› " : "  "}
+                Paste an API token
+              </Text>
+              <Text color={theme.info.color} dimColor>
+                {"    "}Create a token at dash.cloudflare.com/profile/api-tokens (Workers AI:Read, AI Gateway:Read/Edit), then enter your Account ID + token.
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text color={theme.info.color} dimColor>
+                Everything runs in your own Cloudflare account — kimiflare never sees your credentials on a server.
+              </Text>
+            </Box>
+          </>
+        )}
+
+        {step === "oauth" && (
+          <Box flexDirection="column">
+            <Text bold color={theme.accent}>
+              Log in with Cloudflare
+            </Text>
+            {oauthError ? (
+              <>
+                <Box marginTop={1}>
+                  <Text color={theme.error}>{oauthError}</Text>
+                </Box>
+                <Box marginTop={1}>
+                  <Text color={theme.info.color}>
+                    Press <Text bold color={theme.accent}>Enter</Text> to try again · <Text bold color={theme.accent}>m</Text> to paste an API token instead · <Text bold color={theme.accent}>Esc</Text> to go back
+                  </Text>
+                </Box>
+              </>
+            ) : oauthPhase === "accounts" ? (
+              <Box marginTop={1}>
+                <Text color={theme.info.color}>✓ Approved. Looking up your Cloudflare accounts…</Text>
+              </Box>
+            ) : (
+              <>
+                <Box marginTop={1}>
+                  <Text color={theme.info.color}>
+                    {oauthUrl ? "Waiting for you to approve kimiflare in your browser…" : "Starting sign-in…"}
+                  </Text>
+                </Box>
+                {oauthUrl && (
+                  <Box flexDirection="column" marginTop={1}>
+                    <Text color={theme.info.color}>
+                      If the browser didn't open, press <Text bold color={theme.accent}>Enter</Text> to open it again, or visit:
+                    </Text>
+                    <Text color={theme.info.color} dimColor wrap="wrap">
+                      {oauthUrl}
+                    </Text>
+                  </Box>
+                )}
+                <Box marginTop={1}>
+                  <Text color={theme.info.color} dimColor>
+                    <Text bold>m</Text> paste an API token instead · <Text bold>Esc</Text> go back
+                  </Text>
+                </Box>
+              </>
+            )}
+          </Box>
+        )}
+
+        {step === "accountPick" && (
+          <>
+            <Text>Which Cloudflare account should kimiflare use?</Text>
+            <Text color={theme.info.color}>
+              Use ↑/↓ to navigate, Enter to select.
+            </Text>
+            <Box flexDirection="column" marginTop={1}>
+              {accounts.map((acct, i) => (
+                <Text key={acct.id} color={i === accountPickIdx ? theme.palette.primary : undefined}>
+                  {i === accountPickIdx ? "› " : "  "}
+                  {acct.name}
+                  <Text color={theme.info.color} dimColor>{"  "}{acct.id}</Text>
+                </Text>
+              ))}
+            </Box>
+          </>
+        )}
+
         {step === "accountId" && (
           <>
             <Text>Enter your Cloudflare Account ID</Text>
+            <Text color={theme.info.color}>
+              Find it in the dashboard sidebar or the URL: dash.cloudflare.com/&lt;account-id&gt;
+            </Text>
             <Box marginTop={1}>
               <Text color={theme.palette.primary}>› </Text>
               <CustomTextInput
@@ -678,10 +962,20 @@ export function Onboarding({ onDone, onCancel }: Props) {
               borderColor={theme.info.color}
               paddingX={1}
             >
-              {!cloudMode && (
+              {!cloudMode && oauthState && (
+                <>
+                  <Text color={theme.info.color}>
+                    Cloudflare: signed in{oauthState.email ? ` as ${oauthState.email}` : ""} (Log in with Cloudflare)
+                  </Text>
+                  <Text color={theme.info.color}>
+                    Account: {oauthState.accountName ? `${oauthState.accountName}  ` : ""}{accountId}
+                  </Text>
+                </>
+              )}
+              {!cloudMode && !oauthState && (
                 <>
                   <Text color={theme.info.color}>Account ID: {accountId}</Text>
-                  <Text color={theme.info.color}>API Token: {"•".repeat(apiToken.length)}</Text>
+                  <Text color={theme.info.color}>API Token: {"•".repeat(Math.min(apiToken.length, 40))}</Text>
                 </>
               )}
               {!cloudMode && <Text color={theme.info.color}>Model: {model}</Text>}

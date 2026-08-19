@@ -1,6 +1,12 @@
 import { readFile, mkdir, writeFile, chmod } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isCloudModeAvailable } from "./cloud/availability.js";
+import {
+  refreshCloudflareToken,
+  tokenNeedsRefresh,
+  CF_OAUTH_CLIENT_ID,
+} from "./cloud/cloudflare-oauth.js";
 
 export type ReasoningEffort = "low" | "medium" | "high";
 export const EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high"];
@@ -33,10 +39,33 @@ export type PermissionRule = "allow" | "deny" | "ask";
 /** Per-tool permission rules keyed by glob pattern. */
 export type PermissionRules = Record<string, PermissionRule>;
 
+/**
+ * Present when the Cloudflare credentials came from "Log in with Cloudflare"
+ * (OAuth 2.0 + PKCE, see src/cloud/cloudflare-oauth.ts). `apiToken` holds the
+ * current short-lived access token; this block holds what we need to rotate
+ * it silently in the background.
+ */
+export interface CloudflareOAuthConfig {
+  /** Refresh token (rotates on every refresh). Absent if offline_access was not granted. */
+  refreshToken?: string;
+  /** Access-token expiry, epoch milliseconds. */
+  expiresAt: number;
+  /** Scopes granted on the consent screen. */
+  scopes: string[];
+  /** OAuth client id the tokens were issued to. */
+  clientId: string;
+  /** Email of the signed-in Cloudflare user (display only). */
+  email?: string;
+  /** Display name of the selected account (display only). */
+  accountName?: string;
+}
+
 export interface KimiConfig {
   accountId: string;
   apiToken: string;
   model: string;
+  /** Set when apiToken is an OAuth access token from "Log in with Cloudflare". */
+  cloudflareOAuth?: CloudflareOAuthConfig;
   aiGatewayId?: string;
   aiGatewayCacheTtl?: number;
   aiGatewaySkipCache?: boolean;
@@ -94,7 +123,13 @@ export interface KimiConfig {
   githubTokenExpiry?: number;
   /** Default GitHub repo for remote sessions (owner/repo). */
   githubRepo?: string;
-  /** Enable cloud mode: use api.kimiflare.com instead of direct Workers AI. */
+  /**
+   * Enable cloud mode: use api.kimiflare.com instead of direct Workers AI.
+   * NOTE: KimiFlare Cloud is temporarily hidden (see src/cloud/availability.ts).
+   * While it is hidden, loadConfig() never returns cloudMode=true — a persisted
+   * `cloudMode: true` or `KIMIFLARE_CLOUD=1` is ignored and the user is routed
+   * to BYOK onboarding instead. The field is kept so existing configs still parse.
+   */
   cloudMode?: boolean;
   /** Shell override for the bash tool. "auto" (default) detects the platform, or specify "bash", "cmd", "powershell", or an absolute path. */
   shell?: string;
@@ -305,7 +340,9 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
-  const envModel = process.env.KIMI_MODEL ?? DEFAULT_MODEL;
+  // KIMI_MODEL is an override, not a default: leave it undefined when unset so
+  // the persisted `model` (set via /model) is honoured on the next launch.
+  const envModel = process.env.KIMI_MODEL || undefined;
   const envEffort = readReasoningEffortEnv();
   const envCoauthor = readCoauthorEnv();
   const envAiGatewayId = process.env.KIMIFLARE_AI_GATEWAY_ID;
@@ -336,7 +373,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
   const envCodeMode = readBooleanEnv("KIMIFLARE_CODE_MODE");
   const envCostAttribution = readBooleanEnv("KIMI_COST_ATTRIBUTION");
   const envFilePicker = readBooleanEnv("KIMIFLARE_FILE_PICKER");
-  const envCloudMode = readBooleanEnv("KIMIFLARE_CLOUD");
+  // KimiFlare Cloud is temporarily hidden: while isCloudModeAvailable() is
+  // false, neither KIMIFLARE_CLOUD=1 nor a persisted cloudMode:true can put the
+  // user on the managed service. See src/cloud/availability.ts.
+  const cloudAllowed = isCloudModeAvailable();
+  const envCloudMode = cloudAllowed ? readBooleanEnv("KIMIFLARE_CLOUD") : undefined;
   const envShell = process.env.KIMIFLARE_SHELL;
   const envProviderKeys = readProviderKeysEnv();
   const envUnifiedBilling = readBooleanEnv("KIMIFLARE_UNIFIED_BILLING");
@@ -352,7 +393,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     return {
       accountId: "",
       apiToken: "",
-      model: envModel,
+      model: envModel ?? DEFAULT_MODEL,
       cloudMode: true,
       reasoningEffort: envEffort,
       coauthor: envCoauthor?.enabled ?? true,
@@ -397,7 +438,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     return {
       accountId: envAccount,
       apiToken: envToken,
-      model: envModel,
+      model: envModel ?? DEFAULT_MODEL,
       aiGatewayId: envAiGatewayId,
       aiGatewayCacheTtl: envAiGatewayCacheTtl,
       aiGatewaySkipCache: envAiGatewaySkipCache,
@@ -420,7 +461,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
       codeMode: envCodeMode ?? true,
       costAttribution: envCostAttribution ?? true,
       filePicker: envFilePicker ?? true,
-      cloudMode: envCloudMode ?? persisted?.cloudMode,
+      cloudMode: cloudAllowed ? (envCloudMode ?? persisted?.cloudMode) : undefined,
       shell: envShell,
       // Settings-only fields: env vars don't carry these, so we read
       // them from the persisted file (when present) so the user's TUI
@@ -450,7 +491,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
   if (persisted) {
     const parsed = persisted;
-    if (parsed.cloudMode) {
+    if (parsed.cloudMode && cloudAllowed) {
       return {
         accountId: envAccount ?? parsed.accountId ?? "",
         apiToken: envToken ?? parsed.apiToken ?? "",
@@ -497,9 +538,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     }
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
-      return {
+      return withFreshCloudflareToken({
         accountId: envAccount ?? parsed.accountId,
         apiToken: envToken ?? parsed.apiToken,
+        // An env token overrides the stored OAuth session entirely.
+        cloudflareOAuth: envToken ? undefined : parsed.cloudflareOAuth,
         model: envModel ?? parsed.model ?? DEFAULT_MODEL,
         aiGatewayId: envAiGatewayId ?? parsed.aiGatewayId,
         aiGatewayCacheTtl: envAiGatewayCacheTtl ?? parsed.aiGatewayCacheTtl,
@@ -525,7 +568,7 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         codeMode: envCodeMode ?? parsed.codeMode ?? true,
         costAttribution: envCostAttribution ?? parsed.costAttribution ?? true,
         filePicker: envFilePicker ?? parsed.filePicker ?? true,
-        cloudMode: envCloudMode ?? parsed.cloudMode,
+        cloudMode: cloudAllowed ? (envCloudMode ?? parsed.cloudMode) : undefined,
         theme: parsed.theme,
         shell: envShell ?? parsed.shell,
         uiEngine: parsed.uiEngine,
@@ -547,10 +590,93 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
         preferPullRequests: envPreferPullRequests ?? parsed.preferPullRequests ?? true,
         allowDirectPush: envAllowDirectPush ?? parsed.allowDirectPush ?? false,
-      };
+      });
     }
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Log in with Cloudflare — background token refresh
+// ─────────────────────────────────────────────────────────────────────────────
+
+let refreshInFlight: Promise<KimiConfig | null> | null = null;
+
+/**
+ * If `cfg` carries an OAuth session whose access token is expired or about
+ * to expire, refresh it, persist the rotated tokens, and return the updated
+ * config. Returns `null` when nothing needed to change. Never throws — on
+ * failure the caller keeps the current token and the next 401 tells the
+ * user to run `kimiflare auth cloudflare` again.
+ */
+export async function refreshCloudflareSession(cfg: KimiConfig): Promise<KimiConfig | null> {
+  const oauth = cfg.cloudflareOAuth;
+  if (!oauth?.refreshToken) return null;
+  if (!tokenNeedsRefresh(oauth.expiresAt)) return null;
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const fresh = await refreshCloudflareToken(oauth.refreshToken!, oauth.clientId || CF_OAUTH_CLIENT_ID);
+      const nextOAuth: CloudflareOAuthConfig = {
+        ...oauth,
+        refreshToken: fresh.refreshToken ?? oauth.refreshToken,
+        expiresAt: fresh.expiresAt,
+        scopes: fresh.scopes.length > 0 ? fresh.scopes : oauth.scopes,
+      };
+      await patchPersistedConfig({ apiToken: fresh.accessToken, cloudflareOAuth: nextOAuth });
+      return { ...cfg, apiToken: fresh.accessToken, cloudflareOAuth: nextOAuth };
+    } catch (e) {
+      // Another kimiflare process may have rotated the refresh token first —
+      // re-read the file and adopt its session if it is newer than ours.
+      try {
+        const raw = await readFile(configPath(), "utf8");
+        const onDisk = JSON.parse(raw) as Partial<KimiConfig>;
+        if (
+          onDisk.cloudflareOAuth &&
+          onDisk.apiToken &&
+          onDisk.cloudflareOAuth.expiresAt > oauth.expiresAt
+        ) {
+          return { ...cfg, apiToken: onDisk.apiToken, cloudflareOAuth: onDisk.cloudflareOAuth };
+        }
+      } catch {
+        /* ignore */
+      }
+      // eslint-disable-next-line no-console
+      console.warn(
+        `kimiflare: couldn't refresh your Cloudflare login (${e instanceof Error ? e.message : String(e)}). ` +
+          "If requests start failing with 401, run `kimiflare auth cloudflare` to sign in again.",
+      );
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+async function withFreshCloudflareToken(cfg: KimiConfig): Promise<KimiConfig> {
+  if (!cfg.cloudflareOAuth?.refreshToken) return cfg;
+  return (await refreshCloudflareSession(cfg)) ?? cfg;
+}
+
+/**
+ * Merge `patch` into the on-disk config without disturbing unrelated fields
+ * (unlike saveConfig(), which rewrites the whole file from an in-memory cfg
+ * that may carry env-derived defaults).
+ */
+export async function patchPersistedConfig(patch: Partial<KimiConfig>): Promise<string> {
+  const p = configPath();
+  let existing: Partial<KimiConfig> = {};
+  try {
+    existing = JSON.parse(await readFile(p, "utf8")) as Partial<KimiConfig>;
+  } catch {
+    /* no file yet */
+  }
+  const merged = { ...existing, ...patch };
+  await mkdir(join(p, ".."), { recursive: true });
+  await writeFile(p, JSON.stringify(merged, null, 2), "utf8");
+  await chmod(p, 0o600);
+  return p;
 }
 
 /** Resolve and validate a worker budget, applying the hard ceiling.

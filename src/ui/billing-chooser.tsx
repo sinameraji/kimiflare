@@ -2,6 +2,7 @@ import { Box, Text, useInput } from "ink";
 import SelectInput from "ink-select-input";
 import { useTheme } from "./theme-context.js";
 import type { ModelEntry, ModelProvider } from "../models/registry.js";
+import { isCloudModeAvailable } from "../cloud/availability.js";
 
 export type BillingChoice = "cloud" | "unified" | "byok";
 
@@ -28,7 +29,8 @@ export function BillingChooser({ model, onPick }: Props) {
   });
 
   const items: { label: string; value: BillingChoice }[] = [
-    ...(model.provider === "workers-ai"
+    // KimiFlare Cloud is temporarily hidden (src/cloud/availability.ts).
+    ...(model.provider === "workers-ai" && isCloudModeAvailable()
       ? [{ label: `Start free with Kimiflare Cloud  ·  5M tokens`, value: "cloud" as const }]
       : []),
     { label: `Use Cloudflare credits  ·  no extra key`, value: "unified" as const },

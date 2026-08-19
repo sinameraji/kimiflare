@@ -66,6 +66,7 @@ import { HOOK_EVENTS } from "../hooks/types.js";
 import type { AbortScope } from "../util/abort-scope.js";
 import type { CustomCommand } from "../commands/types.js";
 import { buildReport, sendReport } from "../cloud/report.js";
+import { isCloudModeAvailable, CLOUD_UNAVAILABLE_NOTICE } from "../cloud/availability.js";
 import { checkForUpdate } from "../util/update-check.js";
 import { getAppVersion } from "../util/version.js";
 import {
@@ -1516,27 +1517,50 @@ const handleReport: Handler = (ctx, rest) => {
 };
 
 const handleLogout: Handler = (ctx) => {
+  // "Log in with Cloudflare" sessions: revoke the refresh token so the grant
+  // disappears from the user's Cloudflare authorizations too (best effort).
+  const oauth = ctx.cfg?.cloudflareOAuth;
+  if (oauth?.refreshToken) {
+    void import("../cloud/cloudflare-oauth.js").then(({ revokeCloudflareToken }) =>
+      revokeCloudflareToken(oauth.refreshToken!, oauth.clientId),
+    );
+  }
   unlink(configPath()).catch(() => {});
   ctx.setEvents((e) => [
     ...e,
-    { kind: "info", key: ctx.mkKey(), text: `credentials cleared from ${configPath()}` },
+    {
+      kind: "info",
+      key: ctx.mkKey(),
+      text: oauth
+        ? `signed out of Cloudflare and cleared credentials from ${configPath()}`
+        : `credentials cleared from ${configPath()}`,
+    },
   ]);
   ctx.setCfg(null);
   return true;
 };
 
+// /upgrade, /topup and /manage only exist for KimiFlare Cloud, which is
+// temporarily hidden (src/cloud/availability.ts). While hidden they print a
+// short notice instead of reaching into the (still present) billing client.
+const cloudCommandGate = (ctx: SlashContext): boolean => {
+  if (isCloudModeAvailable()) return true;
+  ctx.setEvents((e) => [...e, { kind: "info", key: ctx.mkKey(), text: CLOUD_UNAVAILABLE_NOTICE }]);
+  return false;
+};
+
 const handleUpgrade: Handler = (ctx) => {
-  void ctx.upgrade();
+  if (cloudCommandGate(ctx)) void ctx.upgrade();
   return true;
 };
 
 const handleTopup: Handler = (ctx) => {
-  void ctx.topup();
+  if (cloudCommandGate(ctx)) void ctx.topup();
   return true;
 };
 
 const handleManage: Handler = (ctx) => {
-  void ctx.manageMembership();
+  if (cloudCommandGate(ctx)) void ctx.manageMembership();
   return true;
 };
 

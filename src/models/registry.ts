@@ -2,22 +2,32 @@
  * Model registry: single source of truth for per-model capabilities, pricing,
  * and routing decisions.
  *
- * KimiFlare is built around Kimi models served through Cloudflare Workers AI.
- * Most seeded models are Workers AI models. AI Gateway is optional for those —
- * they also work via the direct api.cloudflare.com path. Provider-native models
- * (e.g. moonshotai/kimi-k3) require AI Gateway and are included so they work out
- * of the box once a gateway is configured.
+ * KimiFlare is built around Kimi models served through Cloudflare. Most seeded
+ * models are Workers AI models; AI Gateway is optional for those — they also
+ * work via the direct api.cloudflare.com path. Kimi K3 (moonshotai/kimi-k3) is
+ * a third-party model in Cloudflare's model catalog, paid from the account's
+ * AI Gateway credits, and works out of the box with just a Cloudflare token.
  *
- * Routing taxonomy:
- *   - Workers AI chat models go through EITHER:
+ * Routing taxonomy (see `routeFor()`):
+ *   - "workers-ai": Workers AI chat models go through EITHER:
  *     a) Direct path:  api.cloudflare.com/client/v4/accounts/{acct}/ai/run/{model}
  *     b) Gateway path: gateway.ai.cloudflare.com/v1/{acct}/{gw}/compat/chat/completions
  *     The choice is made at runtime based on whether aiGatewayId is configured.
- *   - Embeddings use the same dual-path logic:
+ *   - "cf-catalog": third-party models in Cloudflare's model catalog (e.g.
+ *     moonshotai/kimi-k3) go through Cloudflare's unified REST API
+ *     api.cloudflare.com/client/v4/accounts/{acct}/ai/v1/chat/completions with an
+ *     optional `cf-aig-gateway-id` header. Cloudflare pays the provider from the
+ *     account's AI Gateway credits (Unified Billing) — no provider key, and BYOK
+ *     is not supported on this path.
+ *   - "gateway": everything else (Anthropic, OpenAI, Google, OpenAI-compatible)
+ *     goes through the AI Gateway Universal Endpoint with provider auth
+ *     (Unified Billing where supported, else BYOK).
+ *   - Embeddings use the Workers AI dual-path logic:
  *     a) Direct:  api.cloudflare.com/client/v4/accounts/{acct}/ai/run/{model}
  *     b) Gateway: gateway.ai.cloudflare.com/v1/{acct}/{gw}/workers-ai/{model}
  *   - User-registered models (via ~/.kimiflare/models.json) can be any provider,
- *     but they require AI Gateway since only Workers AI has a direct path.
+ *     but "gateway"-routed ones require AI Gateway since only Workers AI has a
+ *     direct path.
  */
 
 export type ModelProvider =
@@ -83,9 +93,23 @@ const UNIFIED_BILLING_PROVIDERS: ReadonlySet<string> = new Set([
   "xai",
 ]);
 
+export type ModelRoute = "workers-ai" | "cf-catalog" | "gateway";
+
+/**
+ * Which transport a model uses. Moonshot models are only reachable through
+ * Cloudflare's model catalog (unified REST API + Unified Billing) — there is
+ * no provider-native Moonshot slug on AI Gateway.
+ */
+export function routeFor(entry: ModelEntry): ModelRoute {
+  if (entry.provider === "workers-ai") return "workers-ai";
+  if (entry.provider === "moonshotai") return "cf-catalog";
+  return "gateway";
+}
+
 /** True when the user can pay for this model through Cloudflare credits rather than BYOK. */
 export function isUnifiedEligible(entry: ModelEntry): boolean {
   if (entry.provider === "workers-ai") return false; // own billing track
+  if (routeFor(entry) === "cf-catalog") return true; // credits are the only option
   // For openai-compatible upstreams we key off the model-id prefix
   // (e.g. "groq/llama-3.3-70b-versatile" → "groq").
   const slashIdx = entry.id.indexOf("/");
@@ -105,18 +129,24 @@ const SEED: ModelEntry[] = [
     supports: { tools: true, reasoning: true, streaming: true, vision: true },
     billingMode: "unified",
   },
-  // ── Kimi K3 (AI Gateway / Moonshot AI, provider-native routing) ──────────
+  // ── Kimi K3 (Cloudflare model catalog, third-party, Unified Billing) ─────
+  // Verified live 2026-08-19 against
+  //   POST api.cloudflare.com/client/v4/accounts/{acct}/ai/v1/chat/completions
+  // with `cf-aig-gateway-id`: streaming, reasoning_content deltas, tool calls
+  // and usage all parse; Cloudflare pays Moonshot from AI Gateway credits.
+  // Pricing per Moonshot (platform.kimi.ai/docs/pricing/chat-k3): $3.00 in,
+  // $0.30 cached in, $15.00 out per 1M tokens; Cloudflare passes it through.
   {
     id: "moonshotai/kimi-k3",
     provider: "moonshotai",
-    contextWindow: 1_000_000,
-    maxOutputTokens: 32_768,
-    // Placeholder pricing — verify against Cloudflare AI Gateway docs once rendered.
-    pricing: { inputPerMtok: 3.0, outputPerMtok: 15.0 },
-    supports: { tools: true, reasoning: true, streaming: true, vision: true },
-    // Cloudflare Unified Billing does not currently cover Moonshot AI.
-    // Use a Moonshot API key (BYOK) via cf-aig-authorization.
-    billingMode: "byok",
+    contextWindow: 1_048_576,
+    maxOutputTokens: 131_072,
+    pricing: { inputPerMtok: 3.0, cachedInputPerMtok: 0.3, outputPerMtok: 15.0 },
+    // K3 fixes temperature=1.0 — sending any other value is a 400
+    // ("invalid temperature: only 1 is allowed for this model"), so we omit it.
+    // Reasoning is always on; `reasoning_effort` low/medium/high are accepted.
+    supports: { tools: true, reasoning: true, streaming: true, vision: true, temperature: false },
+    billingMode: "unified",
   },
   {
     id: "@cf/moonshotai/kimi-k2.6",
@@ -175,7 +205,7 @@ export function getModelOrInfer(id: string): ModelEntry {
     maxOutputTokens: 4_096,
     pricing: { inputPerMtok: 0, outputPerMtok: 0 },
     supports: { tools: true, reasoning: false, streaming: true },
-    billingMode: provider === "workers-ai" ? "unified" : "byok",
+    billingMode: provider === "workers-ai" || provider === "moonshotai" ? "unified" : "byok",
   };
 }
 

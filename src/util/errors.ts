@@ -87,7 +87,7 @@ export function humanizeCloudflareError(err: KimiApiError): string {
   if (httpStatus === 401) {
     const codeStr = code !== undefined ? ` (code: ${code})` : "";
     return (
-      `Authentication required${codeStr}. Please check your API token or run \`kimiflare auth cloud\` if using cloud mode.`
+      `Authentication required${codeStr}. Your Cloudflare credentials were rejected — run \`kimiflare auth cloudflare\` to log in with Cloudflare again, or check your API token.`
     );
   }
 

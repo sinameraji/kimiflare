@@ -12,7 +12,7 @@ import {
   type LlmDumpRecord,
   type LlmDumpResponse,
 } from "../util/llm-dump.js";
-import { getModelOrInfer, isUnifiedEligible, type ModelProvider } from "../models/registry.js";
+import { getModelOrInfer, isUnifiedEligible, routeFor, type ModelProvider } from "../models/registry.js";
 import { DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
 
 export type KimiEvent =
@@ -111,7 +111,7 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.7-code"). Cloud mode uses its own
   // shape and ignores this field. The direct Workers AI path (api.cloudflare.com)
   // also ignores the body model field because the model is already in the URL.
-  const isDirectWorkersAi = url.startsWith("https://api.cloudflare.com/client/v4/accounts/");
+  const isDirectWorkersAi = url.includes("/ai/run/");
   const compatModel = entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
 
   const body: Record<string, unknown> = {
@@ -404,6 +404,24 @@ function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Reco
   }
 
   const entry = getModelOrInfer(opts.model);
+
+  // Cloudflare-catalog models (Kimi K3 today): Cloudflare's unified REST API.
+  // Same OpenAI-shaped request/stream as the gateway path, but auth is only
+  // the Cloudflare token — Cloudflare pays the provider from the account's AI
+  // Gateway credits (Unified Billing). The gateway is optional: with
+  // `cf-aig-gateway-id` set the request is logged in that gateway, otherwise
+  // Cloudflare uses (and auto-creates) the "default" gateway. cf-aig-* headers
+  // (cache TTL, skip-cache, metadata, collect-log) apply here too.
+  if (routeFor(entry) === "cf-catalog") {
+    const headers = gatewayHeadersFor(opts);
+    if (opts.gateway?.id) headers["cf-aig-gateway-id"] = opts.gateway.id;
+    return {
+      url: `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(
+        opts.accountId,
+      )}/ai/v1/chat/completions`,
+      headers,
+    };
+  }
 
   // If no gateway is configured, Workers AI models can use the direct
   // api.cloudflare.com path for lower latency. Non-Workers-AI models still

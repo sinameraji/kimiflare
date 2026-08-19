@@ -25,7 +25,7 @@
 
 ## How it works
 
-You bring your own Cloudflare **Account ID** + **API Token**. KimiFlare calls **Workers AI** directly by default — fastest path, fewest moving parts. You can optionally turn on routing through an **AI Gateway** in your account (provisioned or reused on first run) for observability, caching, and cost reporting. Either way, nothing leaves your Cloudflare tenancy.
+KimiFlare runs on **your own Cloudflare account**. On first run you **Log in with Cloudflare** — the CLI opens a browser page, Cloudflare asks you to approve kimiflare once, and you're in (no API token to mint, no Account ID to copy; pasting a token manually still works). KimiFlare calls **Workers AI** directly by default — fastest path, fewest moving parts. You can optionally turn on routing through an **AI Gateway** in your account (provisioned or reused on first run) for observability, caching, and cost reporting. Either way, nothing leaves your Cloudflare tenancy.
 
 With AI Gateway enabled you get this for free:
 
@@ -72,7 +72,7 @@ npm install -g kimiflare
 kimiflare
 ```
 
-On first run, an interactive onboarding wizard collects your Cloudflare credentials and provisions (or picks) an AI Gateway. That's it.
+On first run, an interactive onboarding wizard connects your Cloudflare account — **Log in with Cloudflare** in the browser (recommended) or paste an API token — then provisions (or picks) an AI Gateway. That's it.
 
 Or run without installing:
 
@@ -82,15 +82,17 @@ npx kimiflare
 
 Requires Node.js ≥ 20.
 
-### Cloudflare API token
+### Connecting your Cloudflare account
 
-The onboarding wizard provisions or picks an AI Gateway in your account. Your Cloudflare API token needs:
+**Log in with Cloudflare (recommended).** Pick it in the wizard, or run `kimiflare auth cloudflare` any time. Cloudflare's consent screen shows exactly what kimiflare asks for (Workers AI, AI Gateway, Secrets Store, and read access to your account list so it can pick your Account ID). Tokens are short-lived and refreshed automatically; `/logout` revokes the grant, and you can review it at <https://dash.cloudflare.com/?to=/profile/access-management/authorization>. Details for maintainers (registering the OAuth client) are in [`docs/login-with-cloudflare.md`](docs/login-with-cloudflare.md).
+
+**Or paste an API token.** Create one at https://dash.cloudflare.com/profile/api-tokens with:
 
 - `Workers AI:Read`
 - `AI Gateway:Read` (to list gateways)
 - `AI Gateway:Edit` (to create gateways)
 
-Edit your token at: https://dash.cloudflare.com/profile/api-tokens
+then enter it with your Account ID in the wizard, or set `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (env credentials override a stored login).
 
 Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, per-feature breakdown, and direct dashboard links to each request log. `/gateway status` shows the current TTL, skip-cache flag, metadata tags, and live cache-hit ratio.
 
@@ -102,6 +104,11 @@ KimiFlare runs on **Kimi K2.7** via Cloudflare Workers AI — no API key needed 
 
 `@cf/moonshotai/kimi-k2.6`, `@cf/moonshotai/kimi-k2.5`, and `@cf/zai-org/glm-5.2`
 (Zhipu AI, 262k context, reasoning + tools) are also available.
+
+**Kimi K3** (`moonshotai/kimi-k3` — 1M context, vision, always-on reasoning) is available as a
+third-party model in Cloudflare's model catalog: pick it with `/model` and it is billed from your
+account's **AI Gateway credits** (Unified Billing) — no Moonshot key needed. Top up credits in the
+AI Gateway dashboard.
 
 ### One-shot mode
 
