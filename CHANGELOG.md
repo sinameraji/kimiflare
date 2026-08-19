@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.0](https://github.com/sinameraji/kimiflare/compare/v0.97.0...v0.98.0) (2026-08-19)
+
+
+### Features
+
+* **onboarding:** Log in with Cloudflare, hide KimiFlare Cloud, fix Kimi K3 routing ([#630](https://github.com/sinameraji/kimiflare/issues/630)) ([9b62351](https://github.com/sinameraji/kimiflare/commit/9b62351ae01805a8a2d3a83937d2e8079868b5ba))
+
 ## [0.97.0](https://github.com/sinameraji/kimiflare/compare/v0.96.1...v0.97.0) (2026-07-17)
 
 
