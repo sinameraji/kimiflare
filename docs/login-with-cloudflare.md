@@ -39,6 +39,14 @@ Under the hood this is Cloudflare's **self-managed OAuth client** feature
 Users can review or revoke the grant any time at
 <https://dash.cloudflare.com/?to=/profile/access-management/authorization>.
 
+One quirk to keep in mind when adding new Cloudflare calls: OAuth access
+tokens work against `api.cloudflare.com` (management API, `/ai/run`,
+`/ai/v1/*` with `cf-aig-gateway-id`) and against the gateway host's
+`/compat` and provider endpoints via `Authorization`, but the gateway host's
+provider-native `…/workers-ai/{model}` route returns 401 for them. Route
+Workers AI calls through `/compat` or the unified `api.cloudflare.com/…/ai`
+endpoints (as `probeGateway()` and the embeddings client do).
+
 ### Scopes requested
 
 | Scope | Why |
@@ -99,9 +107,15 @@ owns `kimiflare.com`:
   `CF_OAUTH_CLIENT_ID` in `src/cloud/cloudflare-oauth.ts`)
 - Public/PKCE client, grants `authorization_code` + `refresh_token`, redirect
   `http://localhost:8978/oauth/callback`, the 9 scopes above (+ `offline_access`)
-- Domain verification TXT record for `kimiflare.com`:
+- Domain verification TXT record on `kimiflare.com` (published, **Verified**):
   `cloudflare_oauth_client_publisher=88913d621ea51f8b2937995a166d4c05`
-  (verification status shows "In progress" until that record is published)
+- Visibility: **Public** (promoted 2026-08-19; any Cloudflare user can log in;
+  the consent screen shows the blue verified-publisher shield)
+- End-to-end verified 2026-08-19: `kimiflare auth cloudflare` → consent →
+  loopback callback → token exchange → `GET /user` + `GET /accounts` →
+  config patched; the resulting token lists gateways (`aig.read`), runs
+  `/compat` inference on the authenticated gateway (`aig.run`), Workers AI
+  direct + K3 via the unified endpoint (`ai.read`), and Secrets Store.
 
 To point a build at a different client (staging, a fork), export
 `KIMIFLARE_CF_OAUTH_CLIENT_ID=<client id>`; if the constant is ever cleared the
@@ -114,9 +128,12 @@ registered redirect URL must match) and `KIMIFLARE_CF_AUTH_DOMAIN`
 
 ### Public clients (anyone can log in)
 
+(The kimiflare client is already public — this is for reference / forks.)
+
 A freshly created client is **private**: only members of the account that owns
 it can authorize it. To let every Cloudflare user log in, promote it to
-**public** in the dashboard. Cloudflare requires a client name, logo, client
+**public** in the dashboard (row menu → *Change Visibility*; *Restart
+Verification* re-polls the TXT record). Cloudflare requires a client name, logo, client
 URL, at least one non-identity scope, and **DNS TXT domain verification** on
 the client URL's domain (for our client: a TXT record on `kimiflare.com` with
 value `cloudflare_oauth_client_publisher=88913d621ea51f8b2937995a166d4c05`;
