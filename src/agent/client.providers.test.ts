@@ -222,34 +222,49 @@ describe("runKimi: provider auth-header routing (BYOK alias vs raw key vs unifie
     assert.strictEqual(lastRequest!.headers.get("cf-aig-byok-alias"), null);
   });
 
-  it("Moonshot K3: providerKeys.moonshotai sends cf-aig-authorization", async () => {
+  it("Moonshot K3: routes to Cloudflare's unified REST API with the gateway id header, no provider key", async () => {
+    // Verified live 2026-08-19: moonshotai/kimi-k3 is a Cloudflare-catalog
+    // model paid from AI Gateway credits (Unified Billing). It is reached via
+    // api.cloudflare.com/.../ai/v1/chat/completions, not the gateway host, and
+    // BYOK is not supported on that path — so no cf-aig-authorization / alias
+    // headers even if the user has a Moonshot key lying around.
     for await (const _ of runKimi({
       ...baseOpts,
       model: "moonshotai/kimi-k3",
       providerKeys: { moonshotai: "sk-moonshot-test" },
+      gateway: { id: "gw", cacheTtl: 60 },
     })) {
       /* drain */
     }
     assert.strictEqual(
-      lastRequest!.headers.get("cf-aig-authorization"),
-      "Bearer sk-moonshot-test",
+      lastRequest!.url,
+      "https://api.cloudflare.com/client/v4/accounts/acct/ai/v1/chat/completions",
     );
+    assert.strictEqual(lastRequest!.headers.get("Authorization"), "Bearer cf-token");
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-gateway-id"), "gw");
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-cache-ttl"), "60");
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-authorization"), null);
     assert.strictEqual(lastRequest!.headers.get("cf-aig-byok-alias"), null);
+    const body = JSON.parse(await lastRequest!.text()) as Record<string, unknown>;
+    assert.strictEqual(body.model, "moonshotai/kimi-k3");
+    // K3 fixes temperature=1.0 and 400s on anything else — must be omitted.
+    assert.strictEqual("temperature" in body, false);
+    assert.deepStrictEqual(body.stream_options, { include_usage: true });
   });
 
-  it("Moonshot K3: unifiedBilling=true is ignored because provider is BYOK-only", async () => {
-    await assert.rejects(
-      async () => {
-        for await (const _ of runKimi({
-          ...baseOpts,
-          model: "moonshotai/kimi-k3",
-          unifiedBilling: true,
-        })) {
-          /* drain */
-        }
-      },
-      (err: Error) => err.message.includes("needs a Moonshot AI API key"),
+  it("Moonshot K3: works without a configured gateway (Cloudflare uses the default gateway)", async () => {
+    for await (const _ of runKimi({
+      ...baseOpts,
+      model: "moonshotai/kimi-k3",
+      gateway: undefined,
+    })) {
+      /* drain */
+    }
+    assert.strictEqual(
+      lastRequest!.url,
+      "https://api.cloudflare.com/client/v4/accounts/acct/ai/v1/chat/completions",
     );
+    assert.strictEqual(lastRequest!.headers.get("cf-aig-gateway-id"), null);
   });
 });
 

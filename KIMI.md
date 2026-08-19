@@ -55,7 +55,7 @@
 | `src/code-mode/` | TypeScript sandbox for safe tool execution (`runInSandbox`, `generateTypeScriptApi`). |
 | `src/skills/` | Skill routing system: load, select, and inject domain-specific skill files into prompts. |
 | `src/commands/` | Slash command system: builtins, loader, renderer, frontmatter parsing. |
-| `src/cloud/` | Cloudflare AI Gateway management (gateway list/create/show via `api.cloudflare.com`). |
+| `src/cloud/` | Cloudflare account plumbing: AI Gateway management (`ai-gateway-api.ts`), "Log in with Cloudflare" OAuth + PKCE (`cloudflare-oauth.ts`), and the (temporarily hidden, see `availability.ts`) KimiFlare Cloud managed-service client (`auth.ts`, `billing.ts`). |
 | `src/cost-attribution/` | Token cost tracking, heuristic classification, and TUI reporting. |
 | `src/hooks/` | User-configured lifecycle hooks (pre/post tool-call, turn start/end). |
 | `src/models/` | Model registry: capabilities, pricing, and routing decisions per provider. |

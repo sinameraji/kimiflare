@@ -1,5 +1,5 @@
 import type { KimiConfig } from "../config.js";
-import { isUnifiedEligible, type ModelEntry } from "./registry.js";
+import { isUnifiedEligible, routeFor, type ModelEntry } from "./registry.js";
 
 export type NextStep =
   | { kind: "ready" }
@@ -18,6 +18,11 @@ export type NextStep =
  */
 export function decideNextStep(cfg: KimiConfig | null, model: ModelEntry): NextStep {
   if (model.provider === "workers-ai") return { kind: "ready" };
+  // Cloudflare-catalog models (e.g. moonshotai/kimi-k3) are paid from the
+  // account's AI Gateway credits via Cloudflare's unified REST API: no
+  // provider key, and a gateway is optional (Cloudflare uses/creates
+  // "default" when none is set).
+  if (routeFor(model) === "cf-catalog") return { kind: "ready" };
   if (!cfg) return { kind: "ready" };
   if (!cfg.aiGatewayId) return { kind: "needs-gateway" };
 

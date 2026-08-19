@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { loadConfig, saveConfig, DEFAULT_MODEL, DEFAULT_CLOUD_MODEL, configPath } from "./config.js";
+import { isCloudModeAvailable, CLOUD_UNAVAILABLE_NOTICE } from "./cloud/availability.js";
 import { isKillSwitchError } from "./util/errors.js";
 import { resolveLspConfig } from "./util/lsp-config.js";
 import { checkForUpdate } from "./util/update-check.js";
@@ -14,6 +15,7 @@ import type { PrintFormat } from "./print-mode.js";
 /** Best-effort synchronous check for whether cloud mode is the default.
  *  Used only for static --help copy; runtime resolution uses loadConfig(). */
 function isCloudModeConfigured(): boolean {
+  if (!isCloudModeAvailable()) return false;
   if (process.env.KIMIFLARE_CLOUD === "1" || process.env.KIMIFLARE_CLOUD === "true") return true;
   try {
     const raw = readFileSync(configPath(), "utf8");
@@ -34,7 +36,14 @@ program
   .version(getAppVersion())
   .option("-p, --print <prompt>", "one-shot mode: send prompt, stream reply to stdout, exit")
   .option("-m, --model <id>", `model id (defaults to ${helpDefaultModel})`)
-  .option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
+  // KimiFlare Cloud is temporarily hidden (src/cloud/availability.ts): keep the
+  // flag parseable so old scripts don't break, but hide it from --help and
+  // ignore it at runtime while the managed service is switched off.
+  .addOption(
+    isCloudModeAvailable()
+      ? new Option("--cloud", "use Kimiflare Cloud (api.kimiflare.com) instead of direct Workers AI")
+      : new Option("--cloud", "(temporarily unavailable) use Kimiflare Cloud").hideHelp(),
+  )
   .option("--dangerously-allow-all", "auto-approve every permission prompt (print mode only)")
   .option("--reasoning", "include reasoning in stdout (print mode only)")
   .option("--thinking", "alias for --reasoning")
@@ -80,9 +89,13 @@ program
   });
 
 program
-  .command("usage")
+  .command("usage", { hidden: !isCloudModeAvailable() })
   .description("Show Kimiflare Cloud token usage (requires cloud authentication)")
   .action(async () => {
+    if (!isCloudModeAvailable()) {
+      console.error(CLOUD_UNAVAILABLE_NOTICE);
+      process.exit(1);
+    }
     const { loadCloudCredentials } = await import("./cloud/auth.js");
     const creds = await loadCloudCredentials();
     if (!creds) {
@@ -144,6 +157,79 @@ program
   .command("auth")
   .description("Authenticate with external services")
   .addCommand(
+    new Command("cloudflare")
+      .description("Log in with Cloudflare (browser OAuth) — no API token or Account ID to copy")
+      .option("--account <id>", "Cloudflare account id to use (skips the picker for multi-account users)")
+      .option("--no-browser", "print the sign-in URL instead of opening a browser")
+      .action(async (cmdOpts: { account?: string; browser?: boolean }) => {
+        const { loginWithCloudflare, listCloudflareAccounts, whoAmI, CF_OAUTH_CLIENT_ID } = await import(
+          "./cloud/cloudflare-oauth.js"
+        );
+        const { patchPersistedConfig } = await import("./config.js");
+        try {
+          const tokens = await loginWithCloudflare({
+            onAuthUrl: (url) => {
+              console.log("\nLog in with Cloudflare");
+              if (cmdOpts.browser !== false) {
+                console.log("Opening your browser… approve kimiflare there, then come back here.");
+                void import("./ui/app-helpers.js").then(({ openBrowser }) => openBrowser(url));
+              }
+              console.log(`If the browser didn't open, visit:\n  ${url}\n`);
+            },
+          });
+          const [me, accounts] = await Promise.all([whoAmI(tokens.accessToken), listCloudflareAccounts(tokens.accessToken)]);
+          if (accounts.length === 0) {
+            console.error("Signed in, but this Cloudflare user has no accounts kimiflare can use.");
+            process.exit(1);
+          }
+          let picked = accounts.length === 1 ? accounts[0]! : undefined;
+          if (cmdOpts.account) {
+            picked = accounts.find((a) => a.id === cmdOpts.account);
+            if (!picked) {
+              console.error(`Account ${cmdOpts.account} is not one of your accounts:`);
+              for (const a of accounts) console.error(`  ${a.id}  ${a.name}`);
+              process.exit(1);
+            }
+          }
+          if (!picked) {
+            console.log("Which Cloudflare account should kimiflare use?");
+            accounts.forEach((a, i) => console.log(`  [${i + 1}] ${a.name}  (${a.id})`));
+            const { createInterface } = await import("node:readline/promises");
+            const rl = createInterface({ input: process.stdin, output: process.stdout });
+            const answer = (await rl.question(`Select 1-${accounts.length} [1]: `)).trim();
+            rl.close();
+            const idx = answer ? parseInt(answer, 10) - 1 : 0;
+            picked = accounts[idx];
+            if (!picked) {
+              console.error("Invalid selection.");
+              process.exit(1);
+            }
+          }
+          const existing = await loadConfig().catch(() => null);
+          const savedTo = await patchPersistedConfig({
+            accountId: picked.id,
+            apiToken: tokens.accessToken,
+            model: existing?.model ?? DEFAULT_MODEL,
+            cloudflareOAuth: {
+              refreshToken: tokens.refreshToken,
+              expiresAt: tokens.expiresAt,
+              scopes: tokens.scopes,
+              clientId: CF_OAUTH_CLIENT_ID,
+              email: me?.email,
+              accountName: picked.name,
+            },
+            // A fresh Cloudflare login supersedes any managed-cloud mode.
+            cloudMode: undefined,
+          });
+          console.log(`\n✓ Signed in${me?.email ? ` as ${me.email}` : ""} · account "${picked.name}" (${picked.id})`);
+          console.log(`Saved to ${savedTo}. Run \`kimiflare\` to start.`);
+        } catch (err) {
+          console.error("Log in with Cloudflare failed:", err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      }),
+  )
+  .addCommand(
     new Command("github")
       .description("Authenticate with GitHub via OAuth device flow")
       .action(async () => {
@@ -163,6 +249,10 @@ program
     new Command("cloud")
       .description("Authenticate with Kimiflare Cloud")
       .action(async () => {
+        if (!isCloudModeAvailable()) {
+          console.error(CLOUD_UNAVAILABLE_NOTICE);
+          process.exit(1);
+        }
         const { authenticateDevice } = await import("./cloud/auth.js");
         try {
           const creds = await authenticateDevice(({ url, userCode, polling }) => {
@@ -209,8 +299,8 @@ program
           process.exit(1);
         }
       }),
-  )
-  ;
+    { hidden: !isCloudModeAvailable() },
+  );
 
 program
   .command("serve")
@@ -224,6 +314,21 @@ program
       process.exit(2);
     }
     const { startServer } = await import("./server/index.js");
+    // Long-running: rotate a "Log in with Cloudflare" access token in place
+    // (routes read config.apiToken on every request, so mutating the shared
+    // object is enough).
+    if (cfg.cloudflareOAuth?.refreshToken) {
+      const { refreshCloudflareSession } = await import("./config.js");
+      const timer = setInterval(() => {
+        void refreshCloudflareSession(cfg).then((next) => {
+          if (next) {
+            cfg.apiToken = next.apiToken;
+            cfg.cloudflareOAuth = next.cloudflareOAuth;
+          }
+        });
+      }, 60_000);
+      timer.unref();
+    }
     await startServer({
       port: cmdOpts.port,
       hostname: cmdOpts.hostname,
@@ -286,8 +391,12 @@ async function main() {
     lspProjectPath = resolved.projectPath;
   }
 
-  // Handle cloud mode
-  const cloudMode = opts.cloud ?? cfg?.cloudMode ?? false;
+  // Handle cloud mode. While KimiFlare Cloud is hidden (src/cloud/availability.ts)
+  // `--cloud` is a no-op: we tell the user once and continue with BYOK.
+  if (opts.cloud && !isCloudModeAvailable()) {
+    console.error(`kimiflare: --cloud ignored — ${CLOUD_UNAVAILABLE_NOTICE}`);
+  }
+  const cloudMode = isCloudModeAvailable() && (opts.cloud ?? cfg?.cloudMode ?? false);
   let cloudToken: string | undefined;
   let cloudDeviceId: string | undefined;
   if (cloudMode) {

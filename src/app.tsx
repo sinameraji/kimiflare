@@ -56,6 +56,7 @@ import {
   DEFAULT_REASONING_EFFORT,
   loadConfig,
   saveConfig,
+  refreshCloudflareSession,
   type ReasoningEffort,
 } from "./config.js";
 import { startRemoteSession, streamRemoteProgress } from "./remote/worker-client.js";
@@ -151,6 +152,8 @@ export interface Cfg {
   accountId: string;
   apiToken: string;
   model: string;
+  /** Set when apiToken is a "Log in with Cloudflare" OAuth access token (see config.ts). */
+  cloudflareOAuth?: import("./config.js").CloudflareOAuthConfig;
   aiGatewayId?: string;
   aiGatewayCacheTtl?: number;
   aiGatewaySkipCache?: boolean;
@@ -439,6 +442,31 @@ function App({
     });
     return () => { cancelled = true; };
   }, []);
+
+  // "Log in with Cloudflare" sessions carry a short-lived access token. Keep
+  // it fresh for the lifetime of the TUI: schedule a refresh a few minutes
+  // before expiry (refreshCloudflareSession() is a no-op until then), swap the
+  // new token into cfg, and re-arm for the next expiry. Turns already in
+  // flight keep the token they started with.
+  useEffect(() => {
+    const oauth = cfg?.cloudflareOAuth;
+    if (!cfg || !oauth?.refreshToken) return;
+    let cancelled = false;
+    const REFRESH_LEAD_MS = 5 * 60 * 1000;
+    const delay = Math.max(1_000, oauth.expiresAt - Date.now() - REFRESH_LEAD_MS + 500);
+    const timer = setTimeout(() => {
+      void refreshCloudflareSession(cfg).then((next) => {
+        if (cancelled || !next) return;
+        setCfg((prev) =>
+          prev ? { ...prev, apiToken: next.apiToken, cloudflareOAuth: next.cloudflareOAuth } : prev,
+        );
+      });
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [cfg?.cloudflareOAuth?.expiresAt, cfg?.cloudflareOAuth?.refreshToken]);
 
   // Fetch cloud token budget on startup
   useEffect(() => {
