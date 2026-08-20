@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.99.0](https://github.com/sinameraji/kimiflare/compare/v0.98.1...v0.99.0) (2026-08-20)
+
+
+### Features
+
+* custom OpenAI-compatible gateway endpoint (KIMIFLARE_BASE_URL / KIMIFLARE_API_KEY) ([#635](https://github.com/sinameraji/kimiflare/issues/635)) ([ba9ff81](https://github.com/sinameraji/kimiflare/commit/ba9ff81140de22e3692fc060202b8e6af61e813b))
+
 ## [0.98.1](https://github.com/sinameraji/kimiflare/compare/v0.98.0...v0.98.1) (2026-08-20)
 
 
