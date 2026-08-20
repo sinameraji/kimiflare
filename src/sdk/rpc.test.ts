@@ -1,5 +1,8 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { startRpcServer } from "./rpc.js";
 import type { createAgentSession } from "./session.js";
@@ -108,6 +111,38 @@ function makeFakeSession(behavior: {
   return { session, state };
 }
 
+async function withRpcServer(
+  commands: string[],
+  handler: (lines: string[]) => void,
+  createSession?: SessionFactory,
+): Promise<void> {
+  const allCommands = [...commands, JSON.stringify({ type: "dispose" })];
+  const input = Readable.from(allCommands.map((c) => c + "\n"));
+  const outputLines: string[] = [];
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      outputLines.push(chunk.toString().trim());
+      callback();
+    },
+  });
+
+  // Start RPC server; it will process all commands and exit on dispose
+  await startRpcServer(input, output, createSession);
+
+  // Filter out the dispose ok response
+  const filtered = outputLines.filter((l) => {
+    try {
+      const parsed = JSON.parse(l);
+      // Remove only the dispose ok response (no id, type ok)
+      return !(parsed.type === "ok" && parsed.id === undefined);
+    } catch {
+      return true;
+    }
+  });
+
+  handler(filtered);
+}
+
 describe("SDK RPC", () => {
   let originalAccount: string | undefined;
   let originalToken: string | undefined;
@@ -123,38 +158,6 @@ describe("SDK RPC", () => {
     process.env.CLOUDFLARE_ACCOUNT_ID = originalAccount;
     process.env.CLOUDFLARE_API_TOKEN = originalToken;
   });
-
-  async function withRpcServer(
-    commands: string[],
-    handler: (lines: string[]) => void,
-    createSession?: SessionFactory,
-  ): Promise<void> {
-    const allCommands = [...commands, JSON.stringify({ type: "dispose" })];
-    const input = Readable.from(allCommands.map((c) => c + "\n"));
-    const outputLines: string[] = [];
-    const output = new Writable({
-      write(chunk, _encoding, callback) {
-        outputLines.push(chunk.toString().trim());
-        callback();
-      },
-    });
-
-    // Start RPC server; it will process all commands and exit on dispose
-    await startRpcServer(input, output, createSession);
-
-    // Filter out the dispose ok response
-    const filtered = outputLines.filter((l) => {
-      try {
-        const parsed = JSON.parse(l);
-        // Remove only the dispose ok response (no id, type ok)
-        return !(parsed.type === "ok" && parsed.id === undefined);
-      } catch {
-        return true;
-      }
-    });
-
-    handler(filtered);
-  }
 
   it("responds to new_session command", async () => {
     await withRpcServer(
@@ -335,5 +338,84 @@ describe("SDK RPC", () => {
       },
       factory,
     );
+  });
+});
+
+describe("SDK RPC with a custom endpoint only (no Cloudflare credentials)", () => {
+  // Acceptance path for host apps: a container gets KIMIFLARE_BASE_URL +
+  // KIMIFLARE_API_KEY pointed at the host's gateway/broker and nothing else —
+  // no Cloudflare login, token, or account id. RPC mode must come up fully.
+  // Uses the REAL createAgentSession factory so resolveSdkConfig/loadConfig
+  // run for real; env + config file are isolated so a developer's own
+  // Cloudflare login can't satisfy the credential check.
+  const ENV_KEYS = [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CF_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "CF_API_TOKEN",
+    "KIMIFLARE_CLOUD",
+    "KIMIFLARE_BASE_URL",
+    "KIMIFLARE_API_KEY",
+    "XDG_CONFIG_HOME",
+  ] as const;
+  const saved: Record<string, string | undefined> = {};
+  let configHome: string;
+
+  before(async () => {
+    for (const k of ENV_KEYS) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    configHome = await mkdtemp(join(tmpdir(), "kimiflare-rpc-custom-endpoint-"));
+    process.env.XDG_CONFIG_HOME = configHome;
+    process.env.KIMIFLARE_BASE_URL = "https://aig.example.com/v1";
+    process.env.KIMIFLARE_API_KEY = "broker-key";
+  });
+
+  after(async () => {
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+    await rm(configHome, { recursive: true, force: true });
+  });
+
+  it("new_session succeeds with only KIMIFLARE_BASE_URL + KIMIFLARE_API_KEY", async () => {
+    await withRpcServer(
+      [
+        JSON.stringify({ id: "1", type: "new_session" }),
+        JSON.stringify({ id: "2", type: "get_state" }),
+      ],
+      (lines) => {
+        const parsed = lines.map((l) => JSON.parse(l));
+        const newSession = parsed.find((r) => r.id === "1");
+        assert.ok(newSession, "new_session got no response");
+        assert.strictEqual(newSession.type, "ok");
+        assert.ok(newSession.sessionId);
+        const state = parsed.find((r) => r.id === "2");
+        assert.ok(state, "get_state got no response");
+        assert.strictEqual(state.type, "state");
+        assert.strictEqual(typeof state.isStreaming, "boolean");
+      },
+    );
+  });
+
+  it("new_session still fails without the custom endpoint vars (missing credentials)", async () => {
+    delete process.env.KIMIFLARE_BASE_URL;
+    delete process.env.KIMIFLARE_API_KEY;
+    try {
+      await withRpcServer(
+        [JSON.stringify({ id: "1", type: "new_session" })],
+        (lines) => {
+          const response = lines.map((l) => JSON.parse(l)).find((r) => r.id === "1");
+          assert.ok(response);
+          assert.strictEqual(response.type, "error");
+          assert.match(response.error, /missing credentials/);
+        },
+      );
+    } finally {
+      process.env.KIMIFLARE_BASE_URL = "https://aig.example.com/v1";
+      process.env.KIMIFLARE_API_KEY = "broker-key";
+    }
   });
 });
