@@ -189,6 +189,10 @@ export async function startRpcServer(
           const { session: newSession } = await createSession({
             cwd: typeof cmd.cwd === "string" ? cmd.cwd : undefined,
             config: typeof cmd.config === "object" ? cmd.config : undefined,
+            // Resume: forwarded to createAgentSession, which reloads
+            // `<sessionsDir>/<sessionId>.json` when it exists (and starts
+            // a fresh session under this id otherwise).
+            sessionId: typeof cmd.sessionId === "string" ? cmd.sessionId : undefined,
           });
           session = newSession;
           unsubscribe = session.subscribe((event) => {

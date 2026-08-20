@@ -216,6 +216,10 @@ proc.stdin.write(JSON.stringify({ type: "prompt", message: "Hello" }) + "\n");
 proc.stdin.write(
   JSON.stringify({ type: "resolve_permission", requestId: "req_0", decision: "allow" }) + "\n"
 );
+
+// Resume a previous session after a process restart (the `new_session`
+// response echoes back the sessionId to store for later)
+proc.stdin.write(JSON.stringify({ type: "new_session", sessionId: "sdk-session-…" }) + "\n");
 ```
 
 ### Image understanding
