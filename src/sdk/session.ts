@@ -319,6 +319,11 @@ class InternalSession implements KimiFlareSession {
   }
 
   async abort(): Promise<void> {
+    // Deny pending permission requests first: the executor awaits the
+    // decision without racing the abort signal, so a turn blocked on
+    // `permission.request` would otherwise keep running until the
+    // 5-minute auto-deny timeout despite the abort.
+    this.denyPendingPermissions();
     this.abortController?.abort();
   }
 
@@ -340,6 +345,16 @@ class InternalSession implements KimiFlareSession {
       resolver(decision);
       this.permissionResolvers.delete(requestId);
     }
+  }
+
+  private denyPendingPermissions(): void {
+    // Resolve (deny) rather than drop the waiters: clearing the map
+    // without resolving disarms the auto-deny timeout in askPermission,
+    // which would leave an in-flight prompt() pending forever.
+    for (const resolver of this.permissionResolvers.values()) {
+      resolver("deny");
+    }
+    this.permissionResolvers.clear();
   }
 
   getUsage(): SessionUsage {
@@ -369,11 +384,11 @@ class InternalSession implements KimiFlareSession {
 
   dispose(): void {
     this.disposed = true;
+    this.denyPendingPermissions();
     this.abortController?.abort();
     this.lspManager?.stopAll().catch(() => {});
     this.memoryManager?.close();
     this.listeners.clear();
-    this.permissionResolvers.clear();
   }
 
   private async runTurn(mode: Mode, maxToolIterations?: number): Promise<void> {
