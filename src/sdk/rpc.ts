@@ -21,9 +21,19 @@ interface RpcResponse {
 export async function startRpcServer(
   input: Readable = process.stdin,
   output: Writable = process.stdout,
+  // Test seam: swap the session factory without touching the wire protocol.
+  createSession: typeof createAgentSession = createAgentSession,
 ): Promise<void> {
   let session: KimiFlareSession | null = null;
   let unsubscribe: (() => void) | null = null;
+  // Prompt turns run OFF the read loop. Awaiting `session.prompt()` inline
+  // would stop the loop from reading commands until the turn ends — but a
+  // turn blocked on `permission.request` can only end via a later
+  // `resolve_permission` command (deadlock), and `abort` could never stop
+  // a running turn. Consecutive prompts are chained so turns stay
+  // serialized (same observable ordering as the old blocking loop). The
+  // chain never rejects: each link sends its own ok/error response.
+  let promptChain: Promise<void> = Promise.resolve();
 
   function send(response: RpcResponse): void {
     output.write(JSON.stringify(response) + "\n");
@@ -54,9 +64,19 @@ export async function startRpcServer(
             send({ id: cmd.id, type: "error", error: "No active session" });
             break;
           }
+          const promptId = cmd.id;
+          const promptSession = session;
           const message = typeof cmd.message === "string" ? cmd.message : "";
-          await session.prompt(message, cmd.options);
-          send({ id: cmd.id, type: "ok" });
+          const options = cmd.options;
+          promptChain = promptChain.then(async () => {
+            try {
+              await promptSession.prompt(message, options);
+              send({ id: promptId, type: "ok" });
+            } catch (err) {
+              logger.error("rpc:command_error", { type: "prompt", error: (err as Error).message });
+              send({ id: promptId, type: "error", error: (err as Error).message });
+            }
+          });
           break;
         }
 
@@ -166,7 +186,7 @@ export async function startRpcServer(
             unsubscribe?.();
             session.dispose();
           }
-          const { session: newSession } = await createAgentSession({
+          const { session: newSession } = await createSession({
             cwd: typeof cmd.cwd === "string" ? cmd.cwd : undefined,
             config: typeof cmd.config === "object" ? cmd.config : undefined,
           });
@@ -185,6 +205,10 @@ export async function startRpcServer(
             session = null;
             unsubscribe = null;
           }
+          // dispose() aborts the turn and denies pending permissions, so
+          // any in-flight or queued prompt settles promptly; flush those
+          // responses before acknowledging and exiting.
+          await promptChain;
           send({ id: cmd.id, type: "ok" });
           rl.close();
           return;
@@ -199,4 +223,8 @@ export async function startRpcServer(
       send({ id: cmd.id, type: "error", error: (err as Error).message });
     }
   }
+
+  // stdin ended without an explicit dispose — let any in-flight prompt
+  // finish so its response is not dropped.
+  await promptChain;
 }
