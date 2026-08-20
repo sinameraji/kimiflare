@@ -96,6 +96,30 @@ then enter it with your Account ID in the wizard, or set `CLOUDFLARE_ACCOUNT_ID`
 
 Once configured, `/cost` shows the Gateway-confirmed totals, cache hit ratio, per-feature breakdown, and direct dashboard links to each request log. `/gateway status` shows the current TTL, skip-cache flag, metadata tags, and live cache-hit ratio.
 
+### Custom gateway endpoint
+
+Point every model call at your own OpenAI-compatible endpoint instead of Cloudflare — useful when a
+host application (CI, an agents platform, a container) fronts AI Gateway with its own broker and
+doesn't want to hand kimiflare a raw Cloudflare token:
+
+```sh
+export KIMIFLARE_BASE_URL="https://your-broker.example.com/v1"  # /chat/completions is appended
+export KIMIFLARE_API_KEY="<bearer for that endpoint>"           # optional; header omitted if unset
+kimiflare -p "..."        # or --mode rpc — no Cloudflare login, token, or account id needed
+```
+
+The same pair can be persisted in `~/.config/kimiflare/config.json` as `baseUrl` / `apiKey`
+(env vars win over the file, field by field). When a base URL is configured it takes precedence
+over **every** Cloudflare path:
+
+- Requests go to `<baseUrl>/chat/completions` with `Authorization: Bearer $KIMIFLARE_API_KEY`
+  (no `Authorization` header at all when the key is unset — e.g. a local llama.cpp/Ollama server).
+- No `cf-aig-*` headers, no BYOK / Unified Billing logic, no account-id URLs, and no Cloudflare
+  token validation or OAuth refresh — Cloudflare credentials become entirely optional.
+- Model ids pass through in the request body unchanged; your endpoint owns provider dispatch.
+- Cloudflare-only extras (AI Gateway `/cost` reconciliation, memory embeddings via Workers AI)
+  still need a Cloudflare account — leave them disabled when running endpoint-only.
+
 ### Model
 
 KimiFlare runs on **Kimi K2.7** via Cloudflare Workers AI — no API key needed beyond your Cloudflare token:
@@ -163,7 +187,10 @@ session.dispose();
 
 #### SDK Authentication
 
-The SDK needs a Cloudflare **Account ID**, **API Token**, and AI Gateway ID. Credentials are resolved in this priority order:
+The SDK needs a Cloudflare **Account ID**, **API Token**, and AI Gateway ID — or a
+[custom gateway endpoint](#custom-gateway-endpoint) (`baseUrl` / `apiKey` in `config`, or
+`KIMIFLARE_BASE_URL` / `KIMIFLARE_API_KEY`), in which case no Cloudflare credentials are required.
+Credentials are resolved in this priority order:
 
 1. **Explicit `config` object** (recommended for apps)
 2. **Environment variables**: `CLOUDFLARE_ACCOUNT_ID` / `CF_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` / `CF_API_TOKEN`
@@ -190,6 +217,10 @@ If you need process isolation or a non-Node consumer, run KimiFlare in JSONL-ove
 ```sh
 node bin/kimiflare.mjs --mode rpc
 ```
+
+RPC mode also runs against a [custom gateway endpoint](#custom-gateway-endpoint) alone: set
+`KIMIFLARE_BASE_URL` + `KIMIFLARE_API_KEY` on the subprocess and no Cloudflare credentials are
+needed — ideal for host apps that broker model access themselves.
 
 ```ts
 import { spawn } from "node:child_process";

@@ -1,5 +1,6 @@
 import { runKimi } from "./client.js";
 import type { AiGatewayOptions, GatewayMeta } from "./client.js";
+import type { CustomEndpoint } from "./custom-endpoint.js";
 import { toOpenAIToolDefs, type ToolSpec } from "../tools/registry.js";
 import type { ToolExecutor, PermissionAsker, ToolResult } from "../tools/executor.js";
 import { sanitizeString, stableStringify, stripOldImages } from "./messages.js";
@@ -117,6 +118,9 @@ export interface AgentTurnOpts {
   providerKeyAliases?: Partial<Record<"workers-ai" | "anthropic" | "openai" | "google" | "moonshotai" | "openai-compatible", string>>;
   /** Whether to use Cloudflare Unified Billing for models that support it. */
   unifiedBilling?: boolean;
+  /** Custom OpenAI-compatible endpoint; when set (or KIMIFLARE_BASE_URL is in
+   *  the env), all Cloudflare routing/auth is bypassed. See src/agent/custom-endpoint.ts. */
+  customEndpoint?: CustomEndpoint;
   /** Shell override for the bash tool. If omitted, the tool auto-detects based on platform. */
   shell?: string;
   /** When false (default), the bash tool blocks `git push` to the default branch. */
@@ -667,6 +671,7 @@ export async function runAgentTurn(opts: AgentTurnOpts): Promise<void> {
       providerKeys: opts.providerKeys,
       providerKeyAliases: opts.providerKeyAliases,
       unifiedBilling: opts.unifiedBilling,
+      customEndpoint: opts.customEndpoint,
       idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
       postFirstByteIdleTimeoutMs: opts.postFirstByteIdleTimeoutMs,
     });

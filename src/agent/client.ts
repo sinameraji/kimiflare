@@ -14,6 +14,7 @@ import {
 } from "../util/llm-dump.js";
 import { getModelOrInfer, isUnifiedEligible, routeFor, type ModelProvider } from "../models/registry.js";
 import { DEFAULT_MODEL, DEFAULT_CLOUD_MODEL } from "../config.js";
+import { resolveCustomEndpoint, customChatCompletionsUrl, type CustomEndpoint } from "./custom-endpoint.js";
 
 export type KimiEvent =
   | { type: "gateway_meta"; meta: GatewayMeta }
@@ -57,6 +58,14 @@ export interface RunKimiOpts {
   /** Once the first byte arrives, tighten the idle timeout to this value.
    *  Default 30000 — a live stream stalling mid-flight should surface fast. */
   postFirstByteIdleTimeoutMs?: number;
+  /**
+   * Custom OpenAI-compatible endpoint (see src/agent/custom-endpoint.ts).
+   * When set — or when KIMIFLARE_BASE_URL is in the environment — the request
+   * goes to `<baseUrl>/chat/completions` with `Authorization: Bearer <apiKey>`
+   * and every Cloudflare path (Workers AI, AI Gateway, cf-catalog, cloud
+   * mode) is bypassed. Model ids pass through in the body unchanged.
+   */
+  customEndpoint?: CustomEndpoint;
 }
 
 export interface AiGatewayOptions {
@@ -92,12 +101,16 @@ function isRetryable(err: KimiApiError, attempt: number): boolean {
 }
 
 export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, void, void> {
-  if (opts.cloudMode && !opts.cloudToken) {
+  // Custom endpoint wins over everything, including cloud mode. The env
+  // fallback means side-call paths (memory extraction, summarization, …)
+  // that build RunKimiOpts from raw accountId/apiToken are rerouted too.
+  const customEndpoint = opts.customEndpoint ?? resolveCustomEndpoint();
+  if (!customEndpoint && opts.cloudMode && !opts.cloudToken) {
     throw new KimiApiError("kimiflare: cloud mode requires a cloud token. Run `kimiflare auth cloud` to authenticate.", undefined, 401);
   }
   const requestId = opts.requestId ?? crypto.randomUUID();
-  const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts);
-  const isCloudEndpoint = url.startsWith("https://api.kimiflare.com");
+  const { url, headers: gatewayHeaders } = buildKimiRequestTarget(opts, customEndpoint);
+  const isCloudEndpoint = !customEndpoint && url.startsWith("https://api.kimiflare.com");
   // Per-model capability gates. Some providers reject params they don't
   // support — gpt-5/gpt-5-mini and claude-opus-4-7 reject any non-default
   // `temperature`; Groq's llama-3.3 rejects `reasoning_effort`. We look up the
@@ -111,8 +124,11 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   // (e.g. "workers-ai/@cf/moonshotai/kimi-k2.7-code"). Cloud mode uses its own
   // shape and ignores this field. The direct Workers AI path (api.cloudflare.com)
   // also ignores the body model field because the model is already in the URL.
-  const isDirectWorkersAi = url.includes("/ai/run/");
-  const compatModel = entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
+  const isDirectWorkersAi = !customEndpoint && url.includes("/ai/run/");
+  // Custom endpoints receive the model id verbatim — the host's gateway owns
+  // provider dispatch, so no workers-ai/ prefixing.
+  const compatModel =
+    !customEndpoint && entry.provider === "workers-ai" ? `workers-ai/${opts.model}` : opts.model;
 
   const body: Record<string, unknown> = {
     messages: sanitizeMessagesForApi(opts.messages),
@@ -176,8 +192,13 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let res: Response;
     try {
+      // For custom endpoints the bearer (if any) rides in gatewayHeaders —
+      // never fall back to the Cloudflare/cloud token, and send no
+      // Authorization header at all when no apiKey is configured.
       const headers: Record<string, string> = {
-        Authorization: `Bearer ${opts.cloudMode && opts.cloudToken ? opts.cloudToken : opts.apiToken}`,
+        ...(customEndpoint
+          ? {}
+          : { Authorization: `Bearer ${opts.cloudMode && opts.cloudToken ? opts.cloudToken : opts.apiToken}` }),
         "Content-Type": "application/json",
         "User-Agent": getUserAgent(),
         ...gatewayHeaders,
@@ -237,10 +258,17 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
         try { return getModelOrInfer(opts.model).provider; } catch { return null; }
       })();
       const isProviderAuthError =
+        !customEndpoint &&
         (res.status === 401 || res.status === 403) &&
         modelProvider !== null &&
         modelProvider !== "workers-ai";
-      const wrappedMsg = isProviderAuthError
+      const wrappedMsg = customEndpoint && (res.status === 401 || res.status === 403)
+        ? [
+            `${opts.model} rejected the request (HTTP ${res.status}): ${msg || "authentication failed"}.`,
+            ``,
+            `Check that KIMIFLARE_API_KEY (or \`apiKey\` in config) matches what ${customEndpoint.baseUrl} expects.`,
+          ].join("\n")
+        : isProviderAuthError
         ? [
             `${opts.model} rejected the request (HTTP ${res.status}): ${msg || "authentication failed"}.`,
             ``,
@@ -286,7 +314,8 @@ export async function* runKimi(opts: RunKimiOpts): AsyncGenerator<KimiEvent, voi
 
     // Client-side fallback: report usage to cloud worker for reconciliation.
     // Only applies to Workers AI models (api.kimiflare.com handles those bills).
-    if (opts.cloudMode && lastUsage && opts.cloudToken && getModelOrInfer(opts.model).provider === "workers-ai") {
+    // Never fires for custom endpoints — the host's gateway does its own metering.
+    if (!customEndpoint && opts.cloudMode && lastUsage && opts.cloudToken && getModelOrInfer(opts.model).provider === "workers-ai") {
       const reportUrl = "https://api.kimiflare.com/v1/usage/report";
       const reportHeaders: Record<string, string> = {
         Authorization: `Bearer ${opts.cloudToken}`,
@@ -394,7 +423,23 @@ function gatewayHeadersFor(opts: RunKimiOpts): Record<string, string> {
   return headers;
 }
 
-function buildKimiRequestTarget(opts: RunKimiOpts): { url: string; headers: Record<string, string> } {
+function buildKimiRequestTarget(
+  opts: RunKimiOpts,
+  customEndpoint: CustomEndpoint | null,
+): { url: string; headers: Record<string, string> } {
+  // Custom OpenAI-compatible endpoint: the host app owns routing and auth,
+  // so every Cloudflare path below is bypassed — no account-id URLs, no
+  // cf-aig-* headers, no BYOK / Unified Billing logic. The model id only
+  // rides in the JSON body on this path (never the URL), so the strict
+  // Cloudflare id shapes don't apply: any non-empty id passes through.
+  if (customEndpoint) {
+    if (!opts.model) throw new KimiApiError(`Invalid model ID: ${opts.model}`, 400);
+    return {
+      url: customChatCompletionsUrl(customEndpoint.baseUrl),
+      headers: customEndpoint.apiKey ? { Authorization: `Bearer ${customEndpoint.apiKey}` } : {},
+    };
+  }
+
   validateModelId(opts.model);
 
   if (opts.cloudMode) {

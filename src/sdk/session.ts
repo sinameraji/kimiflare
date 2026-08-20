@@ -16,6 +16,7 @@ import { saveSession, loadSession, makeSessionId, sessionsDir } from "../session
 import type { SessionFile } from "../sessions.js";
 import { recordUsage } from "../usage-tracker.js";
 import type { GatewayMeta } from "../agent/client.js";
+import { resolveCustomEndpoint } from "../agent/custom-endpoint.js";
 import { logger } from "../util/logger.js";
 import { resolveSdkConfig } from "./config.js";
 import type { CreateSessionOptions, KimiFlareSession, SessionEvent, SessionUsage, SessionStatus, PromptOptions } from "./types.js";
@@ -525,6 +526,9 @@ class InternalSession implements KimiFlareSession {
     await runAgentTurn({
       accountId: this.config.accountId,
       apiToken: this.config.apiToken,
+      // Custom OpenAI-compatible endpoint (config baseUrl/apiKey or
+      // KIMIFLARE_BASE_URL/KIMIFLARE_API_KEY): overrides all Cloudflare routing.
+      customEndpoint: resolveCustomEndpoint(this.config) ?? undefined,
       model: this.model,
       messages: this.messages,
       tools: this.allTools,
@@ -585,6 +589,8 @@ function gatewayUsageLookup(
   meta: import("../agent/client.js").GatewayMeta,
 ): import("../usage-tracker.js").GatewayUsageLookup | undefined {
   if (!config.aiGatewayId) return undefined;
+  // Custom endpoint active: no Cloudflare account to reconcile against.
+  if (resolveCustomEndpoint(config)) return undefined;
   return {
     accountId: config.accountId,
     apiToken: config.apiToken,

@@ -156,3 +156,12 @@ kimiflare auth cloudflare --account <id> --no-browser
 Manual tokens keep working: pick **Paste an API token** in onboarding, or set
 `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` (env credentials override a
 stored OAuth session).
+
+## Bypassing Cloudflare auth entirely
+
+`KIMIFLARE_BASE_URL` (+ optional `KIMIFLARE_API_KEY`) routes every model call
+to a custom OpenAI-compatible endpoint and skips this whole page: no OAuth
+session, no token refresh, no account-id lookups, no `cf-aig-*` headers. Host
+apps that broker AI Gateway access themselves use it to avoid handing the
+kimiflare process a raw Cloudflare token. See "Custom gateway endpoint" in the
+README and `src/agent/custom-endpoint.ts`.
