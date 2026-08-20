@@ -66,6 +66,22 @@ export interface KimiConfig {
   model: string;
   /** Set when apiToken is an OAuth access token from "Log in with Cloudflare". */
   cloudflareOAuth?: CloudflareOAuthConfig;
+  /**
+   * Custom OpenAI-compatible endpoint base URL (env: KIMIFLARE_BASE_URL).
+   * When set, ALL model calls go to `<baseUrl>/chat/completions` and every
+   * Cloudflare routing/auth path is bypassed: no account-id lookups, no
+   * cf-aig-* headers, no Cloudflare token, and no whoami-style preflights or
+   * OAuth token refresh. Cloudflare credentials become optional. See
+   * src/agent/custom-endpoint.ts.
+   */
+  baseUrl?: string;
+  /**
+   * Bearer sent as `Authorization` to `baseUrl` (env: KIMIFLARE_API_KEY).
+   * Only used when `baseUrl` is set; omitted from the request entirely when
+   * unset (for unauthenticated local gateways). Not a Cloudflare token —
+   * that stays in `apiToken`.
+   */
+  apiKey?: string;
   aiGatewayId?: string;
   aiGatewayCacheTtl?: number;
   aiGatewaySkipCache?: boolean;
@@ -340,6 +356,11 @@ export async function loadConfig(): Promise<KimiConfig | null> {
 
   const envAccount = process.env.CLOUDFLARE_ACCOUNT_ID ?? process.env.CF_ACCOUNT_ID;
   const envToken = process.env.CLOUDFLARE_API_TOKEN ?? process.env.CF_API_TOKEN;
+  // Custom OpenAI-compatible endpoint (see src/agent/custom-endpoint.ts).
+  // When a base URL resolves, kimiflare is fully usable without any
+  // Cloudflare credentials — routing and auth belong to the host's gateway.
+  const envBaseUrl = process.env.KIMIFLARE_BASE_URL;
+  const envApiKey = process.env.KIMIFLARE_API_KEY;
   // KIMI_MODEL is an override, not a default: leave it undefined when unset so
   // the persisted `model` (set via /model) is honoured on the next launch.
   const envModel = process.env.KIMI_MODEL || undefined;
@@ -438,6 +459,8 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     return {
       accountId: envAccount,
       apiToken: envToken,
+      baseUrl: envBaseUrl ?? persisted?.baseUrl,
+      apiKey: envApiKey ?? persisted?.apiKey,
       model: envModel ?? DEFAULT_MODEL,
       aiGatewayId: envAiGatewayId,
       aiGatewayCacheTtl: envAiGatewayCacheTtl,
@@ -538,11 +561,13 @@ export async function loadConfig(): Promise<KimiConfig | null> {
     }
     if (parsed.accountId && parsed.apiToken) {
       warnIfBlankGatewayId(parsed.aiGatewayId, "config");
-      return withFreshCloudflareToken({
+      const resolved: KimiConfig = {
         accountId: envAccount ?? parsed.accountId,
         apiToken: envToken ?? parsed.apiToken,
         // An env token overrides the stored OAuth session entirely.
         cloudflareOAuth: envToken ? undefined : parsed.cloudflareOAuth,
+        baseUrl: envBaseUrl ?? parsed.baseUrl,
+        apiKey: envApiKey ?? parsed.apiKey,
         model: envModel ?? parsed.model ?? DEFAULT_MODEL,
         aiGatewayId: envAiGatewayId ?? parsed.aiGatewayId,
         aiGatewayCacheTtl: envAiGatewayCacheTtl ?? parsed.aiGatewayCacheTtl,
@@ -590,8 +615,50 @@ export async function loadConfig(): Promise<KimiConfig | null> {
         workerPreReadMaxChars: envWorkerPreReadMaxChars ?? parsed.workerPreReadMaxChars,
         preferPullRequests: envPreferPullRequests ?? parsed.preferPullRequests ?? true,
         allowDirectPush: envAllowDirectPush ?? parsed.allowDirectPush ?? false,
-      });
+      };
+      // A custom endpoint means no Cloudflare API traffic at all — including
+      // the background OAuth token refresh (the Cloudflare token isn't used
+      // while the custom endpoint is active).
+      return resolved.baseUrl ? resolved : withFreshCloudflareToken(resolved);
     }
+  }
+
+  // Custom OpenAI-compatible endpoint without Cloudflare credentials:
+  // KIMIFLARE_BASE_URL (+ optional KIMIFLARE_API_KEY) is a complete setup on
+  // its own. The host's gateway owns routing and auth, so the Cloudflare
+  // fields stay empty and nothing ever calls a Cloudflare API.
+  const customBaseUrl = envBaseUrl ?? persisted?.baseUrl;
+  if (customBaseUrl) {
+    return {
+      accountId: envAccount ?? persisted?.accountId ?? "",
+      apiToken: envToken ?? persisted?.apiToken ?? "",
+      baseUrl: customBaseUrl,
+      apiKey: envApiKey ?? persisted?.apiKey,
+      model: envModel ?? persisted?.model ?? DEFAULT_MODEL,
+      reasoningEffort: envEffort ?? persisted?.reasoningEffort,
+      coauthor: envCoauthor?.enabled ?? persisted?.coauthor ?? true,
+      coauthorName: envCoauthor?.name ?? persisted?.coauthorName,
+      coauthorEmail: envCoauthor?.email ?? persisted?.coauthorEmail,
+      mcpServers: persisted?.mcpServers,
+      cacheStablePrompts: persisted?.cacheStablePrompts ?? cacheStablePrompts,
+      compiledContext: persisted?.compiledContext ?? compiledContext,
+      imageHistoryTurns: Number.isNaN(imageHistoryTurns) ? persisted?.imageHistoryTurns : imageHistoryTurns,
+      memoryEnabled: envMemoryEnabled ?? persisted?.memoryEnabled ?? false,
+      memoryDbPath: envMemoryDbPath ?? persisted?.memoryDbPath,
+      memoryMaxAgeDays: envMemoryMaxAgeDays ?? persisted?.memoryMaxAgeDays,
+      memoryMaxEntries: envMemoryMaxEntries ?? persisted?.memoryMaxEntries,
+      memoryEmbeddingModel: envMemoryEmbeddingModel ?? persisted?.memoryEmbeddingModel,
+      plumbingModel: envPlumbingModel ?? persisted?.plumbingModel,
+      memoryExtractionModel: envMemoryExtractionModel ?? persisted?.memoryExtractionModel,
+      codeMode: envCodeMode ?? persisted?.codeMode ?? true,
+      costAttribution: envCostAttribution ?? persisted?.costAttribution ?? true,
+      filePicker: envFilePicker ?? persisted?.filePicker ?? true,
+      shell: envShell ?? persisted?.shell,
+      theme: persisted?.theme,
+      uiEngine: persisted?.uiEngine,
+      preferPullRequests: envPreferPullRequests ?? persisted?.preferPullRequests ?? true,
+      allowDirectPush: envAllowDirectPush ?? persisted?.allowDirectPush ?? false,
+    };
   }
   return null;
 }
