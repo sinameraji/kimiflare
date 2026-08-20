@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.1](https://github.com/sinameraji/kimiflare/compare/v0.98.0...v0.98.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **sdk:** non-blocking RPC loop, settle blocked turns on abort, session resume ([#633](https://github.com/sinameraji/kimiflare/issues/633)) ([1bad5ad](https://github.com/sinameraji/kimiflare/commit/1bad5ad224eb4d073ce9cef03b627dc991f32b0d))
+
 ## [0.98.0](https://github.com/sinameraji/kimiflare/compare/v0.97.0...v0.98.0) (2026-08-19)
 
 
